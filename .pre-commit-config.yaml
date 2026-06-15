@@ -1,0 +1,19 @@
+repos:
+  # Базовые хуки общего назначения
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace      # убирает пробелы в конце строк
+      - id: end-of-file-fixer        # добавляет newline в конце файла (помнишь W292?)
+      - id: check-yaml               # проверяет валидность YAML-файлов
+      - id: check-added-large-files  # не даёт закоммитить большие файлы
+      - id: check-merge-conflict     # ловит маркеры merge-конфликтов
+      - id: detect-private-key
+
+  # ruff — линтер и форматтер
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16
+    hooks:
+      - id: ruff                     # линтер
+        args: [--fix]                # с автофиксом
+      - id: ruff-format              # форматтер

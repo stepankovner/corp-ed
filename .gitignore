@@ -1,0 +1,41 @@
+# ===== Секреты и конфигурация окружения =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ===== Виртуальные окружения =====
+.venv/
+venv/
+env/
+
+# ===== Кеши инструментов =====
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ===== IDE и редакторы =====
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Операционная система =====
+.DS_Store
+Thumbs.db
+
+# ===== Логи и локальные данные =====
+*.log
+*.sqlite
+*.sqlite3
