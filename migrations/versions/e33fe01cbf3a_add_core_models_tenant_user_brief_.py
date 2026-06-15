@@ -1,7 +1,7 @@
 """Add core models: tenant, user, brief, program, material
 
 Revision ID: e33fe01cbf3a
-Revises: 
+Revises:
 Create Date: 2026-06-15 16:20:58.267777
 
 """
