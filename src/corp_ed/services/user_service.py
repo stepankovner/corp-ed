@@ -1,10 +1,10 @@
 import structlog
 
-from lms.api.v1.schemas.user import UserCreate
-from lms.core.exceptions import EmailAlreadyExistsError
-from lms.core.security import hash_password
-from lms.domain.models import User
-from lms.repositories.user_repository import UserRepository
+from corp_ed.api.v1.schemas.user import UserCreate
+from corp_ed.core.exceptions import EmailAlreadyExistsError
+from corp_ed.core.security import hash_password
+from corp_ed.domain.models import User
+from corp_ed.repositories.user_repository import UserRepository
 
 logger = structlog.get_logger()
 

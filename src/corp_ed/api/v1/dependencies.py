@@ -3,9 +3,9 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lms.core.database import get_session
-from lms.repositories.user_repository import UserRepository
-from lms.services.user_service import UserService
+from corp_ed.core.database import get_session
+from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.user_service import UserService
 
 
 def get_user_repository(

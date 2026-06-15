@@ -8,13 +8,14 @@ services:
     volumes:
       - ./src:/app/src
     command: >
-      uvicorn lms.main:app
+      uvicorn corp_ed.main:app
       --host 0.0.0.0
       --port 8000
       --reload
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+asyncpg://lms:lms@db:5432/lms
+      - PYTHONPATH=/app/src
+      - DATABASE_URL=postgresql+asyncpg://corp_ed:corp_ed@db:5432/corp_ed
       - SECRET_KEY=${SECRET_KEY}
     depends_on:
       db:
@@ -23,15 +24,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=lms
-      - POSTGRES_PASSWORD=lms
-      - POSTGRES_DB=lms
+      - POSTGRES_USER=corp_ed
+      - POSTGRES_PASSWORD=corp_ed
+      - POSTGRES_DB=corp_ed
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lms"]
+      test: ["CMD-SHELL", "pg_isready -U corp_ed"]
       interval: 5s
       timeout: 5s
       retries: 5

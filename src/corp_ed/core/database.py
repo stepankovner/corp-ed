@@ -13,10 +13,10 @@ from sqlalchemy.orm import (
     with_loader_criteria,
 )
 
-from lms.core.config import settings
-from lms.core.exceptions import TenantContextMissingError
-from lms.core.tenant_context import current_tenant
-from lms.domain.mixins import TenantMixin
+from corp_ed.core.config import settings
+from corp_ed.core.exceptions import TenantContextMissingError
+from corp_ed.core.tenant_context import current_tenant
+from corp_ed.domain.mixins import TenantMixin
 
 
 class Base(DeclarativeBase):

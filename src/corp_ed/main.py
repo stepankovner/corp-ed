@@ -1,20 +1,20 @@
 from fastapi import FastAPI
 
-from lms.api.v1.endpoints import courses, users
-from lms.core.exception_handlers import (
+from corp_ed.api.v1.endpoints import users
+from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
     not_found_error_handler,
     permission_error_handler,
 )
-from lms.core.exceptions import (
+from corp_ed.core.exceptions import (
     ConflictError,
     DomainError,
     NotFoundError,
     PermissionError,
 )
-from lms.core.logging import configure_logging
-from lms.core.middleware import RequestIDMiddleware, TenantMiddleware
+from corp_ed.core.logging import configure_logging
+from corp_ed.core.middleware import RequestIDMiddleware, TenantMiddleware
 
 configure_logging()
 
@@ -25,7 +25,6 @@ app = FastAPI(
 )
 
 app.include_router(users.router, prefix="/api/v1")
-app.include_router(courses.router, prefix="/api/v1")
 
 
 @app.get("/")

@@ -6,11 +6,11 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from lms.core.config import settings
-from lms.core.database import Base
+from corp_ed.core.config import settings
+from corp_ed.core.database import Base
 
 # Важно: импортируем модели, чтобы они зарегистрировались в Base.metadata
-from lms.domain import models  # noqa: F401
+from corp_ed.domain import models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

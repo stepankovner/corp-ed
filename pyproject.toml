@@ -1,5 +1,5 @@
 [project]
-name = "lms"
+name = "corp-ed"
 version = "0.1.0"
 description = "Learning Management System — educational project for backend/MLOps practice"
 readme = "README.md"

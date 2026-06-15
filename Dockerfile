@@ -41,4 +41,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
 
 # Команда запуска при старте контейнера
-CMD ["uvicorn", "lms.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "corp_ed.main:app", "--host", "0.0.0.0", "--port", "8000"]

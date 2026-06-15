@@ -1,11 +1,9 @@
 from datetime import datetime
-from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from lms.core.database import Base
-from lms.domain.mixins import TenantMixin
+from corp_ed.core.database import Base
 
 
 class User(Base):
@@ -19,11 +17,3 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-
-
-class Course(TenantMixin, Base):
-    __tablename__ = "courses"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    title: Mapped[str] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

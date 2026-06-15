@@ -2,9 +2,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 
-from lms.api.v1.dependencies import get_user_service
-from lms.api.v1.schemas.user import UserCreate, UserResponse
-from lms.services.user_service import UserService
+from corp_ed.api.v1.dependencies import get_user_service
+from corp_ed.api.v1.schemas.user import UserCreate, UserResponse
+from corp_ed.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 

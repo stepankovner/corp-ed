@@ -3,7 +3,7 @@ import sys
 
 import structlog
 
-from lms.core.config import settings
+from corp_ed.core.config import settings
 
 
 def configure_logging() -> None:
