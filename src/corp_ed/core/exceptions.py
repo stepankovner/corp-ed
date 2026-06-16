@@ -10,6 +10,13 @@ class TenantContextMissingError(Exception):
     """
 
 
+class InvalidCredentialsError(DomainError):
+    """Неверные учётные данные при логине (компания/email/пароль)."""
+
+    def __init__(self) -> None:
+        super().__init__("Неверный логин или пароль")
+
+
 class NotFoundError(DomainError):
     """Сущность не найдена."""
 

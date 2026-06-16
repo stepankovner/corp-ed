@@ -28,3 +28,9 @@ async def permission_error_handler(request: Request, exc: Exception) -> JSONResp
         status_code=status.HTTP_403_FORBIDDEN,
         content={"detail": str(exc)},
     )
+
+
+async def invalid_credentials_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=401, content={"detail": "Неверный логин или пароль"}
+    )
