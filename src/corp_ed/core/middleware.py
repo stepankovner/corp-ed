@@ -1,13 +1,10 @@
 import uuid
 from collections.abc import Awaitable, Callable
-from uuid import UUID
 
 import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-
-from corp_ed.core.tenant_context import current_tenant
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -25,20 +22,4 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
-        return response
-
-
-class TenantMiddleware(BaseHTTPMiddleware):
-    """Определяет текущего тенанта запроса и кладёт в контекст для изоляции."""
-
-    async def dispatch(
-        self,
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Response]],
-    ) -> Response:
-        # ВРЕМЕННО: tenant из заголовка. В Phase 7 заменить на извлечение из токена.
-        tenant_header = request.headers.get("X-Tenant-ID")
-        if tenant_header:
-            current_tenant.set(UUID(tenant_header))
-        response = await call_next(request)
         return response

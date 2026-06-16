@@ -1,4 +1,8 @@
-from pydantic import BaseModel, EmailStr
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr
+
+from corp_ed.domain.models import UserRole
 
 
 class LoginRequest(BaseModel):
@@ -10,3 +14,13 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class MeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: EmailStr
+    full_name: str | None
+    role: UserRole
+    tenant_id: UUID

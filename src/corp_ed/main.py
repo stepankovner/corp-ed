@@ -5,6 +5,7 @@ from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
     invalid_credentials_handler,
+    not_authenticated_handler,
     not_found_error_handler,
     permission_error_handler,
 )
@@ -12,11 +13,12 @@ from corp_ed.core.exceptions import (
     ConflictError,
     DomainError,
     InvalidCredentialsError,
+    NotAuthenticatedError,
     NotFoundError,
     PermissionError,
 )
 from corp_ed.core.logging import configure_logging
-from corp_ed.core.middleware import RequestIDMiddleware, TenantMiddleware
+from corp_ed.core.middleware import RequestIDMiddleware
 
 configure_logging()
 
@@ -40,6 +42,7 @@ app.add_exception_handler(ConflictError, conflict_error_handler)
 app.add_exception_handler(NotFoundError, not_found_error_handler)
 app.add_exception_handler(PermissionError, permission_error_handler)
 app.add_exception_handler(InvalidCredentialsError, invalid_credentials_handler)
+app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 
-app.add_middleware(TenantMiddleware)  # выполняются в порядке, обратном добавлению
+# выполняются в порядке, обратном добавлению
 app.add_middleware(RequestIDMiddleware)

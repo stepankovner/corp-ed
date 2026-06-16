@@ -34,3 +34,11 @@ async def invalid_credentials_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(
         status_code=401, content={"detail": "Неверный логин или пароль"}
     )
+
+
+async def not_authenticated_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content={"detail": str(exc)},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
