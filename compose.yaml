@@ -15,8 +15,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app/src
-      - DATABASE_URL=postgresql+asyncpg://corp_ed:corp_ed@db:5432/corp_ed
+      - DATABASE_URL=postgresql+asyncpg://corp_ed:${POSTGRES_PASSWORD}@db:5432/corp_ed
       - SECRET_KEY=${SECRET_KEY}
+      - YC_FOLDER_ID=${YC_FOLDER_ID}
+      - YC_API_KEY=${YC_API_KEY}
     depends_on:
       db:
         condition: service_healthy
@@ -25,7 +27,7 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=corp_ed
-      - POSTGRES_PASSWORD=corp_ed
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=corp_ed
     ports:
       - "5432:5432"
