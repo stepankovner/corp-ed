@@ -1,3 +1,7 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import httpx
 from fastapi import FastAPI
 
 from corp_ed.api.v1.endpoints import auth, users
@@ -22,10 +26,21 @@ from corp_ed.core.middleware import RequestIDMiddleware
 
 configure_logging()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.http_client = httpx.AsyncClient()
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
+
+
 app = FastAPI(
     title="corp-ed",
     description="AI-конструктор адаптации стажёров",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.include_router(users.router, prefix="/api/v1")

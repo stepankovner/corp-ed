@@ -1,16 +1,21 @@
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends
+import httpx
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.config import LLMSettings
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import NotAuthenticatedError, PermissionError
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
+from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
@@ -97,3 +102,24 @@ def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
         return current_user
 
     return checker
+
+
+@lru_cache
+def get_llm_settings() -> LLMSettings:
+    return LLMSettings()  # type: ignore[call-arg]
+
+
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    client: httpx.AsyncClient = request.app.state.http_client
+    return client
+
+
+def get_llm_gateway(
+    client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
+    settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+) -> LLMGateway:
+    return YandexAdapter(
+        client=client,
+        folder_id=settings.yc_folder_id,
+        api_key=settings.yc_api_key,
+    )
