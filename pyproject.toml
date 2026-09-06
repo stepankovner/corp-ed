@@ -29,6 +29,8 @@ dev = [
     "alembic>=1.18.4",
     "mypy>=2.1.0",
     "pre-commit>=4.6.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.15.16",
     "types-passlib>=1.7.7.20260211",
 ]
@@ -54,3 +56,7 @@ select = [
 files = ["src"]
 python_version = "3.12"
 strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
