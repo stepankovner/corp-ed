@@ -1,7 +1,9 @@
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -23,21 +25,27 @@ class Base(DeclarativeBase):
     """Базовый класс для всех ORM-моделей."""
 
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-)
+@lru_cache
+def get_engine() -> AsyncEngine:
+    return create_async_engine(
+        settings.database_url,
+        echo=settings.debug,
+    )
 
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+
+@lru_cache
+def get_session_maker() -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(
+        get_engine(),
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
 
 
 async def get_session() -> AsyncGenerator[AsyncSession]:
     """FastAPI-зависимость: выдаёт сессию БД на время запроса."""
-    async with async_session_maker() as session:
+    session_maker = get_session_maker()
+    async with session_maker() as session:
         yield session
 
 
@@ -51,7 +59,7 @@ def _apply_tenant_filter(execute_state: ORMExecuteState) -> None:
         issubclass(m.class_, TenantMixin) for m in execute_state.all_mappers
     )
     if not involves_tenant_model:
-        return  # запрос только по нетенантным моделям (User) — не трогаем
+        return
 
     # дошли сюда => в запросе есть тенант-модель => тенант ОБЯЗАТЕЛЕН
     tenant_id = current_tenant.get()
