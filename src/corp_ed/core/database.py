@@ -14,9 +14,10 @@ from sqlalchemy.orm import (
     Session,
     with_loader_criteria,
 )
+from sqlalchemy.orm.attributes import get_history
 
 from corp_ed.core.config import settings
-from corp_ed.core.exceptions import TenantContextMissingError
+from corp_ed.core.exceptions import TenantContextMissingError, TenantMismatchError
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.mixins import TenantMixin
 
@@ -73,3 +74,32 @@ def _apply_tenant_filter(execute_state: ORMExecuteState) -> None:
             include_aliases=True,
         )
     )
+
+
+@event.listens_for(Session, "before_flush")
+def _check_tenant_on_write(
+    session: Session, flush_context: object, instances: object
+) -> None:
+    tenant_id = current_tenant.get()
+
+    for obj in session.new:
+        if not isinstance(obj, TenantMixin):
+            continue
+
+        if obj.tenant_id is None:
+            if tenant_id is None:
+                raise TenantContextMissingError()
+            obj.tenant_id = tenant_id
+        elif tenant_id is not None and obj.tenant_id != tenant_id:
+            raise TenantMismatchError("Попытка записи с чужим tenant_id")
+
+    for obj in session.dirty:
+        if not isinstance(obj, TenantMixin):
+            continue
+
+        history = get_history(obj, "tenant_id")
+
+        if history.has_changes():
+            raise TenantMismatchError(
+                "Попытка изменить tenant_id у существующей записи"
+            )

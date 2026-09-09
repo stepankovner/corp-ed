@@ -46,3 +46,12 @@ class EmailAlreadyExistsError(ConflictError):
 
     def __init__(self, email: str) -> None:
         super().__init__(f"User with email '{email}' already exists")
+
+
+class TenantMismatchError(Exception):
+    """Попытка записи с tenant_id, не совпадающим с контекстом.
+
+    Признак бага: объект создан с чужим тенантом или tenant_id
+    изменён у существующей записи. Серверная ошибка (500),
+    клиент исправить не может.
+    """
