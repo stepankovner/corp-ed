@@ -13,8 +13,7 @@ class UserRepository:
         self.session = session
 
     async def get_by_id(self, user_id: UUID) -> User | None:
-        result = await self.session.scalars(select(User).where(User.id == user_id))
-        return result.first()
+        return await self.session.get(User, user_id)
 
     async def get_by_email(self, email: str) -> User | None:
         result = await self.session.scalars(select(User).where(User.email == email))
