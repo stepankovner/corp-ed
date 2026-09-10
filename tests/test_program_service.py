@@ -1,8 +1,13 @@
+from uuid import uuid4
+
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.models import Brief, Program, ProgramStatus, Tenant
 from corp_ed.llm.fake import FakeAdapter
+from corp_ed.llm.types import FinishReason
 from corp_ed.repositories.brief_repository import BriefRepository
 from corp_ed.repositories.program_repository import ProgramRepository
 from corp_ed.services.program_service import ProgramService
@@ -55,3 +60,41 @@ async def test_generate_passes_brief_data_to_model(
     assert brief.goals in sent_text
     assert brief.tasks in sent_text
     assert brief.intern_level in sent_text
+
+
+async def test_generate_raises_when_brief_missing(
+    tenant_ctx: Tenant, session: AsyncSession
+) -> None:
+    fake = FakeAdapter()
+    service = _build_service(session, fake)
+
+    with pytest.raises(NotFoundError):
+        await service.generate(uuid4())
+
+    assert len(fake.calls) == 0
+
+
+async def test_finish_reason_truncated(
+    brief: Brief,
+    session: AsyncSession,
+) -> None:
+    fake = FakeAdapter(content="обрубок", finish_reason=FinishReason.TRUNCATED)
+    service = _build_service(session, fake)
+
+    program = await service.generate(brief.id)
+
+    assert program.content == "обрубок"
+    assert program.status == ProgramStatus.DRAFT
+
+
+async def test_generate_uses_default_model_params(
+    brief: Brief,
+    session: AsyncSession,
+) -> None:
+    fake = FakeAdapter()
+    service = _build_service(session, fake)
+
+    await service.generate(brief.id)
+
+    assert fake.call_kwargs[0]["temperature"] == 0.3
+    assert fake.call_kwargs[0]["max_tokens"] == 1000
