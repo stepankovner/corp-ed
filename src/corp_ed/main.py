@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from corp_ed.api.v1.endpoints import auth, users
+from corp_ed.api.v1.endpoints import auth, programs, users
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
@@ -45,6 +45,7 @@ app = FastAPI(
 
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(programs.router, prefix="/api/v1")
 
 
 @app.get("/")

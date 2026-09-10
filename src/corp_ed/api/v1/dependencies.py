@@ -16,9 +16,12 @@ from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.yandex import YandexAdapter
+from corp_ed.repositories.brief_repository import BriefRepository
+from corp_ed.repositories.program_repository import ProgramRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.program_service import ProgramService
 from corp_ed.services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -32,8 +35,9 @@ def get_user_repository(
 
 def get_user_service(
     repository: Annotated[UserRepository, Depends(get_user_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserService:
-    return UserService(repository)
+    return UserService(repository, session)
 
 
 def get_tenant_repository(
@@ -123,3 +127,24 @@ def get_llm_gateway(
         folder_id=settings.yc_folder_id,
         api_key=settings.yc_api_key,
     )
+
+
+def get_brief_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> BriefRepository:
+    return BriefRepository(session)
+
+
+def get_program_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ProgramRepository:
+    return ProgramRepository(session)
+
+
+def get_program_service(
+    program_repo: Annotated[ProgramRepository, Depends(get_program_repository)],
+    brief_repo: Annotated[BriefRepository, Depends(get_brief_repository)],
+    gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ProgramService:
+    return ProgramService(program_repo, brief_repo, gateway, session)
