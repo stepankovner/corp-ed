@@ -3,11 +3,12 @@ import sys
 
 import structlog
 
-from corp_ed.core.config import settings
+from corp_ed.core.config import get_settings
 
 
 def configure_logging() -> None:
     """Настраивает structlog: текст в development, JSON в production."""
+    settings = get_settings()
     processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,

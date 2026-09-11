@@ -16,7 +16,7 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.orm.attributes import get_history
 
-from corp_ed.core.config import settings
+from corp_ed.core.config import get_settings
 from corp_ed.core.exceptions import TenantContextMissingError, TenantMismatchError
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.mixins import TenantMixin
@@ -28,10 +28,8 @@ class Base(DeclarativeBase):
 
 @lru_cache
 def get_engine() -> AsyncEngine:
-    return create_async_engine(
-        settings.database_url,
-        echo=settings.debug,
-    )
+    settings = get_settings()
+    return create_async_engine(settings.database_url, echo=settings.debug)
 
 
 @lru_cache

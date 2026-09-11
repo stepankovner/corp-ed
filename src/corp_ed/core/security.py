@@ -5,7 +5,7 @@ from uuid import UUID
 import jwt
 from passlib.context import CryptContext
 
-from corp_ed.core.config import settings
+from corp_ed.core.config import get_settings
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 8
@@ -31,8 +31,8 @@ def create_access_token(user_id: UUID, tenant_id: UUID, role: str) -> str:
         "role": role,
         "exp": expire,
     }
-    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+    return jwt.encode(payload, get_settings().secret_key, algorithm=ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
-    return jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    return jwt.decode(token, get_settings().secret_key, algorithms=[ALGORITHM])
