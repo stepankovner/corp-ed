@@ -86,3 +86,17 @@ async def brief(session: AsyncSession, manager: User) -> Brief:
     await session.commit()
 
     return brief
+
+
+@pytest.fixture
+async def intern(session: AsyncSession, tenant_ctx: Tenant) -> User:
+    intern = User(
+        id=uuid4(),
+        tenant_id=tenant_ctx.id,
+        email="intern@test.com",
+        role=UserRole.INTERN,
+        hashed_password="hashed",
+    )
+    session.add(intern)
+    await session.commit()
+    return intern

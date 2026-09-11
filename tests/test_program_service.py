@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
-from corp_ed.domain.models import Brief, Program, ProgramStatus, Tenant
+from corp_ed.domain.models import Brief, Program, ProgramStatus, Tenant, User
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.types import FinishReason
 from corp_ed.repositories.brief_repository import BriefRepository
@@ -98,3 +98,40 @@ async def test_generate_uses_default_model_params(
 
     assert fake.call_kwargs[0]["temperature"] == 0.3
     assert fake.call_kwargs[0]["max_tokens"] == 1000
+
+
+async def test_manager_can_read_program(
+    brief: Brief,
+    manager: User,
+    session: AsyncSession,
+) -> None:
+    service = _build_service(session, FakeAdapter())
+
+    created = await service.generate(brief.id)
+    fetched = await service.get(created.id, manager)
+
+    assert fetched.id == created.id
+    assert fetched.content == created.content
+
+
+async def test_get_raises_when_program_missing(
+    manager: User,
+    session: AsyncSession,
+) -> None:
+    service = _build_service(session, FakeAdapter())
+
+    with pytest.raises(NotFoundError):
+        await service.get(uuid4(), manager)
+
+
+async def test_intern_cannot_read_draft(
+    brief: Brief,
+    intern: User,
+    session: AsyncSession,
+) -> None:
+    service = _build_service(session, FakeAdapter())
+
+    created = await service.generate(brief.id)
+
+    with pytest.raises(NotFoundError):
+        await service.get(created.id, intern)

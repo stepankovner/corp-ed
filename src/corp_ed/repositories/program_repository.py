@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.domain.models import Program
@@ -14,3 +16,6 @@ class ProgramRepository:
         await self.session.flush()
         await self.session.refresh(program)
         return program
+
+    async def get_by_id(self, program_id: UUID) -> Program | None:
+        return await self.session.get(Program, program_id)

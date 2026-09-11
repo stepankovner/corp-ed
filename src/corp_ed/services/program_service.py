@@ -4,7 +4,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
-from corp_ed.domain.models import Program
+from corp_ed.domain.models import Program, ProgramStatus, User, UserRole
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import FinishReason
 from corp_ed.prompts.program import build_program_messages
@@ -63,5 +63,28 @@ class ProgramService:
             model=completion.model,
             latency_ms=completion.latency_ms,
         )
+
+        return program
+
+    async def get(self, program_id: UUID, current_user: User) -> Program:
+        program = await self.program_repo.get_by_id(program_id)
+        if program is None:
+            raise NotFoundError("Программа с таким id не найдена")
+
+        is_manager = current_user.role is UserRole.MANAGER
+        is_own_published = (
+            program.intern_id == current_user.id
+            and program.status is ProgramStatus.APPROVED
+        )
+
+        if not (is_manager or is_own_published):
+            logger.warning(
+                "program_access_denied",
+                program_id=program.id,
+                user_id=current_user.id,
+                user_role=current_user.role.value,
+                program_status=program.status.value,
+            )
+            raise NotFoundError("Программа с таким id не найдена")
 
         return program
