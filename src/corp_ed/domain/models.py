@@ -2,6 +2,7 @@ import enum
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,6 +87,26 @@ class Material(TenantMixin, Base):
     track: Mapped[Track]
     title: Mapped[str]
     content: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Chunk(TenantMixin, Base):
+    __tablename__ = "chunks"
+    __table_args__ = (
+        UniqueConstraint("material_id", "position", name="uq_chunk_material_position"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    material_id: Mapped[UUID] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int]
+    content: Mapped[str]
+    embedding: Mapped[list[float]] = mapped_column(Vector(256))
+    model: Mapped[str]
+    model_version: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

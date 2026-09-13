@@ -24,6 +24,7 @@ TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 async def engine() -> AsyncGenerator[AsyncEngine]:
     engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
     try:
         yield engine
