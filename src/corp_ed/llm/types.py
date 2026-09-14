@@ -33,3 +33,12 @@ class Completion:
     model_version: str
     model: str
     latency_ms: int
+
+
+@dataclass(frozen=True)
+class EmbeddingResult:
+    embedding: list[float]
+    input_tokens: int
+    model_version: str
+    model: str
+    latency_ms: int
