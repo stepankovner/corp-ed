@@ -14,7 +14,13 @@ from sqlalchemy.ext.asyncio import (
 
 from corp_ed.core.database import Base
 from corp_ed.core.tenant_context import current_tenant
-from corp_ed.domain.models import Brief, Tenant, Track, User, UserRole
+from corp_ed.domain.models import Brief, Material, Tenant, Track, User, UserRole
+from corp_ed.llm.fake import FakeAdapter
+from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
+from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.services.faq_service import FaqService
+from corp_ed.services.material_service import MaterialService
 
 load_dotenv()
 TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
@@ -87,6 +93,65 @@ async def brief(session: AsyncSession, manager: User) -> Brief:
     await session.commit()
 
     return brief
+
+
+@pytest.fixture
+async def material(session: AsyncSession, tenant_ctx: Tenant) -> Material:
+    material = Material(
+        id=uuid4(),
+        tenant_id=tenant_ctx.id,
+        track=Track.MARKETING,
+        title="Регламент отпусков",
+        content="Первый абзац.\n\nВторой абзац.\n\nТретий абзац.",
+    )
+    session.add(material)
+    await session.commit()
+    return material
+
+
+@pytest.fixture
+def fake_embeddings() -> FakeEmbeddingAdapter:
+    return FakeEmbeddingAdapter()
+
+
+@pytest.fixture
+def chunk_repo(session: AsyncSession) -> ChunkRepository:
+    return ChunkRepository(session)
+
+
+@pytest.fixture
+def material_service(
+    session: AsyncSession,
+    fake_embeddings: FakeEmbeddingAdapter,
+) -> MaterialService:
+    return MaterialService(
+        material_repo=MaterialRepository(session),
+        chunk_repo=ChunkRepository(session),
+        embedding_gateway=fake_embeddings,
+        session=session,
+        chunk_size=20,
+        overlap=0,
+    )
+
+
+@pytest.fixture
+def fake_llm() -> FakeAdapter:
+    return FakeAdapter()
+
+
+@pytest.fixture
+def faq_service(
+    session: AsyncSession,
+    fake_embeddings: FakeEmbeddingAdapter,
+    fake_llm: FakeAdapter,
+) -> FaqService:
+    return FaqService(
+        chunk_repo=ChunkRepository(session),
+        embedding_gateway=fake_embeddings,
+        llm_gateway=fake_llm,
+        limit=5,
+        max_distance=0.6,
+    )
 
 
 @pytest.fixture

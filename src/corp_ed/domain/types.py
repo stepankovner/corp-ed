@@ -9,3 +9,10 @@ class ChunkMatch:
     material_id: UUID
     position: int
     distance: float
+
+
+@dataclass(frozen=True)
+class FaqAnswer:
+    content: str
+    answer_given: bool
+    sources: list[ChunkMatch]
