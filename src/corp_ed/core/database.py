@@ -101,3 +101,13 @@ def _check_tenant_on_write(
             raise TenantMismatchError(
                 "Попытка изменить tenant_id у существующей записи"
             )
+
+    for obj in session.deleted:
+        if not isinstance(obj, TenantMixin):
+            continue
+
+        if tenant_id is None:
+            raise TenantContextMissingError()
+
+        if obj.tenant_id != tenant_id:
+            raise TenantMismatchError("Попытка удалить запись чужого тенанта")

@@ -3,8 +3,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.core.exceptions import TenantContextMissingError
-from corp_ed.core.tenant_context import current_tenant
+from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import Chunk
 from corp_ed.domain.types import ChunkMatch
 
@@ -20,13 +19,20 @@ class ChunkRepository:
         await self.session.flush()
 
     async def delete_by_material(self, material_id: UUID) -> None:
-        stmt = delete(Chunk).where(Chunk.material_id == material_id)
+        """Удалить все чанки материала.
+
+        Фильтр по тенанту здесь обязателен: bulk DELETE идёт мимо
+        обоих хуков изоляции — _apply_tenant_filter реагирует только
+        на SELECT, _check_tenant_on_write работает с объектами сессии.
+        """
+        stmt = delete(Chunk).where(
+            Chunk.material_id == material_id,
+            Chunk.tenant_id == require_tenant(),
+        )
         await self.session.execute(stmt)
 
     async def search(self, embedding: list[float], limit: int = 5) -> list[ChunkMatch]:
-        tenant_id = current_tenant.get()
-        if tenant_id is None:
-            raise TenantContextMissingError("В контексте отсутствует tenant_id")
+        tenant_id = require_tenant()
 
         distance = Chunk.embedding.cosine_distance(embedding)
 
@@ -38,6 +44,9 @@ class ChunkRepository:
                 Chunk.position,
                 distance.label("distance"),
             )
+            # Фильтр обязателен: hook вешает with_loader_criteria, а он
+            # применяется к загрузке ORM-сущностей. Здесь колоночный
+            # select, сущность не грузится — автоматики нет.
             .where(Chunk.tenant_id == tenant_id)
             .order_by(distance)
             .limit(limit)
