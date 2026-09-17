@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     secret_key: str
 
     # База данных
-    database_url: str = "postgresql+asyncpg://corp_ed:corp_ed@localhost:5432/corp_ed"
+    database_url: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
