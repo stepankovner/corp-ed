@@ -65,3 +65,45 @@ class RagSettings(BaseSettings):
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk_overlap must be less than chunk_size")
         return self
+
+
+class CorsSettings(BaseSettings):
+    """Origin'ы, которым браузер разрешит обращаться к API.
+
+    Отдельный класс, а не поле в Settings: main.py читает эти настройки
+    при сборке приложения, а Settings требует секретов — импорт
+    приложения перестал бы работать без .env, и падали бы тесты
+    и alembic. Здесь у каждого поля есть дефолт, поэтому импорт
+    не зависит от окружения.
+
+    Дефолт — адрес dev-сервера Vite, он годится только для локальной
+    разработки. В бою origin задаётся переменной окружения.
+    """
+
+    cors_allowed_origins: str = "http://localhost:5173"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        """Origin'ы списком.
+
+        Хранится строкой через запятую, а не list[str]: сложные типы
+        pydantic-settings разбирает как JSON, и переменная окружения
+        превратилась бы в ["http://..."] — лишний источник опечаток
+        при деплое.
+        """
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
+
+
+@lru_cache
+def get_cors_settings() -> CorsSettings:
+    return CorsSettings()
