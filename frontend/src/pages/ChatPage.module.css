@@ -17,8 +17,6 @@
   flex-direction: column;
   gap: 20px;
   min-height: 220px;
-  /* запас под липкое поле ввода: без него последний ответ уезжает под него */
-  padding-bottom: 88px;
 }
 
 .empty {
@@ -116,9 +114,10 @@
   color: var(--ink-faint);
 }
 
+/* Поле ввода в обычном потоке, а не липкое: висящая панель перекрывала
+   последний ответ, а лента здесь короткая — после ответа она сама
+   подкручивается к нему. */
 .form {
-  position: sticky;
-  bottom: 24px;
   display: flex;
   gap: 12px;
   padding: 14px;

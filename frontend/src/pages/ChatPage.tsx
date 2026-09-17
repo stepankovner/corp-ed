@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { errorMessage } from "../api/ApiError";
 import { askFaq } from "../api/endpoints";
@@ -27,6 +27,13 @@ export function ChatPage() {
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Новый ответ может оказаться ниже края окна — подкручиваем к нему,
+  // иначе кажется, что ничего не произошло.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [entries.length, pending]);
 
   async function handleAsk(event: FormEvent) {
     event.preventDefault();
@@ -135,6 +142,7 @@ export function ChatPage() {
             </div>
           </div>
         ) : null}
+        <div ref={bottomRef} />
       </div>
 
       <form className={styles.form} onSubmit={handleAsk}>
