@@ -33,3 +33,19 @@ class MaterialResponse(BaseModel):
 class IngestResponse(BaseModel):
     material_id: UUID
     chunks: int
+
+
+class MaterialListItemResponse(BaseModel):
+    """Материал в списке: без содержимого, с числом чанков.
+
+    chunks == 0 означает «не проиндексирован» — интерфейс показывает
+    это отметкой у материала.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    track: Track
+    title: str
+    created_at: datetime
+    chunks: int

@@ -4,7 +4,8 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.domain.models import Chunk, Material, User
+from corp_ed.core.tenant_context import current_tenant
+from corp_ed.domain.models import Chunk, Material, Tenant, Track, User
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 
 
@@ -106,3 +107,67 @@ async def test_ingest_material_not_found(
     )
 
     assert response.status_code == 404
+
+
+async def test_material_list_shows_indexing_state(
+    manager_client: httpx.AsyncClient,
+    material: Material,
+) -> None:
+    """Число чанков — это и есть отметка «проиндексирован» в интерфейсе."""
+    response = await manager_client.get("/api/v1/materials")
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert len(body) == 1
+    assert body[0]["title"] == material.title
+    assert body[0]["chunks"] == 0
+    assert "content" not in body[0]
+
+    await manager_client.post(f"/api/v1/materials/{material.id}/ingest")
+
+    response = await manager_client.get("/api/v1/materials")
+
+    assert response.json()[0]["chunks"] == 3
+
+
+async def test_intern_cannot_list_materials(
+    intern_client: httpx.AsyncClient,
+) -> None:
+    response = await intern_client.get("/api/v1/materials")
+
+    assert response.status_code == 403
+
+
+async def test_material_list_excludes_other_tenants(
+    manager_client: httpx.AsyncClient,
+    material: Material,
+    session: AsyncSession,
+) -> None:
+    foreign_tenant = Tenant(id=uuid4(), company_code="other", name="Other Co")
+    session.add(foreign_tenant)
+    await session.commit()
+
+    # Контекст переставляется на чужого тенанта: иначе хук записи
+    # отклонит материал с чужим tenant_id.
+    token = current_tenant.set(foreign_tenant.id)
+    try:
+        session.add(
+            Material(
+                id=uuid4(),
+                tenant_id=foreign_tenant.id,
+                track=Track.ANALYTICS,
+                title="Материал чужой компании",
+                content="Текст чужой компании.",
+            )
+        )
+        await session.commit()
+    finally:
+        current_tenant.reset(token)
+
+    response = await manager_client.get("/api/v1/materials")
+
+    titles = [item["title"] for item in response.json()]
+
+    assert titles == [material.title]

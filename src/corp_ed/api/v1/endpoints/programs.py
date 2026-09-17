@@ -11,12 +11,22 @@ from corp_ed.api.v1.dependencies import (
 from corp_ed.api.v1.schemas.program import (
     ProgramDetailResponse,
     ProgramGenerateRequest,
+    ProgramListItemResponse,
     ProgramResponse,
 )
 from corp_ed.domain.models import User, UserRole
 from corp_ed.services.program_service import ProgramService
 
 router = APIRouter(prefix="/programs", tags=["programs"])
+
+
+@router.get("", response_model=list[ProgramListItemResponse])
+async def list_programs(
+    service: Annotated[ProgramService, Depends(get_program_service)],
+    current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))],
+) -> list[ProgramListItemResponse]:
+    programs = await service.list_all()
+    return [ProgramListItemResponse.model_validate(program) for program in programs]
 
 
 @router.post(

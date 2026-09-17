@@ -10,6 +10,15 @@ from corp_ed.services.brief_service import BriefService
 router = APIRouter(prefix="/briefs", tags=["briefs"])
 
 
+@router.get("", response_model=list[BriefResponse])
+async def list_briefs(
+    service: Annotated[BriefService, Depends(get_brief_service)],
+    current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))],
+) -> list[BriefResponse]:
+    briefs = await service.list_all()
+    return [BriefResponse.model_validate(brief) for brief in briefs]
+
+
 @router.post(
     "",
     response_model=BriefResponse,

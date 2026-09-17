@@ -31,3 +31,14 @@ class ProgramDetailResponse(BaseModel):
     brief_id: UUID
     content: str
     created_at: datetime
+
+
+class ProgramListItemResponse(BaseModel):
+    """Программа в списке: без содержимого, оно приходит отдельной ручкой."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    status: ProgramStatus
+    brief_id: UUID
+    created_at: datetime

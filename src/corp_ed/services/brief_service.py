@@ -55,3 +55,6 @@ class BriefService:
         )
 
         return brief
+
+    async def list_all(self) -> list[Brief]:
+        return await self.brief_repo.list_all()

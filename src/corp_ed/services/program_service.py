@@ -66,6 +66,9 @@ class ProgramService:
 
         return program
 
+    async def list_all(self) -> list[Program]:
+        return await self.program_repo.list_all()
+
     async def get(self, program_id: UUID, current_user: User) -> Program:
         program = await self.program_repo.get_by_id(program_id)
         if program is None:

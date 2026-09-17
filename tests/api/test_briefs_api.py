@@ -85,3 +85,26 @@ async def test_create_brief_requires_authentication(
     response = await api.post("/api/v1/briefs", json=PAYLOAD)
 
     assert response.status_code == 401
+
+
+async def test_manager_can_list_briefs(
+    manager_client: httpx.AsyncClient,
+    brief: Brief,
+) -> None:
+    response = await manager_client.get("/api/v1/briefs")
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert len(body) == 1
+    assert body[0]["id"] == str(brief.id)
+    assert body[0]["role_title"] == brief.role_title
+
+
+async def test_intern_cannot_list_briefs(
+    intern_client: httpx.AsyncClient,
+) -> None:
+    response = await intern_client.get("/api/v1/briefs")
+
+    assert response.status_code == 403
