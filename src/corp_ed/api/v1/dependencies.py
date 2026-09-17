@@ -8,19 +8,25 @@ from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.core.config import LLMSettings
+from corp_ed.core.config import LLMSettings, RagSettings
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import NotAuthenticatedError, PermissionError
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
+from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.yandex import YandexAdapter
+from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.repositories.brief_repository import BriefRepository
+from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.program_repository import ProgramRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.faq_service import FaqService
+from corp_ed.services.material_service import MaterialService
 from corp_ed.services.program_service import ProgramService
 from corp_ed.services.user_service import UserService
 
@@ -113,9 +119,25 @@ def get_llm_settings() -> LLMSettings:
     return LLMSettings()  # type: ignore[call-arg]
 
 
+@lru_cache
+def get_rag_settings() -> RagSettings:
+    return RagSettings()  # type: ignore[call-arg]
+
+
 def get_http_client(request: Request) -> httpx.AsyncClient:
     client: httpx.AsyncClient = request.app.state.http_client
     return client
+
+
+def get_embedding_gateway(
+    client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
+    settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+) -> EmbeddingGateway:
+    return YandexEmbeddingAdapter(
+        client=client,
+        folder_id=settings.yc_folder_id,
+        api_key=settings.yc_api_key,
+    )
 
 
 def get_llm_gateway(
@@ -135,6 +157,18 @@ def get_brief_repository(
     return BriefRepository(session)
 
 
+def get_material_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> MaterialRepository:
+    return MaterialRepository(session)
+
+
+def get_chunk_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ChunkRepository:
+    return ChunkRepository(session)
+
+
 def get_program_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProgramRepository:
@@ -148,3 +182,62 @@ def get_program_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProgramService:
     return ProgramService(program_repo, brief_repo, gateway, session)
+
+
+def get_material_service(
+    material_repo: Annotated[
+        MaterialRepository,
+        Depends(get_material_repository),
+    ],
+    chunk_repo: Annotated[
+        ChunkRepository,
+        Depends(get_chunk_repository),
+    ],
+    embedding_gateway: Annotated[
+        EmbeddingGateway,
+        Depends(get_embedding_gateway),
+    ],
+    session: Annotated[
+        AsyncSession,
+        Depends(get_session),
+    ],
+    settings: Annotated[
+        RagSettings,
+        Depends(get_rag_settings),
+    ],
+) -> MaterialService:
+    return MaterialService(
+        material_repo=material_repo,
+        chunk_repo=chunk_repo,
+        embedding_gateway=embedding_gateway,
+        session=session,
+        chunk_size=settings.chunk_size,
+        overlap=settings.chunk_overlap,
+    )
+
+
+def get_faq_service(
+    chunk_repo: Annotated[
+        ChunkRepository,
+        Depends(get_chunk_repository),
+    ],
+    embedding_gateway: Annotated[
+        EmbeddingGateway,
+        Depends(get_embedding_gateway),
+    ],
+    llm_gateway: Annotated[
+        LLMGateway,
+        Depends(get_llm_gateway),
+    ],
+    settings: Annotated[
+        RagSettings,
+        Depends(get_rag_settings),
+    ],
+) -> FaqService:
+    return FaqService(
+        chunk_repo=chunk_repo,
+        embedding_gateway=embedding_gateway,
+        llm_gateway=llm_gateway,
+        limit=settings.faq_limit,
+        max_distance=settings.faq_max_distance,
+    )

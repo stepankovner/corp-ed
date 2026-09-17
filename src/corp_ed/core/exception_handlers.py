@@ -1,5 +1,8 @@
+import structlog
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
+
+logger = structlog.get_logger()
 
 
 async def domain_fallback_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -41,4 +44,20 @@ async def not_authenticated_handler(request: Request, exc: Exception) -> JSONRes
         status_code=status.HTTP_401_UNAUTHORIZED,
         content={"detail": str(exc)},
         headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def llm_error_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    logger.warning(
+        "llm_unavailable",
+        error=str(exc),
+        path=request.url.path,
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        content={"detail": "Сервис языковой модели недоступен, попробуйте позже"},
     )

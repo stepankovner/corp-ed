@@ -19,6 +19,10 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - YC_FOLDER_ID=${YC_FOLDER_ID}
       - YC_API_KEY=${YC_API_KEY}
+      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE}
+      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP}
+      - RAG_FAQ_LIMIT=${RAG_FAQ_LIMIT}
+      - RAG_FAQ_MAX_DISTANCE=${RAG_FAQ_MAX_DISTANCE}
     depends_on:
       db:
         condition: service_healthy

@@ -4,7 +4,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
-from corp_ed.domain.models import Chunk
+from corp_ed.domain.models import Chunk, Material, Track
 from corp_ed.domain.split import split_into_chunks
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -31,6 +31,30 @@ class MaterialService:
         self.session = session
         self.chunk_size = chunk_size
         self.overlap = overlap
+
+    async def create(
+        self,
+        *,
+        track: Track,
+        title: str,
+        content: str,
+    ) -> Material:
+        material = Material(
+            track=track,
+            title=title,
+            content=content,
+        )
+
+        await self.material_repo.create(material)
+        await self.session.commit()
+
+        logger.info(
+            "material_created",
+            material_id=str(material.id),
+            content_length=len(content),
+        )
+
+        return material
 
     async def ingest(self, material_id: UUID) -> int:
         """Пересчитать чанки материала.
