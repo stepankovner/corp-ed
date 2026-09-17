@@ -26,11 +26,10 @@ from corp_ed.core.logging import configure_logging
 from corp_ed.core.middleware import RequestIDMiddleware
 from corp_ed.llm.errors import LLMError
 
-configure_logging()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
     app.state.http_client = httpx.AsyncClient()
     try:
         yield
