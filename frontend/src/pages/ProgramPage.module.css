@@ -1,0 +1,67 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 820px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+
+.status {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sheet {
+  padding: 48px 56px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+/*
+ * Программа приходит строкой, формат не зафиксирован — разбирать её
+ * на структуру нельзя. Сохраняем переносы как есть и даём колонке
+ * ширину и интерлиньяж, при которых длинный текст читается.
+ */
+.content {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 68ch;
+}
+
+.back {
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+  text-decoration: none;
+}
+
+.back:hover {
+  color: var(--ink);
+}
+
+@media (max-width: 720px) {
+  .sheet {
+    padding: 28px 24px;
+  }
+}

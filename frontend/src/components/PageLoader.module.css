@@ -1,0 +1,9 @@
+.loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 240px;
+  color: var(--ink-muted);
+  font-size: 0.95rem;
+}

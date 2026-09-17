@@ -1,0 +1,87 @@
+.page {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  align-items: center;
+  gap: 64px;
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 72px 32px;
+}
+
+.pitch {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.brand {
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.lead {
+  max-width: 46ch;
+  color: var(--ink-muted);
+  font-size: 1.02rem;
+}
+
+.points {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.point {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  color: var(--ink-muted);
+  font-size: 0.94rem;
+}
+
+.pointNumber {
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  min-width: 24px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+  padding: 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.submit {
+  margin-top: 4px;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .page {
+    grid-template-columns: 1fr;
+    gap: 40px;
+    padding: 40px 20px 64px;
+  }
+
+  .card {
+    padding: 28px;
+  }
+}

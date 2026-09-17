@@ -1,0 +1,55 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.control {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.control:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.control:disabled {
+  background: var(--surface-muted);
+  color: var(--ink-muted);
+}
+
+textarea.control {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.5;
+}
+
+.invalid {
+  border-color: var(--danger);
+}
+
+.error {
+  font-size: 0.84rem;
+  color: var(--danger);
+}
+
+.hint {
+  font-size: 0.84rem;
+  color: var(--ink-faint);
+}

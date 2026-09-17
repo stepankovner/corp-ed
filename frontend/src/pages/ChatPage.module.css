@@ -1,0 +1,151 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  max-width: 780px;
+  margin: 0 auto;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 220px;
+  /* запас под липкое поле ввода: без него последний ответ уезжает под него */
+  padding-bottom: 88px;
+}
+
+.empty {
+  padding: 36px 28px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+}
+
+.examples {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--ink-faint);
+}
+
+.question {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: 14px 20px;
+  border-radius: var(--radius) var(--radius) 4px var(--radius);
+  background: var(--ink);
+  color: #fff;
+}
+
+.answer {
+  align-self: flex-start;
+  width: 100%;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/*
+ * Отказ — не сбой, а работа системы: она не нашла ответа в материалах
+ * и не стала выдумывать. Поэтому не красный, а тёплый акцент и явная
+ * подпись, отличающая отказ от обычного ответа.
+ */
+.refusal {
+  border-color: var(--line-strong);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.refusalLabel {
+  color: var(--accent);
+}
+
+.text {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+
+.sources {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.sourcesSummary {
+  cursor: pointer;
+  font-size: 0.84rem;
+  color: var(--ink-muted);
+}
+
+.source {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 0.88rem;
+  color: var(--ink-muted);
+}
+
+.sourceMeta {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.form {
+  position: sticky;
+  bottom: 24px;
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lift);
+}
+
+.input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 8px 14px;
+  background: transparent;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 720px) {
+  .question {
+    max-width: 92%;
+  }
+}

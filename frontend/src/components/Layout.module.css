@@ -1,0 +1,97 @@
+.shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  border-bottom: 1px solid var(--line);
+  background: rgba(244, 242, 237, 0.92);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.headerInner {
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+
+.brand {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.nav {
+  display: flex;
+  gap: 28px;
+  margin-right: auto;
+}
+
+.link {
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-decoration: none;
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+}
+
+.link:hover {
+  color: var(--ink);
+}
+
+.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.86rem;
+  color: var(--ink-muted);
+}
+
+.role {
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.main {
+  max-width: var(--page-width);
+  width: 100%;
+  margin: 0 auto;
+  padding: 56px 32px 96px;
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  .headerInner {
+    padding: 16px 20px;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .nav {
+    gap: 18px;
+  }
+
+  .main {
+    padding: 36px 20px 64px;
+  }
+}
