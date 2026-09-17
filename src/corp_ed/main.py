@@ -4,7 +4,14 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from corp_ed.api.v1.endpoints import auth, faq, materials, programs, users
+from corp_ed.api.v1.endpoints import (
+    auth,
+    briefs,
+    faq,
+    materials,
+    programs,
+    users,
+)
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
@@ -46,6 +53,7 @@ app = FastAPI(
 
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(briefs.router, prefix="/api/v1")
 app.include_router(programs.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")

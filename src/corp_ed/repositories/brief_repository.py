@@ -13,3 +13,9 @@ class BriefRepository:
 
     async def get_by_id(self, brief_id: UUID) -> Brief | None:
         return await self.session.get(Brief, brief_id)
+
+    async def create(self, brief: Brief) -> Brief:
+        self.session.add(brief)
+        await self.session.flush()
+        await self.session.refresh(brief)
+        return brief
