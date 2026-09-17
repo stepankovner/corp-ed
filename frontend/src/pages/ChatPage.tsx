@@ -65,14 +65,9 @@ export function ChatPage() {
   return (
     <div className={styles.page}>
       <header className={styles.head}>
-        <p className="eyebrow">Вопросы по компании</p>
-        <h1 className="page-heading">
-          Спросите то,{" "}
-          <span className="display-muted">что неудобно спрашивать людей.</span>
-        </h1>
-        <p className="muted">
-          Бот отвечает только по материалам компании и показывает, откуда
-          взял ответ.
+        <h1 className="title">Вопросы</h1>
+        <p className="subtitle">
+          Ответы собираются по документам компании, без домыслов.
         </p>
       </header>
 
@@ -81,47 +76,52 @@ export function ChatPage() {
       <div className={styles.feed}>
         {entries.length === 0 && !pending ? (
           <div className={styles.empty}>
-            Задайте первый вопрос.
+            Здесь пока пусто.
             <div className={styles.examples}>
-              <span>— За сколько дней подавать заявление на отпуск?</span>
-              <span>— Как получить доступ к рекламному кабинету?</span>
+              <span>За сколько дней подавать заявление на отпуск?</span>
+              <span>Как получить доступ к рекламному кабинету?</span>
             </div>
           </div>
         ) : null}
 
         {entries.map((entry) => (
-          <div key={entry.id} className="stack gap-16">
-            <p className={styles.question}>{entry.question}</p>
+          <div key={entry.id} className={styles.exchange}>
+            <div className={styles.question}>
+              <span className="meta">вопрос</span>
+              <p className={styles.questionText}>{entry.question}</p>
+            </div>
 
             <article
               className={`${styles.answer} ${
                 entry.answer.answer_given ? "" : styles.refusal
               }`}
             >
+              <span className="meta">
+                {entry.answer.answer_given
+                  ? "ответ по материалам компании"
+                  : "ответа в материалах компании нет"}
+              </span>
+
               <p
-                className={`${styles.label} ${
-                  entry.answer.answer_given ? "" : styles.refusalLabel
+                className={`${styles.text} ${
+                  entry.answer.answer_given ? "" : styles.refusalText
                 }`}
               >
-                {entry.answer.answer_given
-                  ? "Ответ по материалам компании"
-                  : "В материалах компании нет ответа"}
+                {entry.answer.content}
               </p>
-
-              <p className={styles.text}>{entry.answer.content}</p>
 
               {entry.answer.sources.length > 0 ? (
                 <details className={styles.sources}>
                   <summary className={styles.sourcesSummary}>
-                    Источники: {entry.answer.sources.length}
+                    Источники · {entry.answer.sources.length}
                   </summary>
                   {entry.answer.sources.map((source) => (
                     <div
                       key={`${source.material_id}-${source.position}`}
                       className={styles.source}
                     >
-                      <span className={styles.sourceMeta}>
-                        Материал {shortId(source.material_id)} · фрагмент{" "}
+                      <span className={`meta ${styles.sourceMeta}`}>
+                        материал {shortId(source.material_id)} · фрагмент{" "}
                         {source.position + 1}
                       </span>
                       {source.content}
@@ -134,14 +134,18 @@ export function ChatPage() {
         ))}
 
         {pending ? (
-          <div className="stack gap-16">
-            <p className={styles.question}>{pending}</p>
+          <div className={styles.exchange}>
+            <div className={styles.question}>
+              <span className="meta">вопрос</span>
+              <p className={styles.questionText}>{pending}</p>
+            </div>
             <div className={styles.thinking}>
               <Spinner />
               <span>Ищем ответ в материалах…</span>
             </div>
           </div>
         ) : null}
+
         <div ref={bottomRef} />
       </div>
 

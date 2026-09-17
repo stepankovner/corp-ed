@@ -49,10 +49,10 @@ export function ProgramPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <Notice tone="error">{errorMessage(error)}</Notice>
         <Link className={styles.back} to="/briefs">
-          ← К брифам
+          ← Программы
         </Link>
+        <Notice tone="error">{errorMessage(error)}</Notice>
       </div>
     );
   }
@@ -63,16 +63,16 @@ export function ProgramPage() {
 
   return (
     <div className={styles.page}>
+      <Link className={styles.back} to="/briefs">
+        ← Программы
+      </Link>
+
       <header className={styles.head}>
-        <Link className={styles.back} to="/briefs">
-          ← К брифам
-        </Link>
-        <p className="eyebrow">Программа адаптации</p>
-        <h1 className="section-title">30 / 60 / 90 дней</h1>
-        <div className={styles.meta}>
-          <span className={styles.status}>{STATUS_LABELS[program.status]}</span>
-          <span>Создана {formatDate(program.created_at)}</span>
-        </div>
+        <h1 className={styles.title}>Программа адаптации</h1>
+        <span className="meta">
+          {STATUS_LABELS[program.status]} · собрана{" "}
+          {formatDate(program.created_at)}
+        </span>
       </header>
 
       <article className={styles.sheet}>

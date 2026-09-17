@@ -1,55 +1,57 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .label {
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
 .control {
   width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--line-strong);
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--panel);
   outline: none;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+  font-size: 14px;
+  transition: border-color 0.12s ease;
 }
 
 .control:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .control:disabled {
-  background: var(--surface-muted);
-  color: var(--ink-muted);
+  background: var(--panel-2);
+  color: var(--ink-2);
 }
 
 textarea.control {
   resize: vertical;
-  min-height: 96px;
+  min-height: 84px;
   line-height: 1.5;
 }
 
+/* Ошибка поля — не цветом, а рамкой в основном тоне и подписью:
+   в интерфейсе одна гамма, сигналить красным нечем и незачем. */
 .invalid {
-  border-color: var(--danger);
+  border-color: var(--ink);
 }
 
 .error {
-  font-size: 0.84rem;
-  color: var(--danger);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.error::before {
+  content: "↳ ";
+  color: var(--ink-3);
 }
 
 .hint {
-  font-size: 0.84rem;
-  color: var(--ink-faint);
+  font-size: 12.5px;
+  color: var(--ink-3);
 }

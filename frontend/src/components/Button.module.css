@@ -2,49 +2,51 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 12px 24px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: #fff;
-  font-size: 0.95rem;
+  font-size: 14px;
+  line-height: 1.35;
   cursor: pointer;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
+  transition: background 0.12s ease, border-color 0.12s ease;
   white-space: nowrap;
 }
 
 .button:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--accent-2);
+  border-color: var(--accent-2);
 }
 
 .button:disabled {
   cursor: default;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .secondary {
-  background: var(--surface);
-  border-color: var(--line-strong);
+  background: var(--panel);
+  border-color: var(--line-2);
   color: var(--ink);
 }
 
 .secondary:hover:not(:disabled) {
-  background: var(--surface-muted);
+  background: var(--panel-2);
+  border-color: var(--ink-3);
 }
 
+/* Действие в строке списка: выглядит как ссылка, ведёт себя как кнопка. */
 .quiet {
-  padding: 8px 16px;
+  padding: 4px 0;
+  border-color: transparent;
   background: transparent;
-  border-color: var(--line-strong);
-  color: var(--ink-muted);
-  font-size: 0.85rem;
+  color: var(--ink-2);
+  font-size: 13.5px;
 }
 
 .quiet:hover:not(:disabled) {
-  background: var(--surface);
   color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }

@@ -1,112 +1,150 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 48px;
+  gap: 24px;
 }
 
 .head {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 62ch;
+  align-items: flex-start;
+  gap: 24px;
 }
 
-.columns {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 40px;
-  align-items: start;
-}
-
-.list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  padding: 20px 24px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
-}
-
-.itemBody {
+.headText {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-right: auto;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Список — таблица с шапкой, а не набор карточек: так видно, что это
+   рабочий реестр, и колонки выравниваются между строками. */
+.tableHead,
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px 120px 130px;
+  gap: 16px;
+  align-items: center;
+  padding: 0 18px;
+}
+
+.tableHead {
+  height: 34px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.row {
+  min-height: 48px;
+  border-bottom: 1px solid var(--line);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: var(--panel-2);
+}
+
+.name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
 
 .title {
-  font-size: 1.05rem;
-}
-
-.meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 0.82rem;
-  color: var(--ink-faint);
+  font-size: 14.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.badge {
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  font-size: 0.76rem;
-  white-space: nowrap;
-}
-
-.indexed {
-  background: var(--ok-soft);
-  color: var(--ok);
 }
 
 .pending {
-  background: var(--surface-muted);
-  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 
-.form {
-  position: sticky;
-  top: 96px;
+.cell {
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+/* Индексация — служебное действие, а не то, ради чего открывают экран:
+   появляется при наведении на строку и на фокусе с клавиатуры. */
+.action {
+  justify-self: end;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.row:hover .action,
+.action:focus-visible,
+.actionBusy {
+  opacity: 1;
+}
+
+.footer {
   display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 28px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-card);
+  gap: 16px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12.5px;
 }
 
 .empty {
-  padding: 32px 24px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
-  color: var(--ink-muted);
-  text-align: center;
+  padding: 22px 18px;
+  color: var(--ink-3);
+  font-size: 14px;
 }
 
-@media (max-width: 900px) {
-  .columns {
-    grid-template-columns: 1fr;
+@media (max-width: 860px) {
+  .tableHead {
+    display: none;
   }
 
-  .form {
-    position: static;
+  .row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 14px 16px;
   }
 
-  .item {
+  .action {
+    justify-self: start;
+    opacity: 1;
+  }
+
+  .formRow {
     grid-template-columns: 1fr;
-    gap: 14px;
-    justify-items: start;
   }
 }

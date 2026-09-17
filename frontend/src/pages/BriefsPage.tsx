@@ -30,6 +30,7 @@ export function BriefsPage() {
   const [programs, setPrograms] = useState<ProgramListItem[]>([]);
   const [listError, setListError] = useState<unknown>(null);
 
+  const [formOpen, setFormOpen] = useState(false);
   const [track, setTrack] = useState<Track>("marketing");
   const [roleTitle, setRoleTitle] = useState("");
   const [goals, setGoals] = useState("");
@@ -76,6 +77,7 @@ export function BriefsPage() {
       setGoals("");
       setTasks("");
       setInternLevel("");
+      setFormOpen(false);
       await reload();
     } catch (caught) {
       setFormError(caught);
@@ -100,13 +102,10 @@ export function BriefsPage() {
   if (isForbidden(listError)) {
     return (
       <div className={styles.page}>
-        <header className={styles.head}>
-          <p className="eyebrow">Брифы и программы</p>
-          <h1 className="page-heading">Экран доступен только руководителю.</h1>
-        </header>
+        <h1 className="title">Программы</h1>
         <Notice tone="error">{errorMessage(listError)}</Notice>
         <p>
-          <Link to="/chat">← Вернуться к вопросам</Link>
+          <Link to="/chat">Вернуться к вопросам</Link>
         </p>
       </div>
     );
@@ -120,126 +119,85 @@ export function BriefsPage() {
   return (
     <div className={styles.page}>
       <header className={styles.head}>
-        <p className="eyebrow">Брифы и программы</p>
-        <h1 className="page-heading">
-          Анкета руководителя —{" "}
-          <span className="display-muted">программа на 30/60/90 дней.</span>
-        </h1>
-        <p className="muted">
-          Чем конкретнее цели и задачи в брифе, тем меньше программа похожа
-          на шаблон.
-        </p>
+        <div className={styles.headText}>
+          <h1 className="title">Программы</h1>
+          <p className="subtitle">
+            Бриф руководителя — вход для программы адаптации. Чем конкретнее
+            цели и задачи, тем меньше программа похожа на шаблон.
+          </p>
+        </div>
+        <Button
+          variant={formOpen ? "secondary" : "primary"}
+          onClick={() => setFormOpen((open) => !open)}
+        >
+          {formOpen ? "Отмена" : "Новый бриф"}
+        </Button>
       </header>
 
-      {listError ? <Notice tone="error">{errorMessage(listError)}</Notice> : null}
+      {listError ? (
+        <Notice tone="error">{errorMessage(listError)}</Notice>
+      ) : null}
       {generateError ? (
         <Notice tone="error">{errorMessage(generateError)}</Notice>
       ) : null}
       {generatingId ? (
         <Notice tone="info">
-          Генерируем программу, это займёт до минуты. Не закрывайте страницу.
+          Собираем программу по брифу. Это занимает до минуты — страницу можно
+          не закрывать.
         </Notice>
       ) : null}
 
-      <div className={styles.columns}>
-        <section className={styles.column}>
-          {briefs === null && !listError ? (
-            <PageLoader text="Загружаем брифы" />
-          ) : null}
-
-          {briefs?.length === 0 ? (
-            <p className={styles.empty}>
-              Брифов пока нет. Заполните первый — форма справа.
-            </p>
-          ) : null}
-
-          {briefs?.map((brief) => {
-            const program = programByBrief.get(brief.id);
-            const generating = generatingId === brief.id;
-
-            return (
-              <article key={brief.id} className={styles.item}>
-                <div className={styles.itemBody}>
-                  <h2 className={styles.title}>{brief.role_title}</h2>
-                  <div className={styles.meta}>
-                    <span>{TRACK_LABELS[brief.track]}</span>
-                    <span>{formatDate(brief.created_at)}</span>
-                    {program ? (
-                      <Link
-                        className={styles.programLink}
-                        to={`/programs/${program.id}`}
-                      >
-                        Открыть программу
-                      </Link>
-                    ) : null}
-                  </div>
-                </div>
-
-                <Button
-                  variant={program ? "secondary" : "primary"}
-                  loading={generating}
-                  disabled={generatingId !== null}
-                  onClick={() => void handleGenerate(brief.id)}
-                >
-                  {generating
-                    ? "Генерируем, до минуты"
-                    : program
-                      ? "Сгенерировать заново"
-                      : "Сгенерировать программу"}
-                </Button>
-              </article>
-            );
-          })}
-        </section>
-
-        <form className={styles.form} onSubmit={handleCreate} noValidate>
-          <div className="stack gap-8">
-            <p className="eyebrow">Новый бриф</p>
-            <p className="muted">Что за роль и чего ждём от стажёра.</p>
-          </div>
-
-          {formError ? (
+      {formOpen ? (
+        <form
+          className={`${styles.panel} ${styles.form}`}
+          onSubmit={handleCreate}
+          noValidate
+        >
+          {formError && Object.keys(fieldErrors).length === 0 ? (
             <Notice tone="error">{errorMessage(formError)}</Notice>
           ) : null}
 
-          <SelectField
-            label="Направление"
-            value={track}
-            error={fieldErrors.track}
-            onChange={(event) => setTrack(event.target.value as Track)}
-          >
-            <option value="marketing">Маркетинг</option>
-            <option value="analytics">Аналитика</option>
-          </SelectField>
+          <div className={styles.formRow}>
+            <SelectField
+              label="Направление"
+              value={track}
+              error={fieldErrors.track}
+              onChange={(event) => setTrack(event.target.value as Track)}
+            >
+              <option value="marketing">Маркетинг</option>
+              <option value="analytics">Аналитика</option>
+            </SelectField>
 
-          <TextField
-            label="Роль"
-            value={roleTitle}
-            error={fieldErrors.role_title}
-            onChange={(event) => setRoleTitle(event.target.value)}
-            placeholder="Стажёр-маркетолог"
-            required
-          />
+            <TextField
+              label="Роль стажёра"
+              value={roleTitle}
+              error={fieldErrors.role_title}
+              onChange={(event) => setRoleTitle(event.target.value)}
+              placeholder="Стажёр-маркетолог"
+              required
+            />
+          </div>
 
-          <TextArea
-            label="Цели"
-            value={goals}
-            error={fieldErrors.goals}
-            onChange={(event) => setGoals(event.target.value)}
-            placeholder="Что стажёр должен уметь через три месяца"
-            rows={4}
-            required
-          />
-
-          <TextArea
-            label="Задачи"
-            value={tasks}
-            error={fieldErrors.tasks}
-            onChange={(event) => setTasks(event.target.value)}
-            placeholder="Чем он будет заниматься каждую неделю"
-            rows={4}
-            required
-          />
+          <div className={styles.formPair}>
+            <TextArea
+              label="Цели"
+              value={goals}
+              error={fieldErrors.goals}
+              onChange={(event) => setGoals(event.target.value)}
+              placeholder="Что стажёр должен уметь к концу стажировки"
+              rows={4}
+              required
+            />
+            <TextArea
+              label="Задачи"
+              value={tasks}
+              error={fieldErrors.tasks}
+              onChange={(event) => setTasks(event.target.value)}
+              placeholder="Чем он будет заниматься каждую неделю"
+              rows={4}
+              required
+            />
+          </div>
 
           <TextField
             label="Уровень"
@@ -250,11 +208,65 @@ export function BriefsPage() {
             required
           />
 
-          <Button type="submit" loading={saving}>
-            {saving ? "Сохраняем" : "Сохранить бриф"}
-          </Button>
+          <div>
+            <Button type="submit" loading={saving}>
+              {saving ? "Сохраняем" : "Сохранить бриф"}
+            </Button>
+          </div>
         </form>
-      </div>
+      ) : null}
+
+      <section className={styles.panel}>
+        <div className={styles.tableHead}>
+          <span>Роль</span>
+          <span>Направление</span>
+          <span>Создан</span>
+          <span />
+        </div>
+
+        {briefs === null && !listError ? (
+          <PageLoader text="Загружаем брифы" />
+        ) : null}
+
+        {briefs?.length === 0 ? (
+          <p className={styles.empty}>
+            Брифов пока нет. Первый заполняется кнопкой сверху.
+          </p>
+        ) : null}
+
+        {briefs?.map((brief) => {
+          const program = programByBrief.get(brief.id);
+          const generating = generatingId === brief.id;
+
+          return (
+            <article key={brief.id} className={styles.row}>
+              <span className={styles.title}>{brief.role_title}</span>
+              <span className={styles.cell}>{TRACK_LABELS[brief.track]}</span>
+              <span className="meta">{formatDate(brief.created_at)}</span>
+
+              <div className={styles.action}>
+                {program ? (
+                  <Link className={styles.link} to={`/programs/${program.id}`}>
+                    Открыть программу
+                  </Link>
+                ) : null}
+                <Button
+                  variant="quiet"
+                  loading={generating}
+                  disabled={generatingId !== null}
+                  onClick={() => void handleGenerate(brief.id)}
+                >
+                  {generating
+                    ? "Собираем"
+                    : program
+                      ? "Заново"
+                      : "Собрать программу"}
+                </Button>
+              </div>
+            </article>
+          );
+        })}
+      </section>
     </div>
   );
 }

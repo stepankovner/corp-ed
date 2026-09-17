@@ -44,76 +44,54 @@ export function LoginPage() {
 
   return (
     <div className={styles.page}>
-      <section className={styles.pitch}>
-        <p className={styles.brand}>corp-ed</p>
-        <h1 className="display">
-          Адаптация стажёров,
-          <br />
-          <span className="display-muted">собранная из ваших материалов.</span>
-        </h1>
-        <p className={styles.lead}>
-          Программа 30/60/90 по брифу руководителя и ответы на вопросы стажёра
-          строго по документам компании — без выдумок.
-        </p>
-
-        <div className={styles.points}>
-          <div className={styles.point}>
-            <span className={styles.pointNumber}>01</span>
-            <span>Материалы отдела превращаются в базу знаний.</span>
-          </div>
-          <div className={styles.point}>
-            <span className={styles.pointNumber}>02</span>
-            <span>Бриф руководителя — в программу адаптации.</span>
-          </div>
-          <div className={styles.point}>
-            <span className={styles.pointNumber}>03</span>
-            <span>Нет ответа в материалах — бот честно скажет об этом.</span>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.card}>
-        <div className="stack gap-8">
-          <p className="eyebrow">Вход</p>
-          <h2 className="section-title">Войдите в рабочее пространство</h2>
+      <div className={styles.column}>
+        <div className={styles.brand}>
+          <span className={styles.wordmark}>kronto</span>
+          <span className="meta">адаптация стажёров · вход для сотрудников</span>
         </div>
 
-        {error ? <Notice tone="error">{errorMessage(error)}</Notice> : null}
+        <section className={styles.panel}>
+          {error ? <Notice tone="error">{errorMessage(error)}</Notice> : null}
 
-        <form className={styles.form} onSubmit={handleSubmit} noValidate>
-          <TextField
-            label="Код компании"
-            value={companyCode}
-            onChange={(event) => setCompanyCode(event.target.value)}
-            error={fieldErrors.company_code}
-            autoComplete="organization"
-            placeholder="demo"
-            required
-          />
-          <TextField
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            error={fieldErrors.email}
-            autoComplete="username"
-            required
-          />
-          <TextField
-            label="Пароль"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            error={fieldErrors.password}
-            autoComplete="current-password"
-            required
-          />
+          <form className={styles.form} onSubmit={handleSubmit} noValidate>
+            <TextField
+              label="Код компании"
+              value={companyCode}
+              onChange={(event) => setCompanyCode(event.target.value)}
+              error={fieldErrors.company_code}
+              autoComplete="organization"
+              required
+            />
+            <TextField
+              label="Рабочая почта"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              error={fieldErrors.email}
+              autoComplete="username"
+              required
+            />
+            <TextField
+              label="Пароль"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              error={fieldErrors.password}
+              autoComplete="current-password"
+              required
+            />
 
-          <Button className={styles.submit} type="submit" loading={pending}>
-            {pending ? "Входим" : "Войти"}
-          </Button>
-        </form>
-      </section>
+            <Button className={styles.submit} type="submit" loading={pending}>
+              {pending ? "Входим" : "Войти"}
+            </Button>
+          </form>
+
+          <p className={styles.footnote}>
+            Код компании выдаёт администратор вашей организации. Пароль
+            восстанавливает он же.
+          </p>
+        </section>
+      </div>
     </div>
   );
 }

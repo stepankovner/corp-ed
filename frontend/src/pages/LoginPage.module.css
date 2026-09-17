@@ -1,87 +1,54 @@
 .page {
   min-height: 100%;
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  align-items: center;
-  gap: 64px;
-  max-width: var(--page-width);
-  margin: 0 auto;
-  padding: 72px 32px;
+  place-items: center;
+  padding: 40px 20px;
 }
 
-.pitch {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-.brand {
-  font-size: 0.78rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-
-.lead {
-  max-width: 46ch;
-  color: var(--ink-muted);
-  font-size: 1.02rem;
-}
-
-.points {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 8px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
-}
-
-.point {
-  display: flex;
-  gap: 16px;
-  align-items: baseline;
-  color: var(--ink-muted);
-  font-size: 0.94rem;
-}
-
-.pointNumber {
-  font-size: 0.78rem;
-  letter-spacing: 0.1em;
-  color: var(--ink-faint);
-  min-width: 24px;
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lift);
-  padding: 36px;
+.column {
+  width: 100%;
+  max-width: 372px;
   display: flex;
   flex-direction: column;
   gap: 22px;
 }
 
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wordmark {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
 .form {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .submit {
-  margin-top: 4px;
+  margin-top: 2px;
   width: 100%;
 }
 
-@media (max-width: 900px) {
-  .page {
-    grid-template-columns: 1fr;
-    gap: 40px;
-    padding: 40px 20px 64px;
-  }
-
-  .card {
-    padding: 28px;
-  }
+.footnote {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
 }

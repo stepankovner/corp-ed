@@ -1,150 +1,135 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  max-width: 780px;
-  margin: 0 auto;
+  gap: 22px;
+  max-width: 720px;
 }
 
 .head {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 6px;
 }
 
 .feed {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  min-height: 220px;
+  gap: 26px;
+  min-height: 180px;
 }
 
 .empty {
-  padding: 36px 28px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
-  color: var(--ink-muted);
+  padding: 18px 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .examples {
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 0.9rem;
-  color: var(--ink-faint);
+  gap: 4px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+.exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .question {
-  align-self: flex-end;
-  max-width: 80%;
-  padding: 14px 20px;
-  border-radius: var(--radius) var(--radius) 4px var(--radius);
-  background: var(--ink);
-  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.questionText {
+  font-size: 15.5px;
 }
 
 .answer {
-  align-self: flex-start;
-  width: 100%;
-  padding: 22px 24px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
 }
 
 /*
- * Отказ — не сбой, а работа системы: она не нашла ответа в материалах
- * и не стала выдумывать. Поэтому не красный, а тёплый акцент и явная
- * подпись, отличающая отказ от обычного ответа.
+ * Отказ — не сбой, а работа системы: ответа нет в материалах, и она
+ * не стала выдумывать. Отличается подписью и полосой на левом краю,
+ * а не цветом: сигнальных красок в интерфейсе нет.
  */
 .refusal {
-  border-color: var(--line-strong);
-  border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
-}
-
-.label {
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-
-.refusalLabel {
-  color: var(--accent);
+  border-left: 2px solid var(--ink-3);
+  background: var(--panel-2);
 }
 
 .text {
   white-space: pre-wrap;
-  line-height: 1.65;
+  line-height: 1.6;
+}
+
+.refusalText {
+  color: var(--ink-2);
 }
 
 .sources {
   border-top: 1px solid var(--line);
-  padding-top: 14px;
+  padding-top: 10px;
 }
 
 .sourcesSummary {
   cursor: pointer;
-  font-size: 0.84rem;
-  color: var(--ink-muted);
+  font-size: 13px;
+  color: var(--ink-2);
 }
 
 .source {
-  margin-top: 12px;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-  font-size: 0.88rem;
-  color: var(--ink-muted);
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line-2);
+  font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.55;
 }
 
 .sourceMeta {
   display: block;
-  margin-bottom: 6px;
-  font-size: 0.74rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-
-/* Поле ввода в обычном потоке, а не липкое: висящая панель перекрывала
-   последний ответ, а лента здесь короткая — после ответа она сама
-   подкручивается к нему. */
-.form {
-  display: flex;
-  gap: 12px;
-  padding: 14px;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--shadow-lift);
-}
-
-.input {
-  flex: 1;
-  border: none;
-  outline: none;
-  padding: 8px 14px;
-  background: transparent;
+  margin-bottom: 4px;
 }
 
 .thinking {
   display: flex;
   align-items: center;
-  gap: 10px;
-  color: var(--ink-muted);
-  font-size: 0.92rem;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: 13.5px;
 }
 
-@media (max-width: 720px) {
-  .question {
-    max-width: 92%;
-  }
+.form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.input {
+  flex: 1;
+  padding: 9px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  outline: none;
+  font-size: 14px;
+}
+
+.input:focus {
+  border-color: var(--accent);
 }

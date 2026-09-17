@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 
 import { errorMessage, fieldErrorsOf, isForbidden } from "../api/ApiError";
 import {
@@ -8,13 +9,11 @@ import {
 } from "../api/endpoints";
 import { TRACK_LABELS, type MaterialListItem, type Track } from "../api/types";
 import { useToken } from "../auth/AuthContext";
-import { Link } from "react-router-dom";
-
 import { Button } from "../components/Button";
 import { SelectField, TextArea, TextField } from "../components/Field";
 import { Notice } from "../components/Notice";
 import { PageLoader } from "../components/PageLoader";
-import { formatDate, pluralize } from "../format";
+import { formatDate } from "../format";
 import styles from "./MaterialsPage.module.css";
 
 export function MaterialsPage() {
@@ -23,15 +22,15 @@ export function MaterialsPage() {
   const [materials, setMaterials] = useState<MaterialListItem[] | null>(null);
   const [listError, setListError] = useState<unknown>(null);
 
+  const [formOpen, setFormOpen] = useState(false);
   const [track, setTrack] = useState<Track>("marketing");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [formError, setFormError] = useState<unknown>(null);
-  const [created, setCreated] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // id материала, который сейчас индексируется: индикатор нужен
-  // именно у своей строки, а ингест идёт несколько секунд.
+  // id материала, который сейчас индексируется: индикатор нужен у своей
+  // строки, а ингест идёт несколько секунд.
   const [ingestingId, setIngestingId] = useState<string | null>(null);
   const [ingestError, setIngestError] = useState<unknown>(null);
 
@@ -51,14 +50,13 @@ export function MaterialsPage() {
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
-    setCreated(null);
     setSaving(true);
 
     try {
-      const material = await createMaterial(token, { track, title, content });
-      setCreated(material.title);
+      await createMaterial(token, { track, title, content });
       setTitle("");
       setContent("");
+      setFormOpen(false);
       await reload();
     } catch (caught) {
       setFormError(caught);
@@ -81,38 +79,38 @@ export function MaterialsPage() {
     }
   }
 
-  const fieldErrors = fieldErrorsOf(formError);
-
   // Экран руководителя. Стажёру бэкенд отвечает 403 — показываем причину
   // и дорогу обратно, а не форму, которую он не сможет отправить.
   if (isForbidden(listError)) {
     return (
       <div className={styles.page}>
-        <header className={styles.head}>
-          <p className="eyebrow">Материалы компании</p>
-          <h1 className="page-heading">Экран доступен только руководителю.</h1>
-        </header>
+        <h1 className="title">Материалы</h1>
         <Notice tone="error">{errorMessage(listError)}</Notice>
         <p>
-          <Link to="/chat">← Вернуться к вопросам</Link>
+          <Link to="/chat">Вернуться к вопросам</Link>
         </p>
       </div>
     );
   }
 
+  const fieldErrors = fieldErrorsOf(formError);
+
   return (
     <div className={styles.page}>
       <header className={styles.head}>
-        <p className="eyebrow">Материалы компании</p>
-        <h1 className="page-heading">
-          База знаний,{" "}
-          <span className="display-muted">по которой отвечает бот.</span>
-        </h1>
-        <p className="muted">
-          Бот отвечает только по проиндексированным материалам. Добавьте
-          документ и нажмите «Проиндексировать» — текст будет нарезан
-          на фрагменты и подготовлен для поиска.
-        </p>
+        <div className={styles.headText}>
+          <h1 className="title">Материалы</h1>
+          <p className="subtitle">
+            Регламенты и инструкции отделов. Бот отвечает стажёрам только
+            по ним.
+          </p>
+        </div>
+        <Button
+          variant={formOpen ? "secondary" : "primary"}
+          onClick={() => setFormOpen((open) => !open)}
+        >
+          {formOpen ? "Отмена" : "Добавить материал"}
+        </Button>
       </header>
 
       {listError ? (
@@ -123,120 +121,121 @@ export function MaterialsPage() {
         <Notice tone="error">{errorMessage(ingestError)}</Notice>
       ) : null}
 
-      {ingestingId ? (
-        <Notice tone="info">
-          Индексируем материал: нарезаем текст на фрагменты и считаем
-          эмбеддинги. Это занимает несколько секунд.
-        </Notice>
-      ) : null}
-
-      <div className={styles.columns}>
-        <section className={styles.list}>
-          {materials === null && !listError ? (
-            <PageLoader text="Загружаем материалы" />
-          ) : null}
-
-          {materials?.length === 0 ? (
-            <p className={styles.empty}>
-              Материалов пока нет. Добавьте первый — форма справа.
-            </p>
-          ) : null}
-
-          {materials?.map((material) => {
-            const indexing = ingestingId === material.id;
-            return (
-              <article key={material.id} className={styles.item}>
-                <div className={styles.itemBody}>
-                  <h2 className={styles.title}>{material.title}</h2>
-                  <div className={styles.meta}>
-                    <span>{TRACK_LABELS[material.track]}</span>
-                    <span>{formatDate(material.created_at)}</span>
-                    <span
-                      className={`${styles.badge} ${
-                        material.chunks > 0 ? styles.indexed : styles.pending
-                      }`}
-                    >
-                      {material.chunks > 0
-                        ? `Проиндексирован · ${pluralize(
-                            material.chunks,
-                            "фрагмент",
-                            "фрагмента",
-                            "фрагментов",
-                          )}`
-                        : "Не проиндексирован"}
-                    </span>
-                  </div>
-                </div>
-
-                <Button
-                  variant="secondary"
-                  loading={indexing}
-                  disabled={ingestingId !== null}
-                  onClick={() => void handleIngest(material.id)}
-                >
-                  {indexing
-                    ? "Индексируем"
-                    : material.chunks > 0
-                      ? "Переиндексировать"
-                      : "Проиндексировать"}
-                </Button>
-              </article>
-            );
-          })}
-        </section>
-
-        <form className={styles.form} onSubmit={handleCreate} noValidate>
-          <div className="stack gap-8">
-            <p className="eyebrow">Новый материал</p>
-            <p className="muted">
-              Регламент, инструкция или FAQ отдела — обычным текстом.
-            </p>
-          </div>
-
-          {formError ? (
+      {formOpen ? (
+        <form
+          className={`${styles.panel} ${styles.form}`}
+          onSubmit={handleCreate}
+          noValidate
+        >
+          {formError && !fieldErrors.title && !fieldErrors.content ? (
             <Notice tone="error">{errorMessage(formError)}</Notice>
           ) : null}
 
-          {created ? (
-            <Notice tone="success">
-              «{created}» добавлен. Не забудьте проиндексировать.
-            </Notice>
-          ) : null}
+          <div className={styles.formRow}>
+            <SelectField
+              label="Направление"
+              value={track}
+              error={fieldErrors.track}
+              onChange={(event) => setTrack(event.target.value as Track)}
+            >
+              <option value="marketing">Маркетинг</option>
+              <option value="analytics">Аналитика</option>
+            </SelectField>
 
-          <SelectField
-            label="Направление"
-            value={track}
-            error={fieldErrors.track}
-            onChange={(event) => setTrack(event.target.value as Track)}
-          >
-            <option value="marketing">Маркетинг</option>
-            <option value="analytics">Аналитика</option>
-          </SelectField>
-
-          <TextField
-            label="Заголовок"
-            value={title}
-            error={fieldErrors.title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Регламент отпусков"
-            required
-          />
+            <TextField
+              label="Название"
+              value={title}
+              error={fieldErrors.title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Регламент отпусков и отгулов"
+              required
+            />
+          </div>
 
           <TextArea
-            label="Текст"
+            label="Текст документа"
             value={content}
             error={fieldErrors.content}
             hint="Абзацы разделяйте пустой строкой. До 20 000 символов."
             onChange={(event) => setContent(event.target.value)}
-            rows={10}
+            rows={9}
             required
           />
 
-          <Button type="submit" loading={saving}>
-            {saving ? "Сохраняем" : "Добавить материал"}
-          </Button>
+          <div className={styles.formActions}>
+            <Button type="submit" loading={saving}>
+              {saving ? "Сохраняем" : "Сохранить"}
+            </Button>
+            <span className="meta">
+              {content.length.toLocaleString("ru-RU")} / 20 000
+            </span>
+          </div>
         </form>
-      </div>
+      ) : null}
+
+      <section className={styles.panel}>
+        <div className={styles.tableHead}>
+          <span>Документ</span>
+          <span>Направление</span>
+          <span>Добавлен</span>
+          <span />
+        </div>
+
+        {materials === null && !listError ? (
+          <PageLoader text="Загружаем материалы" />
+        ) : null}
+
+        {materials?.length === 0 ? (
+          <p className={styles.empty}>
+            Пока пусто. Первый документ добавляется кнопкой сверху.
+          </p>
+        ) : null}
+
+        {materials?.map((material) => {
+          const indexing = ingestingId === material.id;
+
+          return (
+            <article key={material.id} className={styles.row}>
+              <div className={styles.name}>
+                <span className={styles.title}>{material.title}</span>
+                {material.chunks === 0 && !indexing ? (
+                  <span className={styles.pending}>нет в поиске</span>
+                ) : null}
+              </div>
+
+              <span className={styles.cell}>
+                {TRACK_LABELS[material.track]}
+              </span>
+              <span className="meta">{formatDate(material.created_at)}</span>
+
+              <Button
+                className={`${styles.action} ${
+                  indexing ? styles.actionBusy : ""
+                }`}
+                variant="quiet"
+                loading={indexing}
+                disabled={ingestingId !== null}
+                onClick={() => void handleIngest(material.id)}
+              >
+                {indexing
+                  ? "Индексируем"
+                  : material.chunks > 0
+                    ? "Обновить индекс"
+                    : "Проиндексировать"}
+              </Button>
+            </article>
+          );
+        })}
+
+        {materials && materials.length > 0 ? (
+          <div className={styles.footer}>
+            <span>
+              {materials.length}{" "}
+              {materials.length === 1 ? "документ" : "документа"}
+            </span>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
