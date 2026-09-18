@@ -109,6 +109,12 @@
 }
 
 @media (max-width: 860px) {
+  .head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
   .tableHead {
     display: none;
   }
