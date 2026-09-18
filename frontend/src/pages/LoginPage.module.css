@@ -1,54 +1,63 @@
 .page {
   min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.head {
+  max-width: var(--page);
+  width: 100%;
+  margin: 0 auto;
+  padding: 22px 32px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.wordmark {
+  font-family: var(--serif);
+  font-size: 19px;
+  letter-spacing: -0.01em;
+}
+
+.body {
+  flex: 1;
   display: grid;
   place-items: center;
-  padding: 40px 20px;
+  padding: 24px 20px 80px;
 }
 
 .column {
   width: 100%;
-  max-width: 372px;
+  max-width: 460px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
+  text-align: left;
 }
 
-.brand {
+.intro {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
 }
 
-.wordmark {
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-}
-
-.panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.form {
+.card {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 22px;
 }
 
 .submit {
-  margin-top: 2px;
   width: 100%;
+  margin-top: 2px;
 }
 
-.footnote {
-  font-size: 12.5px;
-  color: var(--ink-3);
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
+@media (max-width: 600px) {
+  .head {
+    padding: 18px;
+  }
 }

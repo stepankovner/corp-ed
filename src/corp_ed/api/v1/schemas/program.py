@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from corp_ed.domain.models import ProgramStatus
+from corp_ed.domain.models import ProgramStatus, Track
 
 
 class ProgramGenerateRequest(BaseModel):
@@ -42,6 +42,7 @@ class ProgramDetailResponse(BaseModel):
     created_at: datetime
     intern_id: UUID | None
     role_title: str
+    track: Track
 
 
 class ProgramListItemResponse(BaseModel):

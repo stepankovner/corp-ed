@@ -30,6 +30,7 @@ def _detail(program: Program) -> ProgramDetailResponse:
         created_at=program.created_at,
         intern_id=program.intern_id,
         role_title=program.brief.role_title,
+        track=program.brief.track,
     )
 
 

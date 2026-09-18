@@ -33,7 +33,7 @@ export function LoginPage() {
     try {
       const me = await login(companyCode.trim(), email.trim(), password);
       const from = (location.state as { from?: string } | null)?.from;
-      const home = me.role === "manager" ? "/materials" : "/chat";
+      const home = me.role === "manager" ? "/materials" : "/my";
       navigate(from ?? home, { replace: true });
     } catch (caught) {
       setError(caught);
@@ -44,53 +44,59 @@ export function LoginPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.column}>
-        <div className={styles.brand}>
-          <span className={styles.wordmark}>kronto</span>
-          <span className="meta">адаптация стажёров · вход для сотрудников</span>
+      <header className={styles.head}>
+        <span className={styles.wordmark}>kronto</span>
+        <span className="label">адаптация стажёров</span>
+      </header>
+
+      <div className={styles.body}>
+        <div className={styles.column}>
+          <div className={styles.intro}>
+            <h1 className="h1">Вход в рабочее пространство</h1>
+            <p className="lead">
+              Код компании выдаёт администратор. Доступ зависит от роли.
+            </p>
+          </div>
+
+          <section className={`card ${styles.card}`}>
+            <form className="stack gap-16" onSubmit={handleSubmit} noValidate>
+              <TextField
+                label="Код компании"
+                value={companyCode}
+                onChange={(event) => setCompanyCode(event.target.value)}
+                error={fieldErrors.company_code}
+                autoComplete="organization"
+                required
+              />
+              <TextField
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                error={fieldErrors.email}
+                autoComplete="username"
+                required
+              />
+              <TextField
+                label="Пароль"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                error={fieldErrors.password}
+                autoComplete="current-password"
+                required
+              />
+
+              {error ? (
+                <Notice tone="error">{errorMessage(error)}</Notice>
+              ) : null}
+
+              <Button className={styles.submit} type="submit" loading={pending}>
+                {pending ? "Входим" : "Войти"}
+              </Button>
+            </form>
+          </section>
         </div>
-
-        <section className={styles.panel}>
-          {error ? <Notice tone="error">{errorMessage(error)}</Notice> : null}
-
-          <form className={styles.form} onSubmit={handleSubmit} noValidate>
-            <TextField
-              label="Код компании"
-              value={companyCode}
-              onChange={(event) => setCompanyCode(event.target.value)}
-              error={fieldErrors.company_code}
-              autoComplete="organization"
-              required
-            />
-            <TextField
-              label="Рабочая почта"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              error={fieldErrors.email}
-              autoComplete="username"
-              required
-            />
-            <TextField
-              label="Пароль"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              error={fieldErrors.password}
-              autoComplete="current-password"
-              required
-            />
-
-            <Button className={styles.submit} type="submit" loading={pending}>
-              {pending ? "Входим" : "Войти"}
-            </Button>
-          </form>
-
-          <p className={styles.footnote}>
-            Код компании выдаёт администратор вашей организации. Пароль
-            восстанавливает он же.
-          </p>
-        </section>
       </div>
     </div>
   );

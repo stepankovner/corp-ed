@@ -13,7 +13,7 @@ export function setUnauthorizedHandler(handler: () => void): void {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: unknown;
   token?: string | null;
 }

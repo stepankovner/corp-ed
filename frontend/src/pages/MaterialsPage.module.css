@@ -1,83 +1,45 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
 }
 
 .head {
   display: flex;
-  align-items: flex-start;
-  gap: 24px;
-}
-
-.headText {
-  display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-right: auto;
 }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-}
-
-.formRow {
+.columns {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 28px;
+  align-items: start;
 }
 
-.formActions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-/* Список — таблица с шапкой, а не набор карточек: так видно, что это
-   рабочий реестр, и колонки выравниваются между строками. */
 .tableHead,
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 130px 120px 130px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 150px 120px;
+  gap: 20px;
   align-items: center;
   padding: 0 18px;
 }
 
 .tableHead {
-  height: 34px;
+  height: 38px;
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--ink-3);
+  background: var(--surface-muted);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .row {
-  min-height: 48px;
+  min-height: 54px;
   border-bottom: 1px solid var(--line);
 }
 
 .row:last-child {
   border-bottom: none;
-}
-
-.row:hover {
-  background: var(--panel-2);
-}
-
-.name {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
 }
 
 .title {
@@ -87,52 +49,39 @@
   white-space: nowrap;
 }
 
-.pending {
+/* Трек — тег, а не цветная плашка: в интерфейсе одна гамма. */
+.tag {
+  justify-self: start;
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
   font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-
-.cell {
-  font-size: 13.5px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--ink-2);
 }
 
-/* Индексация — служебное действие, а не то, ради чего открывают экран:
-   появляется при наведении на строку и на фокусе с клавиатуры. */
-.action {
-  justify-self: end;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-
-.row:hover .action,
-.action:focus-visible,
-.actionBusy {
-  opacity: 1;
-}
-
-.footer {
-  display: flex;
-  gap: 16px;
-  padding: 10px 18px;
-  border-top: 1px solid var(--line);
-  color: var(--ink-3);
-  font-size: 12.5px;
-}
-
 .empty {
-  padding: 22px 18px;
-  color: var(--ink-3);
+  padding: 26px 18px;
+  color: var(--ink-2);
   font-size: 14px;
 }
 
-@media (max-width: 860px) {
-  .head {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+}
+
+.submit {
+  width: 100%;
+}
+
+@media (max-width: 980px) {
+  .columns {
+    grid-template-columns: 1fr;
   }
 
   .tableHead {
@@ -141,16 +90,7 @@
 
   .row {
     grid-template-columns: 1fr;
-    gap: 4px;
+    gap: 6px;
     padding: 14px 16px;
-  }
-
-  .action {
-    justify-self: start;
-    opacity: 1;
-  }
-
-  .formRow {
-    grid-template-columns: 1fr;
   }
 }

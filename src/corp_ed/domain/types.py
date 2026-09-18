@@ -10,6 +10,7 @@ class ChunkMatch:
     id: UUID
     content: str
     material_id: UUID
+    material_title: str
     position: int
     distance: float
 

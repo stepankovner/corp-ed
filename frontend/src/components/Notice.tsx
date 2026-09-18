@@ -3,23 +3,15 @@ import type { ReactNode } from "react";
 import styles from "./Notice.module.css";
 
 interface Props {
-  tone?: "error" | "info" | "success";
+  tone?: "error" | "info";
   children: ReactNode;
 }
 
-const LABELS = {
-  error: "Ошибка",
-  info: null,
-  success: null,
-} as const;
-
-/** Сообщение пользователю. Тон различается подписью, а не краской. */
+/** Сообщение пользователю. Ошибку помечает знак, а не красная заливка. */
 export function Notice({ tone = "info", children }: Props) {
-  const label = LABELS[tone];
-
   return (
     <div className={`${styles.notice} ${styles[tone]}`} role="status">
-      {label ? <span className={styles.label}>{label}</span> : null}
+      {tone === "error" ? <span className={styles.mark}>!</span> : null}
       <span>{children}</span>
     </div>
   );

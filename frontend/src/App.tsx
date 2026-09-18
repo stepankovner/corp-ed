@@ -3,8 +3,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { useAuth } from "./auth/AuthContext";
-import { BriefsPage } from "./pages/BriefsPage";
+import { BriefPage } from "./pages/BriefPage";
 import { ChatPage } from "./pages/ChatPage";
+import { InternPage } from "./pages/InternPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
 import { ProgramPage } from "./pages/ProgramPage";
@@ -12,7 +13,7 @@ import { ProgramPage } from "./pages/ProgramPage";
 /** Каждой роли — свой первый экран. */
 function HomeRedirect() {
   const { user } = useAuth();
-  return <Navigate to={user?.role === "manager" ? "/materials" : "/chat"} replace />;
+  return <Navigate to={user?.role === "manager" ? "/materials" : "/my"} replace />;
 }
 
 export function App() {
@@ -29,9 +30,11 @@ export function App() {
       >
         <Route index element={<HomeRedirect />} />
         <Route path="materials" element={<MaterialsPage />} />
-        <Route path="briefs" element={<BriefsPage />} />
+        <Route path="programs" element={<ProgramPage />} />
+        <Route path="programs/new" element={<BriefPage />} />
         <Route path="programs/:programId" element={<ProgramPage />} />
         <Route path="chat" element={<ChatPage />} />
+        <Route path="my" element={<InternPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

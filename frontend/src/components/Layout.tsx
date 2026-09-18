@@ -13,56 +13,64 @@ export function Layout() {
   const location = useLocation();
   const isManager = user?.role === "manager";
 
-  // Программа открывается по своему адресу, но остаётся тем же разделом:
-  // иначе при переходе к результату подсветка в меню гаснет.
-  const inPrograms =
-    location.pathname.startsWith("/briefs") ||
-    location.pathname.startsWith("/programs");
-
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `${styles.link} ${isActive ? styles.active : ""}`;
 
+  // Бриф и готовая программа — один раздел «Программы»: подсветка в шапке
+  // не должна гаснуть при переходе от анкеты к результату.
+  const inPrograms = location.pathname.startsWith("/programs");
+
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <NavLink to="/" className={styles.brand}>
-          kronto
-          <span className={styles.brandNote}>адаптация стажёров</span>
-        </NavLink>
-
-        <nav className={styles.nav}>
-          {isManager ? (
-            <>
-              <NavLink to="/materials" className={linkClass}>
-                Материалы
-              </NavLink>
-              <NavLink
-                to="/briefs"
-                className={`${styles.link} ${inPrograms ? styles.active : ""}`}
-              >
-                Программы
-              </NavLink>
-            </>
-          ) : null}
-          <NavLink to="/chat" className={linkClass}>
-            Вопросы
+      <header className={styles.bar}>
+        <div className={styles.barInner}>
+          <NavLink to="/" className={styles.brand}>
+            <span className={styles.wordmark}>kronto</span>
+            {user?.company_name ? (
+              <span className={styles.company}>{user.company_name}</span>
+            ) : null}
           </NavLink>
-        </nav>
 
-        <div className={styles.user}>
-          {user ? (
-            <>
-              <span className={styles.userName}>
-                {user.full_name ?? user.email}
-              </span>
-              <span className={styles.userRole}>{ROLE_LABELS[user.role]}</span>
-            </>
-          ) : null}
-          <button type="button" className={styles.logout} onClick={logout}>
-            Выйти
-          </button>
+          <nav className={styles.nav}>
+            {isManager ? (
+              <>
+                <NavLink to="/materials" className={linkClass}>
+                  Материалы
+                </NavLink>
+                <NavLink
+                  to="/programs"
+                  className={`${styles.link} ${
+                    inPrograms ? styles.active : ""
+                  }`}
+                >
+                  Программы
+                </NavLink>
+                <NavLink to="/chat" className={linkClass}>
+                  Чат
+                </NavLink>
+              </>
+            ) : (
+              <NavLink to="/my" className={linkClass}>
+                Моя стажировка
+              </NavLink>
+            )}
+          </nav>
+
+          <div className={styles.user}>
+            {user ? (
+              <div className={styles.person}>
+                <span className={styles.name}>
+                  {user.full_name ?? user.email}
+                </span>
+                <span className={styles.role}>{ROLE_LABELS[user.role]}</span>
+              </div>
+            ) : null}
+            <button type="button" className={styles.logout} onClick={logout}>
+              Выйти
+            </button>
+          </div>
         </div>
-      </aside>
+      </header>
 
       <main className={styles.main}>
         <Outlet />

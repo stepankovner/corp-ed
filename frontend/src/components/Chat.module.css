@@ -1,0 +1,174 @@
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 120px;
+}
+
+.question {
+  align-self: flex-end;
+  max-width: 76%;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: var(--bubble);
+  font-size: 14.5px;
+}
+
+.reply {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+/* Кружок с буквой вместо аватара: у бота нет лица, но реплику нужно
+   отличать от вопроса с одного взгляда. */
+.avatar {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 13px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+
+.body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.text {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/*
+ * Отказ. Не ошибка и не сбой: система не нашла ответа в материалах
+ * и не стала выдумывать. Отличается фоном и подписью, а не красным цветом.
+ */
+.refusal {
+  padding: 14px 16px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.refusalText {
+  font-size: 15px;
+}
+
+.footnote {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.sources {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.source {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 13.5px;
+}
+
+.sourceNumber {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.composer {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--field);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.input {
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-size: 14.5px;
+  line-height: 1.5;
+  min-height: 46px;
+}
+
+.input::placeholder {
+  color: var(--ink-3);
+}
+
+.composerFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+.empty {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.example {
+  padding: 5px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--field);
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.example:hover {
+  border-color: var(--ink-3);
+  color: var(--ink);
+}

@@ -15,15 +15,7 @@ export interface Me {
   full_name: string | null;
   role: UserRole;
   tenant_id: string;
-}
-
-export interface MaterialListItem {
-  id: string;
-  track: Track;
-  title: string;
-  created_at: string;
-  /** 0 означает «не проиндексирован». */
-  chunks: number;
+  company_name: string;
 }
 
 export interface Material {
@@ -31,11 +23,6 @@ export interface Material {
   track: Track;
   title: string;
   created_at: string;
-}
-
-export interface IngestResult {
-  material_id: string;
-  chunks: number;
 }
 
 export interface Brief {
@@ -48,7 +35,7 @@ export interface Brief {
 export interface ProgramListItem {
   id: string;
   status: ProgramStatus;
-  brief_id: string;
+  role_title: string;
   created_at: string;
 }
 
@@ -60,14 +47,24 @@ export interface ProgramCreated {
 export interface ProgramDetail {
   id: string;
   status: ProgramStatus;
-  brief_id: string;
   content: string;
   created_at: string;
+  intern_id: string | null;
+  role_title: string;
+  track: Track;
+}
+
+export interface Intern {
+  id: string;
+  email: string;
+  full_name: string | null;
 }
 
 export interface FaqSource {
   material_id: string;
-  position: number;
+  /** Источник показывается названием документа: номер фрагмента читателю
+   *  ничего не говорит, и бэкенд его не отдаёт. */
+  material_title: string;
   content: string;
 }
 
@@ -81,4 +78,14 @@ export interface FaqAnswer {
 export const TRACK_LABELS: Record<Track, string> = {
   marketing: "Маркетинг",
   analytics: "Аналитика",
+};
+
+export const TRACK_OPTIONS: { value: Track; label: string }[] = [
+  { value: "marketing", label: "Маркетинг" },
+  { value: "analytics", label: "Аналитика" },
+];
+
+export const STATUS_LABELS: Record<ProgramStatus, string> = {
+  draft: "Черновик",
+  approved: "Согласована",
 };

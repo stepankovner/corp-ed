@@ -2,9 +2,8 @@ import { request } from "./client";
 import type {
   Brief,
   FaqAnswer,
-  IngestResult,
+  Intern,
   Material,
-  MaterialListItem,
   Me,
   ProgramCreated,
   ProgramDetail,
@@ -28,8 +27,8 @@ export function fetchMe(token: string): Promise<Me> {
   return request<Me>("/api/v1/auth/me", { token });
 }
 
-export function listMaterials(token: string): Promise<MaterialListItem[]> {
-  return request<MaterialListItem[]>("/api/v1/materials", { token });
+export function listMaterials(token: string): Promise<Material[]> {
+  return request<Material[]>("/api/v1/materials", { token });
 }
 
 export function createMaterial(
@@ -43,18 +42,18 @@ export function createMaterial(
   });
 }
 
-export function ingestMaterial(
-  token: string,
-  materialId: string,
-): Promise<IngestResult> {
-  return request<IngestResult>(`/api/v1/materials/${materialId}/ingest`, {
+/**
+ * Подготовка материала к поиску.
+ *
+ * Вызывается сразу после создания и не показывается пользователю
+ * отдельным действием: нарезка на фрагменты — устройство системы,
+ * а не шаг в работе руководителя.
+ */
+export function prepareMaterial(token: string, materialId: string): Promise<unknown> {
+  return request<unknown>(`/api/v1/materials/${materialId}/ingest`, {
     method: "POST",
     token,
   });
-}
-
-export function listBriefs(token: string): Promise<Brief[]> {
-  return request<Brief[]>("/api/v1/briefs", { token });
 }
 
 export function createBrief(
@@ -94,6 +93,37 @@ export function fetchProgram(
   programId: string,
 ): Promise<ProgramDetail> {
   return request<ProgramDetail>(`/api/v1/programs/${programId}`, { token });
+}
+
+export function updateProgram(
+  token: string,
+  programId: string,
+  data: { content?: string; intern_id?: string },
+): Promise<ProgramDetail> {
+  return request<ProgramDetail>(`/api/v1/programs/${programId}`, {
+    method: "PATCH",
+    body: data,
+    token,
+  });
+}
+
+export function approveProgram(
+  token: string,
+  programId: string,
+): Promise<ProgramDetail> {
+  return request<ProgramDetail>(`/api/v1/programs/${programId}/approve`, {
+    method: "POST",
+    token,
+  });
+}
+
+/** Программа стажёра. 404 означает «ещё не готова», а не сбой. */
+export function fetchMyProgram(token: string): Promise<ProgramDetail> {
+  return request<ProgramDetail>("/api/v1/programs/my", { token });
+}
+
+export function listInterns(token: string): Promise<Intern[]> {
+  return request<Intern[]>("/api/v1/users/interns", { token });
 }
 
 export function askFaq(token: string, question: string): Promise<FaqAnswer> {
