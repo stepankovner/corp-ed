@@ -33,3 +33,18 @@ class MaterialResponse(BaseModel):
 class IngestResponse(BaseModel):
     material_id: UUID
     chunks: int
+
+
+class MaterialListItemResponse(BaseModel):
+    """Материал в списке: без содержимого.
+
+    Нарезка на фрагменты — устройство системы, а не продуктовый факт:
+    в ответе её нет, как нет и на экране.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    track: Track
+    title: str
+    created_at: datetime

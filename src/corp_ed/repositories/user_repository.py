@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.domain.models import User
+from corp_ed.domain.models import User, UserRole
 
 
 class UserRepository:
@@ -24,3 +24,10 @@ class UserRepository:
         await self.session.flush()
         await self.session.refresh(user)
         return user
+
+    async def list_by_role(self, role: UserRole) -> list[User]:
+        """Пользователи тенанта с указанной ролью. Фильтр по тенанту — хук."""
+        result = await self.session.scalars(
+            select(User).where(User.role == role).order_by(User.created_at)
+        )
+        return list(result)

@@ -3,8 +3,17 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from corp_ed.api.v1.endpoints import auth, faq, materials, programs, users
+from corp_ed.api.v1.endpoints import (
+    auth,
+    briefs,
+    faq,
+    materials,
+    programs,
+    users,
+)
+from corp_ed.core.config import get_cors_settings
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
@@ -46,6 +55,7 @@ app = FastAPI(
 
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(briefs.router, prefix="/api/v1")
 app.include_router(programs.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
@@ -66,3 +76,17 @@ app.add_exception_handler(LLMError, llm_error_handler)
 
 # выполняются в порядке, обратном добавлению
 app.add_middleware(RequestIDMiddleware)
+
+# CORS добавляется последним, то есть выполняется первым: иначе
+# ответы с ошибками уходили бы в браузер без CORS-заголовков, и фронтенд
+# видел бы вместо 403 непрозрачную сетевую ошибку.
+#
+# allow_credentials не включается: токен ходит в заголовке Authorization,
+# куки не используются. Включить его значило бы разрешить браузеру слать
+# учётные данные на API с чужой страницы.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_cors_settings().allowed_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

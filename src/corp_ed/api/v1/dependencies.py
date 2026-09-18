@@ -25,6 +25,7 @@ from corp_ed.repositories.program_repository import ProgramRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.brief_service import BriefService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.program_service import ProgramService
@@ -155,6 +156,13 @@ def get_brief_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> BriefRepository:
     return BriefRepository(session)
+
+
+def get_brief_service(
+    brief_repo: Annotated[BriefRepository, Depends(get_brief_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> BriefService:
+    return BriefService(brief_repo, session)
 
 
 def get_material_repository(

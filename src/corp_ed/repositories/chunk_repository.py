@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Chunk
+from corp_ed.domain.models import Chunk, Material
 from corp_ed.domain.types import ChunkMatch
 
 
@@ -41,9 +41,14 @@ class ChunkRepository:
                 Chunk.id,
                 Chunk.content,
                 Chunk.material_id,
+                # Название материала приезжает вместе с фрагментом: интерфейс
+                # показывает источник документом, а стажёр не вправе читать
+                # список материалов, чтобы сопоставить id с названием.
+                Material.title.label("material_title"),
                 Chunk.position,
                 distance.label("distance"),
             )
+            .join(Material, Material.id == Chunk.material_id)
             # Фильтр обязателен: hook вешает with_loader_criteria, а он
             # применяется к загрузке ORM-сущностей. Здесь колоночный
             # select, сущность не грузится — автоматики нет.
@@ -59,6 +64,7 @@ class ChunkRepository:
                 id=row.id,
                 content=row.content,
                 material_id=row.material_id,
+                material_title=row.material_title,
                 position=row.position,
                 distance=row.distance,
             )

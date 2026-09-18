@@ -7,12 +7,22 @@ from corp_ed.api.v1.dependencies import get_material_service, require_role
 from corp_ed.api.v1.schemas.material import (
     IngestResponse,
     MaterialCreateRequest,
+    MaterialListItemResponse,
     MaterialResponse,
 )
 from corp_ed.domain.models import User, UserRole
 from corp_ed.services.material_service import MaterialService
 
 router = APIRouter(prefix="/materials", tags=["materials"])
+
+
+@router.get("", response_model=list[MaterialListItemResponse])
+async def list_materials(
+    service: Annotated[MaterialService, Depends(get_material_service)],
+    current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))],
+) -> list[MaterialListItemResponse]:
+    materials = await service.list_all()
+    return [MaterialListItemResponse.model_validate(item) for item in materials]
 
 
 @router.post(

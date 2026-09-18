@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.domain.models import Brief
@@ -13,3 +14,16 @@ class BriefRepository:
 
     async def get_by_id(self, brief_id: UUID) -> Brief | None:
         return await self.session.get(Brief, brief_id)
+
+    async def create(self, brief: Brief) -> Brief:
+        self.session.add(brief)
+        await self.session.flush()
+        await self.session.refresh(brief)
+        return brief
+
+    async def list_all(self) -> list[Brief]:
+        """Брифы тенанта, новые сверху. Фильтр по тенанту добавит хук."""
+        result = await self.session.scalars(
+            select(Brief).order_by(Brief.created_at.desc())
+        )
+        return list(result)

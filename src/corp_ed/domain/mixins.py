@@ -1,4 +1,3 @@
-# src/lms/domain/mixins.py
 from uuid import UUID
 
 from sqlalchemy.orm import Mapped, mapped_column

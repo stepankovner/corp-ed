@@ -56,6 +56,10 @@ class MaterialService:
 
         return material
 
+    async def list_all(self) -> list[Material]:
+        """Материалы тенанта, новые сверху."""
+        return await self.material_repo.list_all()
+
     async def ingest(self, material_id: UUID) -> int:
         """Пересчитать чанки материала.
 

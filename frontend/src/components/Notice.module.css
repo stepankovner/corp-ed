@@ -1,0 +1,24 @@
+.notice {
+  display: flex;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.mark {
+  color: var(--accent);
+  font-family: var(--mono);
+  flex: none;
+}
+
+.error {
+  background: var(--accent-soft);
+}
+
+.info {
+  background: var(--surface-muted);
+  color: var(--ink-2);
+}

@@ -8,10 +8,16 @@ class FaqQuestionRequest(BaseModel):
 
 
 class FaqSourceResponse(BaseModel):
+    """Источник ответа.
+
+    Номер фрагмента наружу не отдаётся: для читателя это внутренняя
+    единица хранения, а не ссылка, по которой он может что-то найти.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
     material_id: UUID
-    position: int
+    material_title: str
     content: str
 
 
