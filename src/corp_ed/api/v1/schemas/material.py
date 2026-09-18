@@ -36,10 +36,10 @@ class IngestResponse(BaseModel):
 
 
 class MaterialListItemResponse(BaseModel):
-    """Материал в списке: без содержимого, с числом чанков.
+    """Материал в списке: без содержимого.
 
-    chunks == 0 означает «не проиндексирован» — интерфейс показывает
-    это отметкой у материала.
+    Нарезка на фрагменты — устройство системы, а не продуктовый факт:
+    в ответе её нет, как нет и на экране.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -48,4 +48,3 @@ class MaterialListItemResponse(BaseModel):
     track: Track
     title: str
     created_at: datetime
-    chunks: int

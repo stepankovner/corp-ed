@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from corp_ed.domain.models import ProgramStatus
 
@@ -10,6 +10,16 @@ class ProgramGenerateRequest(BaseModel):
     """Данные для генерации программы (входящий запрос)"""
 
     brief_id: UUID
+
+
+class ProgramUpdateRequest(BaseModel):
+    """Правка черновика: текст и/или назначенный стажёр.
+
+    Оба поля необязательные: экран сохраняет то, что руководитель менял.
+    """
+
+    content: str | None = Field(default=None, min_length=1)
+    intern_id: UUID | None = None
 
 
 class ProgramResponse(BaseModel):
@@ -28,9 +38,10 @@ class ProgramDetailResponse(BaseModel):
 
     id: UUID
     status: ProgramStatus
-    brief_id: UUID
     content: str
     created_at: datetime
+    intern_id: UUID | None
+    role_title: str
 
 
 class ProgramListItemResponse(BaseModel):
@@ -40,5 +51,5 @@ class ProgramListItemResponse(BaseModel):
 
     id: UUID
     status: ProgramStatus
-    brief_id: UUID
+    role_title: str
     created_at: datetime

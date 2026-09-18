@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.api.v1.schemas.user import UserCreate
 from corp_ed.core.exceptions import EmailAlreadyExistsError
 from corp_ed.core.security import hash_password
-from corp_ed.domain.models import User
+from corp_ed.domain.models import User, UserRole
 from corp_ed.repositories.user_repository import UserRepository
 
 logger = structlog.get_logger()
@@ -36,3 +36,7 @@ class UserService:
             email=created_user.email,
         )
         return created_user
+
+    async def list_interns(self) -> list[User]:
+        """Стажёры тенанта — для выбора при назначении программы."""
+        return await self.repository.list_by_role(UserRole.INTERN)

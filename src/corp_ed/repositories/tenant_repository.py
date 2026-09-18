@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,3 +15,6 @@ class TenantRepository:
             select(Tenant).where(Tenant.company_code == company_code)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_id(self, tenant_id: UUID) -> Tenant | None:
+        return await self.session.get(Tenant, tenant_id)

@@ -3,8 +3,9 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.core.exceptions import NotFoundError
+from corp_ed.core.exceptions import ConflictError, NotFoundError
 from corp_ed.domain.models import Program, ProgramStatus, User, UserRole
+from corp_ed.domain.types import ProgramSummary
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import FinishReason
 from corp_ed.prompts.program import build_program_messages
@@ -66,8 +67,95 @@ class ProgramService:
 
         return program
 
-    async def list_all(self) -> list[Program]:
-        return await self.program_repo.list_all()
+    async def list_all(self) -> list[ProgramSummary]:
+        """Программы тенанта для списка: должность берётся из брифа."""
+        programs = await self.program_repo.list_all()
+
+        return [
+            ProgramSummary(
+                id=program.id,
+                status=program.status,
+                role_title=program.brief.role_title,
+                created_at=program.created_at,
+            )
+            for program in programs
+        ]
+
+    async def update(
+        self,
+        program_id: UUID,
+        *,
+        content: str | None = None,
+        intern_id: UUID | None = None,
+    ) -> Program:
+        """Правка черновика: текст и назначенный стажёр.
+
+        Утверждённую программу менять нельзя: стажёр уже мог её прочитать,
+        и подмена текста задним числом сделала бы утверждение бессмысленным.
+        """
+        program = await self._get_or_raise(program_id)
+
+        if program.status is ProgramStatus.APPROVED:
+            raise ConflictError("Утверждённую программу изменить нельзя")
+
+        if content is not None:
+            program.content = content
+        if intern_id is not None:
+            program.intern_id = intern_id
+
+        await self.session.commit()
+
+        logger.info(
+            "program_updated",
+            program_id=program.id,
+            content_changed=content is not None,
+            intern_assigned=intern_id is not None,
+        )
+
+        return program
+
+    async def approve(self, program_id: UUID) -> Program:
+        """Утвердить программу и тем самым открыть её стажёру.
+
+        Без назначенного стажёра утверждать нечего: такую программу
+        не увидит никто, и руководитель решит, что всё получилось.
+
+        Повторное утверждение ничего не меняет и не считается ошибкой:
+        два нажатия подряд не должны заканчиваться пятисоткой.
+        """
+        program = await self._get_or_raise(program_id)
+
+        if program.status is ProgramStatus.APPROVED:
+            return program
+
+        if program.intern_id is None:
+            raise ConflictError(
+                "Назначьте стажёра перед утверждением: иначе программу никто не увидит"
+            )
+
+        program.status = ProgramStatus.APPROVED
+        await self.session.commit()
+
+        logger.info(
+            "program_approved",
+            program_id=program.id,
+            intern_id=program.intern_id,
+        )
+
+        return program
+
+    async def get_for_intern(self, current_user: User) -> Program:
+        """Утверждённая программа стажёра. Черновики сюда не попадают."""
+        program = await self.program_repo.get_approved_for_intern(current_user.id)
+        if program is None:
+            raise NotFoundError("Программа адаптации ещё готовится")
+        return program
+
+    async def _get_or_raise(self, program_id: UUID) -> Program:
+        program = await self.program_repo.get_by_id(program_id)
+        if program is None:
+            raise NotFoundError("Программа с таким id не найдена")
+        return program
 
     async def get(self, program_id: UUID, current_user: User) -> Program:
         program = await self.program_repo.get_by_id(program_id)

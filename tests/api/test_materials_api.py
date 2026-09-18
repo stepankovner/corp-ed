@@ -109,11 +109,11 @@ async def test_ingest_material_not_found(
     assert response.status_code == 404
 
 
-async def test_material_list_shows_indexing_state(
+async def test_material_list_hides_internals(
     manager_client: httpx.AsyncClient,
     material: Material,
 ) -> None:
-    """Число чанков — это и есть отметка «проиндексирован» в интерфейсе."""
+    """В списке нет ни текста, ни следов нарезки на фрагменты."""
     response = await manager_client.get("/api/v1/materials")
 
     assert response.status_code == 200
@@ -122,14 +122,9 @@ async def test_material_list_shows_indexing_state(
 
     assert len(body) == 1
     assert body[0]["title"] == material.title
-    assert body[0]["chunks"] == 0
+    assert body[0]["track"] == "marketing"
     assert "content" not in body[0]
-
-    await manager_client.post(f"/api/v1/materials/{material.id}/ingest")
-
-    response = await manager_client.get("/api/v1/materials")
-
-    assert response.json()[0]["chunks"] == 3
+    assert "chunks" not in body[0]
 
 
 async def test_intern_cannot_list_materials(

@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
@@ -21,3 +22,13 @@ class UserResponse(BaseModel):
     full_name: str | None
     is_active: bool
     created_at: datetime
+
+
+class InternResponse(BaseModel):
+    """Стажёр в списке назначения программы."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: EmailStr
+    full_name: str | None

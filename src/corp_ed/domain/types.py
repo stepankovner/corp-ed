@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from corp_ed.domain.models import Track
+from corp_ed.domain.models import ProgramStatus
 
 
 @dataclass(frozen=True)
@@ -22,15 +22,10 @@ class FaqAnswer:
 
 
 @dataclass(frozen=True)
-class MaterialSummary:
-    """Материал в списке: без текста, но с числом проиндексированных чанков.
-
-    Число чанков живёт в другой таблице, поэтому сущность Material его
-    не несёт — сводку собирает сервис.
-    """
+class ProgramSummary:
+    """Программа в списке: должность берётся из брифа, содержимое не нужно."""
 
     id: UUID
-    track: Track
-    title: str
+    status: ProgramStatus
+    role_title: str
     created_at: datetime
-    chunks: int

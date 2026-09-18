@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
@@ -64,18 +64,3 @@ class ChunkRepository:
             )
             for row in result
         ]
-
-    async def count_by_material(self) -> dict[UUID, int]:
-        """Сколько чанков у каждого материала тенанта.
-
-        Фильтр по тенанту обязателен явно: select колоночный, сущность
-        не грузится, и with_loader_criteria из хука здесь не работает —
-        та же причина, что в search.
-        """
-        stmt = (
-            select(Chunk.material_id, func.count(Chunk.id))
-            .where(Chunk.tenant_id == require_tenant())
-            .group_by(Chunk.material_id)
-        )
-        result = await self.session.execute(stmt)
-        return {material_id: count for material_id, count in result}

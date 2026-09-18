@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.models import Chunk, Material, Track
 from corp_ed.domain.split import split_into_chunks
-from corp_ed.domain.types import MaterialSummary
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
@@ -57,25 +56,9 @@ class MaterialService:
 
         return material
 
-    async def list_all(self) -> list[MaterialSummary]:
-        """Материалы тенанта со числом проиндексированных чанков.
-
-        Интерфейсу нужно показать, проиндексирован материал или нет,
-        а число чанков лежит в соседней таблице — сводку собирает сервис.
-        """
-        materials = await self.material_repo.list_all()
-        counts = await self.chunk_repo.count_by_material()
-
-        return [
-            MaterialSummary(
-                id=material.id,
-                track=material.track,
-                title=material.title,
-                created_at=material.created_at,
-                chunks=counts.get(material.id, 0),
-            )
-            for material in materials
-        ]
+    async def list_all(self) -> list[Material]:
+        """Материалы тенанта, новые сверху."""
+        return await self.material_repo.list_all()
 
     async def ingest(self, material_id: UUID) -> int:
         """Пересчитать чанки материала.

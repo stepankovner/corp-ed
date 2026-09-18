@@ -24,3 +24,5 @@ class MeResponse(BaseModel):
     full_name: str | None
     role: UserRole
     tenant_id: UUID
+    # Название компании показывается в шапке интерфейса рядом с логотипом.
+    company_name: str
