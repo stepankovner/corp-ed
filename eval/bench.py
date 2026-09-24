@@ -63,21 +63,25 @@ def bm25_rankings(
 
 
 def vector_rankings(
-    chunks: Sequence[BenchChunk], queries: Sequence[str], limit: int, workers: int
+    chunks: Sequence[BenchChunk],
+    queries: Sequence[str],
+    limit: int,
+    workers: int,
+    embedding_model: str = "text-search",
 ) -> tuple[list[list[int]], list[list[float]]]:
-    """Индексы чанков по близости и косинусные расстояния (1 − скалярное)."""
+    """Индексы чанков по близости и косинусные расстояния (1 − косинус)."""
     import numpy as np
 
     from eval.yandex import EmbeddingCache, YandexClient, embed_many
 
-    client = YandexClient.from_env()
+    client = YandexClient.from_env(embedding_model=embedding_model)
     cache = EmbeddingCache(CACHE_PATH)
 
     def progress(done: int, total: int) -> None:
         if done % 50 == 0 or done == total:
             print(f"  эмбеддинги: {done}/{total}")
 
-    print(f"Эмбеддинги чанков (text-search-doc), {len(chunks)} шт.")
+    print(f"Эмбеддинги чанков ({client.model_uri('doc')}), {len(chunks)} шт.")
     docs = embed_many(
         client,
         [c.embed_text for c in chunks],
@@ -86,13 +90,16 @@ def vector_rankings(
         workers=workers,
         progress=progress,
     )
-    print(f"Эмбеддинги вопросов (text-search-query), {len(queries)} шт.")
+    print(f"Эмбеддинги вопросов, {len(queries)} шт.")
     questions = embed_many(client, list(queries), "query", cache, workers=workers)
     cache.close()
 
     doc_matrix = np.array([e.vector for e in docs], dtype=np.float32)
     query_matrix = np.array([e.vector for e in questions], dtype=np.float32)
-    # Векторы Яндекса нормализованы (разведка 13.09): косинус = скалярное.
+    # text-search отдаёт нормализованные векторы (разведка 13.09), но другие
+    # модели каталога — не обязательно: нормируем сами, косинус = скалярное.
+    doc_matrix /= np.linalg.norm(doc_matrix, axis=1, keepdims=True)
+    query_matrix /= np.linalg.norm(query_matrix, axis=1, keepdims=True)
     similarity = query_matrix @ doc_matrix.T
     order = np.argsort(-similarity, axis=1)[:, :limit]
     rankings = [row.tolist() for row in order]
@@ -139,6 +146,11 @@ def _parser() -> argparse.ArgumentParser:
         "--weights", default="1.0,0.5", help="hybrid: вектор,полнотекст"
     )
     parser.add_argument("--rrf-k", type=int, default=60)
+    parser.add_argument(
+        "--embedding-model",
+        default="text-search",
+        help="семейство эмбеддингов: text-search, text-embeddings-v2",
+    )
     parser.add_argument("--k", type=int, default=10, help="top-K выдачи")
     parser.add_argument("--glossary", type=Path, help="CSV term,expansion (M5)")
     parser.add_argument("--workers", type=int, default=4)
@@ -163,7 +175,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     config = args.config or f"{chunking.name}-{args.retriever}" + (
         "-glossary" if args.glossary else ""
-    )
+    ) + ("" if args.embedding_model == "text-search" else f"-{args.embedding_model}")
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
@@ -187,7 +199,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             retrieved[item.id] = [_retrieved(chunks[i], None) for i in ranking]
     else:
         depth = args.k if args.retriever == "vector" else max(args.k, FUSION_CANDIDATES)
-        vec_rank, vec_dist = vector_rankings(chunks, queries, depth, args.workers)
+        vec_rank, vec_dist = vector_rankings(
+            chunks, queries, depth, args.workers, args.embedding_model
+        )
         if args.retriever == "vector":
             for item, ranking, dists in zip(items, vec_rank, vec_dist, strict=True):
                 retrieved[item.id] = [

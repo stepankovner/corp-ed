@@ -163,7 +163,7 @@ def test_embedding_retries_go_through_rate_limiter() -> None:
 def test_complete_parses_answer_and_usage() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
-        assert body["modelUri"] == "gpt://folder/yandexgpt"
+        assert body["modelUri"] == "gpt://folder/yandexgpt/latest"
         assert body["messages"] == [
             {"role": "system", "text": "s"},
             {"role": "user", "text": "u"},
@@ -193,6 +193,48 @@ def test_complete_parses_answer_and_usage() -> None:
         12,
         3,
     )
+
+
+def test_complete_via_openai_compatible_api_counts_reasoning() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert request.url.path == "/v1/chat/completions"
+        assert request.headers["OpenAI-Project"] == "folder"
+        assert body["model"] == "gpt://folder/gpt-oss-20b/latest"
+        assert body["messages"][1] == {"role": "user", "content": "u"}
+        assert body["max_tokens"] == 2000
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": " ответ [1] "}, "finish_reason": "stop"}
+                ],
+                "usage": {
+                    "prompt_tokens": 1800,
+                    "completion_tokens": 250,
+                    "completion_tokens_details": {"reasoning_tokens": 200},
+                },
+            },
+        )
+
+    completion = _yandex(httpx.MockTransport(handler)).complete(
+        [Message(Role.SYSTEM, "s"), Message(Role.USER, "u")],
+        model="gpt-oss-20b",
+        max_tokens=2000,
+        api="openai",
+    )
+
+    assert completion.text == "ответ [1]"
+    assert (completion.input_tokens, completion.output_tokens) == (1800, 250)
+    assert (completion.reasoning_tokens, completion.finish_reason) == (200, "stop")
+
+
+def test_model_uris() -> None:
+    client = YandexClient("folder", "key", embedding_model="text-embeddings-v2")
+
+    assert client.model_uri("doc") == "emb://folder/text-embeddings-v2-doc/latest"
+    assert client.gpt_uri("yandexgpt/rc") == "gpt://folder/yandexgpt/rc"
+    assert client.gpt_uri("aliceai-llm") == "gpt://folder/aliceai-llm/latest"
 
 
 def test_embed_many_uses_cache(tmp_path: Path) -> None:
@@ -558,3 +600,110 @@ def test_error_message_strips_session_prefix() -> None:
         "number of input tokens must be no more than 2048, got 2908"
     )
     assert error_message("not json") == "not json"
+
+
+def _chat_ok(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    )
+
+
+def test_completions_go_through_rate_limiter() -> None:
+    sleeps: list[float] = []
+    client = YandexClient(
+        "folder",
+        "key",
+        http=httpx.Client(transport=httpx.MockTransport(_chat_ok)),
+        sleep=sleeps.append,
+        completion_rps=1.0,
+    )
+    messages = [Message(Role.USER, "u")]
+
+    client.complete(messages, api="openai")
+    client.complete(messages, api="openai")
+
+    # Второй вызов ждёт следующий слот: не чаще 1 запроса в секунду.
+    assert any(0.9 < pause <= 1.0 for pause in sleeps)
+
+
+def test_completions_respect_concurrency_limit() -> None:
+    import threading
+
+    lock = threading.Lock()
+    state = {"now": 0, "peak": 0}
+    release = threading.Event()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        with lock:
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+        release.wait(timeout=0.2)
+        with lock:
+            state["now"] -= 1
+        return _chat_ok(request)
+
+    client = YandexClient(
+        "folder",
+        "key",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+        completion_rps=1000.0,
+        completion_concurrency=2,
+    )
+    threads = [
+        threading.Thread(
+            target=client.complete,
+            args=([Message(Role.USER, "u")],),
+            kwargs={"api": "openai"},
+        )
+        for _ in range(5)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    # Квота каталога — одновременные запросы, а не только частота.
+    assert state["peak"] == 2
+
+
+def test_response_format_is_passed_to_both_apis() -> None:
+    schema = {"type": "object", "properties": {"a": {"type": "integer"}}}
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if request.url.path == "/v1/chat/completions":
+            return _chat_ok(request)
+        return httpx.Response(
+            200,
+            json={
+                "result": {
+                    "alternatives": [{"message": {"text": "{}"}, "status": "x"}],
+                    "usage": {"inputTextTokens": "1", "completionTokens": "1"},
+                }
+            },
+        )
+
+    client = _yandex(httpx.MockTransport(handler))
+    response_format = {
+        "type": "json_schema",
+        "json_schema": {"name": "a", "schema": schema},
+    }
+    client.complete(
+        [Message(Role.USER, "u")], api="openai", response_format=response_format
+    )
+    client.complete(
+        [Message(Role.USER, "u")], api="native", response_format=response_format
+    )
+    client.complete(
+        [Message(Role.USER, "u")], api="native", response_format={"type": "json_object"}
+    )
+
+    assert seen[0]["response_format"] == response_format
+    assert seen[1]["jsonSchema"] == {"schema": schema}
+    assert seen[2]["jsonObject"] is True

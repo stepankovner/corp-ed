@@ -8,7 +8,11 @@ eval-скриптам нужны синхронные вызовы, повтор
 
 Эмбеддинги: text-search-doc для документов, text-search-query для
 вопросов (пара моделей, перепутать — тихая потеря качества).
-Генерация: yandexgpt-lite / yandexgpt (Pro), нативный API completion.
+Генерация: нативный API completion (им пользуется бэкенд, только
+модели YandexGPT) или OpenAI-совместимый /v1/chat/completions (api="openai"):
+через него доступны все модели каталога AI Studio — Alice AI, DeepSeek,
+gpt-oss, Qwen. У рассуждающих моделей скрытые «размышления» приходят в
+usage как часть completion_tokens и тарифицируются как выход.
 """
 
 import hashlib
@@ -29,13 +33,22 @@ from corp_ed.llm.types import Message
 
 EMBEDDING_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
 COMPLETION_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+CHAT_URL = "https://llm.api.cloud.yandex.net/v1/chat/completions"
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 EMBEDDING_RPS = 8.0
 """Квота AI Studio по умолчанию — 10 запросов эмбеддинга в секунду на
 каталог (замер 24.09: 4 потока без ограничения получили 429). Берём с
 запасом: квота общая с бэкендом, если он работает в том же каталоге."""
 
+COMPLETION_RPS = 8.0
+COMPLETION_CONCURRENCY = 8
+"""Генерация: квота AI Studio — не больше 10 одновременных запросов на
+каталог (замер 25.09: ai.textGenerationCompletionSessionsCount, «allowed
+10 requests» → 429). Держим не больше 8 одновременных и не чаще 8 в
+секунду, чтобы параллельные скрипты и бэкенд не упирались в квоту."""
+
 EmbeddingKind = Literal["doc", "query"]
+Api = Literal["native", "openai"]
 
 
 @dataclass(frozen=True)
@@ -51,6 +64,9 @@ class Completion:
     output_tokens: int
     latency_ms: float
     model: str
+    reasoning_tokens: int = 0
+    """Скрытые токены рассуждения (входят в output_tokens)."""
+    finish_reason: str = ""
 
 
 class RateLimiter:
@@ -103,6 +119,9 @@ class YandexClient:
         base_delay: float = 1.0,
         sleep: Callable[[float], None] = time.sleep,
         embedding_rps: float = EMBEDDING_RPS,
+        embedding_model: str = "text-search",
+        completion_rps: float = COMPLETION_RPS,
+        completion_concurrency: int = COMPLETION_CONCURRENCY,
     ) -> None:
         self._folder_id = folder_id
         self._api_key = api_key
@@ -111,9 +130,12 @@ class YandexClient:
         self._base_delay = base_delay
         self._sleep = sleep
         self._embedding_limiter = RateLimiter(embedding_rps, sleep=sleep)
+        self._embedding_model = embedding_model
+        self._completion_limiter = RateLimiter(completion_rps, sleep=sleep)
+        self._completion_slots = threading.BoundedSemaphore(completion_concurrency)
 
     @classmethod
-    def from_env(cls) -> "YandexClient":
+    def from_env(cls, **options: Any) -> "YandexClient":
         try:
             from dotenv import load_dotenv
 
@@ -121,14 +143,21 @@ class YandexClient:
         except ImportError:
             pass
         try:
-            return cls(os.environ["YC_FOLDER_ID"], os.environ["YC_API_KEY"])
+            return cls(os.environ["YC_FOLDER_ID"], os.environ["YC_API_KEY"], **options)
         except KeyError as error:
             raise SystemExit(
                 f"Не задан {error} (нужны YC_FOLDER_ID и YC_API_KEY)"
             ) from None
 
     def model_uri(self, kind: EmbeddingKind) -> str:
-        return f"emb://{self._folder_id}/text-search-{kind}/latest"
+        """Пара моделей <семейство>-doc / <семейство>-query: text-search,
+        text-embeddings-v2."""
+        return f"emb://{self._folder_id}/{self._embedding_model}-{kind}/latest"
+
+    def gpt_uri(self, model: str) -> str:
+        """«yandexgpt-lite» → gpt://<каталог>/yandexgpt-lite/latest; версию
+        можно указать явно: «yandexgpt/rc»."""
+        return f"gpt://{self._folder_id}/{model if '/' in model else model + '/latest'}"
 
     def embed(self, text: str, kind: EmbeddingKind) -> Embedding:
         body = self._post(
@@ -148,9 +177,16 @@ class YandexClient:
         model: str = "yandexgpt-lite",
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        api: Api = "native",
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
-        payload = {
-            "modelUri": f"gpt://{self._folder_id}/{model}",
+        """response_format — как в OpenAI API: {"type": "json_object"} или
+        {"type": "json_schema", "json_schema": {"name": …, "schema": …}}.
+        Для native переводится в jsonObject / jsonSchema."""
+        if api == "openai":
+            return self._chat(messages, model, temperature, max_tokens, response_format)
+        payload: dict[str, Any] = {
+            "modelUri": self.gpt_uri(model),
             "completionOptions": {
                 "stream": False,
                 "temperature": temperature,
@@ -158,9 +194,14 @@ class YandexClient:
             },
             "messages": [{"role": m.role.value, "text": m.content} for m in messages],
         }
-        started = time.perf_counter()
-        body = self._post(COMPLETION_URL, payload)
-        latency_ms = (time.perf_counter() - started) * 1000
+        if response_format and response_format.get("type") == "json_object":
+            payload["jsonObject"] = True
+        elif response_format and response_format.get("type") == "json_schema":
+            payload["jsonSchema"] = {"schema": response_format["json_schema"]["schema"]}
+        with self._completion_slots:
+            started = time.perf_counter()
+            body = self._post(COMPLETION_URL, payload, limiter=self._completion_limiter)
+            latency_ms = (time.perf_counter() - started) * 1000
         result = body["result"]
         usage = result.get("usage", {})
         return Completion(
@@ -169,6 +210,47 @@ class YandexClient:
             output_tokens=int(usage.get("completionTokens", 0)),
             latency_ms=latency_ms,
             model=model,
+            finish_reason=str(result["alternatives"][0].get("status", "")),
+        )
+
+    def _chat(
+        self,
+        messages: Sequence[Message],
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        response_format: dict[str, Any] | None = None,
+    ) -> Completion:
+        payload: dict[str, Any] = {
+            "model": self.gpt_uri(model),
+            "messages": [
+                {"role": m.role.value, "content": m.content} for m in messages
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if response_format:
+            payload["response_format"] = response_format
+        with self._completion_slots:
+            started = time.perf_counter()
+            body = self._post(
+                CHAT_URL,
+                payload,
+                limiter=self._completion_limiter,
+                extra_headers={"OpenAI-Project": self._folder_id},
+            )
+            latency_ms = (time.perf_counter() - started) * 1000
+        choice = body["choices"][0]
+        usage = body.get("usage") or {}
+        details = usage.get("completion_tokens_details") or {}
+        return Completion(
+            text=str(choice["message"].get("content") or "").strip(),
+            input_tokens=int(usage.get("prompt_tokens", 0)),
+            output_tokens=int(usage.get("completion_tokens", 0)),
+            latency_ms=latency_ms,
+            model=model,
+            reasoning_tokens=int(details.get("reasoning_tokens") or 0),
+            finish_reason=str(choice.get("finish_reason") or ""),
         )
 
     def _post(
@@ -177,8 +259,9 @@ class YandexClient:
         payload: dict[str, Any],
         *,
         limiter: RateLimiter | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        headers = {"Authorization": f"Api-Key {self._api_key}"}
+        headers = {"Authorization": f"Api-Key {self._api_key}", **(extra_headers or {})}
         for attempt in range(self._max_attempts):
             if limiter:
                 limiter.wait()
