@@ -207,34 +207,43 @@ def is_not_found(answer: str) -> bool:
     return _NOT_FOUND_START.match(answer) is not None
 
 
-_SECTION_CITATION = re.compile(r"\[(\d+(?:\.\d+)+)\.?\]")
+_NUMBER_CITATION = re.compile(r"\[(\d+(?:\.\d+)*)\.?\]")
 
 
 def normalize_citations(answer: str, matches: Sequence[SourceChunk]) -> str:
-    """Номер пункта в скобках ([4.2]) → номер выдержки, где этот пункт.
+    """Номер пункта или строки в скобках → номер выдержки, где он есть.
 
-    Даже с правилом 2 lite иногда ставит в скобки номер пункта документа
-    вместо номера выдержки (прогон 24.09: 1 ответ из 20, нумерованный
-    список шагов). Фронт такую ссылку с источником не свяжет. Если пункт
-    начинает строку ровно в одной выдержке — ссылка на неё; иначе номер
-    остаётся текстом «(п. 4.2)»: без ссылки, но и не битая. Бэкенду —
-    вызывать на ответе модели до записи в qa_log и отдачи фронту.
+    Даже с правилом 2 модели иногда ставят в скобки номер из самого
+    документа вместо номера выдержки:
+    - номер пункта [4.2] (lite, 24.09: 1 ответ из 20, список шагов);
+    - номер строки таблицы или пункта перечня [38] — при пяти выдержках
+      (замер ссылок 24.09, 220 вопросов: 9 ссылок у Alice Flash, 22 у lite;
+      «№: 38.; Мера поддержки…» в таблицах Старт-ИИ-1).
+    Фронт такую ссылку с источником не свяжет. Если пункт начинает строку
+    или строка таблицы «№: 38» есть ровно в одной выдержке — ссылка на неё;
+    иначе номер остаётся текстом «(п. 4.2)»: без ссылки, но и не битая.
+    Обычные ссылки [1]…[len(matches)] не трогаются. Бэкенду — вызывать на
+    ответе модели до записи в qa_log и отдачи фронту.
     """
 
     def replace(citation: re.Match[str]) -> str:
         number = citation.group(1)
-        starts_line = re.compile(
-            rf"^\s*(?:[-*+]\s+)?(?:\*\*)?{re.escape(number)}\.?(?:\*\*)?(?:\s|$)",
+        if "." not in number and 1 <= int(number) <= len(matches):
+            return citation.group(0)
+        escaped = re.escape(number)
+        item = re.compile(
+            rf"^\s*(?:[-*+]\s+)?(?:\*\*)?{escaped}[.)]?(?:\*\*)?(?:\s|$)"
+            rf"|№\s*(?:п/п)?\s*:?\s*{escaped}(?![\d]|\.\d)",
             re.MULTILINE,
         )
         found = [
             position
             for position, match in enumerate(matches, start=1)
-            if starts_line.search(match.content)
+            if item.search(match.content)
         ]
         return f"[{found[0]}]" if len(found) == 1 else f"(п. {number})"
 
-    return _SECTION_CITATION.sub(replace, answer)
+    return _NUMBER_CITATION.sub(replace, answer)
 
 
 def _format_excerpt(number: int, match: SourceChunk) -> str:

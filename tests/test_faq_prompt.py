@@ -172,3 +172,26 @@ def test_normalize_citations_without_unique_excerpt_keeps_number_as_text() -> No
     assert normalize_citations("Ответ [1].", [Match("См. пункт 2.2 ниже.")]) == (
         "Ответ [1]."
     )
+
+
+def test_normalize_citations_maps_row_and_item_numbers() -> None:
+    matches = [
+        Match("Отпуск — 28 дней."),
+        Match("№: 38.; Мера поддержки: Поддержка;\n№: 39.; Мера поддержки: ИНН;"),
+        Match("Перечень:\n14. Работы не финансируются из других источников."),
+    ]
+    answer = "Наименование [38], ИНН [39], источники [14], срок [1], ещё [2]."
+
+    # Номер вне 1..3 — строка таблицы или пункт перечня; 1..3 — выдержки.
+    assert normalize_citations(answer, matches) == (
+        "Наименование [2], ИНН [2], источники [3], срок [1], ещё [2]."
+    )
+
+
+def test_normalize_citations_unknown_number_becomes_text() -> None:
+    matches = [Match("Отпуск — 28 дней."), Match("Срок — 12 месяцев.")]
+
+    # [7] нет ни строкой, ни пунктом (и [0] тоже) — не битая ссылка, а текст.
+    assert normalize_citations("Ответ [7] и [0].", matches) == (
+        "Ответ (п. 7) и (п. 0)."
+    )

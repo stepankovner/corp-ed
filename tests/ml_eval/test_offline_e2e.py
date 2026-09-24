@@ -58,7 +58,13 @@ class _FakeYandex:
         self.prompts: list[str] = []
 
     def complete(
-        self, messages: Sequence[Message], *, model: str, temperature: float
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        temperature: float,
+        max_tokens: int = 1000,
+        api: str = "native",
     ) -> Completion:
         user = messages[-1].content
         self.prompts.append(user)
@@ -85,7 +91,11 @@ def setup(
     dataset.write_text(GOLDEN, encoding="utf-8")
 
     def fake_rankings(
-        chunks: Sequence[object], queries: Sequence[str], limit: int, workers: int
+        chunks: Sequence[object],
+        queries: Sequence[str],
+        limit: int,
+        workers: int,
+        embedding_model: str = "text-search",
     ) -> tuple[list[list[int]], list[list[float]]]:
         distances = {"Сколько": 0.3, "Какая": 0.8, "Можно": 0.4}
         return (
@@ -135,9 +145,10 @@ def test_strict_mode_refuses_without_llm(
     assert len(fake.prompts) == 2
     assert rows["q2"]["answer"] == NOT_FOUND_ANSWER
     assert rows["q2"]["answered"] == "False" and rows["q2"]["n_sources"] == "0"
-    # q1: ответ со ссылками, одна ссылка на несуществующую выдержку [3].
+    # q1: модель сослалась на несуществующую выдержку [3] — считаем по сырому
+    # ответу; normalize_citations превратила её в текст «(п. 3)», ссылка одна.
     assert rows["q1"]["answered"] == "True"
-    assert (rows["q1"]["citations"], rows["q1"]["invalid_citations"]) == ("2", "1")
+    assert (rows["q1"]["citations"], rows["q1"]["invalid_citations"]) == ("1", "1")
     # [2.2] — номер пункта: в выдержке его нет, ответ нормализован в текст.
     assert rows["q1"]["section_citations"] == "1"
     assert "по пункту (п. 2.2)" in rows["q1"]["answer"]

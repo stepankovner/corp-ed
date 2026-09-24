@@ -110,10 +110,13 @@ def retrieve(
     weights: Sequence[float] = (1.0, 0.5),
     rrf_k: int = 60,
     workers: int = 4,
+    embedding_model: str = "text-search",
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние."""
     depth = limit if retriever == "vector" else max(limit, FUSION_CANDIDATES)
-    vec_rank, vec_dist = vector_rankings(chunks, questions, depth, workers)
+    vec_rank, vec_dist = vector_rankings(
+        chunks, questions, depth, workers, embedding_model
+    )
     if retriever == "vector":
         return [
             (
@@ -187,6 +190,16 @@ def _parser() -> argparse.ArgumentParser:
         default=0.0,
         help="0 — воспроизводимо; при 0.3 (как сейчас у бэкенда) ответы гуляют",
     )
+    parser.add_argument(
+        "--api",
+        choices=("native", "openai"),
+        default="native",
+        help="native — как бэкенд (только YandexGPT); openai — все модели каталога",
+    )
+    parser.add_argument(
+        "--max-tokens", type=int, default=1000, help="лимит выхода, с рассуждением"
+    )
+    parser.add_argument("--embedding-model", default="text-search")
     parser.add_argument("--limit", type=int, default=5, help="faq_limit (E4)")
     parser.add_argument("--max-distance", type=float, default=0.6)
     parser.add_argument("--context-tokens", type=int, default=3000)
@@ -238,6 +251,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         weights=[float(w) for w in args.weights.split(",")],
         rrf_k=args.rrf_k,
         workers=args.workers,
+        embedding_model=args.embedding_model,
     )
     client = YandexClient.from_env()
 
@@ -259,10 +273,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             messages = build_general_messages(item.question)
 
         raw = answer = NOT_FOUND_ANSWER
-        latency, tokens_in, tokens_out = 0.0, 0, 0
+        latency, tokens_in, tokens_out, reasoning, finish = 0.0, 0, 0, 0, ""
         if messages is not None:
             completion = client.complete(
-                messages, model=args.model, temperature=args.temperature
+                messages,
+                model=args.model,
+                temperature=args.temperature,
+                max_tokens=args.max_tokens,
+                api=args.api,
             )
             raw = completion.text.strip()
             answer = (
@@ -272,6 +290,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             latency = completion.latency_ms
             tokens_in, tokens_out = completion.input_tokens, completion.output_tokens
+            reasoning, finish = completion.reasoning_tokens, completion.finish_reason
 
         answered = is_answered(answer, answer_given=bool(selected))
         rows.append(
@@ -297,11 +316,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "n_found": len(found),
                 "n_relevant": len(relevant),
                 "citations": len(citation_numbers(answer)),
-                "invalid_citations": len(invalid_citations(answer, len(selected))),
-                # Сколько раз ошиблась модель — до normalize_citations.
+                # Сколько раз ошиблась модель — до normalize_citations: после
+                # неё номеров вне 1..k и [2.2] в ответе уже нет.
+                "invalid_citations": len(invalid_citations(raw, len(selected))),
                 "section_citations": section_citations(raw),
                 "input_tokens": tokens_in,
                 "output_tokens": tokens_out,
+                "reasoning_tokens": reasoning,
+                "finish_reason": finish,
             }
         )
         status = "ответил" if answered else "отказал"
