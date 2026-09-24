@@ -1,7 +1,7 @@
 """Корпус для офлайн-стенда и генерации серебряного набора.
 
 Папка с документами → Markdown → preprocess → чанки нужной конфигурации.
-Извлечение повторяет то, что предложено бэкенду (docs/ml-backend-contracts.md):
+Извлечение повторяет то, что предложено бэкенду (docs/backend-handoff.md, BH-2):
 docx — mammoth + markdownify, pdf — pymupdf4llm постранично через \\f.
 md и txt читаются как есть. Библиотеки извлечения нужны, только если в
 папке есть docx/pdf (eval/requirements.txt).
