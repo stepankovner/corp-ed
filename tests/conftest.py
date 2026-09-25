@@ -1,10 +1,11 @@
 import os
 from collections.abc import AsyncGenerator
+from typing import Any
 from uuid import uuid4
 
 import pytest
 from dotenv import load_dotenv
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -34,10 +35,16 @@ os.environ.setdefault("SECRET_KEY", "test-only-secret-key-" + "x" * 32)
 os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 
 
+# Роль, под которой работают тесты: без SUPERUSER и BYPASSRLS, как
+# роль приложения в production. Под суперпользователем RLS не действует,
+# и тесты изоляции ничего бы не доказывали.
+APP_ROLE = "corp_ed_app_test"
+
+
 @pytest.fixture(scope="session")
 async def engine() -> AsyncGenerator[AsyncEngine]:
-    engine = create_async_engine(TEST_DATABASE_URL)
-    async with engine.begin() as conn:
+    admin = create_async_engine(TEST_DATABASE_URL)
+    async with admin.begin() as conn:
         # create_all не меняет существующие таблицы: новая колонка в модели
         # при старой локальной базе даёт UndefinedColumnError на первом же
         # запросе. Схема пересоздаётся целиком на каждый прогон — таблицы,
@@ -46,8 +53,36 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
         await conn.execute(text("CREATE SCHEMA public"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
-        # Триггеры и политики, которых нет в моделях (см. db_policies).
+        # Триггеры и политики RLS, которых нет в моделях (см. db_policies).
         await conn.run_sync(apply_all)
+        await conn.execute(
+            text(
+                f"""
+                DO $$ BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}')
+                    THEN CREATE ROLE {APP_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS;
+                    END IF;
+                END $$
+                """
+            )
+        )
+        await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}"))
+        await conn.execute(
+            text(
+                "GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE "
+                f"ON ALL TABLES IN SCHEMA public TO {APP_ROLE}"
+            )
+        )
+    await admin.dispose()
+
+    engine = create_async_engine(TEST_DATABASE_URL)
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _drop_privileges(dbapi_connection: Any, connection_record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute(f"SET ROLE {APP_ROLE}")
+        cursor.close()
+
     try:
         yield engine
     finally:

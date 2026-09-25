@@ -153,7 +153,10 @@ async def test_admin_cannot_touch_other_company_user(
 
     assert patched.status_code == 404
     assert reset.status_code == 404
-    await session.refresh(stranger)
+    # Перечитать чужого пользователя можно только в контексте его компании:
+    # вне его RLS в базе строку не отдаёт.
+    with tenant_scope(other.id):
+        await session.refresh(stranger)
     assert stranger.is_active is True
 
 

@@ -65,8 +65,53 @@ def audit_append_only_statements() -> list[str]:
     ]
 
 
+TENANT_SETTING = "app.tenant_id"
+"""Параметр сессии PostgreSQL, из которого политики RLS берут тенанта.
+
+Ставится в начале каждой транзакции из current_tenant (core/database.py)
+через set_config(..., is_local => true): значение живёт до конца
+транзакции и не переезжает с соединением пула в чужой запрос."""
+
+TENANT_TABLES = ("users", "materials", "chunks")
+"""Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
+проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,
+ищется при входе до того, как тенант известен), refresh_tokens (ищется
+по хешу до входа), audit_events (пишется и без тенанта)."""
+
+# NULLIF: пустая строка (тенант не выставлен) превращается в NULL, и
+# сравнение даёт NULL — ни одной строки. Приведение ''::uuid упало бы с
+# ошибкой, а нам нужно тихое «ничего не видно» (default deny).
+_CURRENT_TENANT = f"NULLIF(current_setting('{TENANT_SETTING}', true), '')::uuid"
+
+
+def rls_statements(tables: tuple[str, ...] = TENANT_TABLES) -> list[str]:
+    """Row-Level Security: строки чужого тенанта не видны и не пишутся.
+
+    Второй рубеж после ORM-хуков: они не покрывают сырой SQL и
+    колоночные select, а политика в базе — покрывает всё, включая
+    ошибку в коде, который про тенанта забыл (RISKS №1).
+
+    FORCE — политика действует и для владельца таблицы. Обходят её
+    только суперпользователь и роли с BYPASSRLS, поэтому приложение
+    обязано работать под ролью без них (проверяется на старте).
+    """
+    statements: list[str] = []
+    for table in tables:
+        statements += [
+            f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
+            f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
+            f"DROP POLICY IF EXISTS tenant_isolation ON {table}",
+            f"""
+            CREATE POLICY tenant_isolation ON {table}
+            USING (tenant_id = {_CURRENT_TENANT})
+            WITH CHECK (tenant_id = {_CURRENT_TENANT})
+            """,
+        ]
+    return statements
+
+
 def all_statements() -> list[str]:
-    return [*audit_append_only_statements()]
+    return [*audit_append_only_statements(), *rls_statements()]
 
 
 def apply_all(connection: Connection) -> None:

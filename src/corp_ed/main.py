@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from corp_ed.api.v1.endpoints import audit, auth, faq, materials, users
@@ -66,6 +67,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # должна ронять контейнер, а не превращаться в 500 на первом запросе.
     async with get_engine().connect() as connection:
         await connection.execute(text("SELECT 1"))
+        await _check_database_role(connection)
     redis: Redis | None = None
     limiter: RateLimiter
     if http_settings.redis_url is not None:
@@ -84,6 +86,31 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.http_client.aclose()
         if redis is not None:
             await redis.aclose()
+
+
+async def _check_database_role(connection: AsyncConnection) -> None:
+    """RLS не действует для SUPERUSER и BYPASSRLS — молча, без ошибок.
+
+    Приложение под такой ролью работало бы «как обычно», но второй
+    рубеж изоляции был бы выключен. В production это ошибка старта,
+    в разработке — предупреждение (локальный postgres из compose
+    по умолчанию даёт суперпользователя).
+    """
+    row = (
+        await connection.execute(
+            text(
+                "SELECT rolsuper, rolbypassrls FROM pg_roles "
+                "WHERE rolname = current_user"
+            )
+        )
+    ).one()
+    if row.rolsuper or row.rolbypassrls:
+        if http_settings.is_production:
+            raise RuntimeError(
+                "Database role bypasses row-level security; "
+                "use a role without SUPERUSER and BYPASSRLS (see docs/DEPLOY.md)"
+            )
+        logger.warning("database_role_bypasses_rls")
 
 
 http_settings = get_http_settings()
