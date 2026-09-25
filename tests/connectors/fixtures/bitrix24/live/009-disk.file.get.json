@@ -21,8 +21,8 @@
       "CREATED_BY": "1",
       "UPDATED_BY": "1",
       "DELETED_BY": "0",
-      "DOWNLOAD_URL": "https://b24-oth2uw.bitrix24.ru/rest/1/<redacted>/download/?token=%3Credacted%3E",
-      "DETAIL_URL": "https://b24-oth2uw.bitrix24.ru/company/personal/user/1/disk/file/Положение Старт-ИИ-1 (очередь 2)_на сайт.pdf"
+      "DOWNLOAD_URL": "https://b24-test.bitrix24.ru/rest/1/<redacted>/download/?token=%3Credacted%3E",
+      "DETAIL_URL": "https://b24-test.bitrix24.ru/company/personal/user/1/disk/file/Положение Старт-ИИ-1 (очередь 2)_на сайт.pdf"
     },
     "time": {
       "start": 1790370933,

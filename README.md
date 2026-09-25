@@ -96,7 +96,7 @@ src/corp_ed/
 migrations/       Alembic
 deploy/postgres/  роль приложения
 eval/             оценка качества (ML)
-tests/            970+ тестов, в том числе tests/security/
+tests/            1160+ тестов, в том числе tests/security/
 docs/             ARCHITECTURE, DECISIONS, RISKS, SECURITY, DEPLOY, INTEGRATION, отчёты ML
 ```
 
