@@ -1,5 +1,6 @@
 import structlog
 from fastapi import Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 logger = structlog.get_logger()
@@ -67,4 +68,48 @@ async def llm_error_handler(
     return JSONResponse(
         status_code=status.HTTP_502_BAD_GATEWAY,
         content={"detail": "Сервис языковой модели недоступен, попробуйте позже"},
+    )
+
+
+async def validation_error_handler(
+    request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """422 без эха входных данных.
+
+    Стандартный ответ FastAPI кладёт в каждую ошибку поле input — то, что
+    прислал клиент. Для /auth/login это пароль, для /users — пароль
+    нового сотрудника, и ответ с ним оседает в логах прокси и в
+    инструментах разработчика. Оставляем только где ошибка и какая.
+    """
+    errors = exc.errors() if isinstance(exc, RequestValidationError) else []
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={
+            "detail": [
+                {
+                    "loc": list(error.get("loc", ())),
+                    "msg": error.get("msg", ""),
+                    "type": error.get("type", ""),
+                }
+                for error in errors
+            ]
+        },
+    )
+
+
+async def internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Ошибки-признаки бага (нет тенанта в контексте, чужой tenant_id).
+
+    Клиент исправить их не может, подробности ему не нужны и опасны:
+    текст про tenant_id подсказывает, где искать дыру в изоляции.
+    """
+    logger.error(
+        "internal_error",
+        error_type=type(exc).__name__,
+        path=request.url.path,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Внутренняя ошибка сервера"},
     )

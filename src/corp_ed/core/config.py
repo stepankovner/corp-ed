@@ -101,3 +101,68 @@ class RagSettings(BaseSettings):
         if self.overlap_tokens >= self.chunk_tokens:
             raise ValueError("overlap_tokens must be less than chunk_tokens")
         return self
+
+
+class HttpSettings(BaseSettings):
+    """Настройки HTTP-периметра: CORS, хосты, лимиты тела, документация.
+
+    Отдельный класс, а не поля Settings: main.py читает их при сборке
+    приложения, а Settings требует секретов — импорт приложения
+    перестал бы работать без .env, и падали бы тесты и alembic. У
+    каждого поля есть дефолт, безопасный для разработки; в production
+    всё задаётся явно (см. .env.example).
+    """
+
+    environment: str = "development"
+
+    # Строка через запятую, а не list[str]: сложные типы pydantic-settings
+    # разбирает как JSON, и в переменной окружения пришлось бы писать
+    # ["https://..."] — лишний источник опечаток при деплое.
+    # Пусто — CORS выключен: браузер пустит только same-origin.
+    cors_allowed_origins: str = ""
+    # Host-заголовок: «*» годится только для разработки.
+    allowed_hosts: str = "*"
+
+    # Лимит тела запроса. JSON-ручкам мегабайта хватает с запасом;
+    # загрузке файлов — отдельный лимит (см. MAX_UPLOAD_BYTES в
+    # api/v1/schemas/material.py и middleware).
+    max_body_bytes: int = Field(default=1024 * 1024, gt=0)
+    max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return _split_csv(self.cors_allowed_origins)
+
+    @property
+    def hosts(self) -> list[str]:
+        return _split_csv(self.allowed_hosts)
+
+    @model_validator(mode="after")
+    def validate_production(self) -> Self:
+        # В production небезопасные дефолты — ошибка старта, а не
+        # предупреждение в логе, которое никто не прочтёт.
+        if self.is_production:
+            if "*" in self.hosts:
+                raise ValueError("ALLOWED_HOSTS must be explicit in production")
+            if "*" in self.cors_origins:
+                raise ValueError("CORS_ALLOWED_ORIGINS must not be * in production")
+        return self
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+@lru_cache
+def get_http_settings() -> HttpSettings:
+    return HttpSettings()
