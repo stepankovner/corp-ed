@@ -6,10 +6,11 @@ eval-скриптам нужны синхронные вызовы, повтор
 
 Ключи — те же, что у бэкенда (.env): YC_FOLDER_ID, YC_API_KEY.
 
-Эмбеддинги: text-search-doc для документов, text-search-query для
-вопросов (пара моделей, перепутать — тихая потеря качества).
-Генерация: нативный API completion (им пользуется бэкенд, только
-модели YandexGPT) или OpenAI-совместимый /v1/chat/completions (api="openai"):
+Эмбеддинги: <семейство>-doc для документов, <семейство>-query для
+вопросов (пара моделей, перепутать — тихая потеря качества); семейства
+text-search и text-embeddings-v2.
+Генерация: нативный API completion (им пользуется бэкенд до переезда,
+только модели YandexGPT) или OpenAI-совместимый /v1/chat/completions (api="openai"):
 через него доступны все модели каталога AI Studio — Alice AI, DeepSeek,
 gpt-oss, Qwen. У рассуждающих моделей скрытые «размышления» приходят в
 usage как часть completion_tokens и тарифицируются как выход.
@@ -47,8 +48,25 @@ COMPLETION_CONCURRENCY = 8
 10 requests» → 429). Держим не больше 8 одновременных и не чаще 8 в
 секунду, чтобы параллельные скрипты и бэкенд не упирались в квоту."""
 
+DEFAULT_LLM = "aliceai-llm-flash"
+DEFAULT_API = "openai"
+DEFAULT_EMBEDDING_MODEL = "text-embeddings-v2"
+DEFAULT_EMBEDDING_DIMS = {"text-embeddings-v2": 768}
+DEFAULT_MAX_DISTANCE = 0.51
+"""Решение по задаче 1 (Артём, 25.09): Alice AI LLM Flash через
+OpenAI-совместимый API и text-embeddings-v2 с размерностью 768; порог для
+v2-768 — 0.51 (предварительно, финал — A8). Это значения по умолчанию
+eval-скриптов, чтобы прогоны без флагов мерили то же, что будет у
+бэкенда (BH-15…BH-18)."""
+
 EmbeddingKind = Literal["doc", "query"]
 Api = Literal["native", "openai"]
+
+
+def default_embedding_dim(model: str) -> int | None:
+    """Размерность по умолчанию: 768 для text-embeddings-v2, у text-search
+    размерность не задаётся."""
+    return DEFAULT_EMBEDDING_DIMS.get(model)
 
 
 @dataclass(frozen=True)
@@ -120,6 +138,7 @@ class YandexClient:
         sleep: Callable[[float], None] = time.sleep,
         embedding_rps: float = EMBEDDING_RPS,
         embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
         completion_rps: float = COMPLETION_RPS,
         completion_concurrency: int = COMPLETION_CONCURRENCY,
     ) -> None:
@@ -131,6 +150,7 @@ class YandexClient:
         self._sleep = sleep
         self._embedding_limiter = RateLimiter(embedding_rps, sleep=sleep)
         self._embedding_model = embedding_model
+        self._embedding_dim = embedding_dim
         self._completion_limiter = RateLimiter(completion_rps, sleep=sleep)
         self._completion_slots = threading.BoundedSemaphore(completion_concurrency)
 
@@ -154,17 +174,21 @@ class YandexClient:
         text-embeddings-v2."""
         return f"emb://{self._folder_id}/{self._embedding_model}-{kind}/latest"
 
+    def cache_uri(self, kind: EmbeddingKind) -> str:
+        """Ключ кэша: модель + размерность (у v2 — 128/256/512/768 полем dim)."""
+        uri = self.model_uri(kind)
+        return f"{uri}?dim={self._embedding_dim}" if self._embedding_dim else uri
+
     def gpt_uri(self, model: str) -> str:
         """«yandexgpt-lite» → gpt://<каталог>/yandexgpt-lite/latest; версию
         можно указать явно: «yandexgpt/rc»."""
         return f"gpt://{self._folder_id}/{model if '/' in model else model + '/latest'}"
 
     def embed(self, text: str, kind: EmbeddingKind) -> Embedding:
-        body = self._post(
-            EMBEDDING_URL,
-            {"modelUri": self.model_uri(kind), "text": text},
-            limiter=self._embedding_limiter,
-        )
+        payload: dict[str, Any] = {"modelUri": self.model_uri(kind), "text": text}
+        if self._embedding_dim:
+            payload["dim"] = str(self._embedding_dim)
+        body = self._post(EMBEDDING_URL, payload, limiter=self._embedding_limiter)
         return Embedding(
             vector=[float(x) for x in body["embedding"]],
             num_tokens=int(body.get("numTokens", 0)),
@@ -350,7 +374,7 @@ def embed_many(
     """
     from concurrent.futures import ThreadPoolExecutor
 
-    model_uri = client.model_uri(kind)
+    model_uri = client.cache_uri(kind)
     results: list[Embedding | None] = [
         cache.get(model_uri, text) if cache else None for text in texts
     ]

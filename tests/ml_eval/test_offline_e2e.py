@@ -52,6 +52,22 @@ def test_section_citations_are_not_excerpt_numbers() -> None:
     assert citation_numbers(answer) == [1]
 
 
+def test_defaults_are_the_task1_decision() -> None:
+    from eval.yandex import default_embedding_dim
+
+    args = offline_e2e._parser().parse_args(["--corpus", "c", "--dataset", "d"])
+
+    # Решение 25.09: Flash через OpenAI-совместимый API, v2-768, порог 0.51.
+    assert (args.model, args.api, args.embedding_model, args.max_distance) == (
+        "aliceai-llm-flash",
+        "openai",
+        "text-embeddings-v2",
+        0.51,
+    )
+    assert default_embedding_dim(args.embedding_model) == 768
+    assert default_embedding_dim("text-search") is None
+
+
 class _FakeYandex:
     def __init__(self, answers: dict[str, str]) -> None:
         self.answers = answers
@@ -96,6 +112,7 @@ def setup(
         limit: int,
         workers: int,
         embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
     ) -> tuple[list[list[int]], list[list[float]]]:
         distances = {"Сколько": 0.3, "Какая": 0.8, "Можно": 0.4}
         return (
@@ -141,7 +158,7 @@ def test_strict_mode_refuses_without_llm(
 
     rows = {row["id"]: row for row in _run(corpus, dataset, tmp_path / "out")}
 
-    # q2 дальше порога 0.6: LLM не вызывается, фиксированная фраза отказа.
+    # q2 дальше порога 0.51: LLM не вызывается, фиксированная фраза отказа.
     assert len(fake.prompts) == 2
     assert rows["q2"]["answer"] == NOT_FOUND_ANSWER
     assert rows["q2"]["answered"] == "False" and rows["q2"]["n_sources"] == "0"

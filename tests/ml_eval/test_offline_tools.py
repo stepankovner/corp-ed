@@ -707,3 +707,31 @@ def test_response_format_is_passed_to_both_apis() -> None:
     assert seen[0]["response_format"] == response_format
     assert seen[1]["jsonSchema"] == {"schema": schema}
     assert seen[2]["jsonObject"] is True
+
+
+def test_embedding_dim_is_sent_and_kept_apart_in_cache() -> None:
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"embedding": [1.0, 0.0], "numTokens": "2"})
+
+    client = YandexClient(
+        "folder",
+        "key",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=lambda _: None,
+        embedding_model="text-embeddings-v2",
+        embedding_dim=768,
+    )
+    client.embed("x", "doc")
+
+    assert seen[0] == {
+        "modelUri": "emb://folder/text-embeddings-v2-doc/latest",
+        "text": "x",
+        "dim": "768",
+    }
+    # Векторы разной размерности в кэше не смешиваются.
+    assert (
+        client.cache_uri("doc") == "emb://folder/text-embeddings-v2-doc/latest?dim=768"
+    )

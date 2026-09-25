@@ -112,6 +112,9 @@ python -m eval.bench --corpus docs/ --dataset eval/silver.csv --split dev \
 | `--retriever hybrid --weights 1.0,0.5` | M1 (предпросмотр) |
 | `--glossary glossary.csv` | M5 (CSV `term,expansion`) |
 
+Эмбеддинги по умолчанию — `text-embeddings-v2` с размерностью 768 (решение
+по задаче 1, 25.09). Старые: `--embedding-model text-search`.
+
 Квота AI Studio — 10 запросов эмбеддинга в секунду на каталог. Клиент
 держит 8 (`EMBEDDING_RPS` в `eval/yandex.py`), повторы после 429 тоже идут
 через ограничитель. Два стенда одновременно квоту превысят: запускать
@@ -120,13 +123,18 @@ python -m eval.bench --corpus docs/ --dataset eval/silver.csv --split dev \
 ## Офлайн-e2e (без бэкенда)
 
 Конвейер `/faq/ask` в памяти: векторный поиск → порог → бюджет контекста →
-промпт → YandexGPT. Для того, что на бэкенде меняется переменными
+промпт → LLM. Для того, что на бэкенде меняется переменными
 окружения: `faq_limit` (E4), модель (E5), порог (A8), режим Р1.
 
 ```bash
 python -m eval.offline_e2e --corpus docs/ --dataset eval/golden.csv \
-    --model yandexgpt-lite --limit 5 --max-distance 0.6 [--not-found general]
+    --limit 5 [--not-found general]
 ```
+
+По умолчанию — решение по задаче 1 (25.09): Alice AI LLM Flash
+(`--api openai --model aliceai-llm-flash`), `text-embeddings-v2` 768, порог
+0.51. Старая конфигурация: `--api native --model yandexgpt-lite
+--embedding-model text-search --max-distance 0.65`.
 
 CSV совместим с `run_eval score` и `eval.judge`. Сверх колонок `run_eval
 e2e` — расстояния, токены и проверки ссылок: `citations`,

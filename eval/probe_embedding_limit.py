@@ -1,6 +1,8 @@
-"""Проба лимита входа text-search-doc (A1, до 26.09).
+"""Проба модели эмбеддингов: лимит входа, размерность, режимы, квота (A1, задача 1.1).
 
     python -m eval.probe_embedding_limit [--text длинный_документ.md]
+    python -m eval.probe_embedding_limit --model text-embeddings-v2 \\
+        --text doc.md --sample chunks.txt --name embeddings_v2_probe
 
 Вопросы из ТЗ:
 1. Какой лимит входа у text-search-doc в токенах?
@@ -20,8 +22,16 @@
   не видит. Двоичным поиском находим, с какой длины эмбеддинг перестаёт
   меняться, — это и есть реальное окно.
 
-Отчёт печатается и сохраняется в eval/results/<дата>_embedding_probe.md.
-Стоимость — пара десятков запросов эмбеддинга.
+С --model text-embeddings-v2 (25.09) ещё:
+4. Размерность: у v2 она задаётся полем dim (128, 256, 512, 768 по
+   документации) — проверяем, что приходит и что бывает с другими.
+5. Режимы документ / запрос: одинаковый текст в -doc и -query — разные
+   ли векторы (разные ли это модели).
+6. Квота: пачка запросов без ограничителя — с какой частоты 429.
+7. Символы на токен на реальных чанках (--sample: по тексту на строку).
+
+Отчёт печатается и сохраняется в eval/results/<дата>_<name>.md.
+Стоимость — сотни коротких запросов эмбеддинга, доли рубля.
 """
 
 import argparse
@@ -34,7 +44,7 @@ from collections.abc import Callable, Sequence
 from datetime import date
 from pathlib import Path
 
-LENGTHS = (250, 500, 1000, 2000, 4000, 8000, 16000, 32000)
+LENGTHS = (250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000)
 SAME_VECTOR = 0.99999
 SEARCH_PRECISION_CHARS = 50
 
@@ -120,16 +130,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--text", type=Path, help="длинный документ (≥ 32 000 символов)"
     )
     parser.add_argument("--out", type=Path, default=Path("eval/results"))
+    parser.add_argument("--model", default="text-search", help="семейство эмбеддингов")
+    parser.add_argument(
+        "--sample", type=Path, help="реальные чанки, по одному на строку"
+    )
+    parser.add_argument("--name", default="embedding_probe", help="имя файла отчёта")
     args = parser.parse_args(argv)
 
     from eval.yandex import YandexClient, YandexError
 
-    client = YandexClient.from_env()
+    client = YandexClient.from_env(embedding_model=args.model)
     text = args.text.read_text(encoding="utf-8") if args.text else default_text()
     text = " ".join(text.split())
     source = args.text.name if args.text else "встроенный текст"
     lines = [
-        f"# Проба лимита text-search-doc — {date.today().isoformat()}",
+        f"# Проба {args.model}-doc — {date.today().isoformat()}",
         "",
         f"Текст: {source}, {len(text)} символов.",
         "",
@@ -200,13 +215,109 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "токенах тела и крошках до ~60 токенов запас нужен ≥ 460 токенов."
             )
 
+    if args.model != "text-search":
+        lines += extra_checks(args.model, args.sample)
+
     report = "\n".join(lines)
     print(report)
     args.out.mkdir(parents=True, exist_ok=True)
-    path = args.out / f"{date.today().isoformat()}_embedding_probe.md"
+    path = args.out / f"{date.today().isoformat()}_{args.name}.md"
     path.write_text(report + "\n", encoding="utf-8")
     print(f"\nОтчёт: {path}")
     return 0
+
+
+DIMS = (None, 128, 256, 512, 768, 1024)
+BURST = 40
+
+
+def extra_checks(model: str, sample: Path | None) -> list[str]:
+    """Размерность, режимы документ/запрос, квота, символы на токен."""
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from eval.yandex import YandexClient, YandexError
+
+    probe = "Срок выполнения работ по проекту составляет 12 месяцев с даты договора."
+    lines = [
+        "",
+        "## Размерность (поле dim)",
+        "",
+        "| dim | Результат | Длина вектора | Норма |",
+        "|---|---|---|---|",
+    ]
+    for dim in DIMS:
+        client = YandexClient.from_env(embedding_model=model, embedding_dim=dim)
+        try:
+            vector = client.embed(probe, "doc").vector
+        except YandexError as error:
+            lines.append(
+                f"| {dim} | ошибка {error.status}: {error_message(error.body)} "
+                "| — | — |"
+            )
+            continue
+        norm = math.sqrt(sum(x * x for x in vector))
+        lines.append(f"| {dim or 'не задан'} | ok | {len(vector)} | {norm:.4f} |")
+
+    client = YandexClient.from_env(embedding_model=model)
+    doc = client.embed(probe, "doc").vector
+    query = client.embed(probe, "query").vector
+    lines += [
+        "",
+        "## Режимы документ / запрос",
+        "",
+        f"Один и тот же текст в `{model}-doc` и `{model}-query`: косинус "
+        f"{cosine(doc, query):.4f} (1.0 — одна модель, меньше — разные).",
+    ]
+
+    raw = YandexClient.from_env(
+        embedding_model=model, embedding_rps=1000.0, max_attempts=1
+    )
+    statuses: list[int] = []
+
+    def one(i: int) -> None:
+        try:
+            raw.embed(f"{probe} Вариант {i}.", "query")
+            statuses.append(200)
+        except YandexError as error:
+            statuses.append(error.status)
+
+    started = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        list(pool.map(one, range(BURST)))
+    elapsed = time.perf_counter() - started
+    lines += [
+        "",
+        "## Квота",
+        "",
+        f"{BURST} запросов в 20 потоков без ограничителя за {elapsed:.1f} с "
+        f"(~{BURST / elapsed:.0f} в секунду): успешно {statuses.count(200)}, "
+        f"429 — {statuses.count(429)}, другие ошибки — "
+        f"{len(statuses) - statuses.count(200) - statuses.count(429)}.",
+    ]
+
+    if sample:
+        texts = [
+            t for t in sample.read_text(encoding="utf-8").splitlines() if t.strip()
+        ]
+        v1 = YandexClient.from_env(embedding_model="text-search")
+        ratios: list[float] = []
+        v1_ratios: list[float] = []
+        for text in texts:
+            n = client.embed(text, "doc").num_tokens
+            n1 = v1.embed(text, "doc").num_tokens
+            if n and n1:
+                ratios.append(len(text) / n)
+                v1_ratios.append(len(text) / n1)
+        lines += [
+            "",
+            "## Символы на токен на реальных чанках",
+            "",
+            f"{len(ratios)} чанков: медиана {statistics.median(ratios):.2f} символа на "
+            f"токен у {model}, {statistics.median(v1_ratios):.2f} у text-search "
+            "(count_tokens считает 3.0).",
+        ]
+    return lines
 
 
 if __name__ == "__main__":

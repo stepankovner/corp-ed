@@ -38,6 +38,7 @@ from eval.datasets import EvalItem, load_dataset
 from eval.relevance import RetrievedChunk
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.retrieval_eval import evaluate_retrieval, format_report
+from eval.yandex import DEFAULT_EMBEDDING_MODEL, default_embedding_dim
 
 CACHE_PATH = Path("eval/.cache/embeddings.sqlite")
 FUSION_CANDIDATES = 50
@@ -68,13 +69,16 @@ def vector_rankings(
     limit: int,
     workers: int,
     embedding_model: str = "text-search",
+    embedding_dim: int | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
     """Индексы чанков по близости и косинусные расстояния (1 − косинус)."""
     import numpy as np
 
     from eval.yandex import EmbeddingCache, YandexClient, embed_many
 
-    client = YandexClient.from_env(embedding_model=embedding_model)
+    client = YandexClient.from_env(
+        embedding_model=embedding_model, embedding_dim=embedding_dim
+    )
     cache = EmbeddingCache(CACHE_PATH)
 
     def progress(done: int, total: int) -> None:
@@ -148,8 +152,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rrf-k", type=int, default=60)
     parser.add_argument(
         "--embedding-model",
-        default="text-search",
-        help="семейство эмбеддингов: text-search, text-embeddings-v2",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help="семейство эмбеддингов: text-embeddings-v2 (решение 25.09), text-search",
+    )
+    parser.add_argument(
+        "--embedding-dim",
+        type=int,
+        default=None,
+        help="размерность v2: 128, 256, 512, 768 (по умолчанию — 768)",
     )
     parser.add_argument("--k", type=int, default=10, help="top-K выдачи")
     parser.add_argument("--glossary", type=Path, help="CSV term,expansion (M5)")
@@ -173,9 +183,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         crumbs_in_embed=not args.no_crumbs,
         title_in_crumbs=not args.crumbs_without_title,
     )
-    config = args.config or f"{chunking.name}-{args.retriever}" + (
-        "-glossary" if args.glossary else ""
-    ) + ("" if args.embedding_model == "text-search" else f"-{args.embedding_model}")
+    embedding_dim = args.embedding_dim or default_embedding_dim(args.embedding_model)
+    dim_suffix = f"-d{embedding_dim}" if embedding_dim else ""
+    embedder = (
+        ""
+        if args.retriever == "bm25" or args.embedding_model == "text-search"
+        else f"-{args.embedding_model}{dim_suffix}"
+    )
+    config = (
+        args.config
+        or f"{chunking.name}-{args.retriever}"
+        + ("-glossary" if args.glossary else "")
+        + embedder
+    )
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
@@ -200,7 +220,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         depth = args.k if args.retriever == "vector" else max(args.k, FUSION_CANDIDATES)
         vec_rank, vec_dist = vector_rankings(
-            chunks, queries, depth, args.workers, args.embedding_model
+            chunks,
+            queries,
+            depth,
+            args.workers,
+            args.embedding_model,
+            embedding_dim,
         )
         if args.retriever == "vector":
             for item, ranking, dists in zip(items, vec_rank, vec_dist, strict=True):
