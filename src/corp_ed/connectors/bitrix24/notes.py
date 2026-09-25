@@ -63,7 +63,8 @@ class NotesModule:
 
     async def fetch(self, document: RemoteDocument) -> FetchedMarkdown:
         document_id = document.external_id.removeprefix(PREFIX)
-        markdown = self._markdown.get(document_id)
+        # Содержимое нужно ровно один раз: после выдачи — из памяти вон.
+        markdown = self._markdown.pop(document_id, None)
         if markdown is None:
             item = await self._get(document_id)
             markdown = str(item.get("markdown") or "")

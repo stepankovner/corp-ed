@@ -150,17 +150,19 @@ async def my_connectors(
 )
 async def oauth_callback(
     service: Service,
-    code: Annotated[str, Query(min_length=1, max_length=256)],
     state: Annotated[str, Query(min_length=1, max_length=2048)],
+    code: Annotated[str | None, Query(max_length=256)] = None,
+    error: Annotated[str | None, Query(max_length=128)] = None,
 ) -> Response:
     """Возврат браузера сотрудника с портала: код → токены → грант.
 
     Без аутентификации: кто и к какому подключению — из подписанного
     state. С CONNECTOR_OAUTH_RETURN_URL — редирект на фронт с
     connector_id и status (ok / error и error_code); без него — JSON.
-    Ошибка — тоже 200 с кодом: браузеру некуда «упасть».
+    Ошибка — тоже 200 с кодом: браузеру некуда «упасть». Отказ в
+    согласии приходит без code, с параметром error (OAuth 2.0).
     """
-    result = await service.oauth_callback(state, code)
+    result = await service.oauth_callback(state, code, provider_error=error)
     return_url = service.settings.oauth_return_url
     if return_url is None:
         return JSONResponse(

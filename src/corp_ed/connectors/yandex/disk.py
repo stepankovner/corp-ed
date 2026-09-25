@@ -157,9 +157,12 @@ class YandexDiskClient:
         return downloaded.content
 
     async def _refresh(self) -> None:
-        self._auth.tokens = await self._auth.oauth.refresh(
-            self._auth.tokens.refresh_token
-        )
+        refresh_token = self._auth.tokens.refresh_token
+        if not refresh_token:
+            # Без refresh продлевать нечем: это грант сотрудника, а не
+            # ошибка приложения — авторизоваться заново.
+            raise AdapterAuthError("refresh_token_missing")
+        self._auth.tokens = await self._auth.oauth.refresh(refresh_token)
         self._auth.refreshed = True
 
 
@@ -176,20 +179,16 @@ class YandexDiskModule:
         path = document.locator
         if not path:
             raise AdapterError("locator_missing")
-        info = await self._client.get(
-            "resources", {"path": path, "fields": "size,name"}
-        )
-        size = _int(info.get("size"))
-        if size is not None and size > max_bytes:
+        # Размер и имя уже пришли листингом; лишний запрос метаданных на
+        # каждый файл — это тысячи вызовов на большом Диске.
+        if document.size is not None and document.size > max_bytes:
             raise AdapterError("document_too_large")
         link = await self._client.get("resources/download", {"path": path})
         href = link.get("href")
         if not isinstance(href, str) or not href:
             raise AdapterError("download_url_missing")
         data = await self._client.download(href, max_bytes=max_bytes)
-        return FetchedFile(
-            data=data, filename=str(info.get("name") or document.filename or "file")
-        )
+        return FetchedFile(data=data, filename=document.filename or document.title)
 
     async def _walk(
         self, path: str, label: str, depth: int

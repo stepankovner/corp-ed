@@ -378,11 +378,15 @@ class ConnectorService:
         )
         return flow.authorize_url(state)
 
-    async def oauth_callback(self, state: str, code: str) -> OAuthResult:
+    async def oauth_callback(
+        self, state: str, code: str | None, *, provider_error: str | None = None
+    ) -> OAuthResult:
         """Обменять код на токены сотрудника и записать грант.
 
         Вызывается без аутентификации: кто и куда — только из state.
         Любая ошибка — код в результате и событие аудита, не исключение.
+        Без code — сотрудник отказал в согласии или система вернула
+        ошибку (provider_error): грант не создаётся, state гасится.
         """
         try:
             payload = decode_oauth_state(state)
@@ -397,17 +401,22 @@ class ConnectorService:
         if reused is not None:
             return OAuthResult(None, reused)
         with tenant_scope(tenant_id):
+            if not code:
+                return await self._oauth_failed(
+                    tenant_id, connector_id, user_id, _provider_code(provider_error)
+                )
             return await self._oauth_exchange(user_id, connector_id, code)
 
     async def _state_reused(self, jti: str) -> str | None:
         """Погасить state: повтор перехваченного редиректа не пройдёт.
 
         Окно — срок жизни state: дальше подпись отвергнет его сама.
-        Лимитер недоступен — отказ (fail closed): без него нельзя
-        доказать, что state свежий.
+        Лимитера нет или он недоступен — отказ (fail closed): без него
+        нельзя доказать, что state свежий.
         """
         if self.limiter is None:
-            return None
+            logger.error("connector_oauth_state_store_missing")
+            return "state_store_unavailable"
         try:
             decision = await self.limiter.hit(
                 f"{OAUTH_STATE_ONCE}:{jti}",
@@ -648,6 +657,14 @@ class ConnectorService:
             target_id=connector.id,
             details=dict(details or {}),
         )
+
+
+def _provider_code(error: str | None) -> str:
+    """Код отказа от системы (OAuth 2.0 `error`) → наш код без мусора."""
+    if not error:
+        return "code_missing"
+    clean = "".join(ch if ch.isalnum() else "_" for ch in error.strip().lower())
+    return f"provider_{clean}"[:64]
 
 
 def _validate_modules(spec: KindSpec, modules: list[str]) -> list[str]:

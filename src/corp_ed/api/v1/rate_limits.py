@@ -77,10 +77,12 @@ CONNECTOR_TEST_PER_TENANT = RatePolicy(
 CONNECTOR_GRANT_PER_USER = RatePolicy(
     "connector-grant-user", limit=20, window=3600, fail_open=True
 )
-# Обратный вызов OAuth приходит без нашего токена — лимит по IP, как у
-# входа: подбор state или кода не должен быть бесплатным.
+# Обратный вызов OAuth приходит без нашего токена — лимит по IP: подбор
+# state или кода не должен быть бесплатным. Запас — на офис за одним NAT,
+# где вся компания подключает источник в один час; злоупотребление и
+# так ограничено подписью state и лимитом на /oauth/start по сотруднику.
 CONNECTOR_OAUTH_CALLBACK_PER_IP = RatePolicy(
-    "connector-oauth-ip", limit=30, window=900, fail_open=False
+    "connector-oauth-ip", limit=300, window=900, fail_open=False
 )
 
 

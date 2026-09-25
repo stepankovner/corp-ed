@@ -382,7 +382,11 @@ class ConnectorSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production(self) -> Self:
-        if self.environment == "production" and self.secrets_keys is None:
+        if self.environment != "production":
+            # В разработке фронт живёт на http://localhost — адрес возврата
+            # и подменные серверы стенда могут быть без TLS.
+            return self
+        if self.secrets_keys is None:
             raise ValueError("CONNECTOR_SECRETS_KEYS is required in production")
         for name in (
             "oauth_callback_url",

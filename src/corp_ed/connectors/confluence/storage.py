@@ -60,8 +60,11 @@ _DROP_MACROS = frozenset(
 
 def storage_to_html(title: str, storage: str) -> str:
     soup = BeautifulSoup(storage, "html.parser")
-    for macro in soup.find_all("ac:structured-macro"):
-        if not isinstance(macro, Tag):
+    # Изнутри наружу: вложенный макрос обрабатывается раньше внешнего, а
+    # тот, что уже удалён вместе с родителем (decomposed), пропускается —
+    # иначе чтение его атрибутов падает AttributeError.
+    for macro in reversed(soup.find_all("ac:structured-macro")):
+        if not isinstance(macro, Tag) or macro.decomposed:
             continue
         name = str(macro.get("ac:name") or "").lower()
         if name in _CODE_MACROS:

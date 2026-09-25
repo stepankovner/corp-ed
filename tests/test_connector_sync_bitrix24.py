@@ -224,6 +224,59 @@ async def test_refreshed_tokens_are_saved_into_grant(
     assert "oauth/token" not in [m for m, _ in portal.calls[calls_before:]]
 
 
+async def test_refresh_race_does_not_expire_grant_refreshed_elsewhere(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    employee: User,
+    secrets: SecretBox,
+    portal: FakePortal,
+    service: ConnectorSyncService,
+    session_maker: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Проверка из API обменяла refresh первой: воркер получает
+    invalid_grant, но грант в базе уже с новой парой — не гасить."""
+    portal.expired.add(ACCESS_TOKEN)
+    connector = await make_connector(session, secrets, portal, modules=["disk"])
+    grant = await make_grant(session, secrets, connector, employee)
+    fresh = {
+        "access_token": "tok-fresh",
+        "refresh_token": "ref-fresh",
+        "expires_at": "0",
+    }
+    tenant_id = tenant_ctx.id
+    grant_id = grant.id
+
+    async def refresh_lost_race(self: object, refresh_token: str) -> None:
+        with tenant_scope(tenant_id):
+            async with session_maker() as other:
+                row = (
+                    await other.scalars(
+                        select(ConnectorUserGrant).where(
+                            ConnectorUserGrant.id == grant_id
+                        )
+                    )
+                ).one()
+                row.credentials = secrets.encrypt(fresh)
+                await other.commit()
+        from corp_ed.connectors.base import AdapterAuthError
+
+        raise AdapterAuthError("invalid_grant")
+
+    monkeypatch.setattr(
+        "corp_ed.connectors.bitrix24.oauth.Bitrix24OAuth.refresh", refresh_lost_race
+    )
+
+    outcome = await run(service, connector)
+
+    assert outcome.status is SyncRunStatus.SUCCEEDED
+    assert outcome.stats.grants_expired == 0
+    with tenant_scope(tenant_ctx.id):
+        saved = await grant_of(session, grant)
+        assert saved.status == GrantStatus.ACTIVE.value
+        assert secrets.decrypt(saved.credentials) == fresh
+
+
 async def test_rejected_app_secret_stops_connector_and_keeps_grants(
     session: AsyncSession,
     tenant_ctx: Tenant,

@@ -420,6 +420,32 @@ def test_storage_macros_become_text(storage: str, expected: str, absent: str) ->
     assert absent not in markdown
 
 
+def test_storage_nested_macro_inside_dropped_macro_does_not_crash() -> None:
+    """toc с вложенным info: внешний удаляется, внутренний не трогается."""
+    html = storage_to_html(
+        "T",
+        '<ac:structured-macro ac:name="toc"><ac:rich-text-body>'
+        '<ac:structured-macro ac:name="info"><ac:rich-text-body><p>Внутри</p>'
+        "</ac:rich-text-body></ac:structured-macro></ac:rich-text-body>"
+        "</ac:structured-macro><p>Снаружи</p>",
+    )
+    markdown = html_to_markdown(html)
+    assert "Снаружи" in markdown
+    assert "Внутри" not in markdown
+
+
+def test_storage_nested_panel_inside_panel_keeps_both_texts() -> None:
+    html = storage_to_html(
+        "T",
+        '<ac:structured-macro ac:name="panel"><ac:rich-text-body><p>Внешний</p>'
+        '<ac:structured-macro ac:name="note"><ac:rich-text-body><p>Внутренний</p>'
+        "</ac:rich-text-body></ac:structured-macro></ac:rich-text-body>"
+        "</ac:structured-macro>",
+    )
+    markdown = html_to_markdown(html)
+    assert "Внешний" in markdown and "Внутренний" in markdown
+
+
 def test_storage_unknown_macro_keeps_its_text() -> None:
     html = storage_to_html(
         "T",

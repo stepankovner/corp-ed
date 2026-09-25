@@ -19,6 +19,7 @@ from corp_ed.api.v1.dependencies import (
     get_connector_service,
     get_session,
 )
+from corp_ed.api.v1.rate_limits import CONNECTOR_OAUTH_CALLBACK_PER_IP
 from corp_ed.connectors.registry import default_registry
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.secrets import SecretBox
@@ -478,14 +479,61 @@ async def test_callback_answers_json_without_return_url(
 
 
 async def test_callback_is_rate_limited_by_ip(oauth_api: httpx.AsyncClient) -> None:
+    limit = CONNECTOR_OAUTH_CALLBACK_PER_IP.limit
     statuses: list[int] = []
-    for _ in range(31):
+    for _ in range(limit + 1):
         response = await oauth_api.get(
             f"{URL}/oauth/callback", params={"code": "x", "state": "y"}
         )
         statuses.append(response.status_code)
-    assert statuses[:30] == [303] * 30
-    assert statuses[30] == 429
+    assert statuses[:limit] == [303] * limit
+    assert statuses[limit] == 429
+
+
+async def test_callback_without_code_reports_consent_denial(
+    oauth_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    portal: FakePortal,
+    session: AsyncSession,
+) -> None:
+    """Сотрудник нажал «Отказать»: портал возвращает error без code."""
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, state = await start(oauth_api, account, connector_id)
+    response = await oauth_api.get(
+        f"{URL}/oauth/callback",
+        params={"state": state, "error": "access_denied", "error_description": "x"},
+    )
+    assert redirect_query(response) == {
+        "tab": "mine",
+        "status": "error",
+        "connector_id": str(connector_id),
+        "error_code": "provider_access_denied",
+    }
+    with tenant_scope(require_tenant()):
+        event = (
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == AuditAction.CONNECTOR_OAUTH_FAILED.value
+                )
+            )
+        ).one()
+        assert event.details == {"code": "provider_access_denied"}
+        assert (await session.scalars(select(ConnectorUserGrant))).all() == []
+    # state погашен и без кода: повтор с настоящим кодом не пройдёт.
+    again = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": AUTH_CODE, "state": state}
+    )
+    assert redirect_query(again)["error_code"] == "state_reused"
+
+
+async def test_callback_without_code_or_error(
+    oauth_api: httpx.AsyncClient, admin_account: User, account: User, portal: FakePortal
+) -> None:
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, state = await start(oauth_api, account, connector_id)
+    response = await oauth_api.get(f"{URL}/oauth/callback", params={"state": state})
+    assert redirect_query(response)["error_code"] == "code_missing"
 
 
 async def test_test_endpoint_uses_grant_and_app_secret(

@@ -291,7 +291,9 @@ class Bitrix24Client:
 
     def _record(self, method: str, params: Mapping[str, Any] | None, data: Any) -> None:
         if self._recorder is not None:
-            self._recorder(method, redact(dict(params or {})), redact(data))
+            self._recorder(
+                method, redact(dict(params or {}), request=True), redact(data)
+            )
 
 
 def _json(response: httpx.Response) -> dict[str, Any] | None:
@@ -344,24 +346,32 @@ def _error(status: int, code: str) -> AdapterError:
 
 
 _SECRET_KEYS = frozenset(
-    {"auth", "access_token", "refresh_token", "client_secret", "code", "token"}
+    {"auth", "access_token", "refresh_token", "client_secret", "token"}
 )
+# В параметрах запроса code — одноразовый код авторизации; в ответах
+# CODE — символьный код сайта или страницы, а code — код ошибки REST 3.0.
+_SECRET_REQUEST_KEYS = _SECRET_KEYS | {"code"}
 _SECRET_QUERY = frozenset({"auth", "token", "client_secret", "code"})
 
 
-def redact(value: Any) -> Any:
+def redact(value: Any, *, request: bool = False) -> Any:
     """Убрать токены из параметров и ответов перед записью в фикстуру.
 
     Ключи с секретами заменяются, в ссылках вырезаются параметры auth и
     token (DOWNLOAD_URL несёт access_token портала).
     """
+    secret = _SECRET_REQUEST_KEYS if request else _SECRET_KEYS
     if isinstance(value, dict):
         return {
-            key: ("<redacted>" if str(key).lower() in _SECRET_KEYS else redact(item))
+            key: (
+                "<redacted>"
+                if str(key).lower() in secret
+                else redact(item, request=request)
+            )
             for key, item in value.items()
         }
     if isinstance(value, list):
-        return [redact(item) for item in value]
+        return [redact(item, request=request) for item in value]
     if isinstance(value, str) and "://" in value and "=" in value:
         parts = urlsplit(value)
         if parts.query:

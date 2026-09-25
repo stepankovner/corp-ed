@@ -311,6 +311,16 @@ class ConnectorSyncService:
                 await adapter.check()
                 mine = await self._walk(session, run, adapter, viewer=user_id)
             except AdapterAuthError as exc:
+                if exc.code == "invalid_grant" and await self._grant_changed(
+                    session, grant_id, token
+                ):
+                    # Гонка продления: проверка из API уже обменяла refresh
+                    # и записала новую пару — грант жив, повторим в
+                    # следующем запуске с новыми токенами.
+                    logger.info(
+                        "connector_grant_refreshed_elsewhere", grant_id=str(grant_id)
+                    )
+                    continue
                 await self._expire_grant(session, run, grant_id, exc.code)
                 continue
             except AdapterConfigError as exc:
@@ -578,6 +588,13 @@ class ConnectorSyncService:
             details={"code": code},
         )
         await session.commit()
+
+    async def _grant_changed(
+        self, session: AsyncSession, grant_id: UUID, token: str
+    ) -> bool:
+        await session.rollback()
+        current = await GrantRepository(session).credentials_of(grant_id)
+        return current is not None and current != token
 
     async def _expire_grant(
         self, session: AsyncSession, run: _Run, grant_id: UUID, code: str

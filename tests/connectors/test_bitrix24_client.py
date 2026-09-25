@@ -331,10 +331,16 @@ def test_redact_masks_secret_keys_and_query() -> None:
     }
     assert redact(value) == {
         "auth": "<redacted>",
-        "nested": {
-            "refresh_token": "<redacted>",
-            "items": [{"code": "<redacted>", "ok": "v"}],
-        },
+        # В ответе code — символьный код или код ошибки, не секрет.
+        "nested": {"refresh_token": "<redacted>", "items": [{"code": "c", "ok": "v"}]},
         "url": "https://p.example.com/x?auth=%3Credacted%3E&token=%3Credacted%3E&id=3",
         "plain": "no secrets",
+    }
+    # В параметрах запроса code — одноразовый код авторизации.
+    assert redact({"code": "c", "CODE": "site"}, request=True) == {
+        "code": "<redacted>",
+        "CODE": "<redacted>",
+    }
+    assert redact({"error": {"code": "BITRIX_REST_V3_EXCEPTION_X"}}) == {
+        "error": {"code": "BITRIX_REST_V3_EXCEPTION_X"}
     }

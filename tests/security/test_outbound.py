@@ -318,3 +318,55 @@ class _Stream(httpx.AsyncByteStream):
     async def __aiter__(self) -> AsyncIterator[bytes]:
         async for chunk in self._chunks:
             yield chunk
+
+
+async def test_credentials_are_dropped_on_cross_host_redirect() -> None:
+    """Токен служебной учётки не уезжает на другой хост вслед за редиректом."""
+    seen: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.headers["host"], request.headers.get("authorization")))
+        if request.headers["host"] == "wiki.example.com":
+            return httpx.Response(
+                302, headers={"location": "https://cdn.example.com/f"}
+            )
+        return httpx.Response(200, content=b"data")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    headers = {"Authorization": "Bearer secret", "Accept": "*/*"}
+    downloaded = await client.download(
+        "https://wiki.example.com/f", max_bytes=100, headers=headers
+    )
+    assert downloaded.content == b"data"
+    response = await client.get("https://wiki.example.com/f", headers=headers)
+    assert response.status_code == 200
+    assert seen == [
+        ("wiki.example.com", "Bearer secret"),
+        ("cdn.example.com", None),
+        ("wiki.example.com", "Bearer secret"),
+        ("cdn.example.com", None),
+    ]
+
+
+async def test_credentials_survive_same_host_redirect() -> None:
+    seen: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("authorization"))
+        if request.url.path == "/old":
+            return httpx.Response(
+                302, headers={"location": "https://wiki.example.com/new"}
+            )
+        return httpx.Response(200, content=b"ok")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    await client.get(
+        "https://wiki.example.com/old", headers={"Authorization": "Bearer s"}
+    )
+    assert seen == ["Bearer s", "Bearer s"]

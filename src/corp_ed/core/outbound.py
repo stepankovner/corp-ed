@@ -36,6 +36,10 @@ Resolver = Callable[[str], Awaitable[list[str]]]
 
 MAX_REDIRECTS = 3
 MAX_URL_LENGTH = 2048
+# Заголовки с учётными данными не уходят на другой хост при редиректе:
+# токен служебной учётки Confluence не должен уехать на CDN или чужой
+# сервер, куда система клиента вдруг перенаправила скачивание.
+_CREDENTIAL_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
 
 
 class OutboundURLError(ValueError):
@@ -169,6 +173,10 @@ async def validate_outbound_url(
     return OutboundTarget(url=normalized, host=host, port=port, address=addresses[0])
 
 
+def _without_credentials(headers: dict[str, str]) -> dict[str, str]:
+    return {k: v for k, v in headers.items() if k.lower() not in _CREDENTIAL_HEADERS}
+
+
 class OutboundClient:
     """httpx-клиент, который ходит только по проверенным адресам.
 
@@ -202,13 +210,17 @@ class OutboundClient:
         POST как GET (без тела) значит получить ошибку метода вместо
         понятного «портал переехал»."""
         current = url
+        request_headers = dict(headers or {})
+        origin: str | None = None
         for _ in range(self._max_redirects + 1):
             target = await validate_outbound_url(current, resolver=self._resolver)
-            request_headers = {**(headers or {}), "Host": target.host_header}
+            origin = origin or target.host
+            if target.host != origin:
+                request_headers = _without_credentials(request_headers)
             response = await self._client.request(
                 method,
                 target.pinned_url,
-                headers=request_headers,
+                headers={**request_headers, "Host": target.host_header},
                 timeout=timeout,
                 follow_redirects=False,
                 extensions={"sni_hostname": target.host},
@@ -248,13 +260,17 @@ class OutboundClient:
         сами. Редиректы — как в request: каждый адрес проверяется.
         """
         current = url
+        request_headers = dict(headers or {})
+        origin: str | None = None
         for _ in range(self._max_redirects + 1):
             target = await validate_outbound_url(current, resolver=self._resolver)
-            request_headers = {**(headers or {}), "Host": target.host_header}
+            origin = origin or target.host
+            if target.host != origin:
+                request_headers = _without_credentials(request_headers)
             request = self._client.build_request(
                 "GET",
                 target.pinned_url,
-                headers=request_headers,
+                headers={**request_headers, "Host": target.host_header},
                 timeout=timeout,
                 extensions={"sni_hostname": target.host},
             )

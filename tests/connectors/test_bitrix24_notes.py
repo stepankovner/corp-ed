@@ -125,6 +125,16 @@ async def test_fetch_uses_content_read_during_walk(portal: FakePortal) -> None:
     assert len(portal.calls) == before
 
 
+async def test_fetch_evicts_cached_content(portal: FakePortal) -> None:
+    adapter = make_adapter(portal)
+    documents = await listed(adapter, MODULE)
+    await adapter.fetch(documents["note:11"], max_bytes=1024)
+    before = len(portal.calls)
+    again = await adapter.fetch(documents["note:11"], max_bytes=1024)
+    assert isinstance(again, FetchedMarkdown)
+    assert len(portal.calls) == before + 1  # второй раз — заново с портала
+
+
 async def test_fetch_without_walk_reads_document(portal: FakePortal) -> None:
     adapter = make_adapter(portal)
     documents = await listed(make_adapter(portal), MODULE)

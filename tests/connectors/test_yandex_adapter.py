@@ -136,6 +136,16 @@ async def test_expired_token_is_refreshed_and_refresh_token_kept(
     assert rotated is not None and rotated["refresh_token"] != REFRESH_TOKEN
 
 
+async def test_missing_refresh_token_is_grant_problem_not_app_problem(
+    server: FakeYandex,
+) -> None:
+    server.expired.add(ACCESS_TOKEN)
+    adapter = make_adapter(server, refresh_token="")
+    with pytest.raises(AdapterAuthError, match="refresh_token_missing"):
+        await adapter.check()
+    assert "oauth/token" not in [m for m, _ in server.calls]
+
+
 async def test_rate_limit_backs_off(server: FakeYandex) -> None:
     server.rate_limit_hits = 2
     sleeps: list[float] = []
@@ -198,6 +208,11 @@ async def test_fetch_downloads_from_signed_link(server: FakeYandex) -> None:
     assert content.filename == "Отпуск.txt"
     assert content.data == "Отпуск — 28 дней.".encode()
     assert server.downloads == ["/disk/rid-disk:/Регламенты/Отпуск.txt"]
+    # Метаданные не перечитываются: один вызов за ссылкой и скачивание.
+    api_calls = [
+        p for p, q in server.calls if q.get("path") == "disk:/Регламенты/Отпуск.txt"
+    ]
+    assert api_calls == ["/v1/disk/resources/download"]
 
 
 async def test_fetch_rejects_oversized_and_foreign_links(server: FakeYandex) -> None:
@@ -210,6 +225,7 @@ async def test_fetch_rejects_oversized_and_foreign_links(server: FakeYandex) -> 
         kind=RemoteDocumentKind.FILE,
         module="disk",
         locator="disk:/Регламенты/Большой.pdf",
+        size=100 * 1024 * 1024,
     )
     with pytest.raises(AdapterError, match="document_too_large"):
         await adapter.fetch(big, max_bytes=MAX_BYTES)

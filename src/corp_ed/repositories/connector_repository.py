@@ -148,6 +148,18 @@ class GrantRepository:
         )
         return list(result)
 
+    async def credentials_of(self, grant_id: UUID) -> str | None:
+        """Текущий шифротекст гранта — колоночный select, без загрузки
+        ORM-объекта (credentials отложенная). Сравнить с тем, что было в
+        начале запуска: другой процесс мог уже продлить токены."""
+        value = await self.session.scalar(
+            select(ConnectorUserGrant.credentials).where(
+                ConnectorUserGrant.tenant_id == require_tenant(),
+                ConnectorUserGrant.id == grant_id,
+            )
+        )
+        return str(value) if value is not None else None
+
     async def list_for_user(self, user_id: UUID) -> list[ConnectorUserGrant]:
         result = await self.session.scalars(
             select(ConnectorUserGrant).where(ConnectorUserGrant.user_id == user_id)
