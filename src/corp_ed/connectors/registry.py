@@ -163,7 +163,9 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     адаптеры получают их отсюда, а не читают окружение сами.
     """
     from corp_ed.connectors.bitrix24 import register as register_bitrix24
+    from corp_ed.connectors.confluence import register as register_confluence
 
     registry = AdapterRegistry()
     register_bitrix24(registry, settings)
+    register_confluence(registry, settings)
     return registry

@@ -174,8 +174,12 @@ async def test_kinds_describe_bitrix24_oauth(
 ) -> None:
     response = await oauth_api.get(f"{URL}/kinds", headers=bearer(admin_account))
     assert response.status_code == 200
-    [spec] = response.json()
-    assert spec["kind"] == "bitrix24"
+    by_kind = {k["kind"]: k for k in response.json()}
+    assert set(by_kind) == {"bitrix24", "confluence"}
+    spec = by_kind["bitrix24"]
+    confluence = by_kind["confluence"]
+    assert confluence["mode"] == "organization" and confluence["oauth"] is False
+    assert confluence["oauth_callback_url"] is None
     assert spec["mode"] == "per_user"
     assert spec["oauth"] is True
     assert spec["oauth_callback_url"] == CALLBACK_URL

@@ -282,7 +282,11 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 редирект = «портал переехал», скачивание только с хоста портала),
 модули `disk` (общий диск и группы), `disk_personal`, `knowledge_base`
 (сайты KNOWLEDGE/GROUP → страницы → HTML блоков), `knowledge_base_v2`
-(REST 3.0 `note.*` → Markdown как есть). `cli connector-check`
+(REST 3.0 `note.*` → Markdown как есть); `connectors/confluence/` —
+режим `organization`: пространства → страницы с предками →
+ограничения чтения по цепочке с раскрытием групп → `visibility` и
+`allowed_emails` по шаблону почты, вложения, storage-формат → HTML.
+`cli connector-check`
 гоняет адаптер против источника без базы и умеет записывать ответы в
 фикстуры. Планировщик
 воркера раз в минуту ставит в `connector_sync_jobs` подключения с
