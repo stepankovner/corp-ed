@@ -11,7 +11,7 @@
 ручная загрузка.
 """
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
@@ -34,6 +34,17 @@ class AdapterAuthError(AdapterError):
     останавливается до вмешательства человека."""
 
     def __init__(self, code: str = "auth_failed") -> None:
+        super().__init__(code, retryable=False)
+
+
+class AdapterConfigError(AdapterError):
+    """Подключение настроено неверно на уровне компании: секрет приложения
+    отвергнут сервером авторизации, у приложения или вебхука нет нужного
+    scope, приложение удалено с портала. Останавливает коннектор целиком
+    в любом режиме; гранты сотрудников не трогаются — их токены ни при
+    чём, и после исправления настроек они продолжат работать."""
+
+    def __init__(self, code: str) -> None:
         super().__init__(code, retryable=False)
 
 
@@ -80,6 +91,50 @@ class FetchedPage:
 
 
 FetchedContent = FetchedFile | FetchedPage
+
+
+@dataclass(frozen=True)
+class ExchangedCredentials:
+    """Результат OAuth-обмена: учётные данные сотрудника для SecretBox и
+    его идентификатор в источнике, если сервер авторизации его отдал."""
+
+    credentials: Mapping[str, str]
+    external_user_id: str | None = None
+
+
+class OAuthFlow(Protocol):
+    """OAuth-обмен режима per_user для одного подключения.
+
+    Собирается из config и учётных данных приложения (client_secret),
+    как адаптер — из учётных данных сотрудника. Сам state подписывает и
+    проверяет ядро: адаптер получает его готовым.
+    """
+
+    def authorize_url(self, state: str) -> str:
+        """Адрес, куда отправить браузер сотрудника."""
+        ...
+
+    async def exchange(self, code: str) -> ExchangedCredentials:
+        """Обменять одноразовый код на учётные данные.
+
+        AdapterAuthError — код не принят (истёк, чужой); AdapterConfigError
+        — не принято само приложение (client_id/secret, не установлено,
+        не оплачено); AdapterError — сервер авторизации недоступен.
+        """
+        ...
+
+
+def refreshed_credentials(adapter: object) -> Mapping[str, str] | None:
+    """Новые учётные данные, если адаптер обновил токены по ходу работы.
+
+    Битрикс24 выдаёт новую пару access/refresh при каждом продлении, и
+    старый refresh перестаёт действовать: не сохранить новую — потерять
+    авторизацию сотрудника. Адаптер держит их в атрибуте
+    refreshed_credentials (None — ничего не менялось); ядро после
+    check/list/fetch перешифровывает и записывает в грант или подключение.
+    """
+    value = getattr(adapter, "refreshed_credentials", None)
+    return value if isinstance(value, Mapping) else None
 
 
 class SourceAdapter(Protocol):

@@ -1,0 +1,64 @@
+{
+  "method": "landing.block.getlist",
+  "params": {"scope": "KNOWLEDGE", "lid": 985, "params": {"get_content": true}},
+  "response": {
+    "result": [
+      {
+        "id": 28181,
+        "lid": 985,
+        "code": "0.menu_02",
+        "name": "Меню с логотипом слева и пунктами меню справа",
+        "active": true,
+        "meta": {
+          "LID": "985",
+          "FAVORITE_META": "Array",
+          "CREATED_BY_ID": "779",
+          "DATE_CREATE": "09/13/2024 10:28:08 am",
+          "MODIFIED_BY_ID": "1295",
+          "DATE_MODIFY": "03/26/2026 12:21:48 pm",
+          "SITE_TYPE": "KNOWLEDGE",
+          "LANDING_TITLE": "",
+          "LANDING_TPL_CODE": "",
+          "SITE_TPL_CODE": "empty",
+          "XML_ID": "",
+          "DESIGNER_MODE": ""
+        },
+        "content": "<div id=\"b28181\" class=\"block-wrapper block-0-menu-02\"><header class=\"landing-block u-header\"><nav><a href=\"/knowledge/company/\">Главная</a></nav></header></div>",
+        "css": [],
+        "js": []
+      },
+      {
+        "id": 28853,
+        "lid": 985,
+        "code": "01.big_with_text",
+        "name": "Блок с текстом и изображением",
+        "active": true,
+        "meta": {},
+        "content": "<div id=\"b28853\" class=\"block-wrapper\"><section class=\"landing-block\"><h2 class=\"landing-block-node-title\">Отпуск</h2><p class=\"landing-block-node-text\">Отпуск — 28 календарных дней. Заявление подаётся за две недели.</p><script>track()</script></section></div>",
+        "css": [],
+        "js": ["/bitrix/js/landing/block.js"]
+      },
+      {
+        "id": 28900,
+        "lid": 985,
+        "code": "01.text",
+        "name": "Скрытый блок",
+        "active": false,
+        "meta": {},
+        "content": "<div><p>Черновик про больничный</p></div>",
+        "css": [],
+        "js": []
+      }
+    ],
+    "time": {
+      "start": 1774521039,
+      "finish": 1774521039.570632,
+      "duration": 0.5706319808959961,
+      "processing": 0,
+      "date_start": "2026-03-26T13:30:39+03:00",
+      "date_finish": "2026-03-26T13:30:39+03:00",
+      "operating_reset_at": 1774521639,
+      "operating": 0.48987889289855957
+    }
+  }
+}

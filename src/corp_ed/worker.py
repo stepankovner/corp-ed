@@ -328,7 +328,7 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
         sync_service = ConnectorSyncService(
             get_session_maker(),
             OutboundClient(client),
-            default_registry(),
+            default_registry(connector_settings),
             SecretBox(connector_settings.keys),
             connector_settings,
         )

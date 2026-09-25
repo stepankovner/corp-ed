@@ -362,7 +362,7 @@ def get_faq_service(
 
 @lru_cache
 def get_adapter_registry() -> AdapterRegistry:
-    return default_registry()
+    return default_registry(get_connector_settings())
 
 
 @lru_cache

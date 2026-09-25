@@ -6,28 +6,30 @@
 
 ---
 
-## Сводка на 25 сентября 2026 (ночь, после этапа 1 коннекторов)
+## Сводка на 25 сентября 2026 (ночь, после этапа 2 коннекторов — Битрикс24)
 
 | | |
 |---|---|
-| Ветка | `claude/gallant-pascal-xtb35t` → PR [#15](https://github.com/stepankovner/corp-ed/pull/15) в `main` |
-| Тесты | **973 passed**, 0 skipped при `TEST_REDIS_URL`; ~1 мин 40 с с Postgres и Redis |
-| Покрытие | **93 %** (ветвевое, с трассировкой greenlet — см. ошибку №13), порог в CI 85 % |
-| Проверки | ruff (E, W, F, I, N, UP, B, SIM, **S**), ruff format, mypy strict на `src` — чисто |
-| CI на HEAD | [CI #118](https://github.com/stepankovner/corp-ed/actions/runs/36165635276) ✅, [Security #16](https://github.com/stepankovner/corp-ed/actions/runs/36165635240) ✅ (`313133a`) |
-| Миграции | 14 ревизий, `upgrade → check → downgrade → upgrade` на пустой базе под владельцем без суперпользователя; ревизия `42a0ae63f5ff` (коннекторы) прогнана и на dev-базе |
+| Ветка | `claude/gallant-pascal-xtb35t` → PR [#15](https://github.com/stepankovner/corp-ed/pull/15) в `main` (не слит) |
+| Тесты | **1066 passed**, 0 skipped при `TEST_REDIS_URL`; ~2 мин с Postgres и Redis |
+| Покрытие | **92 %** (ветвевое), порог в CI 85 % |
+| Проверки | ruff (E, W, F, I, N, UP, B, SIM, **S**) по всему репозиторию, ruff format, mypy strict на `src` — чисто |
+| CI на HEAD | до этого коммита — [CI #118](https://github.com/stepankovner/corp-ed/actions/runs/36165635276) ✅, [Security #16](https://github.com/stepankovner/corp-ed/actions/runs/36165635240) ✅ (`313133a`); прогон по этапу 2 — после пуша |
+| Миграции | 14 ревизий, без изменений на этапе 2 (схема этапа 1 покрыла OAuth: `external_user_id`, шифрованные `credentials` у грантов и подключений) |
 | Слияния ML | 5 (`ml/alice-compare` ×2, `ml/docs` ×2, `ml/multi-query` — с #16 M2, #17 золотой dev, #18 multi-query), файлы ML не редактировались |
+| Живая проверка этапа 2 | **не выполнена**: сетевая политика окружения не пропускает `*.bitrix24.ru`, `oauth.bitrix24.tech`, `apidocs.bitrix24.ru` (см. «Этап 2», что нужно от команды) |
 
 Состав тестов по каталогам:
 
 | Каталог | Тестов | Что |
 |---|---|---|
-| `tests/security/` | 157 | токены, пароли, периметр, лимиты, аудит, RLS, **шифрование секретов, SSRF** |
-| `tests/api/` | 186 | все группы ручек: роли, изоляция, валидация, коды; **коннекторы** |
+| `tests/security/` | 162 | токены, пароли, периметр, лимиты, аудит, RLS, шифрование секретов, SSRF, **state OAuth, редирект без следования** |
+| `tests/api/` | 201 | все группы ручек: роли, изоляция, валидация, коды; коннекторы, **OAuth Битрикс24** |
 | `tests/llm/`, `tests/ingest/` | 57 + 33 | адаптеры, разбор ответов, файлы, песочница |
-| `tests/test_*.py` (сервисы бэкенда) | 178 | FAQ, гибрид, кредиты, компании, ингест, воркер, пробелы, изоляция, **синхронизация коннекторов, видимость, очередь синхронизации, HTML** |
-| ML (`ml_eval` и чистые функции; после слияния #16–#18) | 362 | не редактируются бэкендом |
-| **Итого** | **973** | `pytest --collect-only`, 25.09 |
+| `tests/connectors/` | 64 | **клиент REST Битрикс24, адаптер (диск, база знаний, OAuth), контракт по фикстурам документации** |
+| `tests/test_*.py` (сервисы бэкенда) | 275 | FAQ, гибрид, кредиты, компании, ингест, воркер, пробелы, изоляция, синхронизация коннекторов, видимость, очередь синхронизации, HTML, **синхронизация с адаптером Битрикс24, `cli connector-check`** |
+| ML (`tests/ml_eval/` 131 + чистые функции ML в `tests/test_*.py` 143; после слияния #16–#18) | 274 | не редактируются бэкендом |
+| **Итого** | **1066** | `pytest --collect-only`, 25.09; +93 к этапу 1 |
 
 ---
 
@@ -55,12 +57,18 @@
 - **Где ловится ошибка** — `core/exception_handlers.py` +
   `core/middleware.py::RequestIDMiddleware` (необработанное → JSON 500).
 - **Коннекторы** — настройка: `services/connector_service.py` и
-  `api/v1/endpoints/connectors.py`; синхронизация:
+  `api/v1/endpoints/connectors.py` (в том числе OAuth: `oauth_start`,
+  `oauth_callback`); синхронизация:
   `services/connector_sync_service.py` (в воркере, `worker.py::SyncWorker`
-  + планировщик раз в минуту); адаптеры и каталог: `connectors/`;
-  секреты: `core/secrets.py`; защита от SSRF: `core/outbound.py`; права
-  на документ: `materials.visibility` + `material_access`, фильтр
-  `_visible_to` в `repositories/chunk_repository.py`.
+  + планировщик раз в минуту); адаптеры и каталог: `connectors/`
+  (`registry.py` — виды, `default_registry(settings)`; `bitrix24/` —
+  `client.py`, `oauth.py`, `disk.py`, `knowledge_base.py`,
+  `adapter.py`); проверка против источника без базы:
+  `services/connector_check_service.py` + `cli connector-check`;
+  секреты: `core/secrets.py`; state OAuth: `core/security.py`; защита
+  от SSRF: `core/outbound.py`; права на документ: `materials.visibility`
+  + `material_access`, фильтр `_visible_to` в
+  `repositories/chunk_repository.py`.
 
 ---
 
@@ -77,6 +85,7 @@
 | 7. CI и поставка | security-workflow, образ без root, compose в боевой форме, документация | `4945f87`, `b53ffe5`, `8184f2a` |
 | 8. Коннекторы, этап 0 | дизайн, исследование рынка и API, решения команды | `1cbc401`, `7f93e5a`, `599c41a` |
 | 9. Коннекторы, этап 1 | ядро: 5 таблиц под RLS, поля источника у материалов, шифрование секретов, SSRF-защита, два режима прав, синхронизация, воркер, `/connectors`, фильтр видимости в поиске | миграция `42a0ae63f5ff` |
+| 10. Коннекторы, этап 2 | Битрикс24: REST-клиент, OAuth (старт, обратный вызов, продление), модули диска и базы знаний, секрет приложения у подключения, `AdapterConfigError`, `cli connector-check` с записью фикстур | этот коммит |
 
 Сверка с контрактом ML — `INTEGRATION.md`; с досье — раздел
 «Дальнейшие действия» ниже.
@@ -107,6 +116,8 @@
 | 15 | **Живая проверка**: `POST /connectors/{id}/test` для вида без адаптера → 500 | `registry.build` бросал `KeyError` мимо обработчиков | `_spec()` до сборки адаптера → 422 `kind_unknown`; регрессионный тест | — |
 | 17 | CI упал на `ruff` после слияния `ml/multi-query`: `S101` в `eval/offline_e2e.py` | правило bandit включено бэкендом, ветки ML с ним не проверяются | исключение `S101` для `eval/**` в `pyproject.toml` (файлы ML не редактируются); локально перед пушем гонять `ruff check` по всему репозиторию, а не только `src tests` | — |
 | 16 | Бюджет запуска считался по просмотренным документам | источник с 200+ неизменными документами никогда не дошёл бы до новых | бюджет — по работе (скачано + упало); тест `test_budget_makes_run_partial_and_never_deletes` | курсор по листингу — не у всех API есть стабильный порядок |
+| 18 | `MissingGreenlet` в обратном вызове OAuth при неудачном обмене (повтор класса №12) | `_oauth_failed` читал `connector.tenant_id` после `session.rollback()` | плоские `tenant_id`/`connector_id`/`user_id` снимаются до обмена; в тестах API `account.id` и `tenant_ctx.id` берутся до запроса (сессия теста общая с приложением, commit истекает объекты) | — |
+| 19 | Поддельный портал не записывал вызов с истёкшим токеном | проверка авторизации шла до журнала вызовов | журнал — до проверки; тест продления упирался в это, а не в клиент | — |
 
 Не ошибки, но отклонения от контракта ML, принятые ML (handoff v1.2):
 режим Р1 — поле компании, а не переменная окружения; `origin` вместо
@@ -174,11 +185,7 @@
 - не проверено: индексация синхронизированных документов (нет ключей
   Yandex Cloud на этой машине) и настоящий источник (этап 2).
 
-**Дальше** — этап 2, Битрикс24: OAuth-приложение (ручки `oauth/start`
-и `oauth/callback`, обновление токенов), модули диск (`disk.*`) и база
-знаний (`landing.*`), контрактные тесты на записанных ответах, `cli
-connector-check`. Нужно от команды: тестовый портал и регистрация
-приложения; `CONNECTOR_SECRETS_KEYS` в `.env` стенда.
+**Дальше** — этап 2, Битрикс24 (сделан ниже).
 
 Доступы к тестовому порталу для живой проверки живут **в переменных
 окружения сессии**, не в репозитории и не в чате (договорённость
@@ -187,8 +194,107 @@ connector-check`. Нужно от команды: тестовый портал 
 `BITRIX24_TEST_CLIENT_SECRET` (локальное приложение), при необходимости
 `BITRIX24_TEST_LOGIN` / `BITRIX24_TEST_PASSWORD` для входа через
 безголовый Chromium. Сетевая политика окружения должна разрешать
-`*.bitrix24.ru`, `oauth.bitrix.info`, `apidocs.bitrix24.ru`. Новая сессия
-начинает с проверки этих переменных и доступности портала.
+`*.bitrix24.ru`, `oauth.bitrix24.tech` (сервер авторизации по
+документации 2026 года; `oauth.bitrix.info` — прежний адрес),
+`apidocs.bitrix24.ru`. Новая сессия начинает с проверки этих
+переменных и доступности портала.
+
+## Этап 2 (25.09, ночь): Битрикс24
+
+**Проверка среды в начале сессии.** Переменные на месте:
+`BITRIX24_TEST_PORTAL`, `BITRIX24_TEST_WEBHOOK`, `BITRIX24_TEST_CLIENT_ID`,
+`BITRIX24_TEST_CLIENT_SECRET` (логин/пароль не заданы, они не
+обязательны). Портал, `oauth.bitrix24.tech`/`oauth.bitrix.info` и
+`apidocs.bitrix24.ru` **недоступны**: прокси окружения отвечает 403 на
+CONNECT (политика организации), в `/__agentproxy/status` —
+`connect_rejected` по всем трём хостам. Зеркало документации
+`raw.githubusercontent.com/bitrix-tools/b24-rest-docs` доступно —
+адаптер написан по нему (страницы методов, OAuth, лимиты, коды ошибок,
+скачивание файлов; состояние на 25.09.2026).
+
+**Сделано** (~2 000 строк кода и тестов, без миграций):
+- `connectors/bitrix24/`: `client.py` — REST через `OutboundClient`
+  (вебхук или `auth` в теле, 2 запроса/с, страницы по `next`, ожидание
+  1/2/4 с на `QUERY_LIMIT_EXCEEDED`, коды ошибок → `AdapterAuthError` /
+  `AdapterConfigError` / retryable, `expired_token` → продление и один
+  повтор, редирект → `portal_moved`, скачивание только с хоста портала
+  и с браузерными заголовками из документации, запись ответов без
+  токенов); `oauth.py` — адрес авторизации, обмен кода, продление;
+  `disk.py` — `disk.storage.getlist` → `getchildren` рекурсивно (общий
+  диск и группы; личный диск только свой), корзина/форматы/размер
+  отсеиваются в листинге, папка без прав пропускается;
+  `knowledge_base.py` — сайты KNOWLEDGE и GROUP → опубликованные
+  страницы → HTML активных блоков (`landing.block.getlist` с
+  `get_content`); `adapter.py` — спецификация вида (модули `disk`,
+  `disk_personal`, `knowledge_base`; config `portal`, `client_id`;
+  секрет приложения `client_secret`), `check` через `profile`.
+- Ядро: `KindSpec.app_credential_fields` и `user_auth=oauth`;
+  `AdapterConfigError` останавливает коннектор, не трогая гранты;
+  `refreshed_credentials` сохраняются в грант/подключение при любом
+  исходе; `default_registry(settings)`.
+- API: `POST /connectors/{id}/oauth/start` (сотрудник), `GET
+  /connectors/oauth/callback` (публичная, лимит по IP, редирект на
+  `CONNECTOR_OAUTH_RETURN_URL` или JSON), `PUT .../credentials` в
+  режиме `per_user` принимает секрет приложения, `PUT .../mine` для
+  OAuth-вида — 422 `oauth_required`; каталог отдаёт
+  `app_credential_fields`, `oauth`, `oauth_callback_url`, `extra`
+  (нужные scope, путь обратного вызова); `/mine` — флаг `oauth`.
+  Событие аудита `connector.oauth_failed`. `state` — подписанный JWT
+  с `typ=connector_oauth` (`core/security.py`).
+- Настройки: `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`,
+  `CONNECTOR_OAUTH_STATE_TTL_MINUTES`, `CONNECTOR_BITRIX24_OAUTH_SERVER`
+  (только `https://`).
+- `cli connector-check --kind bitrix24 --config portal=… --credential
+  webhook=… [--module …] [--fetch N] [--record DIR] [--fast]`: check,
+  листинг, скачивание через настоящий конвейер, запись фикстур.
+- `OutboundClient.request(allow_redirects=False)`;
+  `ingest.extract.SUPPORTED_EXTENSIONS`.
+
+**Проверено:**
+- тесты: 93 новых (клиент 32, адаптер и OAuth 32, синхронизация с
+  адаптером и базой 5, API OAuth 14, state 4, CLI 5, редирект 1);
+  всего 1066, покрытие 92 %; ruff по всему репозиторию, mypy strict —
+  чисто;
+- контракт: ответы методов из документации (`profile`,
+  `disk.storage.getlist`, `disk.folder.getchildren`, `disk.file.get`,
+  `landing.site.getlist`, `landing.landing.getlist`,
+  `landing.block.getlist`, обмен и продление токена, 16 кодов ошибок)
+  лежат в `tests/connectors/fixtures/bitrix24/` и прогоняются через
+  адаптер целиком; **это образцы документации, не записи с портала**
+  (RISKS №32);
+- поддельный портал (`tests/connectors/fake_portal.py`): права на папки
+  по пользователю, страницы, истечение и ротация токенов, сервер
+  авторизации, лимит запросов, редирект, чужой хост ссылки;
+- сквозная синхронизация с настоящим адаптером и базой: материалы с
+  `source_url`, `restricted` + `material_access` сотрудника, новая пара
+  токенов в гранте после продления, остановка коннектора по
+  `invalid_client`/`insufficient_scope` с целыми грантами, истечение
+  гранта по `invalid_token` без остановки коннектора.
+
+**Не проверено (заблокировано сетью):** живой портал — `cli
+connector-check` с `BITRIX24_TEST_WEBHOOK`, OAuth-обмен с настоящим
+`oauth.bitrix24.tech`, документ в ответе со ссылкой. Ошибка №15
+этапа 1 нашлась именно на живой проверке — здесь такой возможности не
+было, поэтому этап 2 **не закрыт** по правилу «без живой проверки этап
+не закрыт».
+
+**Нужно от команды:**
+1. В настройках окружения Claude Code (меню облачного окружения в
+   заголовке сессии → Edit → Network access) разрешить хосты
+   `b24-*.bitrix24.ru` (тестовый портал), `oauth.bitrix24.tech`,
+   `oauth.bitrix.info`, `apidocs.bitrix24.ru` — или выбрать более
+   широкий уровень доступа.
+2. После этого: `python -m corp_ed.cli connector-check --kind bitrix24
+   --config portal="$BITRIX24_TEST_PORTAL" --credential
+   webhook="$BITRIX24_TEST_WEBHOOK" --record
+   tests/connectors/fixtures/bitrix24/live` — сверить формы ответов с
+   фикстурами, затем стенд: подключение через API, секрет приложения,
+   OAuth сотрудника (нужен браузер: `BITRIX24_TEST_LOGIN` /
+   `BITRIX24_TEST_PASSWORD` для безголового Chromium или ручной проход),
+   `SyncWorker.run_once`, вопрос с ответом по документу портала.
+3. В карточке локального приложения на тестовом портале «Путь вашего
+   обработчика» должен указывать на публичный адрес
+   `/api/v1/connectors/oauth/callback` стенда; scope `disk`, `landing`.
 
 ## Дальнейшие действия — MVP по досье
 
@@ -204,7 +310,7 @@ connector-check`. Нужно от команды: тестовый портал 
 |---|---|---|---|
 | 0 | Дизайн коннекторов и исследование — **закрыт** | записи в `DECISIONS.md` и `CONNECTORS-RESEARCH.md`, решения приняты | OAuth-приложение Битрикс24 и тестовый портал — к этапу 2 |
 | 1 | Ядро: таблицы под RLS, два режима подключения, токены сотрудников и `material_access`, шифрование секретов, `validate_outbound_url`, очередь синхронизации, API `/connectors`, фильтр видимости в поиске — **закрыт** (см. выше) | тесты ядра с поддельным адаптером; SSRF-тесты на все классы адресов; живая проверка на локальном стенде под ролью приложения | `CONNECTOR_SECRETS_KEYS` в `.env` стенда |
-| 2 | Битрикс24: OAuth-приложение, диск, затем база знаний | контрактные тесты на записанных ответах; `cli connector-check` против тестового портала; документ появляется в ответе со ссылкой | тестовый портал Битрикс24 и OAuth-приложение (`disk`, `landing`, `user`) |
+| 2 | Битрикс24: OAuth-приложение, диск, база знаний — **код и тесты готовы, живая проверка заблокирована сетью** (см. «Этап 2») | контрактные тесты на образцах документации ✅; `cli connector-check` против тестового портала ⏳; документ появляется в ответе со ссылкой ⏳ | открыть `*.bitrix24.ru`, `oauth.bitrix24.tech` в сетевой политике окружения; OAuth-приложение с обработчиком на стенде |
 | 3 | Confluence Server/DC (режим `organization`, ACL из ограничений и групп) | то же | доступ к тестовому Confluence или Docker-образ DC с пробной лицензией |
 | 4 | Яндекс Диск и Вики (режим `per_user`) | то же | организация Яндекс 360, OAuth-приложение |
 | 5 | Сквозная проверка MVP на стенде | компания подключена через CLI, три источника, вопросы сотрудников с ссылками на источники, отчёт о пробелах, остановка по кредитам | стенд с `ENVIRONMENT=production`, ключи Yandex Cloud |

@@ -355,6 +355,20 @@ class ConnectorSettings(BaseSettings):
     max_document_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     sync_run_retention_days: int = Field(default=90, gt=0, le=365)
 
+    # OAuth-приложения (режим per_user, этап 2). callback — публичный
+    # адрес ручки GET /api/v1/connectors/oauth/callback: его админ
+    # вписывает в карточку приложения на портале, поэтому он показывается
+    # в каталоге видов. return — страница фронта, куда возвращается
+    # браузер сотрудника после обмена кода; без неё ручка отвечает JSON
+    # (стенд, curl). state живёт oauth_state_ttl_minutes: дольше — окно
+    # для повторного использования перехваченного редиректа.
+    oauth_callback_url: str | None = None
+    oauth_return_url: str | None = None
+    oauth_state_ttl_minutes: int = Field(default=10, gt=0, le=60)
+    # Сервер авторизации Битрикс24 — один на облако и коробку; в
+    # документации 2026 года — oauth.bitrix24.tech (раньше oauth.bitrix.info).
+    bitrix24_oauth_server: str = "https://oauth.bitrix24.tech/"
+
     model_config = SettingsConfigDict(
         env_prefix="CONNECTOR_",
         env_file=".env",
@@ -366,6 +380,12 @@ class ConnectorSettings(BaseSettings):
     def validate_production(self) -> Self:
         if self.environment == "production" and self.secrets_keys is None:
             raise ValueError("CONNECTOR_SECRETS_KEYS is required in production")
+        for name in ("oauth_callback_url", "oauth_return_url", "bitrix24_oauth_server"):
+            value = getattr(self, name)
+            # Браузер сотрудника и секрет приложения ходят по этим адресам:
+            # http здесь — утечка кода авторизации или секрета в открытую.
+            if value is not None and not value.startswith("https://"):
+                raise ValueError(f"CONNECTOR_{name.upper()} must be an https:// URL")
         return self
 
     @property

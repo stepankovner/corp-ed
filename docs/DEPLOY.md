@@ -68,6 +68,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5 |
 | Кредиты | `BILLING_*` | дефолты — предложение досье, пересмотреть с тарифами |
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
+| OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — страница фронта «Мои источники» |
 
 `.env` лежит рядом с `compose.yaml`, права `600`, в репозиторий не
 попадает (`.gitignore`). Секреты в переменных окружения видны в
@@ -216,8 +217,13 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-
 `169.254.0.0/16`, `127.0.0.0/8` и к внутренним сервисам, кроме базы и
 Redis (например, правила `iptables`/`nftables` на docker-сети или
 egress-политика оркестратора). API наружу ходит только в Yandex Cloud
-и, для проверки учётных данных (`POST /connectors/{id}/test`), к тем
-же адресам систем клиентов.
+и, для проверки учётных данных (`POST /connectors/{id}/test`) и
+OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам систем
+клиентов. Для Битрикс24 нужен выход к порталу клиента (`*.bitrix24.ru`
+или свой домен коробки) и к серверу авторизации `oauth.bitrix24.tech`
+(обмен кода и продление токенов) — с обоих контейнеров, `api` и
+`worker`. Ссылки на скачивание файлов диска принимаются только на хосте
+портала: чужой хост в `DOWNLOAD_URL` — ошибка документа, а не запрос.
 
 ## 10. Наблюдение
 

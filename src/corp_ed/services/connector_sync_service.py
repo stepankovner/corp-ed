@@ -37,12 +37,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.connectors.base import (
     AdapterAuthError,
+    AdapterConfigError,
     AdapterError,
     FetchedContent,
     FetchedFile,
     FetchedPage,
     RemoteDocument,
     SourceAdapter,
+    refreshed_credentials,
 )
 from corp_ed.connectors.html import html_to_markdown
 from corp_ed.connectors.registry import AdapterRegistry, UnknownKindError
@@ -238,12 +240,14 @@ class ConnectorSyncService:
         if credentials is None:
             await self._stop_connector(session, run, ERROR_CREDENTIALS_UNREADABLE)
             return
-        adapter = self._adapter(run, credentials)
-        if adapter is None:
-            return
+        adapter: SourceAdapter | None = None
         try:
+            adapter = self._adapter(run, credentials)
+            if adapter is None:
+                return
             await adapter.check()
-        except AdapterAuthError as exc:
+            await self._walk(session, run, adapter, viewer=None)
+        except (AdapterAuthError, AdapterConfigError) as exc:
             await self._stop_connector(session, run, exc.code)
             return
         except (AdapterError, OutboundURLError) as exc:
@@ -251,12 +255,11 @@ class ConnectorSyncService:
                 ERROR_SOURCE_UNAVAILABLE,
                 retryable=getattr(exc, "retryable", False),
             ) from exc
-
-        try:
-            await self._walk(session, run, adapter, viewer=None)
-        except AdapterAuthError as exc:
-            await self._stop_connector(session, run, exc.code)
-            return
+        finally:
+            # Токены могли обновиться и до сбоя: старый refresh уже не
+            # действует, новый нужно сохранить при любом исходе.
+            if adapter is not None:
+                await self._persist_refresh(session, run, adapter, grant_id=None)
         if run.complete:
             run.stats.removed = await MaterialRepository(
                 session
@@ -267,6 +270,16 @@ class ConnectorSyncService:
         connector = run.connector
         grants = GrantRepository(session)
         materials = MaterialRepository(session)
+        # Секреты приложения (client_secret) — общие для всех сотрудников,
+        # складываются с токенами каждого; без них адаптер OAuth не
+        # продлит токен.
+        app_credentials: Mapping[str, str] = {}
+        if connector.credentials is not None:
+            decrypted = self._decrypt(connector.credentials)
+            if decrypted is None:
+                await self._stop_connector(session, run, ERROR_CREDENTIALS_UNREADABLE)
+                return
+            app_credentials = decrypted
         # Плоские кортежи, а не ORM-объекты: откат транзакции после сбоя
         # документа сбрасывает загруженные атрибуты, и следующее чтение
         # ушло бы в базу из синхронного кода.
@@ -282,20 +295,30 @@ class ConnectorSyncService:
                     session, run, grant_id, ERROR_CREDENTIALS_UNREADABLE
                 )
                 continue
-            adapter = self._adapter(run, credentials)
-            if adapter is None:
-                return
+            adapter: SourceAdapter | None = None
             try:
+                adapter = self._adapter(run, {**app_credentials, **credentials})
+                if adapter is None:
+                    return
                 await adapter.check()
                 mine = await self._walk(session, run, adapter, viewer=user_id)
             except AdapterAuthError as exc:
                 await self._expire_grant(session, run, grant_id, exc.code)
                 continue
+            except AdapterConfigError as exc:
+                # Проблема подключения, а не сотрудника: гранты целы.
+                await self._stop_connector(session, run, exc.code)
+                return
             except (AdapterError, OutboundURLError) as exc:
                 raise _StopRunError(
                     ERROR_SOURCE_UNAVAILABLE,
                     retryable=getattr(exc, "retryable", False),
                 ) from exc
+            finally:
+                if adapter is not None:
+                    await self._persist_refresh(
+                        session, run, adapter, grant_id=grant_id
+                    )
             if not run.complete:
                 # Листинг сотрудника оборван бюджетом: чего в нём не
                 # оказалось — не значит, что прав больше нет.
@@ -349,7 +372,7 @@ class ConnectorSyncService:
                     try:
                         material = await self._upsert(session, run, adapter, document)
                     except (AdapterError, ExtractionError, OutboundURLError) as exc:
-                        if isinstance(exc, AdapterAuthError):
+                        if isinstance(exc, AdapterAuthError | AdapterConfigError):
                             raise
                         await session.rollback()
                         run.stats.failed += 1
@@ -366,7 +389,7 @@ class ConnectorSyncService:
                 await self._apply_access(materials, users, material, document, viewer)
                 await session.commit()
                 walked.add(material.id)
-        except AdapterAuthError:
+        except (AdapterAuthError, AdapterConfigError):
             await session.rollback()
             raise
         except (AdapterError, OutboundURLError) as exc:
@@ -482,12 +505,44 @@ class ConnectorSyncService:
     def _adapter(
         self, run: _Run, credentials: Mapping[str, str]
     ) -> SourceAdapter | None:
+        """Собрать адаптер. Фабрика может бросить AdapterAuthError или
+        AdapterConfigError (не хватает полей) — их разбирает вызывающий."""
         try:
             return self.registry.build(run.kind, run.config, credentials, self.http)
         except UnknownKindError:
             run.error_code = ERROR_KIND_UNKNOWN
             logger.error("connector_kind_unknown", kind=run.kind)
             return None
+
+    async def _persist_refresh(
+        self,
+        session: AsyncSession,
+        run: _Run,
+        adapter: SourceAdapter,
+        *,
+        grant_id: UUID | None,
+    ) -> None:
+        """Сохранить токены, обновлённые адаптером по ходу работы."""
+        refreshed = refreshed_credentials(adapter)
+        if refreshed is None:
+            return
+        await session.rollback()
+        token = self.secrets.encrypt(refreshed)
+        if grant_id is not None:
+            grant = await GrantRepository(session).get_by_id(grant_id)
+            if grant is None:
+                return
+            grant.credentials = token
+        else:
+            connector = run.connector
+            await session.refresh(connector)
+            connector.credentials = token
+        await session.commit()
+        logger.info(
+            "connector_credentials_refreshed",
+            connector_id=str(run.connector_id),
+            grant_id=str(grant_id) if grant_id else None,
+        )
 
     async def _stop_connector(
         self, session: AsyncSession, run: _Run, code: str

@@ -47,6 +47,8 @@ class AuditAction(StrEnum):
     CONNECTOR_GRANT_SET = "connector.grant_set"
     CONNECTOR_GRANT_REVOKED = "connector.grant_revoked"
     CONNECTOR_GRANT_EXPIRED = "connector.grant_expired"
+    # OAuth режима per_user: обмен кода не удался (state, код, приложение).
+    CONNECTOR_OAUTH_FAILED = "connector.oauth_failed"
 
 
 class AuditRepository:

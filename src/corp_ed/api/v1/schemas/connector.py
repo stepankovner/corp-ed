@@ -32,7 +32,14 @@ class ModuleSpecResponse(BaseModel):
 
 
 class ConnectorKindResponse(BaseModel):
-    """Вид коннектора из каталога — для формы подключения на фронте."""
+    """Вид коннектора из каталога — для формы подключения на фронте.
+
+    credential_fields — что вводит админ (organization) или сотрудник
+    (per_user без OAuth); app_credential_fields — секреты приложения,
+    которые в режиме per_user задаёт админ; oauth — сотрудник
+    авторизуется редиректом (POST /connectors/{id}/oauth/start), а
+    oauth_callback_url админ вписывает в карточку приложения.
+    """
 
     kind: str
     title: str
@@ -40,6 +47,10 @@ class ConnectorKindResponse(BaseModel):
     modules: list[ModuleSpecResponse]
     config_fields: list[FieldSpecResponse]
     credential_fields: list[FieldSpecResponse]
+    app_credential_fields: list[FieldSpecResponse] = Field(default_factory=list)
+    oauth: bool = False
+    oauth_callback_url: str | None = None
+    extra: dict[str, str] = Field(default_factory=dict)
 
 
 class ConnectorCreateRequest(RequestModel):
@@ -119,3 +130,20 @@ class MyConnectorResponse(BaseModel):
     name: str
     grant_status: GrantStatus | None
     grant_error_code: str | None
+    # Как подключаться: редирект (oauth) или ввод полей (PUT .../mine).
+    oauth: bool = False
+
+
+class OAuthStartResponse(BaseModel):
+    """Куда отправить браузер сотрудника. state внутри адреса подписан
+    и привязан к сотруднику и подключению."""
+
+    authorize_url: str
+
+
+class OAuthCallbackResponse(BaseModel):
+    """Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан."""
+
+    ok: bool
+    connector_id: UUID | None
+    error_code: str | None = None

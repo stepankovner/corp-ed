@@ -10,6 +10,11 @@
     python -m corp_ed.cli purge        # удалить данные старше срока хранения
     python -m corp_ed.cli gaps (--code acme | --all)   # отчёт о пробелах
     python -m corp_ed.cli rotate-connector-secrets     # после смены ключа
+    python -m corp_ed.cli connector-check --kind bitrix24 \\
+        --config portal=https://b24-xxx.bitrix24.ru/ \\
+        --credential webhook="$BITRIX24_TEST_WEBHOOK" \\
+        --module disk --module knowledge_base [--fetch 1] [--record DIR]
+                                       # адаптер против настоящего источника, без базы
 
 Почему CLI, а не HTTP-ручка «суперадмина»: по досье (10.1) компании
 подключает команда после созвона. Ручка с правом создавать тенантов
@@ -23,12 +28,18 @@
 
 import argparse
 import asyncio
+import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
 
 import httpx
 
+from corp_ed.connectors.base import AdapterError, SourceAdapter
+from corp_ed.connectors.registry import UnknownKindError, default_registry
 from corp_ed.core.config import (
+    ConnectorSettings,
     GapsSettings,
     LLMSettings,
     RagSettings,
@@ -38,12 +49,18 @@ from corp_ed.core.config import (
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.outbound import (
+    OutboundClient,
+    OutboundURLError,
+    validate_outbound_url,
+)
 from corp_ed.core.secrets import SecretBox
 from corp_ed.domain.types import NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.reindex_service import ReindexService
@@ -111,10 +128,56 @@ def _parser() -> argparse.ArgumentParser:
         "CONNECTOR_SECRETS_KEYS (docs/DEPLOY.md, раздел 9)",
     )
 
+    check = commands.add_parser(
+        "connector-check",
+        help="проверить адаптер против настоящего источника: check, листинг, "
+        "скачивание; база не нужна",
+    )
+    check.add_argument(
+        "--kind", required=True, help="вид из каталога, например bitrix24"
+    )
+    check.add_argument(
+        "--config",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="поле config (адрес портала, client_id); можно повторять",
+    )
+    check.add_argument(
+        "--credential",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="учётные данные (webhook=…, access_token=…); можно повторять",
+    )
+    check.add_argument(
+        "--module", action="append", default=[], help="модуль; можно повторять"
+    )
+    check.add_argument(
+        "--limit", type=int, default=50, help="сколько документов листить"
+    )
+    check.add_argument(
+        "--fetch", type=int, default=1, help="сколько документов каждого модуля скачать"
+    )
+    check.add_argument(
+        "--record",
+        metavar="DIR",
+        default=None,
+        help="записать ответы REST (без токенов) в каталог — фикстуры для тестов",
+    )
+    check.add_argument(
+        "--fast",
+        action="store_true",
+        help="без паузы между запросами (только для коробки или тестов)",
+    )
+
     return parser
 
 
 async def _run(args: argparse.Namespace) -> int:
+    if args.command == "connector-check":
+        return await _connector_check(args)
+
     if args.command == "purge":
         purged = await RetentionService(
             get_session_maker(),
@@ -191,6 +254,131 @@ async def _run(args: argparse.Namespace) -> int:
         )
         print(f"{tenant.company_code}: is_active={tenant.is_active}")
         return 0
+
+
+async def _connector_check(
+    args: argparse.Namespace, http: OutboundClient | None = None
+) -> int:
+    settings = ConnectorSettings()
+    registry = default_registry(settings)
+    try:
+        spec = registry.spec(args.kind)
+    except UnknownKindError:
+        print(f"Ошибка: неизвестный вид {args.kind}", file=sys.stderr)
+        return 2
+    config = _pairs(args.config)
+    credentials = _pairs(args.credential)
+    modules = args.module or [module.name for module in spec.modules]
+    unknown = sorted(set(modules) - spec.module_names)
+    if unknown:
+        print(f"Ошибка: неизвестные модули {', '.join(unknown)}", file=sys.stderr)
+        return 2
+    if spec.url_field and spec.url_field in config:
+        try:
+            target = await validate_outbound_url(config[spec.url_field])
+        except OutboundURLError as exc:
+            print(f"Ошибка: адрес системы не принят ({exc.code})", file=sys.stderr)
+            return 2
+        config[spec.url_field] = target.url
+
+    recorder = _FixtureRecorder(Path(args.record)) if args.record else None
+    async with httpx.AsyncClient() as client:
+        outbound = http or OutboundClient(client)
+        adapter: SourceAdapter
+        try:
+            if spec.kind == "bitrix24":
+                # Запись фикстур и темп — параметры клиента Битрикс24, у
+                # фабрики реестра их нет.
+                from corp_ed.connectors.bitrix24.adapter import (
+                    Bitrix24Adapter,
+                    build_client,
+                )
+
+                adapter = Bitrix24Adapter(
+                    build_client(
+                        config,
+                        credentials,
+                        outbound,
+                        settings,
+                        recorder=recorder,
+                        min_interval=0.0 if args.fast else None,
+                    ),
+                    max_bytes=settings.max_document_bytes,
+                )
+            else:
+                adapter = registry.build(spec.kind, config, credentials, outbound)
+        except AdapterError as exc:
+            print(f"Ошибка сборки адаптера: {exc.code}", file=sys.stderr)
+            return 1
+        report = await run_check(
+            adapter,
+            modules=modules,
+            limit=args.limit,
+            fetch=args.fetch,
+            max_bytes=settings.max_document_bytes,
+        )
+    _print_report(report, modules)
+    if recorder is not None:
+        print(f"записано ответов: {recorder.count} → {recorder.directory}")
+    return 0 if report.ok else 1
+
+
+def _pairs(values: Sequence[str]) -> dict[str, str]:
+    pairs: dict[str, str] = {}
+    for item in values:
+        name, sep, value = item.partition("=")
+        if not sep or not name.strip():
+            raise DomainError(f"Ожидается NAME=VALUE, получено: {item}")
+        pairs[name.strip()] = value
+    return pairs
+
+
+def _print_report(report: CheckReport, modules: Sequence[str]) -> None:
+    print(f"check: {'ok' if report.check_ok else 'ОШИБКА ' + str(report.check_code)}")
+    if not report.check_ok:
+        return
+    by_module = {m: 0 for m in modules}
+    for document in report.documents:
+        by_module[document.module] = by_module.get(document.module, 0) + 1
+    suffix = " (обрезано по --limit)" if report.truncated else ""
+    print(f"документов: {len(report.documents)}{suffix}; по модулям: {by_module}")
+    if report.list_error_code:
+        print(f"листинг прерван: {report.list_error_code}")
+    for document in report.documents:
+        size = f"{document.size} Б" if document.size is not None else "-"
+        print(
+            f"  [{document.module}] {document.external_id} «{document.title}» "
+            f"{size} v={document.version} {document.path} → {document.url}"
+        )
+    for fetched in report.fetched:
+        if fetched.ok:
+            print(
+                f"скачано {fetched.external_id}: {fetched.format}, {fetched.size} Б, "
+                f"текста {fetched.chars} симв., sha256 {fetched.sha256}"
+            )
+        else:
+            print(f"скачать {fetched.external_id} не удалось: {fetched.error_code}")
+
+
+class _FixtureRecorder:
+    """Ответы REST по одному файлу на вызов: NNN-method.json."""
+
+    def __init__(self, directory: Path) -> None:
+        self.directory = directory
+        self.count = 0
+        directory.mkdir(parents=True, exist_ok=True)
+
+    def __call__(self, method: str, params: Mapping[str, Any], response: Any) -> None:
+        self.count += 1
+        path = self.directory / f"{self.count:03d}-{method}.json"
+        path.write_text(
+            json.dumps(
+                {"method": method, "params": params, "response": response},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
 
 async def _gaps(company_code: str | None) -> int:

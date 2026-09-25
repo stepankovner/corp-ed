@@ -230,3 +230,23 @@ async def test_too_many_redirects() -> None:
         with pytest.raises(OutboundURLError) as exc:
             await client.get("https://portal.example.com/")
     assert exc.value.code == "too_many_redirects"
+
+
+async def test_redirect_can_be_returned_as_is() -> None:
+    """Адаптер Битрикс24 не следует редиректу: 301 — портал переехал."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["host"])
+        return httpx.Response(301, headers={"location": "https://new.example.com/x"})
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    response = await client.post(
+        "https://portal.example.com/rest/m", json={"a": 1}, allow_redirects=False
+    )
+    assert response.status_code == 301
+    assert response.headers["location"] == "https://new.example.com/x"
+    assert seen == ["portal.example.com"]

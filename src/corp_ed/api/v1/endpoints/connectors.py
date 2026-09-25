@@ -1,7 +1,9 @@
 from typing import Annotated
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from corp_ed.api.v1.dependencies import (
     get_connector_service,
@@ -10,9 +12,11 @@ from corp_ed.api.v1.dependencies import (
 )
 from corp_ed.api.v1.rate_limits import (
     CONNECTOR_GRANT_PER_USER,
+    CONNECTOR_OAUTH_CALLBACK_PER_IP,
     CONNECTOR_SYNC_PER_TENANT,
     CONNECTOR_TEST_PER_TENANT,
     CONNECTOR_WRITE_PER_TENANT,
+    limit_by_ip,
     limit_by_tenant,
     limit_by_user,
 )
@@ -26,10 +30,12 @@ from corp_ed.api.v1.schemas.connector import (
     FieldSpecResponse,
     ModuleSpecResponse,
     MyConnectorResponse,
+    OAuthCallbackResponse,
+    OAuthStartResponse,
     SyncRequestedResponse,
     SyncRunResponse,
 )
-from corp_ed.connectors.registry import FieldSpec, KindSpec
+from corp_ed.connectors.registry import FieldSpec, KindSpec, UnknownKindError
 from corp_ed.domain.models import User, UserRole
 from corp_ed.domain.types import GrantStatus
 from corp_ed.services.connector_service import ConnectorService
@@ -50,7 +56,7 @@ def _fields(specs: tuple[FieldSpec, ...]) -> list[FieldSpecResponse]:
     ]
 
 
-def _kind(spec: KindSpec) -> ConnectorKindResponse:
+def _kind(spec: KindSpec, callback_url: str | None) -> ConnectorKindResponse:
     return ConnectorKindResponse(
         kind=spec.kind,
         title=spec.title,
@@ -58,7 +64,18 @@ def _kind(spec: KindSpec) -> ConnectorKindResponse:
         modules=[ModuleSpecResponse(name=m.name, title=m.title) for m in spec.modules],
         config_fields=_fields(spec.config_fields),
         credential_fields=_fields(spec.credential_fields),
+        app_credential_fields=_fields(spec.app_credential_fields),
+        oauth=spec.oauth,
+        oauth_callback_url=callback_url if spec.oauth else None,
+        extra=dict(spec.extra),
     )
+
+
+def _is_oauth(service: ConnectorService, kind: str) -> bool:
+    try:
+        return service.registry.spec(kind).oauth
+    except UnknownKindError:
+        return False
 
 
 # --- каталог и список (ADMIN) ---------------------------------------------------
@@ -69,7 +86,8 @@ async def list_kinds(
     service: Service, current_user: AdminUser
 ) -> list[ConnectorKindResponse]:
     """Какие системы можно подключить и какие поля у формы."""
-    return [_kind(spec) for spec in service.kinds()]
+    callback_url = service.settings.oauth_callback_url
+    return [_kind(spec, callback_url) for spec in service.kinds()]
 
 
 @router.get("", response_model=list[ConnectorResponse])
@@ -116,9 +134,71 @@ async def my_connectors(
             name=connector.name,
             grant_status=GrantStatus(grant.status) if grant else None,
             grant_error_code=grant.error_code if grant else None,
+            oauth=_is_oauth(service, connector.kind),
         )
         for connector, grant in await service.my_connectors(current_user)
     ]
+
+
+# --- OAuth режима per_user (до /{connector_id}: «oauth» — не id) ---------------
+
+
+@router.get(
+    "/oauth/callback",
+    response_model=OAuthCallbackResponse,
+    dependencies=[Depends(limit_by_ip(CONNECTOR_OAUTH_CALLBACK_PER_IP))],
+)
+async def oauth_callback(
+    service: Service,
+    code: Annotated[str, Query(min_length=1, max_length=256)],
+    state: Annotated[str, Query(min_length=1, max_length=2048)],
+) -> Response:
+    """Возврат браузера сотрудника с портала: код → токены → грант.
+
+    Без аутентификации: кто и к какому подключению — из подписанного
+    state. С CONNECTOR_OAUTH_RETURN_URL — редирект на фронт с
+    connector_id и status (ok / error и error_code); без него — JSON.
+    Ошибка — тоже 200 с кодом: браузеру некуда «упасть».
+    """
+    result = await service.oauth_callback(state, code)
+    return_url = service.settings.oauth_return_url
+    if return_url is None:
+        return JSONResponse(
+            OAuthCallbackResponse(
+                ok=result.ok,
+                connector_id=result.connector_id,
+                error_code=result.error_code,
+            ).model_dump(mode="json")
+        )
+    query = {"status": "ok" if result.ok else "error"}
+    if result.connector_id is not None:
+        query["connector_id"] = str(result.connector_id)
+    if result.error_code is not None:
+        query["error_code"] = result.error_code
+    return RedirectResponse(
+        _with_query(return_url, query), status_code=status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.post(
+    "/{connector_id}/oauth/start",
+    response_model=OAuthStartResponse,
+    dependencies=[Depends(limit_by_user(CONNECTOR_GRANT_PER_USER))],
+)
+async def oauth_start(
+    connector_id: UUID, service: Service, current_user: AnyUser
+) -> OAuthStartResponse:
+    """Адрес авторизации на портале: фронт открывает его в браузере
+    сотрудника, портал вернёт браузер на /connectors/oauth/callback."""
+    return OAuthStartResponse(
+        authorize_url=await service.oauth_start(current_user, connector_id)
+    )
+
+
+def _with_query(url: str, params: dict[str, str]) -> str:
+    parts = urlsplit(url)
+    query = f"{parts.query}&{urlencode(params)}" if parts.query else urlencode(params)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
 
 
 @router.put(

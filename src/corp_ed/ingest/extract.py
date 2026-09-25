@@ -73,6 +73,8 @@ _EXTENSIONS = {
     ".md": SourceFormat.MD,
     ".markdown": SourceFormat.MD,
 }
+SUPPORTED_EXTENSIONS = frozenset(_EXTENSIONS)
+"""Адаптерам коннекторов: что вообще стоит скачивать из источника."""
 
 
 @dataclass(frozen=True)

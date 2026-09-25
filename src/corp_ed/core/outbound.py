@@ -179,8 +179,13 @@ class OutboundClient:
         *,
         headers: dict[str, str] | None = None,
         timeout: float = 30.0,
+        allow_redirects: bool = True,
         **kwargs: Any,
     ) -> httpx.Response:
+        """allow_redirects=False — вернуть ответ-редирект как есть: REST
+        Битрикс24 отвечает 301/302 при смене адреса портала, и повторять
+        POST как GET (без тела) значит получить ошибку метода вместо
+        понятного «портал переехал»."""
         current = url
         for _ in range(self._max_redirects + 1):
             target = await validate_outbound_url(current, resolver=self._resolver)
@@ -194,6 +199,8 @@ class OutboundClient:
                 extensions={"sni_hostname": target.host},
                 **kwargs,
             )
+            if not allow_redirects:
+                return response
             if response.is_redirect and "location" in response.headers:
                 await response.aclose()
                 current = urljoin(target.url, response.headers["location"])

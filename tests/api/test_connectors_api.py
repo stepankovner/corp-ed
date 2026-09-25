@@ -579,6 +579,7 @@ async def test_employee_connects_and_disconnects_own_account(
             "name": "Портал",
             "grant_status": None,
             "grant_error_code": None,
+            "oauth": False,
         }
     ]
 

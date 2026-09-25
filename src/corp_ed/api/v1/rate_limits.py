@@ -77,6 +77,11 @@ CONNECTOR_TEST_PER_TENANT = RatePolicy(
 CONNECTOR_GRANT_PER_USER = RatePolicy(
     "connector-grant-user", limit=20, window=3600, fail_open=True
 )
+# Обратный вызов OAuth приходит без нашего токена — лимит по IP, как у
+# входа: подбор state или кода не должен быть бесплатным.
+CONNECTOR_OAUTH_CALLBACK_PER_IP = RatePolicy(
+    "connector-oauth-ip", limit=30, window=900, fail_open=False
+)
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:

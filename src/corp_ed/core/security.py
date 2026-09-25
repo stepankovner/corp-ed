@@ -25,9 +25,11 @@ ALGORITHM = "HS256"
 ISSUER = "corp-ed"
 AUDIENCE = "corp-ed-api"
 ACCESS_TOKEN_TYPE = "access"  # noqa: S105 — значение claim typ, не секрет
+OAUTH_STATE_TYPE = "connector_oauth"  # noqa: S105 — значение claim typ, не секрет
 REFRESH_TOKEN_BYTES = 32
 
 _REQUIRED_CLAIMS = ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]
+_OAUTH_STATE_CLAIMS = [*_REQUIRED_CLAIMS, "tenant_id", "connector_id"]
 
 # Параметры argon2-cffi по умолчанию (RFC 9106, «низкая память»):
 # t=3, m=64 МиБ, p=4. Совпадают с тем, что писал passlib, поэтому
@@ -119,6 +121,51 @@ def decode_access_token(token: str) -> dict[str, Any]:
         options={"require": _REQUIRED_CLAIMS},
     )
     if payload.get("typ") != ACCESS_TOKEN_TYPE:
+        raise jwt.InvalidTokenError("wrong token type")
+    return payload
+
+
+def create_oauth_state(
+    user_id: UUID, tenant_id: UUID, connector_id: UUID, *, ttl_minutes: int
+) -> str:
+    """Подписанный state для OAuth-обмена коннектора (режим per_user).
+
+    Ручка обратного вызова приходит без нашего bearer-токена — браузер
+    сотрудника редиректится с портала. Кто и к какому подключению
+    авторизуется, ядро узнаёт только из state, поэтому он подписан тем же
+    ключом, что access-токены, с отдельным typ (access-токен в роли
+    state не пройдёт и наоборот) и коротким сроком.
+    """
+    settings = get_settings()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": str(user_id),
+        "tenant_id": str(tenant_id),
+        "connector_id": str(connector_id),
+        "typ": OAUTH_STATE_TYPE,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "iat": now,
+        "nbf": now,
+        "exp": now + timedelta(minutes=ttl_minutes),
+        "jti": uuid4().hex,
+    }
+    return jwt.encode(
+        payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM
+    )
+
+
+def decode_oauth_state(state: str) -> dict[str, Any]:
+    """Проверить state; бросает jwt.PyJWTError на любое нарушение."""
+    payload: dict[str, Any] = jwt.decode(
+        state,
+        get_settings().secret_key.get_secret_value(),
+        algorithms=[ALGORITHM],
+        audience=AUDIENCE,
+        issuer=ISSUER,
+        options={"require": _OAUTH_STATE_CLAIMS},
+    )
+    if payload.get("typ") != OAUTH_STATE_TYPE:
         raise jwt.InvalidTokenError("wrong token type")
     return payload
 

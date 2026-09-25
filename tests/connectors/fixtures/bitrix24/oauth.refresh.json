@@ -1,0 +1,17 @@
+{
+  "method": "oauth/token",
+  "params": {"grant_type": "refresh_token", "client_id": "app.573ad8a0346747.09223434", "client_secret": "<redacted>", "refresh_token": "<redacted>"},
+  "response": {
+    "access_token": "<redacted>",
+    "client_endpoint": "https://portal.bitrix24.ru/rest/",
+    "domain": "oauth.bitrix24.tech",
+    "expires": 1780319382,
+    "expires_in": 3600,
+    "member_id": "a223c6b3710f85df22e9377d6c4f7553",
+    "refresh_token": "<redacted>",
+    "scope": "disk,landing",
+    "server_endpoint": "https://oauth.bitrix24.tech/rest/",
+    "status": "F",
+    "user_id": 67
+  }
+}
