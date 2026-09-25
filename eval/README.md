@@ -29,8 +29,11 @@ id,question,expected_answer,expected_material,expected_section,in_corpus,type[,l
 - Лежит в `eval/private/` — в git не попадает (живые вопросы). Как писать
   вопросы — `docs/ml-golden-guide.md`.
 - 40 вопросов: 25 по корпусу (из них ≥ 5 `negation`), 10 вне корпуса,
-  5 дословных из интервью Влада.
+  5 написанных людьми (по ТЗ — из интервью Влада; на демо-корпусе черновик
+  пишет ИИ, люди проверяют — `docs/ml-golden-guide.md`).
 - `level` — `тема` / `деталь` (или `topic` / `detail`).
+- `evidence` (необязательно) — дословная цитата с ответом: правильный чанк
+  определяется по ней, а не по разделу. `author` — `llm` / `human`.
 - `split` — `dev` / `holdout`, ставит `python -m eval.datasets split …`
   (50/50 по слоям). **Holdout скрипты не берут без `--split holdout`** — он
   открывается один раз, на финальном прогоне.
@@ -42,7 +45,9 @@ id,question,expected_answer,expected_material,expected_section,in_corpus,type[,l
 - Пример — `eval/golden.example.csv`. Проверка состава:
   `python -m eval.datasets eval/private/golden.csv`.
 
-Правильный чанк для золотого вопроса — из нужного документа и нужного раздела.
+Правильный чанк для золотого вопроса — из нужного документа и с цитатой
+`evidence` (≥ 80 % пар соседних слов, как у серебряного); без цитаты — из
+нужного раздела.
 
 ### Серебряный — `eval/silver.csv` (A6, генерирует LLM)
 

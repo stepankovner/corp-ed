@@ -3,19 +3,27 @@
 Золотой — eval/private/golden.csv (живые вопросы, в git не попадает),
 формат из ТЗ:
     id,question,expected_answer,expected_material,expected_section,in_corpus,type
-и две необязательные колонки (задача 2.1, 25.09):
-    level — topic (вопрос на уровне темы) / detail (про конкретную деталь);
-            по-русски тоже можно: тема / деталь;
-    split — dev / holdout, ставит `python -m eval.datasets split`.
+и необязательные колонки (задача 2.1, 25.09):
+    level    — topic (вопрос на уровне темы) / detail (про конкретную деталь);
+               по-русски тоже можно: тема / деталь;
+    split    — dev / holdout, ставит `python -m eval.datasets split`;
+    evidence — дословная цитата из документа с ответом. Если есть,
+               правильный чанк определяется по ней (как в серебряном
+               наборе), а не по разделу: разделы бывают на несколько
+               чанков, и «любой чанк раздела» завышает Hit@K;
+    author   — кто написал вопрос (llm / human), для отчёта по перекосу;
+               загрузчиком не читается.
 Holdout не открывается до финального прогона: скрипты берут только dev,
 пока holdout не запрошен явно (`--split holdout`), см. select_split.
 
 Серебряный — eval/silver.csv (пишет generate_silver.py):
     id,question,material,position,heading_path,evidence,split,chunk_config
 
-Соглашение по золотому набору: вопросы из интервью Влада имеют id с
-префиксом «iv» (iv01…iv05) — в формате ТЗ нет отдельной колонки для
-источника вопроса, а в проверке состава их нужно посчитать.
+Соглашение по золотому набору: 5 вопросов, написанных людьми, имеют id с
+префиксом «iv» (iv01…iv05). По ТЗ это дословные вопросы из интервью Влада;
+база интервью пуста, поэтому по решению Артёма (25.09) их пишут люди «как
+спросил бы сотрудник». Остальные вопросы черновиком пишет ИИ, люди
+проверяют (docs/ml-golden-guide.md).
 
 Проверка:  python -m eval.datasets eval/private/golden.csv
 Разбиение: python -m eval.datasets split eval/private/golden.csv
@@ -132,6 +140,7 @@ def _golden_item(row: dict[str, str]) -> EvalItem:
         expected_answer=row["expected_answer"].strip(),
         expected_material=row["expected_material"].strip(),
         expected_section=row["expected_section"].strip(),
+        evidence=row.get("evidence", "").strip(),
         level=level,
         split=split,
     )
@@ -153,7 +162,7 @@ def check_golden_composition(items: list[EvalItem]) -> list[str]:
     """Расхождения золотого набора с составом из ТЗ (A5). Пусто — всё в порядке.
 
     40 вопросов: 25 по корпусу (из них ≥ 5 negation), 10 вне корпуса,
-    5 дословных из интервью Влада (id с префиксом iv).
+    5 написанных людьми (id с префиксом iv; по ТЗ — из интервью Влада).
     """
     problems: list[str] = []
     interview = [item for item in items if item.id.startswith(INTERVIEW_PREFIX)]
@@ -166,7 +175,7 @@ def check_golden_composition(items: list[EvalItem]) -> list[str]:
         (len(items), 40, "всего вопросов"),
         (len(in_corpus), 25, "по корпусу (без интервью)"),
         (len(outside), 10, "вне корпуса (без интервью)"),
-        (len(interview), 5, f"из интервью (id на «{INTERVIEW_PREFIX}»)"),
+        (len(interview), 5, f"от людей (id на «{INTERVIEW_PREFIX}»)"),
     ]
     for actual, expected, label in expectations:
         if actual != expected:
