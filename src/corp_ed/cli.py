@@ -1,7 +1,8 @@
 """Команды для команды Kronto. Запускаются на сервере, не по сети.
 
-    python -m corp_ed.cli create-tenant --code acme --name "ACME" \\
+    python -m corp_ed.cli create-tenant --code acme --name "ACME" --seats 50 \\
         --admin-email admin@acme.ru [--admin-name "Иван Петров"]
+    python -m corp_ed.cli set-seats --code acme --seats 80
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
@@ -41,8 +42,15 @@ def _parser() -> argparse.ArgumentParser:
     create = commands.add_parser("create-tenant", help="завести компанию и админа")
     create.add_argument("--code", required=True, help="код компании для входа")
     create.add_argument("--name", required=True, help="название компании")
+    create.add_argument(
+        "--seats", required=True, type=int, help="оплаченные места (пул кредитов)"
+    )
     create.add_argument("--admin-email", required=True)
     create.add_argument("--admin-name", default=None)
+
+    seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")
+    seats.add_argument("--code", required=True)
+    seats.add_argument("--seats", required=True, type=int)
 
     for name in ("suspend-tenant", "resume-tenant"):
         command = commands.add_parser(name)
@@ -95,12 +103,19 @@ async def _run(args: argparse.Namespace) -> int:
                 name=args.name,
                 admin_email=args.admin_email,
                 admin_full_name=args.admin_name,
+                seats=args.seats,
             )
             print(f"company_code:       {result.tenant.company_code}")
             print(f"tenant_id:          {result.tenant.id}")
+            print(f"seats:              {result.tenant.seats}")
             print(f"admin_email:        {result.admin.email}")
             print(f"temporary_password: {result.temporary_password}")
             print("Пароль показан один раз. Сменить при первом входе.")
+            return 0
+
+        if args.command == "set-seats":
+            tenant = await service.set_seats(args.code, args.seats)
+            print(f"{tenant.company_code}: seats={tenant.seats}")
             return 0
 
         tenant = await service.set_active(

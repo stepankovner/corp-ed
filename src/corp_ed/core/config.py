@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal, Self
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -160,6 +161,49 @@ class RagSettings(BaseSettings):
         if self.overlap_tokens >= self.chunk_tokens:
             raise ValueError("overlap_tokens must be less than chunk_tokens")
         return self
+
+
+class BillingSettings(BaseSettings):
+    """Пул кредитов компании (досье 10.2).
+
+    Структура решена командой 24.09: один пул на компанию, один тип
+    кредита, персональных лимитов нет, жёсткая остановка при
+    исчерпании. Числа — ПРЕДЛОЖЕНИЕ досье, не утверждены: 1 кредит ≈
+    одно обычное обращение (~2 000 токенов), 420 кредитов на место в
+    месяц (20 обращений × 21 день). Поэтому — настройки с дефолтами.
+    """
+
+    credits_per_seat: int = Field(default=420, gt=0)
+    tokens_per_credit: int = Field(default=2000, gt=0)
+    # Месяц считается по московскому времени: клиенты и счета — в России.
+    billing_timezone: str = "Europe/Moscow"
+    warn_at_percent: int = Field(default=80, gt=0, lt=100)
+
+    model_config = SettingsConfigDict(
+        env_prefix="BILLING_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("billing_timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        # Опечатка в поясе должна ронять старт, а не первый вопрос месяца.
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Unknown BILLING_TIMEZONE: {value}") from exc
+        return value
+
+    @property
+    def zone(self) -> ZoneInfo:
+        return ZoneInfo(self.billing_timezone)
+
+
+@lru_cache
+def get_billing_settings() -> BillingSettings:
+    return BillingSettings()
 
 
 class HttpSettings(BaseSettings):

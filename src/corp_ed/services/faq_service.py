@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.context import select_context
-from corp_ed.domain.credits import credits_for
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.types import AnswerDiagnostics, AnswerOrigin, ChunkMatch, FaqAnswer
@@ -23,6 +22,7 @@ from corp_ed.prompts.faq import (
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
+from corp_ed.services.credit_service import CreditService
 
 logger = structlog.get_logger()
 
@@ -42,6 +42,7 @@ class FaqService:
         self,
         chunk_repo: ChunkRepository,
         qa_log_repo: QaLogRepository,
+        credits: CreditService,
         embedding_gateway: EmbeddingGateway,
         llm_gateway: LLMGateway,
         session: AsyncSession,
@@ -49,10 +50,10 @@ class FaqService:
         max_distance: float,
         context_max_tokens: int,
         temperature: float,
-        tokens_per_credit: int = 2000,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
+        self.credits = credits
         self.embedding_gateway = embedding_gateway
         self.llm_gateway = llm_gateway
         self.session = session
@@ -60,7 +61,6 @@ class FaqService:
         self.max_distance = max_distance
         self.context_max_tokens = context_max_tokens
         self.temperature = temperature
-        self.tokens_per_credit = tokens_per_credit
 
     async def answer(self, question: str, user: User) -> FaqAnswer:
         """Ответить по документам, а если в них ответа нет — из общих знаний.
@@ -75,7 +75,11 @@ class FaqService:
 
         Каждый ответ пишется в qa_log (BH-20) в той же транзакции:
         версия промпта, модель, лучшее расстояние, токены и кредиты.
+
+        Пул кредитов проверяется первым: исчерпанный пул не должен
+        стоить ни эмбеддинга, ни вызова модели (досье 10.2).
         """
+        usage = await self.credits.ensure_available()
         embedded = await self.embedding_gateway.embed_query(question)
 
         matches = await self.chunk_repo.search(
@@ -94,7 +98,7 @@ class FaqService:
 
         input_tokens = sum(c.usage.input_tokens for c in outcome.completions)
         output_tokens = sum(c.usage.output_tokens for c in outcome.completions)
-        credits = credits_for(input_tokens + output_tokens, self.tokens_per_credit)
+        credits = self.credits.cost(input_tokens + output_tokens)
         model = outcome.completions[-1].model
         answer_given = outcome.origin is AnswerOrigin.DOCUMENTS
 
@@ -117,6 +121,7 @@ class FaqService:
                 credits=credits,
             )
         )
+        await self.credits.note_spend(usage, credits)
         await self.session.commit()
 
         logger.info(

@@ -16,6 +16,7 @@ from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.services.faq_service import FaqService
+from tests.conftest import make_credit_service
 
 
 def _chunk(material: Material, position: int, content: str) -> Chunk:
@@ -72,6 +73,7 @@ def _service(
     return FaqService(
         chunk_repo=chunk_repo,
         qa_log_repo=QaLogRepository(chunk_repo.session),
+        credits=make_credit_service(chunk_repo.session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,
         session=chunk_repo.session,

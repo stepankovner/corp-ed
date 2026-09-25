@@ -13,11 +13,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from corp_ed.api.v1.endpoints import audit, auth, faq, materials, users
+from corp_ed.api.v1.endpoints import audit, auth, faq, materials, usage, users
 from corp_ed.core.config import LLMSettings, get_http_settings
 from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
+    credits_exhausted_handler,
     domain_fallback_handler,
     duplicate_material_handler,
     internal_error_handler,
@@ -34,6 +35,7 @@ from corp_ed.core.exception_handlers import (
 )
 from corp_ed.core.exceptions import (
     ConflictError,
+    CreditsExhaustedError,
     DomainError,
     DuplicateMaterialError,
     InvalidCredentialsError,
@@ -168,6 +170,7 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
+app.include_router(usage.router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -190,6 +193,7 @@ app.add_exception_handler(RateLimitedError, rate_limited_handler)
 app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)
 app.add_exception_handler(UnacceptableFileError, unacceptable_file_handler)
 app.add_exception_handler(DuplicateMaterialError, duplicate_material_handler)
+app.add_exception_handler(CreditsExhaustedError, credits_exhausted_handler)
 
 # Выполняются в порядке, обратном добавлению. Снаружи внутрь:
 #   CORS → заголовки безопасности → request_id и ловушка 500 →

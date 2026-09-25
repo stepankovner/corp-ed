@@ -10,7 +10,12 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.core.config import LLMSettings, RagSettings
+from corp_ed.core.config import (
+    BillingSettings,
+    LLMSettings,
+    RagSettings,
+    get_billing_settings,
+)
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import (
     NotAuthenticatedError,
@@ -35,6 +40,7 @@ from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.user_service import UserService
@@ -285,9 +291,27 @@ def get_qa_log_repository(
     return QaLogRepository(session)
 
 
+def get_credit_service(
+    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
+    qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    settings: Annotated[BillingSettings, Depends(get_billing_settings)],
+) -> CreditService:
+    return CreditService(
+        tenant_repo,
+        qa_log_repo,
+        audit,
+        credits_per_seat=settings.credits_per_seat,
+        tokens_per_credit=settings.tokens_per_credit,
+        zone=settings.zone,
+        warn_at_percent=settings.warn_at_percent,
+    )
+
+
 def get_faq_service(
     chunk_repo: Annotated[ChunkRepository, Depends(get_chunk_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
+    credits: Annotated[CreditService, Depends(get_credit_service)],
     embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
     llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -296,6 +320,7 @@ def get_faq_service(
     return FaqService(
         chunk_repo=chunk_repo,
         qa_log_repo=qa_log_repo,
+        credits=credits,
         embedding_gateway=embedding_gateway,
         llm_gateway=llm_gateway,
         session=session,

@@ -64,6 +64,7 @@ class IngestJobStatus(enum.Enum):
 
 class Tenant(Base):
     __tablename__ = "tenants"
+    __table_args__ = (CheckConstraint("seats > 0", name="ck_tenants_seats_positive"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     company_code: Mapped[str] = mapped_column(unique=True, index=True)
@@ -71,6 +72,9 @@ class Tenant(Base):
     # Приостановленная компания (неоплата, окончание пилота, инцидент):
     # вход закрыт, выданные токены перестают приниматься.
     is_active: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # Оплаченные места. Пул кредитов на месяц = места × кредитов на место
+    # (досье 10.2). Задаёт команда при подключении (CLI).
+    seats: Mapped[int] = mapped_column(default=30, server_default="30")
 
 
 class User(TenantMixin, Base):

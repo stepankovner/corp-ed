@@ -115,3 +115,17 @@ class DuplicateMaterialError(ConflictError):
     def __init__(self, material_id: object) -> None:
         super().__init__("Этот файл уже загружен")
         self.material_id = material_id
+
+
+class CreditsExhaustedError(DomainError):
+    """Пул кредитов компании на месяц исчерпан. HTTP 402.
+
+    Жёсткая остановка — решение команды (досье 10.2): без оплаты сверх
+    лимита и без мягкой деградации.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Лимит обращений компании на этот месяц исчерпан. "
+            "Обратитесь к администратору вашей компании"
+        )

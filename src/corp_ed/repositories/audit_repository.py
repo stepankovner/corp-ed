@@ -29,6 +29,9 @@ class AuditAction(StrEnum):
     MATERIAL_CREATED = "material.created"
     MATERIAL_UPDATED = "material.updated"
     MATERIAL_DELETED = "material.deleted"
+    TENANT_SEATS_CHANGED = "tenant.seats_changed"
+    CREDITS_WARNING = "credits.warning"
+    CREDITS_EXHAUSTED = "credits.exhausted"
 
 
 class AuditRepository:
@@ -68,6 +71,25 @@ class AuditRepository:
                 details=details or {},
             )
         )
+
+    async def exists_since(
+        self, tenant_id: UUID, action: AuditAction, since: datetime
+    ) -> bool:
+        """Было ли такое событие у компании с момента since.
+
+        Нужно событиям «раз за период» (порог кредитов): они не должны
+        повторяться на каждый следующий вопрос.
+        """
+        result = await self.session.scalar(
+            select(AuditEvent.id)
+            .where(
+                AuditEvent.tenant_id == tenant_id,
+                AuditEvent.action == action.value,
+                AuditEvent.created_at >= since,
+            )
+            .limit(1)
+        )
+        return result is not None
 
     async def list_for_tenant(
         self,

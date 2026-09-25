@@ -18,12 +18,21 @@ logger = structlog.get_logger()
 # нижнем регистре, цифры и дефис — без пробелов, юникода и спецсимволов.
 _COMPANY_CODE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 
+# Верхняя граница ловит опечатку в CLI (лишний ноль — десятикратный
+# пул и счёт). Сегмент по досье — 30–300 сотрудников.
+MAX_SEATS = 10_000
+
 
 class InvalidCompanyCodeError(DomainError):
     def __init__(self) -> None:
         super().__init__(
             "Код компании: 2–63 символа, латиница в нижнем регистре, цифры, дефис"
         )
+
+
+class InvalidSeatsError(DomainError):
+    def __init__(self) -> None:
+        super().__init__(f"Число мест: от 1 до {MAX_SEATS}")
 
 
 @dataclass(frozen=True)
@@ -60,15 +69,22 @@ class TenantService:
         name: str,
         admin_email: str,
         admin_full_name: str | None,
+        seats: int,
     ) -> ProvisionedTenant:
-        """Создать компанию и её первого администратора одной транзакцией."""
+        """Создать компанию и её первого администратора одной транзакцией.
+
+        seats — оплаченные места: от них считается пул кредитов.
+        """
         code = company_code.strip().casefold()
         if not _COMPANY_CODE.fullmatch(code):
             raise InvalidCompanyCodeError()
+        _check_seats(seats)
         if await self.tenant_repo.get_by_company_code(code) is not None:
             raise ConflictError(f"Компания с кодом '{code}' уже существует")
 
-        tenant = await self.tenant_repo.create(Tenant(company_code=code, name=name))
+        tenant = await self.tenant_repo.create(
+            Tenant(company_code=code, name=name, seats=seats)
+        )
         temporary = generate_temporary_password()
 
         with tenant_scope(tenant.id):
@@ -88,7 +104,11 @@ class TenantService:
                 tenant_id=tenant.id,
                 target_type="tenant",
                 target_id=tenant.id,
-                details={"company_code": code, "admin_user_id": str(admin.id)},
+                details={
+                    "company_code": code,
+                    "admin_user_id": str(admin.id),
+                    "seats": seats,
+                },
             )
             await self.session.commit()
 
@@ -117,3 +137,38 @@ class TenantService:
         await self.session.commit()
         logger.info("tenant_status_changed", tenant_id=str(tenant.id), active=active)
         return tenant
+
+    async def set_seats(self, company_code: str, seats: int) -> Tenant:
+        """Изменить число оплаченных мест.
+
+        Пул текущего месяца пересчитывается сразу: места × кредитов на
+        место, без пропорции по дням. Докупили места в середине месяца —
+        пул вырос сегодня; сократили — уменьшился, и если потрачено уже
+        больше, обращения остановятся до следующего месяца.
+        """
+        _check_seats(seats)
+        tenant = await self.tenant_repo.get_by_company_code(company_code)
+        if tenant is None:
+            raise ConflictError(f"Компании с кодом '{company_code}' нет")
+        previous = tenant.seats
+        tenant.seats = seats
+        self.audit.record(
+            AuditAction.TENANT_SEATS_CHANGED,
+            tenant_id=tenant.id,
+            target_type="tenant",
+            target_id=tenant.id,
+            details={"from": previous, "to": seats},
+        )
+        await self.session.commit()
+        logger.info(
+            "tenant_seats_changed",
+            tenant_id=str(tenant.id),
+            previous=previous,
+            seats=seats,
+        )
+        return tenant
+
+
+def _check_seats(seats: int) -> None:
+    if not 1 <= seats <= MAX_SEATS:
+        raise InvalidSeatsError()

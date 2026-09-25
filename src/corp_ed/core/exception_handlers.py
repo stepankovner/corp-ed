@@ -87,6 +87,18 @@ async def duplicate_material_handler(request: Request, exc: Exception) -> JSONRe
     )
 
 
+async def credits_exhausted_handler(request: Request, exc: Exception) -> JSONResponse:
+    """402: пул компании на месяц исчерпан.
+
+    code — чтобы фронт показал отдельный экран, а не общую ошибку:
+    повтор запроса здесь не поможет до следующего месяца.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+        content={"detail": str(exc), "code": "credits_exhausted"},
+    )
+
+
 async def weak_password_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

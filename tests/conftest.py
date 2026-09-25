@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from corp_ed.core.config import BillingSettings
 from corp_ed.core.database import Base
 from corp_ed.core.db_policies import apply_all
 from corp_ed.core.tenant_context import current_tenant
@@ -24,6 +25,8 @@ from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.material_service import MaterialService
@@ -196,6 +199,20 @@ def fake_llm() -> FakeAdapter:
     return FakeAdapter()
 
 
+def make_credit_service(session: AsyncSession) -> CreditService:
+    """Пул с дефолтами досье: 420 кредитов на место, 2 000 токенов."""
+    settings = BillingSettings()
+    return CreditService(
+        TenantRepository(session),
+        QaLogRepository(session),
+        AuditRepository(session),
+        credits_per_seat=settings.credits_per_seat,
+        tokens_per_credit=settings.tokens_per_credit,
+        zone=settings.zone,
+        warn_at_percent=settings.warn_at_percent,
+    )
+
+
 @pytest.fixture
 def faq_service(
     session: AsyncSession,
@@ -205,6 +222,7 @@ def faq_service(
     return FaqService(
         chunk_repo=ChunkRepository(session),
         qa_log_repo=QaLogRepository(session),
+        credits=make_credit_service(session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,
         session=session,
