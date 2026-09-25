@@ -30,6 +30,7 @@ from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -278,28 +279,26 @@ def get_material_service(
     )
 
 
+def get_qa_log_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> QaLogRepository:
+    return QaLogRepository(session)
+
+
 def get_faq_service(
-    chunk_repo: Annotated[
-        ChunkRepository,
-        Depends(get_chunk_repository),
-    ],
-    embedding_gateway: Annotated[
-        EmbeddingGateway,
-        Depends(get_embedding_gateway),
-    ],
-    llm_gateway: Annotated[
-        LLMGateway,
-        Depends(get_llm_gateway),
-    ],
-    settings: Annotated[
-        RagSettings,
-        Depends(get_rag_settings),
-    ],
+    chunk_repo: Annotated[ChunkRepository, Depends(get_chunk_repository)],
+    qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
+    embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
+    llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[RagSettings, Depends(get_rag_settings)],
 ) -> FaqService:
     return FaqService(
         chunk_repo=chunk_repo,
+        qa_log_repo=qa_log_repo,
         embedding_gateway=embedding_gateway,
         llm_gateway=llm_gateway,
+        session=session,
         limit=settings.faq_limit,
         max_distance=settings.faq_max_distance,
         context_max_tokens=settings.context_max_tokens,

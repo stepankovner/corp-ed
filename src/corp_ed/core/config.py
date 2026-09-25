@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # База данных
     database_url: str
 
+    # Сколько дней хранить журнал вопросов (qa_log). Вопросы сотрудников
+    # могут содержать персональные данные даже после маскирования —
+    # хранить их дольше, чем нужно отчёту о пробелах, незачем (152-ФЗ).
+    qa_log_retention_days: int = Field(default=90, gt=0, le=365)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

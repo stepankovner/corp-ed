@@ -6,12 +6,15 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     ARRAY,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     false,
     func,
     text,
@@ -274,4 +277,52 @@ class IngestJob(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class QaLog(TenantMixin, Base):
+    """Журнал вопросов и ответов (BH-20).
+
+    Нужен для трёх вещей: привязать 👍/👎 и eval к версии промпта и
+    модели, собрать отчёт о пробелах (вопросы, на которые в документах
+    ответа нет) и считать расход кредитов компании.
+
+    Вопрос хранится ПОСЛЕ mask_pii (почта, телефоны, паспорта, ФИО):
+    для подписи кластеров пробелов текст нужен, но персональные данные в
+    нём — нет. Срок хранения — QA_LOG_RETENTION_DAYS, удаляет команда
+    purge. Ответ модели не хранится.
+    """
+
+    __tablename__ = "qa_log"
+    __table_args__ = (
+        Index("ix_qa_log_tenant_created", "tenant_id", "created_at"),
+        CheckConstraint("feedback IN (-1, 1)", name="ck_qa_log_feedback"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    question: Mapped[str] = mapped_column(Text)
+    # Тот же вектор, что ушёл в поиск (не считать второй раз); по нему
+    # кластеризуются пробелы. Размерность — как у chunks.
+    question_embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
+    embedding_model: Mapped[str] = mapped_column(String(64))
+    prompt_version: Mapped[str] = mapped_column(String(32))
+    llm_model: Mapped[str] = mapped_column(String(64))
+    best_vector_distance: Mapped[float | None]
+    best_fulltext_score: Mapped[float | None]
+    answer_given: Mapped[bool]
+    origin: Mapped[str] = mapped_column(String(32))
+    source_chunk_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, server_default="{}"
+    )
+    input_tokens: Mapped[int] = mapped_column(default=0, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(default=0, server_default="0")
+    credits: Mapped[int] = mapped_column(default=0, server_default="0")
+    feedback: Mapped[int | None] = mapped_column(SmallInteger)
+    # Заполняет ночная задача отчёта о пробелах (classify_miss).
+    miss_kind: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

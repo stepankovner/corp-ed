@@ -23,6 +23,7 @@ from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.material_service import MaterialService
@@ -203,8 +204,10 @@ def faq_service(
 ) -> FaqService:
     return FaqService(
         chunk_repo=ChunkRepository(session),
+        qa_log_repo=QaLogRepository(session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,
+        session=session,
         limit=5,
         max_distance=0.6,
         context_max_tokens=3000,

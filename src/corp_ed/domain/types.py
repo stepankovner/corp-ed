@@ -38,6 +38,18 @@ class AnswerOrigin(StrEnum):
 
 
 @dataclass(frozen=True)
+class AnswerDiagnostics:
+    """Сведения для админа и eval (E5 — стоимость и модель ответа)."""
+
+    model: str
+    prompt_version: str
+    input_tokens: int
+    output_tokens: int
+    credits: int
+    nearest_distance: float | None
+
+
+@dataclass(frozen=True)
 class FaqAnswer:
     content: str
     answer_given: bool
@@ -46,3 +58,6 @@ class FaqAnswer:
     ответа нет."""
     origin: AnswerOrigin
     sources: list[ChunkMatch]
+    log_id: UUID | None = None
+    """Запись qa_log — к ней сотрудник ставит 👍/👎."""
+    diagnostics: AnswerDiagnostics | None = None

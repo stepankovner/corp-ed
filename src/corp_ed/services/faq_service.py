@@ -1,9 +1,18 @@
-import structlog
+from dataclasses import dataclass, field
+from uuid import UUID
 
+import structlog
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.context import select_context
-from corp_ed.domain.types import AnswerOrigin, ChunkMatch, FaqAnswer
+from corp_ed.domain.credits import credits_for
+from corp_ed.domain.gaps import mask_pii
+from corp_ed.domain.models import QaLog, User
+from corp_ed.domain.types import AnswerDiagnostics, AnswerOrigin, ChunkMatch, FaqAnswer
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.types import Completion
 from corp_ed.prompts.faq import (
     PROMPT_VERSION,
     build_faq_messages,
@@ -13,8 +22,17 @@ from corp_ed.prompts.faq import (
     normalize_citations,
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.qa_log_repository import QaLogRepository
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class _Outcome:
+    content: str
+    origin: AnswerOrigin
+    sources: list[ChunkMatch]
+    completions: list[Completion] = field(default_factory=list)
 
 
 class FaqService:
@@ -23,22 +41,28 @@ class FaqService:
     def __init__(
         self,
         chunk_repo: ChunkRepository,
+        qa_log_repo: QaLogRepository,
         embedding_gateway: EmbeddingGateway,
         llm_gateway: LLMGateway,
+        session: AsyncSession,
         limit: int,
         max_distance: float,
         context_max_tokens: int,
         temperature: float,
+        tokens_per_credit: int = 2000,
     ) -> None:
         self.chunk_repo = chunk_repo
+        self.qa_log_repo = qa_log_repo
         self.embedding_gateway = embedding_gateway
         self.llm_gateway = llm_gateway
+        self.session = session
         self.limit = limit
         self.max_distance = max_distance
         self.context_max_tokens = context_max_tokens
         self.temperature = temperature
+        self.tokens_per_credit = tokens_per_credit
 
-    async def answer(self, question: str) -> FaqAnswer:
+    async def answer(self, question: str, user: User) -> FaqAnswer:
         """Ответить по документам, а если в них ответа нет — из общих знаний.
 
         Решение продукта (25.09, режим Р1 «общий ответ с пометкой»):
@@ -48,6 +72,9 @@ class FaqService:
         Выдержки, не прошедшие порог max_distance, в модель не уходят:
         нерелевантный контекст дороже и толкает модель выдать чужой
         пункт за ответ.
+
+        Каждый ответ пишется в qa_log (BH-20) в той же транзакции:
+        версия промпта, модель, лучшее расстояние, токены и кредиты.
         """
         embedded = await self.embedding_gateway.embed_query(question)
 
@@ -63,14 +90,86 @@ class FaqService:
         context = select_context(relevant, max_tokens=self.context_max_tokens)
         nearest = matches[0].distance if matches else None
 
-        if not context:
-            return await self._general_answer(
-                question, reason="no_relevant_excerpts", nearest=nearest
-            )
+        outcome = await self._answer(question, context)
 
-        messages = build_faq_messages(question=question, matches=context)
+        input_tokens = sum(c.usage.input_tokens for c in outcome.completions)
+        output_tokens = sum(c.usage.output_tokens for c in outcome.completions)
+        credits = credits_for(input_tokens + output_tokens, self.tokens_per_credit)
+        model = outcome.completions[-1].model
+        answer_given = outcome.origin is AnswerOrigin.DOCUMENTS
+
+        entry = await self.qa_log_repo.add(
+            QaLog(
+                user_id=user.id,
+                # Для отчёта о пробелах нужен текст, но не персональные
+                # данные в нём (152-ФЗ): почта, телефоны, ФИО — маской.
+                question=mask_pii(question),
+                question_embedding=embedded.embedding,
+                embedding_model=embedded.model,
+                prompt_version=PROMPT_VERSION,
+                llm_model=model,
+                best_vector_distance=nearest,
+                answer_given=answer_given,
+                origin=outcome.origin.value,
+                source_chunk_ids=[source.id for source in outcome.sources],
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                credits=credits,
+            )
+        )
+        await self.session.commit()
+
+        logger.info(
+            "faq_answered",
+            qa_log_id=str(entry.id),
+            origin=outcome.origin.value,
+            used=len(outcome.sources),
+            nearest=nearest,
+            prompt_version=PROMPT_VERSION,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            latency_ms=sum(c.latency_ms for c in outcome.completions),
+        )
+        return FaqAnswer(
+            content=outcome.content,
+            answer_given=answer_given,
+            origin=outcome.origin,
+            sources=outcome.sources,
+            log_id=entry.id,
+            diagnostics=AnswerDiagnostics(
+                model=model,
+                prompt_version=PROMPT_VERSION,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                credits=credits,
+                nearest_distance=nearest,
+            ),
+        )
+
+    async def search(self, question: str, limit: int) -> list[ChunkMatch]:
+        """Отладка поиска для eval (BH-5): top-K без порога и без LLM.
+
+        Порог здесь не применяется: для подбора порога (A8) нужны
+        расстояния и у тех вопросов, которые его не прошли.
+        """
+        embedded = await self.embedding_gateway.embed_query(question)
+        return await self.chunk_repo.search(embedding=embedded.embedding, limit=limit)
+
+    async def rate(self, user: User, log_id: UUID, feedback: int) -> None:
+        """👍/👎 к своему ответу. Чужой ответ — 404, как несуществующий."""
+        entry = await self.qa_log_repo.get_by_id(log_id)
+        if entry is None or entry.user_id != user.id:
+            raise NotFoundError("Ответ не найден")
+        entry.feedback = feedback
+        await self.session.commit()
+
+    async def _answer(self, question: str, context: list[ChunkMatch]) -> _Outcome:
+        if not context:
+            return await self._general_answer(question, reason="no_relevant_excerpts")
+
         completion = await self.llm_gateway.generate(
-            messages=messages,
+            messages=build_faq_messages(question=question, matches=context),
             temperature=self.temperature,
         )
         # Модели иногда ставят в скобки номер пункта документа [4.2]
@@ -80,30 +179,18 @@ class FaqService:
         # Выдержки нашлись, но модель по ним отказала: в документах
         # ответа нет — это тот же случай, что и пустой поиск.
         if is_not_found(content):
-            return await self._general_answer(
-                question, reason="model_refusal", nearest=nearest
-            )
+            general = await self._general_answer(question, reason="model_refusal")
+            general.completions.insert(0, completion)
+            return general
 
-        logger.info(
-            "faq_answered",
-            origin=AnswerOrigin.DOCUMENTS.value,
-            used=len(context),
-            nearest=nearest,
-            prompt_version=PROMPT_VERSION,
-            model=completion.model,
-            usage=completion.usage,
-            latency_ms=completion.latency_ms,
-        )
-        return FaqAnswer(
+        return _Outcome(
             content=content,
-            answer_given=True,
             origin=AnswerOrigin.DOCUMENTS,
             sources=context,
+            completions=[completion],
         )
 
-    async def _general_answer(
-        self, question: str, *, reason: str, nearest: float | None
-    ) -> FaqAnswer:
+    async def _general_answer(self, question: str, *, reason: str) -> _Outcome:
         """Ответ из общих знаний со строгой пометкой.
 
         В этот промпт не уходит ни одной выдержки: смешать общие сведения
@@ -115,19 +202,10 @@ class FaqService:
             messages=build_general_messages(question),
             temperature=self.temperature,
         )
-        logger.info(
-            "faq_answered",
-            origin=AnswerOrigin.GENERAL_KNOWLEDGE.value,
-            reason=reason,
-            nearest=nearest,
-            prompt_version=PROMPT_VERSION,
-            model=completion.model,
-            usage=completion.usage,
-            latency_ms=completion.latency_ms,
-        )
-        return FaqAnswer(
+        logger.info("faq_general_answer", reason=reason)
+        return _Outcome(
             content=ensure_general_prefix(completion.content),
-            answer_given=False,
             origin=AnswerOrigin.GENERAL_KNOWLEDGE,
             sources=[],
+            completions=[completion],
         )
