@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import StrEnum
 from uuid import UUID
 
 
@@ -22,8 +23,26 @@ class ChunkMatch:
     heading_path: list[str]
 
 
+class AnswerOrigin(StrEnum):
+    """Откуда взят ответ.
+
+    DOCUMENTS — из выдержек документов компании, со ссылками.
+    GENERAL_KNOWLEDGE — в документах ответа не нашлось, модель ответила
+    из общих знаний. Такой ответ всегда помечен: первой строкой текста
+    (GENERAL_ANSWER_PREFIX) и этим полем — фронт показывает предупреждение
+    по полю, не разбирая текст.
+    """
+
+    DOCUMENTS = "documents"
+    GENERAL_KNOWLEDGE = "general_knowledge"
+
+
 @dataclass(frozen=True)
 class FaqAnswer:
     content: str
     answer_given: bool
+    """Ответ дан ПО ДОКУМЕНТАМ. Для общего ответа — False: для журнала
+    ответов и отчёта о пробелах это вопрос, на который в базе знаний
+    ответа нет."""
+    origin: AnswerOrigin
     sources: list[ChunkMatch]
