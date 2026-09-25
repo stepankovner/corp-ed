@@ -1,8 +1,14 @@
-"""Воркер фонового ингеста: python -m corp_ed.worker
+"""Воркер фоновых задач: python -m corp_ed.worker
 
-Берёт задачи из ingest_jobs по одной, выполняет в контексте тенанта
-задачи, повторяет временные сбои с растущей паузой. Останавливается по
-SIGTERM/SIGINT после текущей задачи — docker stop не рвёт её посередине.
+Два цикла в одном процессе:
+- IngestWorker — задачи ingest_jobs (нарезка, эмбеддинги, замена чанков);
+- SyncWorker — задачи connector_sync_jobs (синхронизация коннекторов) и
+  планировщик, который раз в минуту ставит в очередь подключения с
+  истёкшим интервалом.
+
+Каждая задача выполняется в контексте своего тенанта, временные сбои
+повторяются с растущей паузой. Останавливается по SIGTERM/SIGINT после
+текущей задачи — docker stop не рвёт её посередине.
 
 Правило изоляции: одна задача — одна свежая сессия и один tenant_scope.
 Identity map сессии, пережившей задачу другого тенанта, отдал бы его
@@ -13,29 +19,45 @@ import asyncio
 import contextlib
 import signal
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.core.config import LLMSettings, RagSettings, get_http_settings
+from corp_ed.connectors.registry import default_registry
+from corp_ed.core.config import (
+    LLMSettings,
+    RagSettings,
+    get_connector_settings,
+    get_http_settings,
+)
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.secrets import SecretBox
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import MaterialStatus
+from corp_ed.domain.types import SyncRunStatus, SyncTrigger
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle, Throttle
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.connector_repository import ConnectorRepository
+from corp_ed.repositories.connector_sync_job_repository import (
+    ClaimedSyncJob,
+    ConnectorSyncJobRepository,
+)
 from corp_ed.repositories.ingest_job_repository import (
     ClaimedJob,
     IngestJobRepository,
 )
 from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.services.connector_sync_service import ConnectorSyncService
 from corp_ed.services.ingest_service import IngestService
 
 logger = structlog.get_logger()
@@ -159,6 +181,122 @@ class IngestWorker:
         await session.commit()
 
 
+SYNC_MAX_ATTEMPTS = 3
+SYNC_STALE_AFTER = timedelta(hours=3)
+"""Запуск синхронизации длится до CONNECTOR_MAX_RUN_MINUTES; дольше
+трёх часов в RUNNING — воркер упал."""
+SCHEDULE_EVERY = 60.0
+SYNC_ERROR_INTERNAL = "internal_error"
+
+
+class SyncWorker:
+    """Очередь синхронизации коннекторов и её планировщик."""
+
+    def __init__(
+        self,
+        session_maker: async_sessionmaker[AsyncSession],
+        service: ConnectorSyncService,
+        *,
+        max_attempts: int = SYNC_MAX_ATTEMPTS,
+        schedule_every: float = SCHEDULE_EVERY,
+    ) -> None:
+        self.session_maker = session_maker
+        self.service = service
+        self.max_attempts = max_attempts
+        self.schedule_every = schedule_every
+
+    async def run_once(self) -> bool:
+        """Выполнить одну задачу. False — очередь пуста."""
+        async with self.session_maker() as session:
+            job = await ConnectorSyncJobRepository(session).claim_next(
+                stale_after=SYNC_STALE_AFTER
+            )
+            await session.commit()
+        if job is None:
+            return False
+        log = logger.bind(
+            job_id=str(job.id),
+            tenant_id=str(job.tenant_id),
+            connector_id=str(job.connector_id),
+            attempt=job.attempts,
+        )
+        try:
+            outcome = await self.service.run(
+                job.tenant_id, job.connector_id, trigger=job.trigger
+            )
+        except Exception:
+            # Сам сервис ловит всё и пишет в журнал запуска; сюда доходит
+            # только сбой до или после запуска (база недоступна).
+            log.exception("sync_job_crashed")
+            await self._settle(job, retryable=True, error=SYNC_ERROR_INTERNAL)
+            return True
+        if outcome is None or outcome.status is not SyncRunStatus.FAILED:
+            await self._settle(job, retryable=False, error=None)
+        else:
+            await self._settle(
+                job, retryable=outcome.retryable, error=outcome.error_code
+            )
+        return True
+
+    async def _settle(
+        self, job: ClaimedSyncJob, *, retryable: bool, error: str | None
+    ) -> None:
+        async with self.session_maker() as session:
+            jobs = ConnectorSyncJobRepository(session)
+            if error is None:
+                await jobs.mark_done(job.id)
+            elif retryable and job.attempts < self.max_attempts:
+                await jobs.retry_later(job.id, error, retry_delay(job.attempts))
+            else:
+                await jobs.mark_failed(job.id, error)
+            await session.commit()
+
+    async def schedule_due(self) -> int:
+        """Поставить в очередь подключения, чей интервал истёк.
+
+        По компаниям в своём tenant_scope: таблица connectors под RLS, а
+        планировщик — единственное место, где нужны все компании сразу.
+        """
+        now = datetime.now(UTC)
+        async with self.session_maker() as session:
+            tenants = await TenantRepository(session).list_all()
+        queued = 0
+        for tenant in tenants:
+            if not tenant.is_active:
+                continue
+            with tenant_scope(tenant.id):
+                async with self.session_maker() as session:
+                    due = await ConnectorRepository(session).list_due(now)
+                    jobs = ConnectorSyncJobRepository(session)
+                    for connector in due:
+                        if await jobs.enqueue(
+                            tenant.id, connector.id, SyncTrigger.SCHEDULE
+                        ):
+                            queued += 1
+                    await session.commit()
+        if queued:
+            logger.info("sync_scheduled", queued=queued)
+        return queued
+
+    async def run_forever(self, stop: asyncio.Event) -> None:
+        logger.info("sync_worker_started")
+        next_schedule = 0.0
+        loop = asyncio.get_running_loop()
+        while not stop.is_set():
+            try:
+                if loop.time() >= next_schedule:
+                    await self.schedule_due()
+                    next_schedule = loop.time() + self.schedule_every
+                worked = await self.run_once()
+            except Exception:
+                logger.exception("sync_worker_loop_error")
+                worked = False
+            if not worked:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=IDLE_SLEEP)
+        logger.info("sync_worker_stopped")
+
+
 def _ingest_throttle(redis: Redis | None, rate: float) -> Throttle:
     if redis is None:
         return InMemoryThrottle(rate, max_wait=INGEST_MAX_WAIT)
@@ -186,9 +324,20 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             dim=llm.embedding_dim,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
-        worker = IngestWorker(get_session_maker(), gateway, rag)
+        connector_settings = get_connector_settings()
+        sync_service = ConnectorSyncService(
+            get_session_maker(),
+            OutboundClient(client),
+            default_registry(),
+            SecretBox(connector_settings.keys),
+            connector_settings,
+        )
+        ingest_worker = IngestWorker(get_session_maker(), gateway, rag)
+        sync_worker = SyncWorker(get_session_maker(), sync_service)
         try:
-            await worker.run_forever(stop)
+            await asyncio.gather(
+                ingest_worker.run_forever(stop), sync_worker.run_forever(stop)
+            )
         finally:
             if redis is not None:
                 await redis.aclose()

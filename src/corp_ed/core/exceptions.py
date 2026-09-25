@@ -129,3 +129,29 @@ class CreditsExhaustedError(DomainError):
             "Лимит обращений компании на этот месяц исчерпан. "
             "Обратитесь к администратору вашей компании"
         )
+
+
+class ConnectorLimitError(ConflictError):
+    """Технический потолок подключений на компанию (CONNECTOR_MAX_PER_TENANT).
+
+    Не тарифная граница: тариф строится от мест (решение команды 25.09).
+    HTTP 409 с кодом connector_limit.
+    """
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"В компании не больше {limit} подключений")
+        self.code = "connector_limit"
+
+
+class InvalidConnectorConfigError(DomainError):
+    """Настройки коннектора не приняты: неизвестный вид, лишнее или
+    пропущенное поле, адрес не прошёл проверку. code — для фронта. HTTP 422."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class ConnectorStateError(ConflictError):
+    """Действие не подходит к состоянию коннектора (синхронизировать
+    приостановленный, задать учётные данные не в том режиме). HTTP 409."""

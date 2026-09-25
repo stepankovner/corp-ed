@@ -25,6 +25,9 @@ class ChunkMatch:
     """ts_rank_cd по полнотекстовой ветке; None — чанк найден только
     вектором. distance известен всегда: полнотекстовая ветка считает его
     тем же запросом."""
+    source_url: str | None = None
+    """Ссылка на документ в источнике (коннекторы); у ручных загрузок
+    пусто. Фронт показывает её в источниках ответа (досье 12.2)."""
 
 
 class AnswerOrigin(StrEnum):
@@ -107,3 +110,63 @@ class GapStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     RESOLVED = "resolved"
     DISMISSED = "dismissed"
+
+
+class ConnectorMode(StrEnum):
+    """Как коннектор получает документы и права (DECISIONS «Коннекторы»).
+
+    ORGANIZATION — админ подключает одну учётную запись на компанию,
+    адаптер выгружает документы и их ACL (Confluence). PER_USER — админ
+    ставит приложение, каждый сотрудник авторизует его сам; документ
+    виден сотруднику, если есть в ЕГО листинге (Битрикс24, Яндекс).
+    """
+
+    ORGANIZATION = "organization"
+    PER_USER = "per_user"
+
+
+class ConnectorStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    # Остановлен системой: учётные данные не работают. До вмешательства
+    # админа не синхронизируется.
+    ERROR = "error"
+
+
+class GrantStatus(StrEnum):
+    """Состояние авторизации сотрудника в коннекторе per_user."""
+
+    ACTIVE = "active"
+    # Источник отверг токен: сотруднику нужно подключиться заново.
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+
+
+class SyncRunStatus(StrEnum):
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    # Часть документов пропущена (ошибка или бюджет запуска исчерпан).
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+class SyncTrigger(StrEnum):
+    SCHEDULE = "schedule"
+    MANUAL = "manual"
+
+
+class MaterialVisibility(StrEnum):
+    """Кто из сотрудников компании видит документ в поиске.
+
+    TENANT — все (ручные загрузки и документы без ограничений в
+    источнике). RESTRICTED — только те, у кого есть строка в
+    material_access: права источника, зеркалированные коннектором.
+    """
+
+    TENANT = "tenant"
+    RESTRICTED = "restricted"
+
+
+class RemoteDocumentKind(StrEnum):
+    FILE = "file"
+    PAGE = "page"

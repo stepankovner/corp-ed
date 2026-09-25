@@ -80,11 +80,17 @@ TENANT_TABLES = (
     "glossary_terms",
     "gap_clusters",
     "gap_cluster_questions",
+    "connectors",
+    "connector_user_grants",
+    "connector_sync_runs",
+    "material_access",
 )
 """Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
 проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,
 ищется при входе до того, как тенант известен), refresh_tokens (ищется
-по хешу до входа), audit_events (пишется и без тенанта)."""
+по хешу до входа), audit_events (пишется и без тенанта), ingest_jobs и
+connector_sync_jobs (очереди: воркер берёт задачу до того, как знает
+тенанта; в них только идентификаторы)."""
 
 # NULLIF: пустая строка (тенант не выставлен) превращается в NULL, и
 # сравнение даёт NULL — ни одной строки. Приведение ''::uuid упало бы с

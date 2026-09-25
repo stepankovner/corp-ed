@@ -10,11 +10,14 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.connectors.registry import AdapterRegistry, default_registry
 from corp_ed.core.config import (
     BillingSettings,
+    ConnectorSettings,
     LLMSettings,
     RagSettings,
     get_billing_settings,
+    get_connector_settings,
 )
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import (
@@ -22,6 +25,8 @@ from corp_ed.core.exceptions import (
     PasswordChangeRequiredError,
     PermissionError,
 )
+from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
@@ -33,6 +38,14 @@ from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.connector_repository import (
+    ConnectorRepository,
+    GrantRepository,
+    SyncRunRepository,
+)
+from corp_ed.repositories.connector_sync_job_repository import (
+    ConnectorSyncJobRepository,
+)
 from corp_ed.repositories.gap_repository import GapRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
@@ -42,6 +55,7 @@ from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.gap_service import GapService
@@ -343,4 +357,43 @@ def get_faq_service(
         temperature=settings.faq_temperature,
         retriever=Retriever(settings.retriever),
         fulltext_weight=settings.fulltext_weight,
+    )
+
+
+@lru_cache
+def get_adapter_registry() -> AdapterRegistry:
+    return default_registry()
+
+
+@lru_cache
+def get_secret_box() -> SecretBox:
+    return SecretBox(get_connector_settings().keys)
+
+
+def get_outbound_client(
+    client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
+) -> OutboundClient:
+    return OutboundClient(client)
+
+
+def get_connector_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
+    secrets: Annotated[SecretBox, Depends(get_secret_box)],
+    settings: Annotated[ConnectorSettings, Depends(get_connector_settings)],
+    http: Annotated[OutboundClient, Depends(get_outbound_client)],
+) -> ConnectorService:
+    return ConnectorService(
+        ConnectorRepository(session),
+        GrantRepository(session),
+        SyncRunRepository(session),
+        ConnectorSyncJobRepository(session),
+        MaterialRepository(session),
+        audit,
+        secrets,
+        registry,
+        settings,
+        session,
+        http,
     )

@@ -184,18 +184,45 @@ Redis (Lua `INCR`+`EXPIRE`, атомарно) или память процесс
   (`ingest/test_extract.py::test_sandbox_environment_has_no_secrets`).
 - `.env` в `.gitignore`; gitleaks в CI по всей истории.
 
-### 3.9. Аудит
+### 3.9. Коннекторы к системам клиентов
+
+Воркер ходит в системы клиентов (Битрикс24, Confluence, Яндекс 360) по
+адресам, которые задал администратор компании, и хранит учётные данные
+к ним. Это новая поверхность: SSRF, секреты в базе, чужие права на
+документы.
+
+| Мера | Код | Тесты |
+|---|---|---|
+| Учётные данные источников шифруются в базе (Fernet: AES-128-CBC + HMAC-SHA256), ключ — только в окружении API и воркера (`CONNECTOR_SECRETS_KEYS`), ротация через `MultiFernet` без простоя; в `production` без ключа приложение не стартует; без ключа в разработке — 503 на записи | `core/secrets.py`, `core/config.py::ConnectorSettings` | `security/test_secrets.py`, `api/test_connectors_api.py::test_without_encryption_key_credentials_are_refused` |
+| Секреты только на запись: в ответах API — `credentials_set_at`; в аудите — имена полей; колонка `deferred` и не поднимается списками; расшифровка — только в момент вызова адаптера | `services/connector_service.py`, `domain/models.py::Connector` | `api/test_connectors_api.py::test_credentials_are_write_only_encrypted_and_queue_a_sync` |
+| **SSRF**: только `https`, без учётных данных в URL; имя резолвится и каждый адрес проверяется (loopback, RFC 1918, ULA, link-local и метаданные облака, CGNAT, multicast, служебные; IPv6 с вложенным IPv4 — по вложенному); подключение к **проверенному IP** с именем в `Host` и SNI (DNS rebinding); редиректы — вручную, с той же проверкой, не больше 3 | `core/outbound.py` | `security/test_outbound.py` (каждый класс адресов, rebinding между редиректами, приватный редирект) |
+| Адрес системы проверяется уже при создании коннектора: частный или `http` → 422 с кодом | `services/connector_service.py::_validate_config` | `api/test_connectors_api.py::test_invalid_forms_are_rejected_with_a_code` |
+| Адаптер получает `OutboundClient`, а не голый `httpx`: другого пути в сеть у него нет | `connectors/registry.py::AdapterFactory` | — (по конструкции) |
+| Скачанное — враждебный ввод: файлы идут через `detect_format` и ту же песочницу, что и загрузка; HTML страниц чистится (скрипты, формы, фреймы, `javascript:`/`data:` ссылки, атрибуты) и только потом становится Markdown; лимиты размера | `services/connector_sync_service.py`, `connectors/html.py` | `test_connector_html.py`, `test_connector_sync.py::test_one_broken_document_does_not_stop_the_run` |
+| Права источника зеркалируются: `materials.visibility` + `material_access`; поиск чанков (вектор и полнотекст) фильтрует по спрашивающему, и это обязательный аргумент, а не флаг | `repositories/chunk_repository.py::_visible_to` | `test_visibility.py`, `test_connector_sync.py` (оба режима, отзыв прав) |
+| Форма коннектора — по спецификации вида: неизвестные поля, лишние модули → 422; технический потолок подключений на компанию → 409 | `services/connector_service.py` | `api/test_connectors_api.py` |
+| Отвергнутые учётные данные останавливают коннектор (или грант сотрудника) без повторов; событие аудита `connector.stopped` | `services/connector_sync_service.py` | `test_connector_sync.py::test_rejected_credentials_stop_the_connector` |
+| Новые таблицы под RLS с FORCE; задачи очереди — без данных; синхронизация — в `tenant_scope` компании | `core/db_policies.py::TENANT_TABLES` | `security/test_rls.py` (каталог), `test_connector_sync.py::test_sync_never_touches_another_tenant` |
+| Лимиты частоты: настройка 120/ч, «синхронизировать сейчас» 12/ч, проверка 30/ч на компанию; гранты 20/ч на сотрудника | `api/v1/rate_limits.py` | `api/test_connectors_api.py::test_sync_now_is_rate_limited_per_tenant` |
+
+Что ещё не сделано: egress-политика воркера в проде (`DEPLOY.md`) —
+вторая линия после проверки адресов; OAuth-обмен кодов для Битрикс24 —
+этап 2.
+
+### 3.10. Аудит
 
 `audit_events`: вход (успех/неудача с причиной), reuse refresh-токена,
 выход, смена пароля, создание/изменение/сброс пользователя, компания
 (создание, приостановка, места, режим ответа), материалы, словарь,
-статус пробела, пороги кредитов. Поля: актор, цель, IP, `request_id`,
+статус пробела, пороги кредитов, коннекторы (создание, изменение,
+удаление, учётные данные — только имена полей, ручной запуск,
+остановка системой, гранты сотрудников). Поля: актор, цель, IP, `request_id`,
 детали. Таблица **только дописывается**: `UPDATE` запрещён триггером
 (кроме `ON DELETE SET NULL` внешних ключей), `DELETE` — только строк
 старше 365 дней (`core/db_policies.py`, `security/test_audit_log.py`).
 Администратор компании видит журнал своей компании (`GET /audit`).
 
-### 3.10. Хранение и сроки
+### 3.11. Хранение и сроки
 
 | Данные | Хранится | Срок |
 |---|---|---|
@@ -209,7 +236,7 @@ Redis (Lua `INCR`+`EXPIRE`, атомарно) или память процесс
 Удаление материала удаляет чанки и задачи каскадом; удаление вопроса
 по сроку — его участие в кластерах пробелов.
 
-### 3.11. База данных
+### 3.12. База данных
 
 Две роли (`DEPLOY.md`, раздел 2): владелец схемы для миграций и
 `corp_ed_app` с правами только на данные. Схема `public` без `CREATE`
@@ -218,7 +245,7 @@ Redis (Lua `INCR`+`EXPIRE`, атомарно) или память процесс
 `SUPERUSER` — единственный способ поймать миграцию, которая под FORCE
 RLS не видит строк.
 
-### 3.12. Контейнер и цепочка поставки
+### 3.13. Контейнер и цепочка поставки
 
 - Образ: uv закреплён по версии, `apt-get upgrade`, процесс под
   системным пользователем без shell, код только на чтение, HEALTHCHECK
@@ -246,7 +273,7 @@ RLS не видит строк.
 | API4 | Unrestricted Resource Consumption | лимиты тела, длины, частоты, квота эмбеддингов, семафор LLM, пул кредитов, песочница парсера с rlimits, потолки словаря и отчёта |
 | API5 | Broken Function Level Authorization | `require_role` на каждой административной ручке; нет ручки создания компаний вовсе (CLI) |
 | API6 | Unrestricted Access to Sensitive Business Flows | загрузка и вопросы ограничены на компанию и пользователя; кредиты |
-| API7 | SSRF | исходящие запросы — только к фиксированным адресам Yandex Cloud; URL от клиента не принимаются |
+| API7 | SSRF | адреса систем клиентов — только `https` и публичные IP, резолв и проверка каждого адреса, подключение к закреплённому IP (DNS rebinding), редиректы с повторной проверкой (`core/outbound.py`, § 3.9); Yandex Cloud — фиксированные адреса |
 | API8 | Security Misconfiguration | заголовки, CORS/Host явно, докс в production выключены, отказ старта при небезопасной конфигурации, non-root образ, Trivy config |
 | API9 | Improper Inventory Management | один версионированный префикс `/api/v1`, OpenAPI генерируется из кода, `test_removed_endpoints.py` фиксирует удалённые ручки |
 | API10 | Unsafe Consumption of APIs | ответы провайдера LLM валидируются по форме; кривые тела → `LLMError`; ретраи с ограничением |
@@ -291,6 +318,23 @@ RLS не видит строк.
 - [ ] Прямое подключение под `corp_ed_app` без `app.tenant_id`:
       `SELECT count(*) FROM materials` = 0; `SET ROLE`/`SET
       row_security = off` → ошибка.
+- [ ] Документ коннектора с `visibility = restricted` не цитируется
+      сотруднику без строки в `material_access` — ни в `/faq/ask`, ни в
+      `/faq/search` админа.
+
+**Коннекторы**
+- [ ] `POST /connectors` с `base_url` вида `http://…`,
+      `https://127.0.0.1`, `https://169.254.169.254`,
+      `https://[::ffff:10.0.0.1]`, `https://user:pw@host`, именем,
+      резолвящимся в частный адрес, → `422` с кодом; запроса наружу нет.
+- [ ] Источник, отвечающий редиректом на частный адрес, → запуск
+      падает с `address_not_public`, подключения к адресу нет.
+- [ ] Ответы `GET /connectors*`, журнал аудита и логи не содержат
+      учётных данных; в `connectors.credentials` — шифротекст Fernet.
+- [ ] `PUT /connectors/{id}/credentials` с лишним полем → `422`;
+      сотрудник (не админ) → `403`; чужой коннектор → `404`.
+- [ ] Страница источника со `<script>`, формой и `javascript:`-ссылкой
+      → в материале только текст.
 
 **Токены**
 - [ ] `alg: none`, другой HMAC-алгоритм, изменённый `tenant_id` в
@@ -358,7 +402,12 @@ RLS не видит строк.
 - actions и базовый образ закреплены тегом, не хешем;
 - семафор LLM — на процесс, при нескольких процессах квота делится
   руками;
-- секреты — в переменных окружения контейнера.
+- секреты — в переменных окружения контейнера;
+- фильтр прав в векторном поиске выполняется после ANN-выборки, без
+  индекса по вектору — на MVP таблицы малы, при росте нужен индекс и
+  проверка полноты выдачи;
+- egress воркера ограничен проверкой адресов в коде, сетевой политики
+  на стенде пока нет.
 
 ---
 

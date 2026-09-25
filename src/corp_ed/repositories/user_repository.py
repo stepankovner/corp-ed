@@ -1,8 +1,10 @@
+from collections.abc import Iterable
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import User, UserRole
 
 
@@ -28,6 +30,23 @@ class UserRepository:
             select(User).where(User.email == email.casefold())
         )
         return result.first()
+
+    async def ids_by_emails(self, emails: Iterable[str]) -> dict[str, UUID]:
+        """{почта: id} для сопоставления ACL источника с сотрудниками.
+
+        Почты в базе хранятся в casefold; адаптер отдаёт как в источнике.
+        Неизвестные почты просто не попадают в ответ: у людей без учётки
+        у нас документ и не должен быть виден.
+        """
+        wanted = {email.strip().casefold() for email in emails if email}
+        if not wanted:
+            return {}
+        result = await self.session.execute(
+            select(User.email, User.id).where(
+                User.tenant_id == require_tenant(), User.email.in_(wanted)
+            )
+        )
+        return {row.email: row.id for row in result}
 
     async def list_all(self) -> list[User]:
         result = await self.session.scalars(select(User).order_by(User.created_at))

@@ -62,6 +62,21 @@ INGEST_PER_TENANT = RatePolicy("ingest-tenant", limit=120, window=3600, fail_ope
 GLOSSARY_PER_TENANT = RatePolicy(
     "glossary-tenant", limit=300, window=3600, fail_open=True
 )
+# Коннекторы: настройка — руками админа; «синхронизировать сейчас» и
+# проверка учётных данных — запросы к системе клиента, их темп держим
+# ниже её лимитов API.
+CONNECTOR_WRITE_PER_TENANT = RatePolicy(
+    "connector-tenant", limit=120, window=3600, fail_open=True
+)
+CONNECTOR_SYNC_PER_TENANT = RatePolicy(
+    "connector-sync-tenant", limit=12, window=3600, fail_open=True
+)
+CONNECTOR_TEST_PER_TENANT = RatePolicy(
+    "connector-test-tenant", limit=30, window=3600, fail_open=True
+)
+CONNECTOR_GRANT_PER_USER = RatePolicy(
+    "connector-grant-user", limit=20, window=3600, fail_open=True
+)
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:

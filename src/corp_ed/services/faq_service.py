@@ -127,7 +127,11 @@ class FaqService:
         embedded = await self.embedding_gateway.embed_query(search_text)
 
         found = await self._retrieve(
-            search_text, embedded.embedding, limit=self.limit, retriever=self.retriever
+            search_text,
+            embedded.embedding,
+            limit=self.limit,
+            retriever=self.retriever,
+            viewer=user.id,
         )
         # Порядок сохраняется: номер [n] в ответе модели — позиция выдержки
         # в context, и в том же порядке источники уходят клиенту.
@@ -202,13 +206,20 @@ class FaqService:
         )
 
     async def search(
-        self, question: str, limit: int, retriever: Retriever | None = None
+        self,
+        question: str,
+        limit: int,
+        retriever: Retriever | None = None,
+        *,
+        viewer: User,
     ) -> list[ChunkMatch]:
         """Отладка поиска для eval (BH-5): top-K без порога и без LLM.
 
         Порог здесь не применяется: для подбора порога (A8) нужны
         расстояния и у тех вопросов, которые его не прошли. retriever —
         сравнить способы поиска на живой базе, не меняя настройку.
+        Права источников действуют и здесь: админ видит то, что видит
+        сам, а не всё подряд.
         """
         search_text = await self._search_text(question)
         embedded = await self.embedding_gateway.embed_query(search_text)
@@ -217,6 +228,7 @@ class FaqService:
             embedded.embedding,
             limit=limit,
             retriever=retriever or self.retriever,
+            viewer=viewer.id,
         )
         return found.candidates
 
@@ -244,8 +256,13 @@ class FaqService:
         *,
         limit: int,
         retriever: Retriever,
+        viewer: UUID,
     ) -> _Retrieval:
         """Найти выдержки и решить, какие из них проходят порог.
+
+        viewer — сотрудник, чьи права на документы применяются в поиске
+        (materials.visibility и material_access): чужие документы не
+        попадают ни в промпт, ни в источники, ни в отладку.
 
         VECTOR: порог — на каждой выдержке. HYBRID (M1, BH-12): вектор и
         полнотекст по FUSION_CANDIDATES, слияние RRF с весами 1.0 и
@@ -259,9 +276,13 @@ class FaqService:
         """
         query = to_fulltext_query(question)
         if retriever is Retriever.VECTOR:
-            vector = await self.chunk_repo.search(embedding=embedding, limit=limit)
+            vector = await self.chunk_repo.search(
+                embedding=embedding, limit=limit, viewer=viewer
+            )
             fulltext = (
-                await self.chunk_repo.search_fulltext(query, embedding, limit=1)
+                await self.chunk_repo.search_fulltext(
+                    query, embedding, limit=1, viewer=viewer
+                )
                 if query
                 else []
             )
@@ -273,10 +294,14 @@ class FaqService:
             )
 
         depth = max(limit, FUSION_CANDIDATES)
-        vector = await self.chunk_repo.search(embedding=embedding, limit=depth)
+        vector = await self.chunk_repo.search(
+            embedding=embedding, limit=depth, viewer=viewer
+        )
         # Пустая строка (вопрос из одних знаков) — ветку не вызывать.
         fulltext = (
-            await self.chunk_repo.search_fulltext(query, embedding, limit=depth)
+            await self.chunk_repo.search_fulltext(
+                query, embedding, limit=depth, viewer=viewer
+            )
             if query
             else []
         )

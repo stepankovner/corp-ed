@@ -22,6 +22,7 @@ from tests.conftest import make_credit_service
 
 # Фейковый эмбеддер отдаёт на вопрос [0.1] * dim.
 NEAR = [0.1] * EMBEDDING_DIM  # расстояние 0
+VIEWER = uuid4()  # любой сотрудник: материалы фикстур видны всей компании
 FAR = [-0.1] * (EMBEDDING_DIM // 2) + [0.1] * (EMBEDDING_DIM // 2)  # 1.0
 
 
@@ -66,7 +67,9 @@ def _service(
 
 
 async def _fulltext(repo: ChunkRepository, question: str, limit: int = 10) -> list[str]:
-    matches = await repo.search_fulltext(to_fulltext_query(question), NEAR, limit=limit)
+    matches = await repo.search_fulltext(
+        to_fulltext_query(question), NEAR, limit=limit, viewer=VIEWER
+    )
     return [m.content for m in matches]
 
 
@@ -103,6 +106,7 @@ async def test_fulltext_ranks_more_matching_words_higher(
         to_fulltext_query("Как перенести отпуск по заявлению за две недели?"),
         NEAR,
         limit=10,
+        viewer=VIEWER,
     )
 
     assert matches[0].content == "Перенос отпуска: заявление за две недели."
@@ -116,7 +120,7 @@ async def test_fulltext_returns_vector_distance_too(
 ) -> None:
     await chunk_repo.bulk_create([make_chunk(material, 0, "Отпуск 28 дней.", FAR)])
 
-    [match] = await chunk_repo.search_fulltext("отпуск", NEAR, limit=5)
+    [match] = await chunk_repo.search_fulltext("отпуск", NEAR, limit=5, viewer=VIEWER)
 
     assert match.distance == pytest.approx(1.0)
     assert match.title == material.title
@@ -154,7 +158,11 @@ async def test_hostile_questions_do_not_break_fulltext(
     await chunk_repo.bulk_create([make_chunk(material, 0, "Отпуск 28 дней.", FAR)])
 
     query = to_fulltext_query(question)
-    matches = await chunk_repo.search_fulltext(query, NEAR, limit=5) if query else []
+    matches = (
+        await chunk_repo.search_fulltext(query, NEAR, limit=5, viewer=VIEWER)
+        if query
+        else []
+    )
 
     assert all(m.material_id == material.id for m in matches)
     # Таблица на месте.

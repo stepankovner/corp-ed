@@ -28,9 +28,12 @@ api  →  services  →  repositories  →  domain
   ретраи, ограничитель квоты. Уровень `repositories`: переводит с языка
   внешней системы на язык домена.
 - **`ingest`** — извлечение текста из файлов и его песочница.
+- **`connectors`** — адаптеры к системам-источникам документов
+  (интерфейс, каталог видов, очистка HTML). Как `llm`: только
+  ввод-вывод, без базы и без знания о компании.
 - **`prompts`** — промпты (ML).
-- Точки входа: `main.py` (API), `worker.py` (фоновый ингест), `cli.py`
-  (команды команды Kronto).
+- Точки входа: `main.py` (API), `worker.py` (фоновый ингест и
+  синхронизация коннекторов), `cli.py` (команды команды Kronto).
 
 Правило целостности: **импорт вверх по цепочке — протечка слоя.**
 `domain` не знает про `sqlalchemy`-сессии, `httpx` и FastAPI; `core` не
@@ -224,6 +227,15 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
   markdownify), pdf (pymupdf4llm, страницы через `\f`); `sandbox.py` —
   дочерний `python -I`, чистое окружение, таймаут; `extract_worker.py` —
   rlimits; `preprocess.py` (ML) — чистка Markdown.
+- `connectors/base.py` — `SourceAdapter` (`check`, `list`, `fetch`),
+  `RemoteDocument` (id, версия, ссылка, права словами источника),
+  `FetchedFile | FetchedPage`, `AdapterError`/`AdapterAuthError`;
+  `registry.py` — `KindSpec` (режим, модули, поля формы и учётных
+  данных, поле адреса) и `AdapterRegistry` (фабрики адаптеров);
+  `html.py` — очистка HTML страниц до Markdown. Сеть — только через
+  `core/outbound.py::OutboundClient` (проверка адреса и закрепление IP).
+  Адаптеры конкретных систем добавляются этапами: Битрикс24 →
+  Confluence → Яндекс 360.
 
 ---
 
@@ -249,12 +261,30 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 `split_document` → эмбеддинги документов (слоты квоты) → чанки заменяются
 → `READY`; ошибка — повтор 30 с × 2ⁿ до 5 раз, затем `FAILED` с кодом.
 
+**Коннектор** (`/connectors`, `services/connector_service.py`): админ
+создаёт подключение по спецификации вида (форма проверяется, адрес —
+через `validate_outbound_url`), задаёт учётные данные (шифруются
+`SecretBox`, ставится синхронизация) или, в режиме `per_user`, каждый
+сотрудник авторизует себя сам (`PUT /connectors/{id}/mine`). Планировщик
+воркера раз в минуту ставит в `connector_sync_jobs` подключения с
+истёкшим интервалом. `ConnectorSyncService.run` в `tenant_scope`:
+расшифровка → `check` → `list` → по документу: сравнение версии →
+`fetch` → `detect_format` + песочница (файл) или `html_to_markdown`
+(страница) → материал (`connector_id`, `external_id`, `source_url`,
+`visibility`) + `IngestJob` + `material_access` — одной транзакцией на
+документ; после полного листинга исчезнувшие удаляются. Права: режим
+`organization` — из `allowed_emails` адаптера по `users.email`; режим
+`per_user` — документ виден тому, в чьём листинге он есть. Поиск чанков
+фильтрует по спрашивающему (`_visible_to`). Отвергнутые учётные данные
+останавливают коннектор (`status=error`) или грант (`expired`) до
+вмешательства человека; недоступный источник — повтор задачи до 3 раз.
+
 **Вход**: лимиты по IP и по паре компания+почта → `verify_password` с
 пустышкой → пара токенов; refresh: поиск по хешу `FOR UPDATE`, повторное
 использование отзывает семейство и пишет аудит.
 
-**Ночью** (`cli purge`, `cli gaps --all`): удаление `qa_log` по сроку и
-аудита старше года; по каждой активной компании в её `tenant_scope` —
+**Ночью** (`cli purge`, `cli gaps --all`): удаление `qa_log` по сроку,
+журнала запусков коннекторов старше 90 дней и аудита старше года; по каждой активной компании в её `tenant_scope` —
 классы, кластеры, сопоставление, подпись моделью, запись.
 
 ---
@@ -265,8 +295,13 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 схемы **без суперпользователя**, с `alembic check` и полным даунгрейдом.
 `MIGRATIONS_DATABASE_URL` отделяет роль миграций от роли приложения.
 
+Тенантские таблицы (все под RLS): `users`, `materials`, `chunks`,
+`qa_log`, `glossary_terms`, `gap_clusters`, `gap_cluster_questions`,
+`connectors`, `connector_user_grants`, `connector_sync_runs`,
+`material_access`. Очереди без RLS: `ingest_jobs`, `connector_sync_jobs`.
+
 Ловушки, закреплённые в коде: `postgresql.ENUM(...).create(checkfirst=True)`
-для новых enum; FORCE RLS и массовые правки; генерируемая колонка `fts`;
+для новых enum (и `create_type=False` при переиспользовании существующего); FORCE RLS и массовые правки; генерируемая колонка `fts`;
 переиндексация из миграции при смене размерности векторов.
 
 ---

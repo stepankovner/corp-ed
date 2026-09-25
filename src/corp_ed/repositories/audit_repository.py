@@ -37,6 +37,16 @@ class AuditAction(StrEnum):
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
     CREDITS_WARNING = "credits.warning"
     CREDITS_EXHAUSTED = "credits.exhausted"
+    CONNECTOR_CREATED = "connector.created"
+    CONNECTOR_UPDATED = "connector.updated"
+    CONNECTOR_DELETED = "connector.deleted"
+    CONNECTOR_CREDENTIALS_SET = "connector.credentials_set"  # noqa: S105 — имя события
+    CONNECTOR_SYNC_REQUESTED = "connector.sync_requested"
+    # Остановлен системой: источник отверг учётные данные.
+    CONNECTOR_STOPPED = "connector.stopped"
+    CONNECTOR_GRANT_SET = "connector.grant_set"
+    CONNECTOR_GRANT_REVOKED = "connector.grant_revoked"
+    CONNECTOR_GRANT_EXPIRED = "connector.grant_expired"
 
 
 class AuditRepository:

@@ -99,6 +99,22 @@ async def credits_exhausted_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
+async def connector_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={"detail": str(exc), "code": getattr(exc, "code", "connector_limit")},
+    )
+
+
+async def invalid_connector_config_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": str(exc), "code": getattr(exc, "code", "invalid_config")},
+    )
+
+
 async def weak_password_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

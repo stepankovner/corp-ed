@@ -150,13 +150,25 @@ class Material(TenantMixin, Base):
     __tablename__ = "materials"
     __table_args__ = (
         # Один и тот же файл дважды в одной компании — дубль выдержек в
-        # выдаче и двойная цена эмбеддингов.
+        # выдаче и двойная цена эмбеддингов. Только для ручных загрузок:
+        # один файл на двух дисках коннекторов — два документа с разными
+        # ссылками, sha256 у них — признак «не изменился», не ключ.
         Index(
             "uq_materials_tenant_sha256",
             "tenant_id",
             "source_sha256",
             unique=True,
-            postgresql_where=text("source_sha256 IS NOT NULL"),
+            postgresql_where=text("source_sha256 IS NOT NULL AND connector_id IS NULL"),
+        ),
+        Index(
+            "uq_materials_connector_external_id",
+            "connector_id",
+            "external_id",
+            unique=True,
+            postgresql_where=text("connector_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "visibility IN ('tenant', 'restricted')", name="ck_materials_visibility"
         ),
     )
 
@@ -177,8 +189,42 @@ class Material(TenantMixin, Base):
     # интерфейсе, а трассировка и ответ провайдера — только в логе.
     status_error: Mapped[str | None] = mapped_column(String(64))
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Документ из источника (коннектор): стабильный id в системе,
+    # ссылка для сотрудника, версия (etag / дата / ревизия) для
+    # сравнения без скачивания. У ручных загрузок всё пусто.
+    connector_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("connectors.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(512))
+    source_url: Mapped[str | None] = mapped_column(String(2048))
+    external_version: Mapped[str | None] = mapped_column(String(128))
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # tenant — видят все сотрудники; restricted — только по material_access
+    # (MaterialVisibility). Проверяется в поиске чанков.
+    visibility: Mapped[str] = mapped_column(
+        String(16), default="tenant", server_default="tenant"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class MaterialAccess(TenantMixin, Base):
+    """Кому виден документ с visibility = restricted.
+
+    Заполняет синхронизация коннектора: в режиме organization — из ACL
+    источника по почте сотрудника, в режиме per_user — фактом «документ
+    есть в листинге этого сотрудника». Удаление документа или
+    сотрудника убирает строки каскадом.
+    """
+
+    __tablename__ = "material_access"
+
+    material_id: Mapped[UUID] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
     )
 
 
@@ -448,4 +494,179 @@ class GapClusterQuestion(TenantMixin, Base):
     )
     qa_log_id: Mapped[UUID] = mapped_column(
         ForeignKey("qa_log.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class Connector(TenantMixin, Base):
+    """Подключение компании к одной системе-источнику документов.
+
+    kind — система (bitrix24, confluence, yandex360), modules — какие её
+    части читать (диск, база знаний, пространства). Один портал — одно
+    подключение (решение команды 25.09). config — НЕсекретные настройки
+    (адрес портала, корневая папка); credentials — учётные данные режима
+    organization, зашифрованные SecretBox, в API никогда не отдаются.
+    В режиме per_user учётные данные у каждого сотрудника свои
+    (ConnectorUserGrant), здесь пусто.
+    """
+
+    __tablename__ = "connectors"
+    __table_args__ = (
+        CheckConstraint(
+            "mode IN ('organization', 'per_user')", name="ck_connectors_mode"
+        ),
+        CheckConstraint(
+            "status IN ('active', 'paused', 'error')", name="ck_connectors_status"
+        ),
+        CheckConstraint(
+            "sync_interval_minutes BETWEEN 15 AND 1440",
+            name="ck_connectors_sync_interval",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(100))
+    mode: Mapped[str] = mapped_column(String(16))
+    modules: Mapped[list[str]] = mapped_column(
+        ARRAY(String(32)), default=list, server_default="{}"
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
+    # deferred: шифротекст не должен подниматься в память API на каждый
+    # список коннекторов — он нужен только воркеру и ручке проверки.
+    credentials: Mapped[str | None] = deferred(mapped_column(Text))
+    credentials_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(16), default="active", server_default="active"
+    )
+    sync_interval_minutes: Mapped[int] = mapped_column(default=60, server_default="60")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_code: Mapped[str | None] = mapped_column(String(64))
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ConnectorUserGrant(TenantMixin, Base):
+    """Авторизация сотрудника в коннекторе режима per_user.
+
+    Хранит его токены (зашифрованы SecretBox) и состояние: источник
+    отверг токен — expired, сотрудник отключился — revoked. Документы
+    сотрудника видны ему через material_access, которую заполняет
+    синхронизация его листингом.
+    """
+
+    __tablename__ = "connector_user_grants"
+    __table_args__ = (
+        UniqueConstraint("connector_id", "user_id", name="uq_grant_connector_user"),
+        CheckConstraint(
+            "status IN ('active', 'expired', 'revoked')", name="ck_grants_status"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    connector_id: Mapped[UUID] = mapped_column(
+        ForeignKey("connectors.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    credentials: Mapped[str] = deferred(mapped_column(Text))
+    # Идентификатор сотрудника в источнике, если адаптер его знает.
+    external_user_id: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(
+        String(16), default="active", server_default="active"
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ConnectorSyncRun(TenantMixin, Base):
+    """Журнал запусков синхронизации: админу — что и когда произошло,
+    команде — разбор сбоев. stats: seen / added / updated / removed /
+    skipped / failed. Хранится CONNECTOR_SYNC_RUN_RETENTION_DAYS (purge)."""
+
+    __tablename__ = "connector_sync_runs"
+    __table_args__ = (
+        Index("ix_sync_runs_connector_started", "connector_id", "started_at"),
+        CheckConstraint(
+            "status IN ('running', 'succeeded', 'partial', 'failed')",
+            name="ck_sync_runs_status",
+        ),
+        CheckConstraint(
+            "trigger IN ('schedule', 'manual')", name="ck_sync_runs_trigger"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    connector_id: Mapped[UUID] = mapped_column(
+        ForeignKey("connectors.id", ondelete="CASCADE")
+    )
+    trigger: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(
+        String(16), default="running", server_default="running"
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stats: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64))
+
+
+class ConnectorSyncJob(Base):
+    """Очередь синхронизации коннекторов — по образцу IngestJob.
+
+    Не под RLS по той же причине: воркер выбирает задачу до того, как
+    знает тенанта. Отдельная таблица, а не обобщение ingest_jobs: другой
+    payload (коннектор, а не материал) и другая семантика повтора.
+    """
+
+    __tablename__ = "connector_sync_jobs"
+    __table_args__ = (
+        Index(
+            "uq_sync_jobs_active_connector",
+            "connector_id",
+            unique=True,
+            postgresql_where=text("status IN ('QUEUED', 'RUNNING')"),
+        ),
+        Index("ix_sync_jobs_queue", "status", "run_after"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    connector_id: Mapped[UUID] = mapped_column(
+        ForeignKey("connectors.id", ondelete="CASCADE")
+    )
+    trigger: Mapped[str] = mapped_column(
+        String(16), default="schedule", server_default="schedule"
+    )
+    status: Mapped[IngestJobStatus] = mapped_column(default=IngestJobStatus.QUEUED)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(String(64))
+    run_after: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

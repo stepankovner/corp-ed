@@ -326,3 +326,55 @@ def _split_csv(value: str) -> list[str]:
 @lru_cache
 def get_http_settings() -> HttpSettings:
     return HttpSettings()
+
+
+class ConnectorSettings(BaseSettings):
+    """Коннекторы к источникам документов (досье 10.5, DECISIONS «Коннекторы»).
+
+    secrets_keys — ключи Fernet через запятую, первым — действующий:
+    им шифруются учётные данные источников в базе; остальные — для
+    расшифровки во время ротации (docs/DEPLOY.md). Без ключа коннекторы
+    недоступны (503 на записи секретов); в production ключ обязателен
+    на старте. Сгенерировать:
+    python -c "from cryptography.fernet import Fernet; \
+    print(Fernet.generate_key().decode())"
+
+    max_per_tenant — технический потолок подключений на компанию (защита
+    от скрипта), не тарифная граница: тариф строится от мест (решение
+    команды 25.09).
+    """
+
+    environment: str = "development"
+    secrets_keys: SecretStr | None = None
+    max_per_tenant: int = Field(default=20, gt=0, le=1000)
+    default_sync_interval_minutes: int = Field(default=60, ge=15, le=1440)
+    # Бюджет одного запуска: документов и минут; остаток — следующим.
+    max_documents_per_run: int = Field(default=200, gt=0, le=5000)
+    max_run_minutes: int = Field(default=20, gt=0, le=180)
+    # Больше — не скачивается: тот же порядок, что у ручной загрузки.
+    max_document_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    sync_run_retention_days: int = Field(default=90, gt=0, le=365)
+
+    model_config = SettingsConfigDict(
+        env_prefix="CONNECTOR_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @model_validator(mode="after")
+    def validate_production(self) -> Self:
+        if self.environment == "production" and self.secrets_keys is None:
+            raise ValueError("CONNECTOR_SECRETS_KEYS is required in production")
+        return self
+
+    @property
+    def keys(self) -> list[str]:
+        if self.secrets_keys is None:
+            return []
+        return _split_csv(self.secrets_keys.get_secret_value())
+
+
+@lru_cache
+def get_connector_settings() -> ConnectorSettings:
+    return ConnectorSettings()

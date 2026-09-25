@@ -67,6 +67,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5 |
 | Кредиты | `BILLING_*` | дефолты — предложение досье, пересмотреть с тарифами |
+| Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
 
 `.env` лежит рядом с `compose.yaml`, права `600`, в репозиторий не
 попадает (`.gitignore`). Секреты в переменных окружения видны в
@@ -140,6 +141,10 @@ Cron на хосте (или systemd timer), под пользователем �
 30 3 * * *  cd /opt/corp-ed && docker compose -f compose.yaml run --rm api python -m corp_ed.cli gaps --all
 ```
 
+`purge` удаляет и журнал запусков коннекторов старше
+`CONNECTOR_SYNC_RUN_RETENTION_DAYS` (90). Синхронизация коннекторов по
+расписанию — внутри `worker`, отдельной задачи cron не нужно.
+
 `gaps` держит advisory-блокировку: параллельный запуск завершится с
 ошибкой, а не построит отчёт дважды. Ненулевой код выхода — ошибка
 хотя бы у одной компании, подробности в логе.
@@ -192,6 +197,7 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-
 | `YC_API_KEY` | заменить в `.env`, перезапустить `api` и `worker`; ключ нигде не логируется и не хранится в базе |
 | `APP_DB_PASSWORD` | `ALTER ROLE corp_ed_app PASSWORD '…'`, затем `.env` и перезапуск |
 | `REDIS_PASSWORD` | `.env`, перезапуск `redis`, `api`, `worker` |
+| `CONNECTOR_SECRETS_KEYS` | новый ключ дописать **первым** через запятую, перезапустить `api` и `worker` (новые записи шифруются им, старые читаются вторым), выполнить `cli rotate-connector-secrets`, затем убрать старый ключ и перезапустить снова. Потеря всех ключей = все подключения останавливаются с `credentials_unreadable`, учётные данные вводятся заново |
 
 Утечка любого секрета — повод для ротации в тот же день, а не для
 расследования сначала. «Выйти везде» для одного пользователя —
@@ -199,6 +205,19 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-
 (токены перестают приниматься сразу).
 
 ---
+
+## 9a. Исходящий трафик воркера
+
+Воркер ходит в системы клиентов по адресам из настроек коннекторов.
+В коде адреса проверяются (`core/outbound.py`: только `https`,
+публичные IP, закрепление адреса), но на стенде стоит добавить вторую
+линию: сетевая политика для контейнера `worker` — запрет исходящих
+соединений к `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
+`169.254.0.0/16`, `127.0.0.0/8` и к внутренним сервисам, кроме базы и
+Redis (например, правила `iptables`/`nftables` на docker-сети или
+egress-политика оркестратора). API наружу ходит только в Yandex Cloud
+и, для проверки учётных данных (`POST /connectors/{id}/test`), к тем
+же адресам систем клиентов.
 
 ## 10. Наблюдение
 

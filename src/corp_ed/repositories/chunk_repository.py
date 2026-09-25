@@ -1,17 +1,34 @@
 from uuid import UUID
 
-from sqlalchemy import delete, func, literal_column, select
+from sqlalchemy import ColumnElement, delete, exists, func, literal_column, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnClause
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Chunk, Material
-from corp_ed.domain.types import ChunkMatch
+from corp_ed.domain.models import Chunk, Material, MaterialAccess
+from corp_ed.domain.types import ChunkMatch, MaterialVisibility
 
 # Та же конфигурация, что у генерируемой колонки chunks.fts: иначе
 # вопрос и документ разобьются на разные основы слов. Константа, не
 # параметр запроса — в SQL не попадает ничего от клиента.
 _TS_CONFIG: ColumnClause[str] = literal_column("'russian'::regconfig")
+
+
+def _visible_to(viewer: UUID, tenant_id: UUID) -> ColumnElement[bool]:
+    """Условие видимости документа сотруднику (права источника).
+
+    visibility = tenant — виден всем; restricted — только при строке в
+    material_access. Обязательный аргумент viewer, а не флаг: поиск без
+    зрителя — это поиск по чужим правам, такого вызова быть не должно.
+    """
+    return or_(
+        Material.visibility == MaterialVisibility.TENANT.value,
+        exists().where(
+            MaterialAccess.material_id == Material.id,
+            MaterialAccess.user_id == viewer,
+            MaterialAccess.tenant_id == tenant_id,
+        ),
+    )
 
 
 class ChunkRepository:
@@ -37,7 +54,9 @@ class ChunkRepository:
         )
         await self.session.execute(stmt)
 
-    async def search(self, embedding: list[float], limit: int = 5) -> list[ChunkMatch]:
+    async def search(
+        self, embedding: list[float], limit: int = 5, *, viewer: UUID
+    ) -> list[ChunkMatch]:
         tenant_id = require_tenant()
 
         distance = Chunk.embedding.cosine_distance(embedding)
@@ -50,6 +69,7 @@ class ChunkRepository:
                 Chunk.position,
                 Chunk.heading_path,
                 Material.title,
+                Material.source_url,
                 distance.label("distance"),
             )
             # Название берётся JOIN'ом, а не копией в chunks: переименование
@@ -61,7 +81,11 @@ class ChunkRepository:
             # грузится — автоматики нет. Второй фильтр не избыточен:
             # он держит изоляцию, даже если чанк однажды окажется
             # привязан к материалу чужого тенанта.
-            .where(Chunk.tenant_id == tenant_id, Material.tenant_id == tenant_id)
+            .where(
+                Chunk.tenant_id == tenant_id,
+                Material.tenant_id == tenant_id,
+                _visible_to(viewer, tenant_id),
+            )
             .order_by(distance)
             .limit(limit)
         )
@@ -77,12 +101,13 @@ class ChunkRepository:
                 distance=row.distance,
                 title=row.title,
                 heading_path=list(row.heading_path),
+                source_url=row.source_url,
             )
             for row in result
         ]
 
     async def search_fulltext(
-        self, query: str, embedding: list[float], limit: int
+        self, query: str, embedding: list[float], limit: int, *, viewer: UUID
     ) -> list[ChunkMatch]:
         """Полнотекстовая ветка гибридного поиска (M1, BH-12).
 
@@ -111,6 +136,7 @@ class ChunkRepository:
                 Chunk.position,
                 Chunk.heading_path,
                 Material.title,
+                Material.source_url,
                 distance.label("distance"),
                 rank.label("rank"),
             )
@@ -119,6 +145,7 @@ class ChunkRepository:
                 Chunk.tenant_id == tenant_id,
                 Material.tenant_id == tenant_id,
                 Chunk.fts.op("@@")(ts_query),
+                _visible_to(viewer, tenant_id),
             )
             # id — второй ключ: при равном ранге порядок детерминирован.
             .order_by(rank.desc(), Chunk.id)
@@ -137,6 +164,7 @@ class ChunkRepository:
                 title=row.title,
                 heading_path=list(row.heading_path),
                 fulltext_rank=row.rank,
+                source_url=row.source_url,
             )
             for row in result
         ]

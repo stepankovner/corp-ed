@@ -90,12 +90,13 @@ src/corp_ed/
   core/           конфиг, база и изоляция, безопасность, middleware
   llm/            адаптеры Yandex Cloud, ретраи, квоты
   ingest/         извлечение текста из файлов, песочница
+  connectors/     адаптеры к системам-источникам (интерфейс, каталог, HTML)
   prompts/        промпты (ML)
-  main.py         API · worker.py  фоновый ингест · cli.py  команды
+  main.py         API · worker.py  ингест и синхронизация · cli.py  команды
 migrations/       Alembic
 deploy/postgres/  роль приложения
 eval/             оценка качества (ML)
-tests/            790+ тестов, в том числе tests/security/
+tests/            940+ тестов, в том числе tests/security/
 docs/             ARCHITECTURE, DECISIONS, RISKS, SECURITY, DEPLOY, INTEGRATION, отчёты ML
 ```
 

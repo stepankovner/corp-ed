@@ -41,6 +41,11 @@ class MaterialResponse(BaseModel):
     status: MaterialStatus
     status_error: str | None
     indexed_at: datetime | None
+    # Документ из источника: подключение, ссылка, когда синхронизирован.
+    connector_id: UUID | None = None
+    source_url: str | None = None
+    synced_at: datetime | None = None
+    visibility: str = "tenant"
     created_at: datetime
 
 

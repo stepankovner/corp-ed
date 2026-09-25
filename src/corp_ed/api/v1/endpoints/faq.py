@@ -69,7 +69,9 @@ async def search_faq(
     Только ADMIN: показывает сырые выдержки и расстояния, которых нет в
     продуктовом ответе. Компания — из токена, как везде.
     """
-    matches = await service.search(data.question, data.limit, data.retriever)
+    matches = await service.search(
+        data.question, data.limit, data.retriever, viewer=current_user
+    )
     return FaqSearchResponse(
         matches=[
             FaqSearchMatch(

@@ -10,6 +10,9 @@ from corp_ed.domain.models import Chunk, Material, Tenant
 from corp_ed.domain.types import ChunkMatch
 from corp_ed.repositories.chunk_repository import ChunkRepository
 
+# Любой сотрудник: у материалов фикстур visibility = tenant.
+VIEWER = uuid4()
+
 
 async def test_search_returns_chunkmatch_with_distance(
     chunk_repo: ChunkRepository,
@@ -36,7 +39,7 @@ async def test_search_returns_chunkmatch_with_distance(
 
     await chunk_repo.bulk_create(chunks=chunks)
 
-    result = await chunk_repo.search(embedding=[0.3] * EMBEDDING_DIM)
+    result = await chunk_repo.search(embedding=[0.3] * EMBEDDING_DIM, viewer=VIEWER)
 
     assert result
     assert all(isinstance(item, ChunkMatch) for item in result)
@@ -65,6 +68,7 @@ async def test_search_respects_limit(
     result = await chunk_repo.search(
         embedding=[0.3] * EMBEDDING_DIM,
         limit=2,
+        viewer=VIEWER,
     )
 
     assert len(result) == 2
@@ -95,7 +99,7 @@ async def test_search_returns_nearest_chunk_first(
 
     await chunk_repo.bulk_create(chunks=chunks)
 
-    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM)
+    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM, viewer=VIEWER)
 
     assert result
     assert result[0].content == "Первый чанк."
@@ -149,7 +153,7 @@ async def test_search_does_not_return_foreign_tenant_chunk(
 
     current_tenant.set(tenant_ctx.id)
 
-    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM)
+    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM, viewer=VIEWER)
 
     assert result == []
 
@@ -160,7 +164,7 @@ async def test_search_requires_tenant_context(
     token = current_tenant.set(None)
     try:
         with pytest.raises(TenantContextMissingError):
-            await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM)
+            await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM, viewer=VIEWER)
     finally:
         current_tenant.reset(token)
 
@@ -183,7 +187,7 @@ async def test_search_returns_title_and_heading_path(
         ]
     )
 
-    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM)
+    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM, viewer=VIEWER)
 
     assert result[0].title == material.title
     assert result[0].heading_path == ["Раздел 3", "3.1 Продолжительность"]
@@ -224,6 +228,6 @@ async def test_search_skips_foreign_material_with_same_title(
     await session.commit()
 
     current_tenant.set(tenant_ctx.id)
-    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM)
+    result = await chunk_repo.search(embedding=[0.1] * EMBEDDING_DIM, viewer=VIEWER)
 
     assert result == []

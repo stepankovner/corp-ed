@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from corp_ed.api.v1.endpoints import (
     audit,
     auth,
+    connectors,
     faq,
     gaps,
     glossary,
@@ -23,14 +24,20 @@ from corp_ed.api.v1.endpoints import (
     usage,
     users,
 )
-from corp_ed.core.config import LLMSettings, get_http_settings
+from corp_ed.core.config import (
+    LLMSettings,
+    get_connector_settings,
+    get_http_settings,
+)
 from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
+    connector_limit_handler,
     credits_exhausted_handler,
     domain_fallback_handler,
     duplicate_material_handler,
     internal_error_handler,
+    invalid_connector_config_handler,
     invalid_credentials_handler,
     llm_error_handler,
     not_authenticated_handler,
@@ -44,9 +51,11 @@ from corp_ed.core.exception_handlers import (
 )
 from corp_ed.core.exceptions import (
     ConflictError,
+    ConnectorLimitError,
     CreditsExhaustedError,
     DomainError,
     DuplicateMaterialError,
+    InvalidConnectorConfigError,
     InvalidCredentialsError,
     NotAuthenticatedError,
     NotFoundError,
@@ -86,6 +95,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with get_engine().connect() as connection:
         await connection.execute(text("SELECT 1"))
         await _check_database_role(connection)
+    # В production без ключа шифрования учётных данных источников не
+    # стартуем (ConnectorSettings): лучше упасть здесь, чем на первом
+    # подключении клиента.
+    if not get_connector_settings().keys:
+        logger.warning("connector_secrets_key_missing")
     redis: Redis | None = None
     limiter: RateLimiter
     if http_settings.redis_url is not None:
@@ -182,6 +196,7 @@ app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
 app.include_router(gaps.router, prefix="/api/v1")
+app.include_router(connectors.router, prefix="/api/v1")
 
 
 @app.get("/")
@@ -216,6 +231,8 @@ app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)
 app.add_exception_handler(UnacceptableFileError, unacceptable_file_handler)
 app.add_exception_handler(DuplicateMaterialError, duplicate_material_handler)
 app.add_exception_handler(CreditsExhaustedError, credits_exhausted_handler)
+app.add_exception_handler(ConnectorLimitError, connector_limit_handler)
+app.add_exception_handler(InvalidConnectorConfigError, invalid_connector_config_handler)
 
 # Выполняются в порядке, обратном добавлению. Снаружи внутрь:
 #   CORS → заголовки безопасности → request_id и ловушка 500 →

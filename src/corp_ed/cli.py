@@ -9,6 +9,7 @@
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
     python -m corp_ed.cli purge        # удалить данные старше срока хранения
     python -m corp_ed.cli gaps (--code acme | --all)   # отчёт о пробелах
+    python -m corp_ed.cli rotate-connector-secrets     # после смены ключа
 
 Почему CLI, а не HTTP-ручка «суперадмина»: по досье (10.1) компании
 подключает команда после созвона. Ручка с правом создавать тенантов
@@ -27,15 +28,23 @@ from collections.abc import Sequence
 
 import httpx
 
-from corp_ed.core.config import GapsSettings, LLMSettings, RagSettings, get_settings
+from corp_ed.core.config import (
+    GapsSettings,
+    LLMSettings,
+    RagSettings,
+    get_connector_settings,
+    get_settings,
+)
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.secrets import SecretBox
 from corp_ed.domain.types import NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
@@ -96,19 +105,38 @@ def _parser() -> argparse.ArgumentParser:
     gaps_scope.add_argument("--code", help="одна компания")
     gaps_scope.add_argument("--all", action="store_true", help="все активные")
 
+    commands.add_parser(
+        "rotate-connector-secrets",
+        help="перешифровать учётные данные коннекторов первым ключом "
+        "CONNECTOR_SECRETS_KEYS (docs/DEPLOY.md, раздел 9)",
+    )
+
     return parser
 
 
 async def _run(args: argparse.Namespace) -> int:
     if args.command == "purge":
         purged = await RetentionService(
-            get_session_maker(), get_settings().qa_log_retention_days
+            get_session_maker(),
+            get_settings().qa_log_retention_days,
+            get_connector_settings().sync_run_retention_days,
         ).purge()
-        print(f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}")
+        print(
+            f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}, "
+            f"sync_runs: {purged.sync_runs}"
+        )
         return 0
 
     if args.command == "gaps":
         return await _gaps(None if args.all else args.code)
+
+    if args.command == "rotate-connector-secrets":
+        settings = get_connector_settings()
+        rotated = await ConnectorSecretsRotation(
+            get_session_maker(), SecretBox(settings.keys)
+        ).rotate()
+        print(f"connectors: {rotated.connectors}, grants: {rotated.grants}")
+        return 0
 
     if args.command == "reindex":
         reports = await ReindexService(get_session_maker()).reindex(

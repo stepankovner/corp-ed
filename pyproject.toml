@@ -69,13 +69,16 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 # Тесты: assert — их язык; пароли и токены в них ненастоящие; random —
 # тестовые данные; subprocess и f-строка SQL — над нашими же константами.
-"tests/**" = ["S101", "S105", "S106", "S311", "S603", "S608"]
+"tests/**" = ["S101", "S105", "S106", "S107", "S311", "S603", "S608"]
 # Скрипты eval (ML): random — бутстреп и выборки, не криптография.
 "eval/**" = ["S311"]
 
 [tool.coverage.run]
 branch = true
 source = ["corp_ed"]
+# SQLAlchemy async выполняет ORM-код в greenlet; без этого coverage теряет
+# трассировку после первого await к базе и занижает покрытие сервисов.
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 # Порог для CI (pytest --cov): ниже — сборка красная. Не цель, а

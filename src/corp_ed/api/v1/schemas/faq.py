@@ -22,6 +22,8 @@ class FaqSourceResponse(BaseModel):
     heading_path: list[str]
     position: int
     content: str
+    # Ссылка на документ в источнике (коннекторы); у загрузок пусто.
+    source_url: str | None = None
 
 
 class AnswerDiagnosticsResponse(BaseModel):
