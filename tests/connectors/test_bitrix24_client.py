@@ -322,6 +322,21 @@ async def test_recorder_receives_redacted_calls(portal: FakePortal) -> None:
     assert ACCESS_TOKEN not in json.dumps(response)
 
 
+def test_redact_masks_webhook_code_in_url_path() -> None:
+    """Код вебхука в пути DOWNLOAD_URL — секрет портала, не фикстура."""
+    url = "https://p.example.com/rest/1/abcdef0123456789/download/?token=t&x=1"
+    assert (
+        redact({"DOWNLOAD_URL": url})["DOWNLOAD_URL"]
+        == "https://p.example.com/rest/1/<redacted>/download/?token=%3Credacted%3E&x=1"
+    )
+    assert redact("https://p.example.com/rest/1/abcdef/") == (
+        "https://p.example.com/rest/1/<redacted>/"
+    )
+    assert redact("https://p.example.com/rest/disk.file.get.json") == (
+        "https://p.example.com/rest/disk.file.get.json"
+    )
+
+
 def test_redact_masks_secret_keys_and_query() -> None:
     value = {
         "auth": "t",

@@ -283,7 +283,7 @@ async def _connector_check(
 
     recorder = _FixtureRecorder(Path(args.record)) if args.record else None
     async with httpx.AsyncClient() as client:
-        outbound = http or OutboundClient(client)
+        outbound = http or OutboundClient(client, via_proxy=settings.outbound_via_proxy)
         adapter: SourceAdapter
         try:
             adapter = registry.build(

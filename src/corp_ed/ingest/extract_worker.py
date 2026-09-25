@@ -1,4 +1,6 @@
-"""Дочерний процесс извлечения текста: python -I -m corp_ed.ingest.extract_worker FMT
+"""Дочерний процесс извлечения текста.
+
+Запуск: python -I -m corp_ed.ingest.extract_worker FMT [CPU_SECONDS]
 
 Читает файл из stdin, пишет JSON в stdout: {"ok": true, "markdown": …}
 или {"ok": false, "code": …}. Запускается только из ingest/sandbox.py.
@@ -14,12 +16,18 @@ import resource
 import sys
 
 MEMORY_LIMIT = 1536 * 1024 * 1024
-CPU_SECONDS = 60
+# Потолок CPU передаёт sandbox.py: таймаут по стене на число ядер.
+# Разбор PDF многопоточный (модель разметки pymupdf-layout на
+# onnxruntime занимает все ядра: 85 страниц — 23 с по стене и 75 с CPU
+# на 4 ядрах), и фиксированные 60 с CPU убивали честный документ раньше
+# таймаута. Лимит здесь — вторая линия на случай, если родитель не
+# убил процесс по таймауту.
+DEFAULT_CPU_SECONDS = 600
 
 
-def _limit_resources() -> None:
+def _limit_resources(cpu_seconds: int) -> None:
     resource.setrlimit(resource.RLIMIT_AS, (MEMORY_LIMIT, MEMORY_LIMIT))
-    resource.setrlimit(resource.RLIMIT_CPU, (CPU_SECONDS, CPU_SECONDS))
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
     # Запись файлов запрещена целиком: парсеру она не нужна.
     resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
     # Core dump содержал бы документ клиента.
@@ -27,7 +35,10 @@ def _limit_resources() -> None:
 
 
 def main() -> int:
-    _limit_resources()
+    cpu_seconds = DEFAULT_CPU_SECONDS
+    if len(sys.argv) > 2 and sys.argv[2].isdigit():
+        cpu_seconds = max(1, int(sys.argv[2]))
+    _limit_resources(cpu_seconds)
 
     from corp_ed.ingest.extract import ExtractionError, SourceFormat, extract
 

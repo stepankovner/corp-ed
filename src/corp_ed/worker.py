@@ -315,6 +315,7 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
     stop = asyncio.Event()
     (install_signals or _install_signals)(stop)
 
+    connector_settings = get_connector_settings()
     async with httpx.AsyncClient() as client:
         gateway = YandexEmbeddingAdapter(
             client=client,
@@ -324,10 +325,9 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             dim=llm.embedding_dim,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
-        connector_settings = get_connector_settings()
         sync_service = ConnectorSyncService(
             get_session_maker(),
-            OutboundClient(client),
+            OutboundClient(client, via_proxy=connector_settings.outbound_via_proxy),
             default_registry(connector_settings),
             SecretBox(connector_settings.keys),
             connector_settings,

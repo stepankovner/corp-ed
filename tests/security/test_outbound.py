@@ -160,6 +160,47 @@ async def test_request_goes_to_pinned_ip_with_host_and_sni() -> None:
     assert request.extensions["sni_hostname"] == "portal.example.com"
 
 
+async def test_via_proxy_sends_the_name_and_still_checks_the_address() -> None:
+    """За egress-прокси запрос уходит по имени (прокси отвергает CONNECT
+    к IP), но имя всё равно резолвится и проверяется."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    async with _client(handler) as raw:
+        client = OutboundClient(raw, resolver=resolver_for(PUBLIC), via_proxy=True)
+        response = await client.get("https://portal.example.com/rest/user.current")
+        with pytest.raises(OutboundURLError) as exc:
+            await OutboundClient(
+                raw, resolver=resolver_for("10.0.0.5"), via_proxy=True
+            ).get("https://intranet.example.com/")
+
+    assert response.status_code == 200
+    [request] = seen
+    assert request.url.host == "portal.example.com"
+    assert "sni_hostname" not in request.extensions
+    assert exc.value.code == "address_not_public"
+
+
+async def test_via_proxy_download_goes_by_name() -> None:
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.url.host)
+        return httpx.Response(200, content=b"data")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+        via_proxy=True,
+    )
+    downloaded = await client.download("https://portal.example.com/f", max_bytes=100)
+    assert downloaded.content == b"data"
+    assert hosts == ["portal.example.com"]
+
+
 async def test_private_url_never_reaches_the_transport() -> None:
     called = False
 

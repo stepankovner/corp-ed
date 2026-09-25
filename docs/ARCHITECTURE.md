@@ -225,15 +225,17 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 - `fake.py`, `fake_embedding.py` — для тестов.
 - `ingest/extract.py` — сигнатуры, zip-бомба, docx (mammoth →
   markdownify), pdf (pymupdf4llm, страницы через `\f`); `sandbox.py` —
-  дочерний `python -I`, чистое окружение, таймаут; `extract_worker.py` —
-  rlimits; `preprocess.py` (ML) — чистка Markdown.
+  дочерний `python -I`, чистое окружение, таймаут, бюджет CPU = таймаут ×
+  ядер (разбор многопоточный), убийство по лимиту → `timeout`;
+  `extract_worker.py` — rlimits; `preprocess.py` (ML) — чистка Markdown.
 - `connectors/base.py` — `SourceAdapter` (`check`, `list`, `fetch`),
   `RemoteDocument` (id, версия, ссылка, права словами источника),
   `FetchedFile | FetchedPage`, `AdapterError`/`AdapterAuthError`;
   `registry.py` — `KindSpec` (режим, модули, поля формы и учётных
   данных, поле адреса) и `AdapterRegistry` (фабрики адаптеров);
   `html.py` — очистка HTML страниц до Markdown. Сеть — только через
-  `core/outbound.py::OutboundClient` (проверка адреса и закрепление IP).
+  `core/outbound.py::OutboundClient` (проверка адреса и закрепление IP; за
+  egress-прокси — по имени, `CONNECTOR_OUTBOUND_VIA_PROXY`, `DEPLOY.md` §9a).
   Адаптеры конкретных систем добавляются этапами: Битрикс24 →
   Confluence → Яндекс 360.
 
@@ -345,6 +347,7 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 | `tests/api/` | каждая группа ручек: роли, изоляция, валидация, коды |
 | `tests/llm/`, `tests/ingest/` | адаптеры и разбор ответов, файлы и песочница |
 | `tests/test_*.py` | сервисы: FAQ, гибрид, кредиты, компании, ингест, воркер, отчёт о пробелах, изоляция |
+| `tests/live/` | живая синхронизация с тестовым порталом Битрикс24; пропуск без `BITRIX24_TEST_*` |
 | `tests/ml_eval/`, `test_split*`, `test_gaps`, … | тесты ML (не редактируются бэкендом) |
 
 Порог покрытия в CI — 85 % (текущее ≈ 89 %). mypy strict — на `src`.

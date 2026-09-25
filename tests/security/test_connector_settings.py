@@ -8,6 +8,11 @@ from corp_ed.core.config import ConnectorSettings
 KEY = Fernet.generate_key().decode()
 
 
+def test_outbound_goes_to_pinned_addresses_by_default() -> None:
+    settings = ConnectorSettings(environment="development")  # type: ignore[call-arg]
+    assert settings.outbound_via_proxy is False
+
+
 def test_development_allows_plain_http_return_url() -> None:
     settings = ConnectorSettings(
         environment="development",

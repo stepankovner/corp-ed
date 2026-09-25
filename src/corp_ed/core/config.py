@@ -354,6 +354,12 @@ class ConnectorSettings(BaseSettings):
     # Больше — не скачивается: тот же порядок, что у ручной загрузки.
     max_document_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
     sync_run_retention_days: int = Field(default=90, gt=0, le=365)
+    # Процесс за egress-прокси (HTTPS_PROXY): запросы к системам клиентов
+    # уходят по имени хоста, а не на закреплённый IP — прокси отвергает
+    # CONNECT к IP и сам резолвит имя. Проверка адреса (публичный IP, без
+    # учётных данных в URL) остаётся; закрепление против DNS rebinding —
+    # на политике прокси (core/outbound.py, DEPLOY.md §9a).
+    outbound_via_proxy: bool = False
 
     # OAuth-приложения (режим per_user, этап 2). callback — публичный
     # адрес ручки GET /api/v1/connectors/oauth/callback: его админ

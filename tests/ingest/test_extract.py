@@ -13,7 +13,7 @@ from corp_ed.ingest.extract import (
     extract,
 )
 from corp_ed.ingest.preprocess import PAGE_BREAK
-from corp_ed.ingest.sandbox import _clean_env, extract_isolated
+from corp_ed.ingest.sandbox import _clean_env, _crash_code, cpu_budget, extract_isolated
 from tests.ingest import samples
 
 
@@ -183,6 +183,31 @@ async def test_sandbox_times_out() -> None:
     with pytest.raises(ExtractionError) as info:
         await extract_isolated(SourceFormat.PDF, data, timeout=0.001)
     assert info.value.code == "timeout"
+
+
+def test_kill_by_cpu_limit_is_reported_as_timeout() -> None:
+    """SIGXCPU/SIGKILL от лимита — «слишком долго», падение парсера —
+    «повреждён»."""
+    assert _crash_code(-9) == "timeout"
+    assert _crash_code(-24) == "timeout"
+    assert _crash_code(-11) == "corrupted"
+    assert _crash_code(1) == "corrupted"
+
+
+def test_cpu_budget_covers_all_cores_for_the_whole_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("corp_ed.ingest.sandbox.os.cpu_count", lambda: 4)
+    assert cpu_budget(90.0) == 360
+    assert cpu_budget(0.001) == 4
+    monkeypatch.setattr("corp_ed.ingest.sandbox.os.cpu_count", lambda: None)
+    assert cpu_budget(10) == 10
+
+
+async def test_sandbox_accepts_explicit_cpu_budget() -> None:
+    data = samples.docx([("Раздел", "Heading1"), ("Текст.", None)])
+    markdown = await extract_isolated(SourceFormat.DOCX, data, cpu_seconds=120)
+    assert "# Раздел" in markdown
 
 
 def test_sandbox_environment_has_no_secrets(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -19,6 +19,12 @@
 Одна функция для всех адаптеров, с тестами на каждый класс адресов
 (tests/security/test_outbound.py). Вторая линия — egress-политика
 воркера в проде (DEPLOY.md).
+
+Режим via_proxy — для процесса за egress-прокси (HTTPS_PROXY): прокси
+сам резолвит имя и пропускает по имени хоста, CONNECT к IP он отвергает.
+Тогда запрос уходит по имени, а проверка адреса остаётся (имя резолвится
+и проверяется перед каждым запросом); закрепление адреса против DNS
+rebinding в этом режиме делает политика прокси, не мы (DEPLOY.md §9a).
 """
 
 import asyncio
@@ -190,10 +196,25 @@ class OutboundClient:
         *,
         resolver: Resolver | None = None,
         max_redirects: int = MAX_REDIRECTS,
+        via_proxy: bool = False,
     ) -> None:
         self._client = client
         self._resolver = resolver
         self._max_redirects = max_redirects
+        self._via_proxy = via_proxy
+
+    def _route(
+        self, target: OutboundTarget
+    ) -> tuple[str, dict[str, str], dict[str, Any]]:
+        """Куда слать проверенный адрес: на IP с именем в Host и SNI, а за
+        egress-прокси — по имени (прокси не принимает CONNECT к IP)."""
+        if self._via_proxy:
+            return target.url, {}, {}
+        return (
+            target.pinned_url,
+            {"Host": target.host_header},
+            {"sni_hostname": target.host},
+        )
 
     async def request(
         self,
@@ -217,13 +238,14 @@ class OutboundClient:
             origin = origin or target.host
             if target.host != origin:
                 request_headers = _without_credentials(request_headers)
+            send_url, route_headers, extensions = self._route(target)
             response = await self._client.request(
                 method,
-                target.pinned_url,
-                headers={**request_headers, "Host": target.host_header},
+                send_url,
+                headers={**request_headers, **route_headers},
                 timeout=timeout,
                 follow_redirects=False,
-                extensions={"sni_hostname": target.host},
+                extensions=extensions,
                 **kwargs,
             )
             if not allow_redirects:
@@ -267,12 +289,13 @@ class OutboundClient:
             origin = origin or target.host
             if target.host != origin:
                 request_headers = _without_credentials(request_headers)
+            send_url, route_headers, extensions = self._route(target)
             request = self._client.build_request(
                 "GET",
-                target.pinned_url,
-                headers={**request_headers, "Host": target.host_header},
+                send_url,
+                headers={**request_headers, **route_headers},
                 timeout=timeout,
-                extensions={"sni_hostname": target.host},
+                extensions=extensions,
             )
             response = await self._client.send(request, stream=True)
             try:

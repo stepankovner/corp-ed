@@ -74,11 +74,18 @@ _SECRET_QUERY = frozenset({"auth", "token", "client_secret", "code"})
 _SECRET_HEADER = re.compile(r"^(Bearer|OAuth|Basic)\s+\S+", re.IGNORECASE)
 
 
+# Код входящего вебхука Битрикс24 живёт в пути: /rest/{user}/{code}/…
+# Портал подставляет его в DOWNLOAD_URL файлов диска — без маски он
+# уехал бы в фикстуры (замечено на живой записи 26.09).
+_WEBHOOK_PATH = re.compile(r"(/rest/\d+/)[^/?#]+(/)")
+
+
 def redact(value: Any, *, request: bool = False) -> Any:
     """Убрать токены из параметров и ответов перед записью в фикстуру.
 
     Ключи с секретами заменяются, в ссылках вырезаются параметры auth и
-    token (DOWNLOAD_URL Битрикс24 несёт access_token портала).
+    token (DOWNLOAD_URL Битрикс24 несёт access_token портала) и код
+    вебхука из пути.
     """
     secret = _SECRET_REQUEST_KEYS if request else _SECRET_KEYS
     if isinstance(value, dict):
@@ -95,6 +102,8 @@ def redact(value: Any, *, request: bool = False) -> Any:
     if isinstance(value, str):
         if _SECRET_HEADER.match(value):
             return "<redacted>"
+        if "://" in value:
+            value = _WEBHOOK_PATH.sub(r"\1<redacted>\2", value)
         if "://" in value and "=" in value:
             parts = urlsplit(value)
             if parts.query:

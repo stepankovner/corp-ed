@@ -1,0 +1,24 @@
+{
+  "method": "profile",
+  "params": {},
+  "response": {
+    "result": {
+      "ID": "1",
+      "ADMIN": true,
+      "NAME": "",
+      "LAST_NAME": "",
+      "PERSONAL_GENDER": "",
+      "TIME_ZONE": "Europe/Moscow"
+    },
+    "time": {
+      "start": 1790370915,
+      "finish": 1790370915.124675,
+      "duration": 0.12467503547668457,
+      "processing": 0,
+      "date_start": "2026-09-26T00:15:15+03:00",
+      "date_finish": "2026-09-26T00:15:15+03:00",
+      "operating_reset_at": 1790371515,
+      "operating": 0
+    }
+  }
+}

@@ -374,7 +374,7 @@ def get_secret_box() -> SecretBox:
 def get_outbound_client(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
 ) -> OutboundClient:
-    return OutboundClient(client)
+    return OutboundClient(client, via_proxy=get_connector_settings().outbound_via_proxy)
 
 
 def get_connector_service(
