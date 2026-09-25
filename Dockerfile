@@ -1,5 +1,5 @@
 # ===== Стадия 1: builder — сборка зависимостей =====
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS builder
 
 # uv — из официального образа, версия закреплена (та же, что у разработчиков
 # и в CI): «latest» в базовом образе — это сборка, которая меняется сама.
@@ -24,7 +24,7 @@ COPY src/ ./src/
 RUN uv sync --frozen --no-dev
 
 # ===== Стадия 2: runtime — финальный образ =====
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS runtime
 
 # Обновления безопасности базового образа: slim выходит по расписанию, а
 # CVE в libc и openssl — нет. Списки пакетов не оставляем (размер).
