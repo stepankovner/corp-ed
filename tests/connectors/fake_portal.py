@@ -23,7 +23,7 @@ from tests.fake_connector import public_resolver
 DEFAULT_HOST = "portal.example.com"
 OAUTH_HOST = "oauth.bitrix24.tech"
 OAUTH_SERVER = f"https://{OAUTH_HOST}/"
-CLIENT_ID = "local.6ab6b8f08a3069.42767144"
+CLIENT_ID = "local.0123456789abcd.0123456789abcdef"
 CLIENT_SECRET = "app-secret-value"  # noqa: S105 — поддельный портал
 EMPLOYEE_ID = "7"
 ADMIN_ID = "1"
