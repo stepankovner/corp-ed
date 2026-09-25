@@ -14,7 +14,7 @@
 | Тесты | **1160 passed**, 0 skipped при `TEST_REDIS_URL`; ~2 мин с Postgres и Redis |
 | Покрытие | **92 %** (ветвевое), порог в CI 85 % |
 | Проверки | ruff (E, W, F, I, N, UP, B, SIM, **S**) по всему репозиторию, ruff format, mypy strict на `src` — чисто |
-| CI на HEAD | [CI #124](https://github.com/stepankovner/corp-ed/actions/runs/36177421372) ✅ (линт, mypy, 1066 тестов, миграции на пустой базе, образ без root), [Security #22](https://github.com/stepankovner/corp-ed/actions/runs/36177421337) ✅ (`cd99dd6`) |
+| CI на HEAD | [CI #142](https://github.com/stepankovner/corp-ed/actions/runs/36185087126) ✅ (линт, mypy, 1160 тестов, миграции на пустой базе, образ без root по digest), [Security #36](https://github.com/stepankovner/corp-ed/actions/runs/36185087138) ✅ (`1c5789d`); все промежуточные пуши этой ночи тоже зелёные |
 | Миграции | 14 ревизий, без изменений на этапе 2 (схема этапа 1 покрыла OAuth: `external_user_id`, шифрованные `credentials` у грантов и подключений) |
 | Слияния ML | 5 (`ml/alice-compare` ×2, `ml/docs` ×2, `ml/multi-query` — с #16 M2, #17 золотой dev, #18 multi-query), файлы ML не редактировались |
 | Живая проверка этапов 2–4а | **не выполнена**: сетевая политика окружения не пропускает `*.bitrix24.ru`, `oauth.bitrix24.tech`, `apidocs.bitrix24.ru`, сайты Atlassian и Яндекса; тестовых Confluence и организации Яндекс 360 нет (см. «Этап 2», «Этап 3», «Этап 4а») |
