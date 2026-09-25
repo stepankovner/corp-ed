@@ -5,6 +5,7 @@ description = "AI-powered onboarding programs for interns"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.18.4",
     "argon2-cffi>=25.1.0",
     "asyncpg>=0.31.0",
     "fastapi>=0.136.3",
@@ -35,11 +36,11 @@ packages = ["src/corp_ed"]
 
 [dependency-groups]
 dev = [
-    "alembic>=1.18.4",
     "mypy>=2.1.0",
     "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "python-dotenv>=1.2.2",
     "ruff>=0.15.16",
     "snowballstemmer>=3.1.1",
@@ -60,7 +61,26 @@ select = [
     "UP",   # pyupgrade (модернизация устаревшего синтаксиса)
     "B",    # flake8-bugbear (потенциальные баги)
     "SIM",  # flake8-simplify (упрощение кода)
+    "S",    # flake8-bandit (типовые дыры: shell=True, eval, слабые хеши, секреты в коде)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Тесты: assert — их язык; пароли и токены в них ненастоящие; random —
+# тестовые данные; subprocess и f-строка SQL — над нашими же константами.
+"tests/**" = ["S101", "S105", "S106", "S311", "S603", "S608"]
+# Скрипты eval (ML): random — бутстреп и выборки, не криптография.
+"eval/**" = ["S311"]
+
+[tool.coverage.run]
+branch = true
+source = ["corp_ed"]
+
+[tool.coverage.report]
+# Порог для CI (pytest --cov): ниже — сборка красная. Не цель, а
+# страховка от коммитов без тестов; поднимать по мере роста.
+fail_under = 85
+show_missing = true
+skip_covered = true
 
 [tool.mypy]
 files = ["src"]

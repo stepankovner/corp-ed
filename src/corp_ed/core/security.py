@@ -24,7 +24,7 @@ from corp_ed.core.config import get_settings
 ALGORITHM = "HS256"
 ISSUER = "corp-ed"
 AUDIENCE = "corp-ed-api"
-ACCESS_TOKEN_TYPE = "access"
+ACCESS_TOKEN_TYPE = "access"  # noqa: S105 — значение claim typ, не секрет
 REFRESH_TOKEN_BYTES = 32
 
 _REQUIRED_CLAIMS = ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]

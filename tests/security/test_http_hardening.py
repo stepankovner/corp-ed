@@ -206,3 +206,12 @@ def test_log_redaction_hides_secrets() -> None:
         "api_key",
     ):
         assert redacted[key] == REDACTED
+
+
+async def test_health_is_public_and_not_in_openapi(api: httpx.AsyncClient) -> None:
+    """Живость для HEALTHCHECK: без токена, без базы, без строки в схеме."""
+    response = await api.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    schema = (await api.get("/openapi.json")).json()
+    assert "/health" not in schema["paths"]

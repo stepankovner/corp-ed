@@ -19,10 +19,10 @@ class AuditAction(StrEnum):
     REFRESH_REUSE_DETECTED = "auth.refresh.reuse_detected"
     LOGOUT = "auth.logout"
     LOGOUT_EVERYWHERE = "auth.logout_everywhere"
-    PASSWORD_CHANGED = "auth.password.changed"
+    PASSWORD_CHANGED = "auth.password.changed"  # noqa: S105 — имя события
     USER_CREATED = "user.created"
     USER_UPDATED = "user.updated"
-    USER_PASSWORD_RESET = "user.password_reset"
+    USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105 — имя события
     TENANT_CREATED = "tenant.created"
     TENANT_SUSPENDED = "tenant.suspended"
     TENANT_RESUMED = "tenant.resumed"

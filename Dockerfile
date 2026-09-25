@@ -1,44 +1,68 @@
 # ===== Стадия 1: builder — сборка зависимостей =====
 FROM python:3.12-slim AS builder
 
-# Копируем uv из официального образа uv (быстрее чем ставить через pip)
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# uv — из официального образа, версия закреплена (та же, что у разработчиков
+# и в CI): «latest» в базовом образе — это сборка, которая меняется сама.
+COPY --from=ghcr.io/astral-sh/uv:0.8.17 /uv /uvx /bin/
 
-# Рабочая директория внутри контейнера
 WORKDIR /app
 
-# Переменные окружения для uv:
 # - UV_COMPILE_BYTECODE: компилировать .pyc для скорости старта
 # - UV_LINK_MODE=copy: копировать пакеты, не симлинки (надёжнее в Docker)
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
-# Сначала копируем ТОЛЬКО файлы зависимостей (меняются редко -> кешируется)
+# Сначала ТОЛЬКО файлы зависимостей (меняются редко -> кешируется)
 COPY pyproject.toml uv.lock README.md ./
 
-# Устанавливаем зависимости (без самого проекта пока, без dev-группы)
+# Зависимости без самого проекта и без dev-группы. Alembic — в основных
+# зависимостях: миграции накатываются этим же образом (RISKS №3).
 RUN uv sync --frozen --no-install-project --no-dev
 
-# Теперь копируем код проекта (меняется часто -> отдельный слой)
+# Код проекта (меняется часто -> отдельный слой)
 COPY src/ ./src/
-
-# Устанавливаем сам проект
 RUN uv sync --frozen --no-dev
 
 # ===== Стадия 2: runtime — финальный образ =====
 FROM python:3.12-slim AS runtime
 
+# Обновления безопасности базового образа: slim выходит по расписанию, а
+# CVE в libc и openssl — нет. Списки пакетов не оставляем (размер).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
+# Непривилегированный пользователь без домашней папки и без shell:
+# уязвимость в парсере PDF или в зависимости не должна давать root в
+# контейнере. Код и окружение принадлежат root и доступны только на чтение.
+RUN groupadd --system app && useradd --system --gid app --no-create-home \
+    --home-dir /app --shell /usr/sbin/nologin app
+
 WORKDIR /app
 
-# Копируем готовое виртуальное окружение и код из builder-стадии
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
+# Миграции — тем же образом: `alembic upgrade head` под ролью владельца
+# схемы (MIGRATIONS_DATABASE_URL), см. compose.yaml и docs/DEPLOY.md.
+COPY alembic.ini ./
+COPY migrations/ ./migrations/
 
-# Добавляем venv в PATH, чтобы команды (uvicorn) были доступны напрямую
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Порт который слушает приложение (документирующая директива)
+USER app
+
 EXPOSE 8000
 
-# Команда запуска при старте контейнера
-CMD ["uvicorn", "corp_ed.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Без базы и Redis намеренно: их сбой — не повод перезапускать приложение.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status == 200 else 1)"]
+
+# --proxy-headers: за reverse proxy настоящий адрес клиента — из
+#   X-Forwarded-For, но только от адресов из FORWARDED_ALLOW_IPS (переменная
+#   окружения uvicorn; по умолчанию 127.0.0.1). Иначе лимиты частоты и
+#   журнал аудита видели бы адрес прокси или подделанный заголовок.
+# --no-server-header: не сообщать версию сервера.
+CMD ["uvicorn", "corp_ed.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--no-server-header"]

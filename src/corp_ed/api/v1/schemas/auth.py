@@ -30,7 +30,7 @@ class ChangePasswordRequest(RequestModel):
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 — схема токена (RFC 6750), не пароль
     expires_in: int
 
 

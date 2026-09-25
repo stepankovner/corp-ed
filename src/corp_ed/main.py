@@ -189,6 +189,17 @@ def read_root() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, str]:
+    """Проверка живости для Docker HEALTHCHECK и балансировщика.
+
+    Без базы и Redis намеренно: их сбой — не повод перезапускать
+    контейнер приложения. Проходит через TrustedHost, поэтому адрес,
+    с которого идёт проверка (127.0.0.1), должен быть в ALLOWED_HOSTS.
+    """
+    return {"status": "ok"}
+
+
 app.add_exception_handler(DomainError, domain_fallback_handler)
 app.add_exception_handler(ConflictError, conflict_error_handler)
 app.add_exception_handler(NotFoundError, not_found_error_handler)

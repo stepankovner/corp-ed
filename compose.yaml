@@ -1,34 +1,54 @@
+# Базовая конфигурация — как в бою: без публикации портов базы и Redis,
+# без --reload, приложение под ролью corp_ed_app (без DDL и BYPASSRLS),
+# миграции — отдельным одноразовым контейнером под владельцем схемы.
+#
+#   docker compose up                    # + compose.override.yaml: разработка
+#   docker compose -f compose.yaml up    # только этот файл: боевая форма
+#
+# Переменные — из .env (см. .env.example). См. docs/DEPLOY.md.
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: corp-ed:local
+  env_file: .env
+  environment:
+    # Приложение ходит в базу НЕ владельцем схемы: RLS для него действует,
+    # таблицы оно не создаёт и не удаляет (deploy/postgres/10-app-role.sh).
+    - DATABASE_URL=postgresql+asyncpg://corp_ed_app:${APP_DB_PASSWORD}@db:5432/corp_ed
+    - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+  restart: unless-stopped
+
 services:
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./src:/app/src
-    command: >
-      uvicorn corp_ed.main:app
-      --host 0.0.0.0
-      --port 8000
-      --reload
+  migrate:
+    <<: *app
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
     environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONPATH=/app/src
+      - MIGRATIONS_DATABASE_URL=postgresql+asyncpg://corp_ed:${POSTGRES_PASSWORD}@db:5432/corp_ed
       - DATABASE_URL=postgresql+asyncpg://corp_ed:${POSTGRES_PASSWORD}@db:5432/corp_ed
-      - SECRET_KEY=${SECRET_KEY}
-      - YC_FOLDER_ID=${YC_FOLDER_ID}
-      - YC_API_KEY=${YC_API_KEY}
-      - RAG_CHUNK_TOKENS=${RAG_CHUNK_TOKENS}
-      - RAG_OVERLAP_TOKENS=${RAG_OVERLAP_TOKENS}
-      - RAG_FAQ_LIMIT=${RAG_FAQ_LIMIT}
-      - RAG_FAQ_MAX_DISTANCE=${RAG_FAQ_MAX_DISTANCE}
-      - RAG_CONTEXT_MAX_TOKENS=${RAG_CONTEXT_MAX_TOKENS}
-      - RAG_FAQ_TEMPERATURE=${RAG_FAQ_TEMPERATURE}
-      - RAG_RETRIEVER=${RAG_RETRIEVER}
-      - RAG_FULLTEXT_WEIGHT=${RAG_FULLTEXT_WEIGHT}
     depends_on:
       db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "corp_ed.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
         condition: service_healthy
 
   db:
@@ -37,15 +57,31 @@ services:
       - POSTGRES_USER=corp_ed
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=corp_ed
-    ports:
-      - "5432:5432"
+      # Роль приложения создаётся при первой инициализации тома.
+      - APP_DB_PASSWORD=${APP_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U corp_ed"]
+      test: ["CMD-SHELL", "pg_isready -U corp_ed -d corp_ed"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # Только память: счётчики лимитов и слоты квоты эмбеддингов не нужны
+    # после перезапуска, а дамп на диске — лишняя копия данных.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    restart: unless-stopped
 
 volumes:
   postgres_data:
