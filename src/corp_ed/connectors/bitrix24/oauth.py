@@ -13,7 +13,6 @@ client_secret уходит только на сервер авторизации
 """
 
 import time
-from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
 
@@ -25,7 +24,10 @@ from corp_ed.connectors.base import (
     AdapterError,
     ExchangedCredentials,
 )
+from corp_ed.connectors.common import TokenSet, json_object
 from corp_ed.core.outbound import OutboundClient
+
+__all__ = ["Bitrix24OAuth", "TokenSet"]
 
 TOKEN_TIMEOUT = 20.0
 # Ошибки сервера авторизации → чья это проблема.
@@ -36,27 +38,6 @@ _CONFIG_ERRORS = {
     "invalid_scope",
     "payment_required",
 }
-
-
-@dataclass(frozen=True)
-class TokenSet:
-    access_token: str
-    refresh_token: str
-    expires_at: int
-    """Unix-время истечения access_token (expires из ответа или now + expires_in)."""
-    member_id: str | None = None
-    user_id: str | None = None
-
-    def as_credentials(self) -> dict[str, str]:
-        """Что кладётся в грант сотрудника (SecretBox)."""
-        credentials = {
-            "access_token": self.access_token,
-            "refresh_token": self.refresh_token,
-            "expires_at": str(self.expires_at),
-        }
-        if self.member_id:
-            credentials["member_id"] = self.member_id
-        return credentials
 
 
 class Bitrix24OAuth:
@@ -109,7 +90,7 @@ class Bitrix24OAuth:
             raise AdapterError("oauth_timeout", retryable=True) from exc
         except httpx.HTTPError as exc:
             raise AdapterError("oauth_network_error", retryable=True) from exc
-        data = _json(response)
+        data = json_object(response)
         if data is None:
             raise AdapterError(
                 f"oauth_http_{response.status_code}",
@@ -126,14 +107,6 @@ class Bitrix24OAuth:
                 raise AdapterConfigError(code)
             raise AdapterError(f"oauth_{code}"[:64])
         return _tokens(data)
-
-
-def _json(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        data = response.json()
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) else None
 
 
 def _tokens(data: dict[str, Any], *, now: float | None = None) -> TokenSet:

@@ -22,12 +22,13 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import httpx
 
 from corp_ed.connectors.base import AdapterAuthError, AdapterConfigError, AdapterError
-from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth, TokenSet
+from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth
+from corp_ed.connectors.common import Recorder, TokenSet, json_object, redact
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 USER_AGENT = "corp-ed-connector/1.0"
@@ -66,9 +67,8 @@ _RETRYABLE_CODES = frozenset(
 _FATAL_CODES = frozenset({"portal_deleted", "overload_limit"})
 
 Sleep = Callable[[float], Awaitable[None]]
-Recorder = Callable[[str, Mapping[str, Any], Any], None]
-"""(method, params без auth, ответ с вырезанными токенами) — для записи
-контрактных фикстур из cli connector-check --record."""
+
+__all__ = ["Bitrix24Client", "OAuthAuth", "Recorder", "WebhookAuth", "redact"]
 
 
 @dataclass(frozen=True)
@@ -148,7 +148,7 @@ class Bitrix24Client:
             response = await self._post(method, params, v3=v3)
             if response.is_redirect:
                 raise AdapterError("portal_moved")
-            data = _json(response)
+            data = json_object(response)
             error = data.get("error") if data is not None else None
             if data is not None and not error and "result" in data:
                 self._record(method, params, data)
@@ -296,14 +296,6 @@ class Bitrix24Client:
             )
 
 
-def _json(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        data = response.json()
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) else None
-
-
 _V3_PREFIX = "bitrix_rest_v3_exception_"
 _V3_CODES = {
     "insufficientscopeexception": "insufficient_scope",
@@ -343,41 +335,3 @@ def _error(status: int, code: str) -> AdapterError:
     if code:
         return AdapterError(code[:64], retryable=status >= 500)
     return AdapterError(f"http_{status}", retryable=status >= 500)
-
-
-_SECRET_KEYS = frozenset(
-    {"auth", "access_token", "refresh_token", "client_secret", "token"}
-)
-# В параметрах запроса code — одноразовый код авторизации; в ответах
-# CODE — символьный код сайта или страницы, а code — код ошибки REST 3.0.
-_SECRET_REQUEST_KEYS = _SECRET_KEYS | {"code"}
-_SECRET_QUERY = frozenset({"auth", "token", "client_secret", "code"})
-
-
-def redact(value: Any, *, request: bool = False) -> Any:
-    """Убрать токены из параметров и ответов перед записью в фикстуру.
-
-    Ключи с секретами заменяются, в ссылках вырезаются параметры auth и
-    token (DOWNLOAD_URL несёт access_token портала).
-    """
-    secret = _SECRET_REQUEST_KEYS if request else _SECRET_KEYS
-    if isinstance(value, dict):
-        return {
-            key: (
-                "<redacted>"
-                if str(key).lower() in secret
-                else redact(item, request=request)
-            )
-            for key, item in value.items()
-        }
-    if isinstance(value, list):
-        return [redact(item, request=request) for item in value]
-    if isinstance(value, str) and "://" in value and "=" in value:
-        parts = urlsplit(value)
-        if parts.query:
-            query = [
-                (k, "<redacted>" if k.lower() in _SECRET_QUERY else v)
-                for k, v in parse_qsl(parts.query, keep_blank_values=True)
-            ]
-            return urlunsplit(parts._replace(query=urlencode(query)))
-    return value

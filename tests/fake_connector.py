@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from corp_ed.connectors.base import (
     AdapterAuthError,
     AdapterError,
+    AdapterOptions,
     FetchedContent,
     FetchedFile,
     RemoteDocument,
@@ -153,6 +154,7 @@ def make_registry(source: FakeSource) -> AdapterRegistry:
         config: Mapping[str, str],
         credentials: Mapping[str, str],
         http: OutboundClient,
+        options: AdapterOptions,
     ) -> FakeAdapter:
         return FakeAdapter(source, credentials)
 

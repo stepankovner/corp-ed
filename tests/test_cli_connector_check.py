@@ -95,3 +95,62 @@ def test_cli_help_mentions_connector_check() -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["connector-check", "--help"])
     assert excinfo.value.code == 0
+
+
+async def test_check_records_confluence_and_yandex_too(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """--record и --fast действуют для любого вида, не только Битрикс24."""
+    from tests.connectors.fake_confluence import PAT, sample_confluence
+    from tests.connectors.fake_yandex import (
+        ACCESS_TOKEN,
+        CLIENT_ID,
+        CLIENT_SECRET,
+        REFRESH_TOKEN,
+        sample_yandex,
+    )
+
+    confluence = sample_confluence()
+    confluence.host = HOST
+    record = tmp_path / "confluence"
+    args_confluence = argparse.Namespace(
+        kind="confluence",
+        config=[f"base_url={confluence.base}", "spaces=HR"],
+        credential=[f"token={PAT}"],
+        module=["pages"],
+        limit=50,
+        fetch=1,
+        record=str(record),
+        fast=True,
+    )
+    code = await cli._connector_check(args_confluence, http=confluence.client())
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "[pages] page:100 «Отпуск»" in out
+    files = sorted(record.glob("*.json"))
+    assert files and files[0].name == "001-user_current.json"
+    dumped = "\n".join(f.read_text(encoding="utf-8") for f in files)
+    assert PAT not in dumped
+
+    yandex = sample_yandex()
+    record_y = tmp_path / "yandex"
+    args_yandex = argparse.Namespace(
+        kind="yandex360",
+        config=[f"client_id={CLIENT_ID}"],
+        credential=[
+            f"client_secret={CLIENT_SECRET}",
+            f"access_token={ACCESS_TOKEN}",
+            f"refresh_token={REFRESH_TOKEN}",
+        ],
+        module=["disk"],
+        limit=50,
+        fetch=1,
+        record=str(record_y),
+        fast=True,
+    )
+    code = await cli._connector_check(args_yandex, http=yandex.client())
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "[disk] ydisk:rid-disk:/Регламенты/Отпуск.txt" in out
+    dumped = "\n".join(f.read_text(encoding="utf-8") for f in record_y.glob("*.json"))
+    assert dumped and ACCESS_TOKEN not in dumped and CLIENT_SECRET not in dumped

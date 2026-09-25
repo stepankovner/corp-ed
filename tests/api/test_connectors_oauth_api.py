@@ -241,6 +241,58 @@ async def test_app_secret_is_write_only_and_validated(
     assert response.json()["credentials_set_at"] is None
 
 
+# --- инварианты вида при сохранении формы (Confluence) ------------------------
+
+
+async def test_confluence_invariants_are_checked_on_save(
+    oauth_api: httpx.AsyncClient, admin_account: User
+) -> None:
+    base = {
+        "kind": "confluence",
+        "name": "Вики",
+        "modules": ["pages"],
+        "config": {
+            "base_url": "https://wiki.example.com/",
+            "email_template": "corp.ru",
+        },
+    }
+    response = await oauth_api.post(URL, json=base, headers=bearer(admin_account))
+    assert response.status_code == 422
+    assert response.json()["code"] == "email_template_invalid"
+    base["config"]["email_template"] = "{username}@corp.ru"
+    response = await oauth_api.post(URL, json=base, headers=bearer(admin_account))
+    assert response.status_code == 201, response.text
+    connector_id = response.json()["id"]
+    response = await oauth_api.put(
+        f"{URL}/{connector_id}/credentials",
+        json={"credentials": {"username": "svc"}},
+        headers=bearer(admin_account),
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "credentials_incomplete"
+    response = await oauth_api.put(
+        f"{URL}/{connector_id}/credentials",
+        json={"credentials": {"username": "svc", "password": "p"}},
+        headers=bearer(admin_account),
+    )
+    assert response.status_code == 200, response.text
+    response = await oauth_api.put(
+        f"{URL}/{connector_id}/credentials",
+        json={"credentials": {"token": "pat"}},
+        headers=bearer(admin_account),
+    )
+    assert response.status_code == 200
+    response = await oauth_api.patch(
+        f"{URL}/{connector_id}",
+        json={
+            "config": {"base_url": "https://wiki.example.com/", "email_template": "x"}
+        },
+        headers=bearer(admin_account),
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "email_template_invalid"
+
+
 # --- старт --------------------------------------------------------------------
 
 

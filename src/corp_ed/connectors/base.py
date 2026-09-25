@@ -16,7 +16,22 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
+from corp_ed.connectors.common import Recorder
 from corp_ed.domain.types import MaterialVisibility, RemoteDocumentKind
+
+
+@dataclass(frozen=True)
+class AdapterOptions:
+    """Что фабрика адаптера получает сверх config и credentials.
+
+    recorder — записывать ответы источника без секретов (фикстуры для
+    контрактных тестов); fast — без пауз между запросами (только
+    диагностика: коробочные системы и тесты). В синхронизации — по
+    умолчанию: пусто и с паузами.
+    """
+
+    recorder: Recorder | None = None
+    fast: bool = False
 
 
 class AdapterError(Exception):

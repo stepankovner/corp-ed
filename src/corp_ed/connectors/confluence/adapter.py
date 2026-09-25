@@ -26,11 +26,13 @@ from corp_ed.connectors.base import (
     AdapterAuthError,
     AdapterConfigError,
     AdapterError,
+    AdapterOptions,
     FetchedContent,
     FetchedFile,
     FetchedPage,
     RemoteDocument,
 )
+from corp_ed.connectors.common import Recorder, to_int
 from corp_ed.connectors.confluence.client import (
     GROUP_LIMIT,
     BasicAuth,
@@ -85,6 +87,18 @@ SPEC = KindSpec(
         FieldSpec("password", "Пароль служебной учётной записи", False, True),
     ),
     url_field="base_url",
+    config_check=lambda config: (
+        "email_template_invalid"
+        if config.get("email_template", "").strip()
+        and "{username}" not in config["email_template"]
+        else None
+    ),
+    credentials_check=lambda credentials: (
+        None
+        if credentials.get("token")
+        or (credentials.get("username") and credentials.get("password"))
+        else "credentials_incomplete"
+    ),
     extra={"auth": "token или username+password"},
 )
 
@@ -186,7 +200,7 @@ class ConfluenceAdapter:
             info = await self._client.get(
                 f"content/{attachment_id}", {"expand": "version"}
             )
-            size = _int(info.get("extensions", {}).get("fileSize"))
+            size = to_int(info.get("extensions", {}).get("fileSize"))
             if size is not None and size > max_bytes:
                 raise AdapterError("document_too_large")
             link = info.get("_links", {}).get("download")
@@ -249,7 +263,7 @@ class ConfluenceAdapter:
         title = str(attachment.get("title") or "")
         if PurePath(title).suffix.lower() not in SUPPORTED_EXTENSIONS:
             return None
-        size = _int(attachment.get("extensions", {}).get("fileSize"))
+        size = to_int(attachment.get("extensions", {}).get("fileSize"))
         if size is not None and size > self._max_bytes:
             return None
         attachment_id = str(attachment.get("id") or "")
@@ -377,18 +391,13 @@ def _when(item: Mapping[str, Any]) -> datetime | None:
         return None
 
 
-def _int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def build_adapter(
     config: Mapping[str, str],
     credentials: Mapping[str, str],
     http: OutboundClient,
     settings: ConnectorSettings,
+    *,
+    recorder: Recorder | None = None,
 ) -> ConfluenceAdapter:
     base_url = config.get("base_url", "")
     if not base_url:
@@ -404,7 +413,7 @@ def build_adapter(
     if "{username}" not in template:
         raise AdapterConfigError("email_template_invalid")
     return ConfluenceAdapter(
-        ConfluenceClient(http, base_url=base_url, auth=auth),
+        ConfluenceClient(http, base_url=base_url, auth=auth, recorder=recorder),
         spaces=config.get("spaces", "").split(","),
         email_template=template,
         max_bytes=settings.max_document_bytes,
@@ -417,7 +426,10 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
         config: Mapping[str, str],
         credentials: Mapping[str, str],
         http: OutboundClient,
+        options: AdapterOptions,
     ) -> ConfluenceAdapter:
-        return build_adapter(config, credentials, http, settings)
+        return build_adapter(
+            config, credentials, http, settings, recorder=options.recorder
+        )
 
     registry.register(SPEC, factory)

@@ -9,7 +9,6 @@ client_id&client_secret → access_token, refresh_token, expires_in
 """
 
 import time
-from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -20,7 +19,7 @@ from corp_ed.connectors.base import (
     AdapterError,
     ExchangedCredentials,
 )
-from corp_ed.connectors.bitrix24.oauth import TokenSet
+from corp_ed.connectors.common import TokenSet, json_object
 from corp_ed.core.outbound import OutboundClient
 
 TOKEN_TIMEOUT = 20.0
@@ -74,7 +73,7 @@ class YandexOAuth:
             raise AdapterError("oauth_timeout", retryable=True) from exc
         except httpx.HTTPError as exc:
             raise AdapterError("oauth_network_error", retryable=True) from exc
-        data = _json(response)
+        data = json_object(response)
         if data is None:
             raise AdapterError(
                 f"oauth_http_{response.status_code}",
@@ -100,11 +99,3 @@ class YandexOAuth:
             refresh_token=str(refresh) if refresh else grant.get("refresh_token", ""),
             expires_at=int(time.time()) + ttl,
         )
-
-
-def _json(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        data = response.json()
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) else None

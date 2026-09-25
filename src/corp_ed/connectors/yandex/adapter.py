@@ -14,10 +14,16 @@ from corp_ed.connectors.base import (
     AdapterAuthError,
     AdapterConfigError,
     AdapterError,
+    AdapterOptions,
     FetchedContent,
     RemoteDocument,
 )
-from corp_ed.connectors.bitrix24.oauth import TokenSet
+from corp_ed.connectors.common import (
+    OAUTH_CALLBACK_PATH,
+    Recorder,
+    TokenSet,
+    to_int,
+)
 from corp_ed.connectors.registry import (
     AdapterRegistry,
     FieldSpec,
@@ -33,7 +39,6 @@ from corp_ed.core.outbound import OutboundClient
 from corp_ed.domain.types import ConnectorMode
 
 KIND = "yandex360"
-OAUTH_CALLBACK_PATH = "/api/v1/connectors/oauth/callback"
 SPEC = KindSpec(
     kind=KIND,
     title="Яндекс 360 (Диск)",
@@ -99,6 +104,8 @@ def build_adapter(
     credentials: Mapping[str, str],
     http: OutboundClient,
     settings: ConnectorSettings,
+    *,
+    recorder: Recorder | None = None,
 ) -> YandexAdapter:
     access = credentials.get("access_token")
     refresh = credentials.get("refresh_token")
@@ -111,7 +118,7 @@ def build_adapter(
     tokens = TokenSet(
         access_token=access,
         refresh_token=refresh or "",
-        expires_at=_int(credentials.get("expires_at")),
+        expires_at=to_int(credentials.get("expires_at")) or 0,
     )
     oauth = YandexOAuth(
         http,
@@ -120,7 +127,10 @@ def build_adapter(
         server=settings.yandex_oauth_server,
     )
     client = YandexDiskClient(
-        http, api=settings.yandex_disk_api, auth=OAuthTokens(tokens, oauth)
+        http,
+        api=settings.yandex_disk_api,
+        auth=OAuthTokens(tokens, oauth),
+        recorder=recorder,
     )
     return YandexAdapter(client, max_bytes=settings.max_document_bytes)
 
@@ -131,8 +141,11 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
         config: Mapping[str, str],
         credentials: Mapping[str, str],
         http: OutboundClient,
+        options: AdapterOptions,
     ) -> YandexAdapter:
-        return build_adapter(config, credentials, http, settings)
+        return build_adapter(
+            config, credentials, http, settings, recorder=options.recorder
+        )
 
     def oauth(
         spec: KindSpec,
@@ -152,10 +165,3 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
         )
 
     registry.register(SPEC, factory, oauth)
-
-
-def _int(value: str | None) -> int:
-    try:
-        return int(value or 0)
-    except ValueError:
-        return 0

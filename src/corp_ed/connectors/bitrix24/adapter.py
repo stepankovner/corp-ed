@@ -14,6 +14,7 @@ from corp_ed.connectors.base import (
     AdapterAuthError,
     AdapterConfigError,
     AdapterError,
+    AdapterOptions,
     FetchedContent,
     RemoteDocument,
 )
@@ -27,7 +28,8 @@ from corp_ed.connectors.bitrix24.client import (
     Recorder,
     WebhookAuth,
 )
-from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth, TokenSet
+from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth
+from corp_ed.connectors.common import OAUTH_CALLBACK_PATH, TokenSet, to_int
 from corp_ed.connectors.registry import (
     AdapterRegistry,
     FieldSpec,
@@ -40,7 +42,6 @@ from corp_ed.core.outbound import OutboundClient
 from corp_ed.domain.types import ConnectorMode
 
 KIND = "bitrix24"
-OAUTH_CALLBACK_PATH = "/api/v1/connectors/oauth/callback"
 SPEC = KindSpec(
     kind=KIND,
     title="Битрикс24",
@@ -159,7 +160,7 @@ def build_client(
             TokenSet(
                 access_token=access,
                 refresh_token=refresh,
-                expires_at=_int(credentials.get("expires_at")),
+                expires_at=to_int(credentials.get("expires_at")) or 0,
                 member_id=credentials.get("member_id") or None,
             ),
             Bitrix24OAuth(
@@ -185,8 +186,16 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
         config: Mapping[str, str],
         credentials: Mapping[str, str],
         http: OutboundClient,
+        options: AdapterOptions,
     ) -> Bitrix24Adapter:
-        client = build_client(config, credentials, http, settings)
+        client = build_client(
+            config,
+            credentials,
+            http,
+            settings,
+            recorder=options.recorder,
+            min_interval=0.0 if options.fast else None,
+        )
         return Bitrix24Adapter(client, max_bytes=settings.max_document_bytes)
 
     def oauth(
@@ -208,10 +217,3 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
         )
 
     registry.register(SPEC, factory, oauth)
-
-
-def _int(value: str | None) -> int:
-    try:
-        return int(value or 0)
-    except ValueError:
-        return 0

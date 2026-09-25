@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from corp_ed.connectors.base import OAuthFlow, SourceAdapter
+from corp_ed.connectors.base import AdapterOptions, OAuthFlow, SourceAdapter
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.domain.types import ConnectorMode
@@ -67,6 +67,12 @@ class KindSpec:
     user_auth: UserAuth = UserAuth.FIELDS
     # Поле config с адресом системы: проверяется validate_outbound_url.
     url_field: str | None = None
+    # Инварианты сверх «поля известны и заполнены»: шаблон с
+    # подстановкой, «токен или логин с паролем». Возвращают код ошибки
+    # (422 при сохранении формы) или None; иначе админ узнал бы о
+    # неверной форме только из остановки первой синхронизации.
+    config_check: Callable[[Mapping[str, str]], str | None] | None = None
+    credentials_check: Callable[[Mapping[str, str]], str | None] | None = None
     # Подсказки фронту: нужные scope приложения, путь обратного вызова.
     extra: Mapping[str, str] = field(default_factory=dict)
 
@@ -80,10 +86,11 @@ class KindSpec:
 
 
 AdapterFactory = Callable[
-    [KindSpec, Mapping[str, str], Mapping[str, str], OutboundClient], SourceAdapter
+    [KindSpec, Mapping[str, str], Mapping[str, str], OutboundClient, AdapterOptions],
+    SourceAdapter,
 ]
-"""(spec, config, credentials, http) → адаптер. credentials — уже
-расшифрованные (в режиме per_user — секреты приложения плюс токены
+"""(spec, config, credentials, http, options) → адаптер. credentials —
+уже расшифрованные (в режиме per_user — секреты приложения плюс токены
 сотрудника одним словарём); фабрика вызывается только в момент работы
 с источником."""
 
@@ -137,9 +144,12 @@ class AdapterRegistry:
         config: Mapping[str, str],
         credentials: Mapping[str, str],
         http: OutboundClient,
+        options: AdapterOptions | None = None,
     ) -> SourceAdapter:
         spec = self.spec(kind)
-        return self._factories[kind](spec, config, credentials, http)
+        return self._factories[kind](
+            spec, config, credentials, http, options or AdapterOptions()
+        )
 
     def build_oauth(
         self,

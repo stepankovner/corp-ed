@@ -17,6 +17,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from corp_ed.connectors.base import AdapterAuthError, AdapterError
+from corp_ed.connectors.common import Recorder, redact
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 USER_AGENT = "corp-ed-connector/1.0"
@@ -56,12 +57,14 @@ class ConfluenceClient:
         base_url: str,
         auth: TokenAuth | BasicAuth,
         sleep: Sleep = asyncio.sleep,
+        recorder: Recorder | None = None,
     ) -> None:
         self._http = http
         self._base = base_url if base_url.endswith("/") else base_url + "/"
         self._host = (urlsplit(self._base).hostname or "").lower()
         self._auth = auth
         self._sleep = sleep
+        self._recorder = recorder
 
     @property
     def base_url(self) -> str:
@@ -99,6 +102,14 @@ class ConfluenceClient:
                     raise AdapterError("rate_limited", retryable=True)
                 await self._sleep(_retry_after(response, delay))
                 continue
+            if self._recorder is not None:
+                try:
+                    body: Any = response.json()
+                except ValueError:
+                    body = response.text[:200]
+                self._recorder(
+                    path, redact(dict(params or {}), request=True), redact(body)
+                )
             return _parse(response)
 
     async def paginate(

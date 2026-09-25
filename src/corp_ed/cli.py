@@ -36,7 +36,7 @@ from typing import Any
 
 import httpx
 
-from corp_ed.connectors.base import AdapterError, SourceAdapter
+from corp_ed.connectors.base import AdapterError, AdapterOptions, SourceAdapter
 from corp_ed.connectors.registry import UnknownKindError, default_registry
 from corp_ed.core.config import (
     ConnectorSettings,
@@ -286,27 +286,13 @@ async def _connector_check(
         outbound = http or OutboundClient(client)
         adapter: SourceAdapter
         try:
-            if spec.kind == "bitrix24":
-                # Запись фикстур и темп — параметры клиента Битрикс24, у
-                # фабрики реестра их нет.
-                from corp_ed.connectors.bitrix24.adapter import (
-                    Bitrix24Adapter,
-                    build_client,
-                )
-
-                adapter = Bitrix24Adapter(
-                    build_client(
-                        config,
-                        credentials,
-                        outbound,
-                        settings,
-                        recorder=recorder,
-                        min_interval=0.0 if args.fast else None,
-                    ),
-                    max_bytes=settings.max_document_bytes,
-                )
-            else:
-                adapter = registry.build(spec.kind, config, credentials, outbound)
+            adapter = registry.build(
+                spec.kind,
+                config,
+                credentials,
+                outbound,
+                AdapterOptions(recorder=recorder, fast=args.fast),
+            )
         except AdapterError as exc:
             print(f"Ошибка сборки адаптера: {exc.code}", file=sys.stderr)
             return 1
@@ -370,7 +356,9 @@ class _FixtureRecorder:
 
     def __call__(self, method: str, params: Mapping[str, Any], response: Any) -> None:
         self.count += 1
-        path = self.directory / f"{self.count:03d}-{method}.json"
+        # Имя метода Битрикс24 или путь REST Confluence/Яндекса → имя файла.
+        safe = "".join(ch if ch.isalnum() or ch in ".-" else "_" for ch in method)
+        path = self.directory / f"{self.count:03d}-{safe}.json"
         path.write_text(
             json.dumps(
                 {"method": method, "params": params, "response": response},

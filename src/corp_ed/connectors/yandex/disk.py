@@ -16,7 +16,6 @@ downloader.disk.yandex.ru (подписанная ссылка, без токе�
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import PurePath
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -30,7 +29,14 @@ from corp_ed.connectors.base import (
     FetchedFile,
     RemoteDocument,
 )
-from corp_ed.connectors.bitrix24.oauth import TokenSet
+from corp_ed.connectors.common import (
+    Recorder,
+    TokenSet,
+    json_object,
+    parse_datetime,
+    redact,
+    to_int,
+)
 from corp_ed.connectors.yandex.oauth import YandexOAuth
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 from corp_ed.domain.types import RemoteDocumentKind
@@ -72,11 +78,13 @@ class YandexDiskClient:
         api: str,
         auth: OAuthTokens,
         sleep: Sleep = asyncio.sleep,
+        recorder: Recorder | None = None,
     ) -> None:
         self._http = http
         self._api = api if api.endswith("/") else api + "/"
         self._auth = auth
         self._sleep = sleep
+        self._recorder = recorder
 
     @property
     def refreshed_credentials(self) -> Mapping[str, str] | None:
@@ -117,7 +125,11 @@ class YandexDiskClient:
                     raise AdapterError("rate_limited", retryable=True)
                 await self._sleep(delay)
                 continue
-            data = _json(response)
+            data = json_object(response)
+            if self._recorder is not None:
+                self._recorder(
+                    path, redact(dict(params or {}), request=True), redact(data)
+                )
             if status == 200 and data is not None:
                 return data
             if status == 403:
@@ -219,7 +231,7 @@ class YandexDiskModule:
             embedded = page.get("_embedded") or {}
             items = [i for i in embedded.get("items") or [] if isinstance(i, dict)]
             entries.extend(items)
-            total = _int(embedded.get("total")) or 0
+            total = to_int(embedded.get("total")) or 0
             offset += len(items)
             if not items or offset >= total:
                 break
@@ -242,7 +254,7 @@ class YandexDiskModule:
         name = str(entry.get("name") or "")
         if PurePath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
             return None
-        size = _int(entry.get("size"))
+        size = to_int(entry.get("size"))
         if size is not None and size > self._max_bytes:
             return None
         path = str(entry.get("path") or "")
@@ -262,7 +274,7 @@ class YandexDiskModule:
             locator=path,
             filename=name,
             size=size,
-            modified_at=_datetime(modified),
+            modified_at=parse_datetime(modified),
         )
 
 
@@ -275,25 +287,3 @@ def _folder_url(path: str) -> str:
         else ""
     )
     return f"https://disk.yandex.ru/client/disk/{quote(folder)}"
-
-
-def _json(response: httpx.Response) -> dict[str, Any] | None:
-    try:
-        data = response.json()
-    except ValueError:
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def _int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _datetime(value: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
-    except ValueError:
-        return None

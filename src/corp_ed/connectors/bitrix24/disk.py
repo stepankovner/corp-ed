@@ -17,7 +17,6 @@ ENTITY_TYPE common и group); `disk_personal` — «Мой диск» самог
 """
 
 from collections.abc import AsyncIterator, Mapping
-from datetime import datetime
 from pathlib import PurePath
 from typing import Any
 
@@ -31,6 +30,7 @@ from corp_ed.connectors.base import (
     RemoteDocument,
 )
 from corp_ed.connectors.bitrix24.client import Bitrix24Client
+from corp_ed.connectors.common import parse_datetime, to_int
 from corp_ed.domain.types import RemoteDocumentKind
 from corp_ed.ingest.extract import SUPPORTED_EXTENSIONS
 
@@ -86,7 +86,7 @@ class DiskModule:
         info = (await self._client.call("disk.file.get", {"id": file_id})).get("result")
         if not isinstance(info, dict):
             raise AdapterError("file_not_found")
-        size = _int(info.get("SIZE"))
+        size = to_int(info.get("SIZE"))
         if size is not None and size > max_bytes:
             raise AdapterError("document_too_large")
         url = info.get("DOWNLOAD_URL")
@@ -149,7 +149,7 @@ class DiskModule:
         name = str(entry.get("NAME") or "")
         if PurePath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
             return None
-        size = _int(entry.get("SIZE"))
+        size = to_int(entry.get("SIZE"))
         if size is not None and size > self._max_bytes:
             return None
         file_id = str(entry.get("ID"))
@@ -171,19 +171,5 @@ class DiskModule:
             path=path,
             filename=name,
             size=size,
-            modified_at=_datetime(updated),
+            modified_at=parse_datetime(updated),
         )
-
-
-def _int(value: Any) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _datetime(value: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(value) if value else None
-    except ValueError:
-        return None

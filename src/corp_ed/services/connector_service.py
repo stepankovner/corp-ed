@@ -7,7 +7,7 @@
 """
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -267,6 +267,7 @@ class ConnectorService:
                 "В этом подключении каждый сотрудник авторизуется сам"
             )
         clean = _validate_fields(fields, credentials, "credentials")
+        _check_invariant(spec.credentials_check, clean)
         connector.credentials = self.secrets.encrypt(clean)
         connector.credentials_set_at = _now()
         if connector.status == ConnectorStatus.ERROR.value:
@@ -591,6 +592,7 @@ class ConnectorService:
                 "POST /connectors/{id}/oauth/start",
             )
         clean = _validate_fields(spec.credential_fields, credentials, "credentials")
+        _check_invariant(spec.credentials_check, clean)
         token = self.secrets.encrypt(clean)
         grant = await self.grants.get(connector.id, user.id)
         if grant is None:
@@ -722,7 +724,21 @@ async def _validate_config(
                 exc.code, "Адрес системы не принят: только https и публичный адрес"
             ) from exc
         clean[spec.url_field] = target.url
+    _check_invariant(spec.config_check, clean)
     return clean
+
+
+def _check_invariant(
+    check: Callable[[Mapping[str, str]], str | None] | None,
+    values: Mapping[str, str],
+) -> None:
+    """Инвариант вида (шаблон, набор учётных данных) — 422 при сохранении,
+    а не остановка первой синхронизации через час."""
+    if check is None:
+        return
+    code = check(values)
+    if code:
+        raise InvalidConnectorConfigError(code, "Настройки не приняты: " + code)
 
 
 def _now() -> datetime:

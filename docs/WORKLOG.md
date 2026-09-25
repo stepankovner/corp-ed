@@ -11,7 +11,7 @@
 | | |
 |---|---|
 | Ветка | `claude/gallant-pascal-xtb35t` → PR [#15](https://github.com/stepankovner/corp-ed/pull/15) в `main` (не слит) |
-| Тесты | **1158 passed**, 0 skipped при `TEST_REDIS_URL`; ~2 мин с Postgres и Redis |
+| Тесты | **1160 passed**, 0 skipped при `TEST_REDIS_URL`; ~2 мин с Postgres и Redis |
 | Покрытие | **92 %** (ветвевое), порог в CI 85 % |
 | Проверки | ruff (E, W, F, I, N, UP, B, SIM, **S**) по всему репозиторию, ruff format, mypy strict на `src` — чисто |
 | CI на HEAD | [CI #124](https://github.com/stepankovner/corp-ed/actions/runs/36177421372) ✅ (линт, mypy, 1066 тестов, миграции на пустой базе, образ без root), [Security #22](https://github.com/stepankovner/corp-ed/actions/runs/36177421337) ✅ (`cd99dd6`) |
@@ -24,12 +24,12 @@
 | Каталог | Тестов | Что |
 |---|---|---|
 | `tests/security/` | 174 | токены, пароли, периметр, лимиты, аудит, RLS, шифрование секретов, SSRF, **state OAuth, редирект без следования** |
-| `tests/api/` | 205 | все группы ручек: роли, изоляция, валидация, коды; коннекторы, **OAuth Битрикс24** |
+| `tests/api/` | 206 | все группы ручек: роли, изоляция, валидация, коды; коннекторы, **OAuth Битрикс24** |
 | `tests/llm/`, `tests/ingest/` | 57 + 33 | адаптеры, разбор ответов, файлы, песочница |
 | `tests/connectors/` | 133 | **Битрикс24: клиент (старый REST и 3.0), адаптер (диск, база знаний, база знаний 2.0, OAuth), контракт по фикстурам документации; Confluence: клиент, обход с правами, storage-формат; Яндекс Диск: OAuth, обход, продление** |
-| `tests/test_*.py` (сервисы бэкенда) | 282 | FAQ, гибрид, кредиты, компании, ингест, воркер, пробелы, изоляция, синхронизация коннекторов, видимость, очередь синхронизации, HTML, **синхронизация с адаптерами Битрикс24, Confluence и Яндекс Диска, `cli connector-check`** |
+| `tests/test_*.py` (сервисы бэкенда) | 283 | FAQ, гибрид, кредиты, компании, ингест, воркер, пробелы, изоляция, синхронизация коннекторов, видимость, очередь синхронизации, HTML, **синхронизация с адаптерами Битрикс24, Confluence и Яндекс Диска, `cli connector-check`** |
 | ML (`tests/ml_eval/` 131 + чистые функции ML в `tests/test_*.py` 143; после слияния #16–#18) | 274 | не редактируются бэкендом |
-| **Итого** | **1158** | `pytest --collect-only`, 25.09; +185 к этапу 1 |
+| **Итого** | **1160** | `pytest --collect-only`, 25.09; +187 к этапу 1 |
 
 ---
 
@@ -61,9 +61,12 @@
   `oauth_callback`); синхронизация:
   `services/connector_sync_service.py` (в воркере, `worker.py::SyncWorker`
   + планировщик раз в минуту); адаптеры и каталог: `connectors/`
-  (`registry.py` — виды, `default_registry(settings)`; `bitrix24/` —
-  `client.py`, `oauth.py`, `disk.py`, `knowledge_base.py`,
-  `adapter.py`); проверка против источника без базы:
+  (`registry.py` — виды, `default_registry(settings)`, `AdapterOptions`,
+  `config_check`/`credentials_check`; `common.py` — `TokenSet`, `redact`,
+  помощники; `bitrix24/` — `client.py`, `oauth.py`, `disk.py`,
+  `knowledge_base.py`, `notes.py`, `adapter.py`; `confluence/` —
+  `client.py`, `storage.py`, `adapter.py`; `yandex/` — `oauth.py`,
+  `disk.py`, `adapter.py`); проверка против источника без базы:
   `services/connector_check_service.py` + `cli connector-check`;
   секреты: `core/secrets.py`; state OAuth: `core/security.py`; защита
   от SSRF: `core/outbound.py`; права на документ: `materials.visibility`
@@ -429,12 +432,16 @@ base_url=… --credential token=… --record …` и сверка форм от�
 | 29 | Яндекс `fetch` делал лишний запрос метаданных на каждый файл | размер и имя берутся из листинга |
 | 30 | Модуль базы знаний 2.0 держал Markdown всей базы в памяти до конца обхода | содержимое отдаётся один раз и удаляется из кеша |
 
-Отложено (структура, не ошибки; следующий коммит или позже):
-инварианты Confluence (`{username}` в шаблоне, `token` или
-`username+password`) проверяются в фабрике, а не при сохранении формы
-(422 приходит только при первой синхронизации); `connector-check`
-включает `--record`/`--fast` только для Битрикс24; `TokenSet` и
-мелкие помощники живут в пакете Битрикс24 и импортируются Яндексом.
+Структурные замечания — следующим коммитом: у `KindSpec` появились
+`config_check` и `credentials_check` (инварианты вида: `{username}` в
+шаблоне почты Confluence, `token` или `username+password`) — 422 при
+сохранении формы, а не остановка первой синхронизации; фабрики
+адаптеров получают `AdapterOptions` (запись фикстур, без пауз), и
+`connector-check --record`/`--fast` действуют для всех видов; общий
+`connectors/common.py` (`TokenSet`, `redact`, `json_object`, `to_int`,
+`parse_datetime`, `OAUTH_CALLBACK_PATH`) вместо импортов Яндекса из
+пакета Битрикс24. Тесты: +2 (инварианты через API, запись фикстур
+Confluence и Яндекса).
 
 ## Дальнейшие действия — MVP по досье
 
