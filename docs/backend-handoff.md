@@ -546,6 +546,158 @@ RAG_FAQ_TEMPERATURE=0
 
 ---
 
+## Отчёт о пробелах (задача ML 3, 25.09)
+
+ML-часть готова: `corp_ed.domain.gaps` (`classify_miss`, `cluster_questions`,
+`cluster_priority`, `mask_pii`) и промпт `corp_ed.prompts.gaps` (gaps-v1:
+`build_gap_messages`, `GAP_LABEL_SCHEMA`, `parse_gap_label`). Клиенту
+показываем только темы, которых нет в базе; остальные классы — внутренний
+мониторинг.
+
+Замер на синтетике (корпус без УМНИК и правил акселератора, `eval/gaps_eval.py`,
+`docs/ml-report.md`): одних gap-вопросов (вектор не прошёл порог) мало —
+recall 0.36 при precision 0.82: близкие по теме пробелы проходят порог, и
+модель на них отказывает. **Вместе с отказами модели при найденных
+выдержках** — precision 0.88, recall 0.64. Поэтому в отчёт идут классы
+`gap` **и** `model_refusal`.
+
+### BH-20. Таблица `qa_log`
+
+- **Зачем:** сигналы для отчёта о пробелах, привязка 👍/👎 и eval к версии
+  промпта и модели (заменяет минимум из BH-11).
+- **Приоритет / Срок:** P1 · 06.10.
+- **Что сделать:**
+  ```sql
+  CREATE TABLE qa_log (
+    id uuid PRIMARY KEY,
+    tenant_id uuid NOT NULL REFERENCES tenants(id),
+    user_id uuid NOT NULL REFERENCES users(id),
+    question text NOT NULL,
+    question_embedding vector(768) NOT NULL,   -- размерность = у chunks (BH-16/17)
+    embedding_model text NOT NULL,             -- 'text-embeddings-v2-query@768'
+    prompt_version text NOT NULL,              -- PROMPT_VERSION из prompts/faq.py
+    llm_model text NOT NULL,
+    best_vector_distance real,                 -- лучший ВЕКТОРНЫЙ кандидат, до порога
+    best_fulltext_rank real,                   -- ts_rank_cd лучшего; NULL — ветка пуста
+    answer_given boolean NOT NULL,
+    source_chunk_ids uuid[] NOT NULL DEFAULT '{}',
+    feedback smallint CHECK (feedback IN (-1, 1)),
+    miss_kind text,                            -- заполняет ночная задача (BH-21)
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+  CREATE INDEX qa_log_tenant_created_idx ON qa_log (tenant_id, created_at);
+  ```
+  Писать строку на каждый `/faq/ask` (в том числе отказ без LLM); 👍/👎 —
+  отдельным `PATCH`.
+- **Где выбор:** хранить сам текст вопроса (нужен для подписи кластеров,
+  но это персональные данные по 152-ФЗ — срок хранения, например 90 дней,
+  и удаление по запросу) **или** только маскированный (`mask_pii`) — меньше
+  риска, но маскирование неидеально (списки имён).
+- **Изоляция тенантов:** все выборки ночной задачи — сырым SQL с
+  `WHERE tenant_id = :tenant_id`.
+- **Приёмка:** тест: строка пишется и при отказе без LLM
+  (`best_vector_distance` есть, `answer_given=false`, LLM не вызывался).
+- **Ловушки:** `question_embedding` — тот же вектор, что ушёл в поиск (не
+  считать второй раз); при смене модели эмбеддингов старые векторы с новыми
+  не кластеризовать — окно начинать заново.
+
+### BH-21. Ночная задача: классификация → кластеры → подпись
+
+- **Приоритет / Срок:** P1 · 06.10 (v2).
+- **Что сделать**, для каждого тенанта по очереди:
+  ```python
+  from corp_ed.domain.gaps import (GapThresholds, MissKind, MissSignals,
+      classify_miss, cluster_questions, cluster_priority, ClusterQuestion)
+  from corp_ed.prompts.gaps import GAP_LABEL_SCHEMA, build_gap_messages, parse_gap_label
+
+  thresholds = GapThresholds(
+      max_distance=rag.faq_max_distance,        # тот же порог, что в ответе
+      strong_fulltext=gaps.strong_fulltext,     # подобрать по живым логам
+      empty_fulltext=gaps.empty_fulltext,
+      off_topic_distance=gaps.off_topic_distance,
+  )
+  # 1. классы для новых строк окна (например, 30 дней)
+  kind = classify_miss(MissSignals(row.best_vector_distance,
+                                   row.best_fulltext_rank, row.answer_given,
+                                   row.feedback), thresholds)
+  # 2. кластеры по строкам с kind in (GAP, MODEL_REFUSAL)
+  labels = cluster_questions(vectors, max_distance=gaps.cluster_distance)  # 0.6
+  # 3. приоритет и подпись каждого кластера
+  priority = cluster_priority([ClusterQuestion(r.user_id, r.created_at) ...],
+                              now=now, half_life_days=gaps.half_life_days)  # 14
+  label = parse_gap_label(await llm.generate(
+      build_gap_messages(top_questions), response_format=GAP_LABEL_SCHEMA))
+  ```
+  Параметры — в настройках (`GAPS_*`), не константами.
+  `build_gap_messages` сам маскирует ПДн (`mask_pii`).
+- **Где выбор:**
+  - кластеризовать окно заново каждую ночь (просто; id кластеров меняются,
+    статус «в работе» надо переносить по пересечению вопросов) **или**
+    дописывать новые вопросы к существующим кластерам по близости к
+    центроиду (id стабильны, больше кода);
+  - подписывать LLM все кластеры (≈ 0,05 ₽ и 0,5 с на кластер на Flash)
+    **или** только кластеры с приоритетом выше порога.
+- **Изоляция тенантов:** кластеризовать **только в пределах тенанта** —
+  векторы разных компаний не смешивать ни в одной матрице.
+- **Приёмка:** тест с фейковыми векторами: вопросы тенанта B не попадают в
+  кластеры тенанта A; строка с 👎 на ответе → `retrieval_miss`, в отчёт не
+  идёт.
+- **Ловушки:** кластеризация O(n²) по памяти — окно ограничить (несколько
+  тысяч вопросов на тенант — секунды). Порог 0.6 — по синтетике (чистота
+  0.83 по документу, крупнейший кластер 14 вопросов), уточнить на живых
+  логах.
+
+### BH-22. Таблицы `gap_clusters` и `gap_cluster_questions`
+
+```sql
+CREATE TABLE gap_clusters (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES tenants(id),
+  title text NOT NULL,                 -- GapLabel.title
+  missing text NOT NULL,               -- GapLabel.missing
+  priority real NOT NULL,
+  question_count int NOT NULL,
+  user_count int NOT NULL,
+  first_seen timestamptz NOT NULL,
+  last_seen timestamptz NOT NULL,
+  status text NOT NULL DEFAULT 'new'
+    CHECK (status IN ('new', 'in_progress', 'resolved', 'dismissed')),
+  prompt_version text NOT NULL,        -- gaps-v1
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX gap_clusters_tenant_priority_idx ON gap_clusters (tenant_id, priority DESC);
+CREATE TABLE gap_cluster_questions (
+  cluster_id uuid NOT NULL REFERENCES gap_clusters(id) ON DELETE CASCADE,
+  qa_log_id uuid NOT NULL REFERENCES qa_log(id) ON DELETE CASCADE,
+  tenant_id uuid NOT NULL,
+  PRIMARY KEY (cluster_id, qa_log_id)
+);
+```
+**Изоляция тенантов:** `tenant_id` в обеих таблицах, фильтр в каждом
+запросе. **Приоритет / Срок:** P1 · 06.10.
+
+### BH-23. `GET /api/v1/gaps` — только для админа
+
+- **Что сделать:**
+  ```http
+  GET /api/v1/gaps?status=new&limit=20       роль: MANAGER
+  ```
+  ```json
+  {"clusters": [{"id": "…", "title": "Оформление командировок",
+                 "missing": "Нет положения о командировках: …",
+                 "priority": 12.4, "question_count": 9, "user_count": 6,
+                 "last_seen": "2026-10-05T…", "status": "new",
+                 "sample_questions": ["Как оформить командировку?", "…"]}]}
+  ```
+  `sample_questions` — после `mask_pii`. Плюс `PATCH /api/v1/gaps/{id}`
+  со `status`.
+- **Изоляция тенантов:** `WHERE tenant_id = :tenant_id` явно; тест: админ
+  тенанта A не видит кластеров тенанта B, INTERN — 403.
+- **Ловушки:** показывать только `gap` и `model_refusal`; `retrieval_miss`,
+  `unclear`, `off_topic` — во внутреннем мониторинге, клиенту не нужны.
+
+---
+
 ## Сводка v1
 
 | Пункт | Приоритет | Срок | ML-часть |
@@ -567,3 +719,7 @@ RAG_FAQ_TEMPERATURE=0
 | BH-17 `vector(768)` + переингест | P1 | 02.10 (лучше с BH-3) | — |
 | BH-18 порог 0.51 для v2-768 | P1 | с BH-17 | предварительно; финал — A8 к 12.10 |
 | BH-19 температура 0, `faq-v2.3` | P1 | с BH-15 | промпт готов |
+| BH-20 `qa_log` (`vector(768)`) | P1 | 06.10 | `PROMPT_VERSION`, `mask_pii` готовы |
+| BH-21 ночная задача пробелов | P1 | 06.10 | `classify_miss`, `cluster_questions`, gaps-v1 готовы |
+| BH-22 таблицы кластеров | P1 | 06.10 | — |
+| BH-23 `GET /api/v1/gaps` | P1 | с BH-22 | — |
