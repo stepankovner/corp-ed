@@ -55,9 +55,11 @@ class RemoteDocument:
     external_id — стабильный идентификатор в системе; version — что
     угодно, что меняется при изменении документа (etag, дата, ревизия):
     по нему ядро решает, скачивать ли заново. path — путь/крошки в
-    источнике (для будущего вывода прав из папок). visibility и
-    allowed_emails заполняет адаптер режима organization; в режиме
-    per_user ядро само считает документ ограниченным листингом.
+    источнике для человека; locator — адрес документа для fetch на
+    момент листинга (путь на Диске, если id по API не адресуется),
+    ядро его не хранит. visibility и allowed_emails заполняет адаптер
+    режима organization; в режиме per_user ядро само считает документ
+    ограниченным листингом.
     """
 
     external_id: str
@@ -67,6 +69,7 @@ class RemoteDocument:
     kind: RemoteDocumentKind
     module: str
     path: str = ""
+    locator: str = ""
     filename: str | None = None
     size: int | None = None
     modified_at: datetime | None = None

@@ -102,7 +102,11 @@ def test_spec_is_per_user_with_oauth() -> None:
 
 def test_default_registry_has_bitrix24(portal: FakePortal) -> None:
     registry = default_registry(settings())
-    assert [spec.kind for spec in registry.kinds()] == ["bitrix24", "confluence"]
+    assert [spec.kind for spec in registry.kinds()] == [
+        "bitrix24",
+        "confluence",
+        "yandex360",
+    ]
     config = {"portal": portal.portal, "client_id": CLIENT_ID}
     adapter = registry.build(
         "bitrix24",

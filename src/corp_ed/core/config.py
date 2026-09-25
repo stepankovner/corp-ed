@@ -368,6 +368,10 @@ class ConnectorSettings(BaseSettings):
     # Сервер авторизации Битрикс24 — один на облако и коробку; в
     # документации 2026 года — oauth.bitrix24.tech (раньше oauth.bitrix.info).
     bitrix24_oauth_server: str = "https://oauth.bitrix24.tech/"
+    # Яндекс: OAuth Яндекс ID и REST Диска — фиксированные адреса, не
+    # адрес клиента; настройки — чтобы тесты и стенд могли их подменить.
+    yandex_oauth_server: str = "https://oauth.yandex.ru/"
+    yandex_disk_api: str = "https://cloud-api.yandex.net/"
 
     model_config = SettingsConfigDict(
         env_prefix="CONNECTOR_",
@@ -380,7 +384,13 @@ class ConnectorSettings(BaseSettings):
     def validate_production(self) -> Self:
         if self.environment == "production" and self.secrets_keys is None:
             raise ValueError("CONNECTOR_SECRETS_KEYS is required in production")
-        for name in ("oauth_callback_url", "oauth_return_url", "bitrix24_oauth_server"):
+        for name in (
+            "oauth_callback_url",
+            "oauth_return_url",
+            "bitrix24_oauth_server",
+            "yandex_oauth_server",
+            "yandex_disk_api",
+        ):
             value = getattr(self, name)
             # Браузер сотрудника и секрет приложения ходят по этим адресам:
             # http здесь — утечка кода авторизации или секрета в открытую.

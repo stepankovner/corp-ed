@@ -285,7 +285,9 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 (REST 3.0 `note.*` → Markdown как есть); `connectors/confluence/` —
 режим `organization`: пространства → страницы с предками →
 ограничения чтения по цепочке с раскрытием групп → `visibility` и
-`allowed_emails` по шаблону почты, вложения, storage-формат → HTML.
+`allowed_emails` по шаблону почты, вложения, storage-формат → HTML;
+`connectors/yandex/` — режим `per_user` с OAuth Яндекс ID, обход Диска
+сотрудника (общие папки внутри), скачивание по подписанной ссылке.
 `cli connector-check`
 гоняет адаптер против источника без базы и умеет записывать ответы в
 фикстуры. Планировщик

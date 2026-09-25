@@ -164,8 +164,10 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     """
     from corp_ed.connectors.bitrix24 import register as register_bitrix24
     from corp_ed.connectors.confluence import register as register_confluence
+    from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry()
     register_bitrix24(registry, settings)
     register_confluence(registry, settings)
+    register_yandex(registry, settings)
     return registry
