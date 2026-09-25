@@ -37,10 +37,12 @@ async def api(
         yield session
 
     settings = RagSettings(
-        chunk_size=20,
-        chunk_overlap=0,
+        chunk_tokens=5,
+        overlap_tokens=0,
         faq_limit=5,
         faq_max_distance=0.6,
+        context_max_tokens=3000,
+        faq_temperature=0.0,
     )
 
     app.dependency_overrides[get_session] = test_session

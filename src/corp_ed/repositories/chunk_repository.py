@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Chunk
+from corp_ed.domain.models import Chunk, Material
 from corp_ed.domain.types import ChunkMatch
 
 
@@ -42,12 +42,20 @@ class ChunkRepository:
                 Chunk.content,
                 Chunk.material_id,
                 Chunk.position,
+                Chunk.heading_path,
+                Material.title,
                 distance.label("distance"),
             )
-            # Фильтр обязателен: hook вешает with_loader_criteria, а он
-            # применяется к загрузке ORM-сущностей. Здесь колоночный
-            # select, сущность не грузится — автоматики нет.
-            .where(Chunk.tenant_id == tenant_id)
+            # Название берётся JOIN'ом, а не копией в chunks: переименование
+            # материала сразу видно в источниках ответа, без переингеста.
+            .join(Material, Material.id == Chunk.material_id)
+            # Фильтры обязательны на ОБЕИХ таблицах: hook вешает
+            # with_loader_criteria, а он применяется к загрузке
+            # ORM-сущностей. Здесь колоночный select, сущность не
+            # грузится — автоматики нет. Второй фильтр не избыточен:
+            # он держит изоляцию, даже если чанк однажды окажется
+            # привязан к материалу чужого тенанта.
+            .where(Chunk.tenant_id == tenant_id, Material.tenant_id == tenant_id)
             .order_by(distance)
             .limit(limit)
         )
@@ -61,6 +69,8 @@ class ChunkRepository:
                 material_id=row.material_id,
                 position=row.position,
                 distance=row.distance,
+                title=row.title,
+                heading_path=list(row.heading_path),
             )
             for row in result
         ]

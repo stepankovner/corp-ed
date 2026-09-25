@@ -211,8 +211,8 @@ def get_material_service(
         chunk_repo=chunk_repo,
         embedding_gateway=embedding_gateway,
         session=session,
-        chunk_size=settings.chunk_size,
-        overlap=settings.chunk_overlap,
+        chunk_tokens=settings.chunk_tokens,
+        overlap_tokens=settings.overlap_tokens,
     )
 
 
@@ -240,4 +240,6 @@ def get_faq_service(
         llm_gateway=llm_gateway,
         limit=settings.faq_limit,
         max_distance=settings.faq_max_distance,
+        context_max_tokens=settings.context_max_tokens,
+        temperature=settings.faq_temperature,
     )

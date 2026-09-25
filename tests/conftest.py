@@ -30,6 +30,12 @@ TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
 async def engine() -> AsyncGenerator[AsyncEngine]:
     engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
+        # create_all не меняет существующие таблицы: новая колонка в модели
+        # при старой локальной базе даёт UndefinedColumnError на первом же
+        # запросе. Схема пересоздаётся целиком на каждый прогон — таблицы,
+        # удалённые из моделей, тоже уходят.
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
     try:
@@ -129,8 +135,9 @@ def material_service(
         chunk_repo=ChunkRepository(session),
         embedding_gateway=fake_embeddings,
         session=session,
-        chunk_size=20,
-        overlap=0,
+        # Крошечный бюджет: каждый абзац фикстуры ложится в свой чанк.
+        chunk_tokens=5,
+        overlap_tokens=0,
     )
 
 
@@ -151,6 +158,8 @@ def faq_service(
         llm_gateway=fake_llm,
         limit=5,
         max_distance=0.6,
+        context_max_tokens=3000,
+        temperature=0.0,
     )
 
 

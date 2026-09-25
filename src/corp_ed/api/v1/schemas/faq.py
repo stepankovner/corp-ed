@@ -11,6 +11,8 @@ class FaqSourceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     material_id: UUID
+    title: str
+    heading_path: list[str]
     position: int
     content: str
 

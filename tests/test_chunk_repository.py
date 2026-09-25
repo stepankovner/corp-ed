@@ -163,3 +163,68 @@ async def test_search_requires_tenant_context(
             await chunk_repo.search(embedding=[0.1] * 256)
     finally:
         current_tenant.reset(token)
+
+
+async def test_search_returns_title_and_heading_path(
+    chunk_repo: ChunkRepository,
+    material: Material,
+) -> None:
+    await chunk_repo.bulk_create(
+        [
+            Chunk(
+                material_id=material.id,
+                position=0,
+                heading_path=["Раздел 3", "3.1 Продолжительность"],
+                content="Чанк.",
+                embedding=[0.1] * 256,
+                model="fake",
+                model_version="fake",
+            )
+        ]
+    )
+
+    result = await chunk_repo.search(embedding=[0.1] * 256)
+
+    assert result[0].title == material.title
+    assert result[0].heading_path == ["Раздел 3", "3.1 Продолжительность"]
+
+
+async def test_search_skips_foreign_material_with_same_title(
+    chunk_repo: ChunkRepository,
+    session: AsyncSession,
+    material: Material,
+    tenant_ctx: Tenant,
+) -> None:
+    """JOIN по материалам не должен тащить чужие строки (BH-1, приёмка)."""
+    foreign_tenant = Tenant(id=uuid4(), company_code="other", name="Other Co")
+    session.add(foreign_tenant)
+    await session.commit()
+
+    current_tenant.set(foreign_tenant.id)
+    foreign_material = Material(
+        id=uuid4(),
+        tenant_id=foreign_tenant.id,
+        track=Track.MARKETING,
+        title=material.title,
+        content="Чужой регламент",
+    )
+    session.add(foreign_material)
+    await session.commit()
+    await chunk_repo.bulk_create(
+        [
+            Chunk(
+                material_id=foreign_material.id,
+                position=0,
+                content="Чужой чанк.",
+                embedding=[0.1] * 256,
+                model="fake",
+                model_version="fake",
+            )
+        ]
+    )
+    await session.commit()
+
+    current_tenant.set(tenant_ctx.id)
+    result = await chunk_repo.search(embedding=[0.1] * 256)
+
+    assert result == []

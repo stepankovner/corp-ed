@@ -70,6 +70,8 @@ async def test_faq_returns_answer_with_source(
     assert body["content"] == fake_llm.content
     assert len(body["sources"]) == 1
     assert body["sources"][0]["material_id"] == str(material.id)
+    assert body["sources"][0]["title"] == material.title
+    assert body["sources"][0]["heading_path"] == []
     assert "distance" not in body["sources"][0]
 
 

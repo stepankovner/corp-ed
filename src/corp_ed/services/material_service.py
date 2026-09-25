@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.models import Chunk, Material, Track
-from corp_ed.domain.split import split_into_chunks
+from corp_ed.domain.split import split_document
+from corp_ed.ingest.preprocess import preprocess
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
@@ -22,15 +23,15 @@ class MaterialService:
         chunk_repo: ChunkRepository,
         embedding_gateway: EmbeddingGateway,
         session: AsyncSession,
-        chunk_size: int,
-        overlap: int,
+        chunk_tokens: int,
+        overlap_tokens: int,
     ) -> None:
         self.material_repo = material_repo
         self.chunk_repo = chunk_repo
         self.embedding_gateway = embedding_gateway
         self.session = session
-        self.chunk_size = chunk_size
-        self.overlap = overlap
+        self.chunk_tokens = chunk_tokens
+        self.overlap_tokens = overlap_tokens
 
     async def create(
         self,
@@ -70,28 +71,36 @@ class MaterialService:
             logger.warning("material_not_found", material_id=str(material_id))
             raise NotFoundError("Материал с таким id не найден")
 
-        text_chunks = split_into_chunks(
-            material.content,
-            chunk_size=self.chunk_size,
-            overlap=self.overlap,
+        # material.content хранит Markdown до предобработки: если ML
+        # поменяет preprocess, переиндексация подхватит новую версию
+        # без повторной загрузки файла.
+        drafts = split_document(
+            preprocess(material.content),
+            title=material.title,
+            chunk_tokens=self.chunk_tokens,
+            overlap_tokens=self.overlap_tokens,
         )
         logger.info(
             "material_split",
             material_id=str(material_id),
-            chunks=len(text_chunks),
+            chunks=len(drafts),
         )
 
         chunks: list[Chunk] = []
         input_tokens = 0
 
-        for position, text in enumerate(text_chunks):
-            result = await self.embedding_gateway.embed_document(text)
+        for draft in drafts:
+            # Эмбеддинг — по embed_text, НЕ по llm_text: разметка в
+            # векторе — шум, тихая потеря качества поиска (BH-3).
+            result = await self.embedding_gateway.embed_document(draft.embed_text)
             input_tokens += result.input_tokens
             chunks.append(
                 Chunk(
                     material_id=material.id,
-                    position=position,
-                    content=text,
+                    position=draft.position,
+                    heading_path=draft.heading_path,
+                    embed_text=draft.embed_text,
+                    content=draft.llm_text,
                     embedding=result.embedding,
                     model=result.model,
                     model_version=result.model_version,

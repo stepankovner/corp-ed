@@ -42,16 +42,23 @@ class LLMSettings(BaseSettings):
 
 
 class RagSettings(BaseSettings):
-    """Параметры нарезки и поиска.
+    """Параметры нарезки, поиска и ответа.
 
     Значения — зона ML (Артём). Здесь только проводка: дефолтов нет
     намеренно, чтобы придуманные числа не стали продакшен-значениями.
+
+    Размеры — в ТОКЕНАХ в единицах count_tokens (len/3), а не в
+    символах: у эмбеддера окно в токенах (BH-9).
     """
 
-    chunk_size: int = Field(gt=0)
-    chunk_overlap: int = Field(ge=0)
-    faq_limit: int = Field(gt=0)
+    chunk_tokens: int = Field(gt=0)
+    overlap_tokens: int = Field(ge=0)
+    faq_limit: int = Field(gt=0, le=50)
     faq_max_distance: float = Field(gt=0, le=2)
+    context_max_tokens: int = Field(gt=0)
+    # Для FAQ 0: при 0.3 ответ на один и тот же вопрос по одним и тем же
+    # выдержкам переключался «ответил ↔ отказал» (замер ML 24.09, BH-8).
+    faq_temperature: float = Field(ge=0, le=1)
 
     model_config = SettingsConfigDict(
         env_prefix="RAG_",
@@ -61,7 +68,9 @@ class RagSettings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def validate_chunk_overlap(self) -> Self:
-        if self.chunk_overlap >= self.chunk_size:
-            raise ValueError("chunk_overlap must be less than chunk_size")
+    def validate_overlap(self) -> Self:
+        # split_document сам кидает ValueError, но на первом ингесте.
+        # Падать на старте дешевле, чем узнать об ошибке от клиента.
+        if self.overlap_tokens >= self.chunk_tokens:
+            raise ValueError("overlap_tokens must be less than chunk_tokens")
         return self

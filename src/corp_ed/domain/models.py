@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from corp_ed.core.database import Base
@@ -103,6 +103,14 @@ class Chunk(TenantMixin, Base):
         ForeignKey("materials.id", ondelete="CASCADE"), index=True
     )
     position: Mapped[int]
+    # Стек заголовков секции без названия документа: ["Раздел 3", "3.2 …"].
+    heading_path: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
+    # Крошки + текст без разметки. По нему считается эмбеддинг; хранится,
+    # чтобы из него же строилась полнотекстовая ветка поиска (M1).
+    embed_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Крошки + Markdown (llm_text) — то, что уходит в промпт.
     content: Mapped[str]
     embedding: Mapped[list[float]] = mapped_column(Vector(256))
     model: Mapped[str]
