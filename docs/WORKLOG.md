@@ -14,7 +14,7 @@
 | Тесты | **973 passed**, 0 skipped при `TEST_REDIS_URL`; ~1 мин 40 с с Postgres и Redis |
 | Покрытие | **93 %** (ветвевое, с трассировкой greenlet — см. ошибку №13), порог в CI 85 % |
 | Проверки | ruff (E, W, F, I, N, UP, B, SIM, **S**), ruff format, mypy strict на `src` — чисто |
-| CI на HEAD | см. последний коммит в PR (проверяется после каждого пуша) |
+| CI на HEAD | [CI #118](https://github.com/stepankovner/corp-ed/actions/runs/36165635276) ✅, [Security #16](https://github.com/stepankovner/corp-ed/actions/runs/36165635240) ✅ (`313133a`) |
 | Миграции | 14 ревизий, `upgrade → check → downgrade → upgrade` на пустой базе под владельцем без суперпользователя; ревизия `42a0ae63f5ff` (коннекторы) прогнана и на dev-базе |
 | Слияния ML | 5 (`ml/alice-compare` ×2, `ml/docs` ×2, `ml/multi-query` — с #16 M2, #17 золотой dev, #18 multi-query), файлы ML не редактировались |
 
@@ -105,6 +105,7 @@
 | 13 | Покрытие `connector_service.py` 50 % при полностью зелёных тестах | coverage без `concurrency = greenlet` теряет трассировку после первого `await` к базе (SQLAlchemy async работает в greenlet) | `concurrency = ["thread", "greenlet"]` в `pyproject.toml`; общее покрытие оказалось 92 %, а не 87 % | поднять порог без починки измерения — цифра была бы случайной |
 | 14 | Автогенерация миграции пыталась создать уже существующий тип `ingestjobstatus` и пропустила смену частичного индекса sha256 | alembic не различает переиспользование enum и не сравнивает `WHERE` частичных индексов | `postgresql.ENUM(..., create_type=False)`, индекс пересоздан явно, RLS и CHECK добавлены руками; прогон `upgrade → check → downgrade → upgrade` | — |
 | 15 | **Живая проверка**: `POST /connectors/{id}/test` для вида без адаптера → 500 | `registry.build` бросал `KeyError` мимо обработчиков | `_spec()` до сборки адаптера → 422 `kind_unknown`; регрессионный тест | — |
+| 17 | CI упал на `ruff` после слияния `ml/multi-query`: `S101` в `eval/offline_e2e.py` | правило bandit включено бэкендом, ветки ML с ним не проверяются | исключение `S101` для `eval/**` в `pyproject.toml` (файлы ML не редактируются); локально перед пушем гонять `ruff check` по всему репозиторию, а не только `src tests` | — |
 | 16 | Бюджет запуска считался по просмотренным документам | источник с 200+ неизменными документами никогда не дошёл бы до новых | бюджет — по работе (скачано + упало); тест `test_budget_makes_run_partial_and_never_deletes` | курсор по листингу — не у всех API есть стабильный порядок |
 
 Не ошибки, но отклонения от контракта ML, принятые ML (handoff v1.2):
