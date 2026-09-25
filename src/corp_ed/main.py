@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -6,13 +7,14 @@ import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from corp_ed.api.v1.endpoints import audit, auth, faq, materials, users
-from corp_ed.core.config import get_http_settings
+from corp_ed.core.config import LLMSettings, get_http_settings
 from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
@@ -79,6 +81,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         limiter = InMemoryRateLimiter()
     app.state.rate_limiter = limiter
 
+    # Семафор генерации — один на процесс: адаптер создаётся на запрос.
+    # Размер читается лениво: без YC-ключей (тесты, alembic) он не нужен.
+    app.state.llm_semaphore = asyncio.Semaphore(_llm_concurrency())
+
     app.state.http_client = httpx.AsyncClient()
     try:
         yield
@@ -86,6 +92,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.http_client.aclose()
         if redis is not None:
             await redis.aclose()
+
+
+def _llm_concurrency() -> int:
+    try:
+        return LLMSettings().llm_max_concurrency  # type: ignore[call-arg]
+    except ValidationError:
+        # Нет ключей провайдера — ответы всё равно не заработают, а
+        # запуск ради остальных ручек (вход, пользователи) нужен.
+        logger.warning("llm_settings_missing")
+        return 1
 
 
 async def _check_database_role(connection: AsyncConnection) -> None:

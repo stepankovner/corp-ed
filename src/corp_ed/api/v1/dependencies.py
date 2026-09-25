@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable
 from functools import lru_cache
 from typing import Annotated
@@ -23,6 +24,7 @@ from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
+from corp_ed.llm.yandex_openai import YandexOpenAIAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
@@ -188,6 +190,13 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return client
 
 
+def get_llm_semaphore(request: Request) -> asyncio.Semaphore | None:
+    semaphore: asyncio.Semaphore | None = getattr(
+        request.app.state, "llm_semaphore", None
+    )
+    return semaphore
+
+
 def get_embedding_gateway(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
@@ -195,18 +204,31 @@ def get_embedding_gateway(
     return YandexEmbeddingAdapter(
         client=client,
         folder_id=settings.yc_folder_id,
-        api_key=settings.yc_api_key,
+        api_key=settings.yc_api_key.get_secret_value(),
     )
 
 
 def get_llm_gateway(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+    semaphore: Annotated[asyncio.Semaphore | None, Depends(get_llm_semaphore)],
 ) -> LLMGateway:
-    return YandexAdapter(
+    """Провайдер по настройке LLM_PROVIDER. Тип возврата — контракт:
+    сервисы не знают, какой адаптер им достался."""
+    if settings.llm_provider == "yandex-native":
+        return YandexAdapter(
+            client=client,
+            folder_id=settings.yc_folder_id,
+            api_key=settings.yc_api_key.get_secret_value(),
+            model=settings.llm_model,
+            concurrency=semaphore,
+        )
+    return YandexOpenAIAdapter(
         client=client,
         folder_id=settings.yc_folder_id,
-        api_key=settings.yc_api_key,
+        api_key=settings.yc_api_key.get_secret_value(),
+        model=settings.llm_model,
+        concurrency=semaphore,
     )
 
 

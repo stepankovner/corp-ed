@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,10 +56,26 @@ def get_settings() -> Settings:
 
 
 class LLMSettings(BaseSettings):
-    """Настройки провайдера языковых моделей."""
+    """Настройки провайдера языковых моделей.
+
+    Модель меняется одной переменной (досье 9.4): модели снимаются с
+    поддержки (gpt-oss — 30.10.2026), а цены быстро меняются. Значения по
+    умолчанию — решение ML от 25.09 (Alice AI LLM Flash), имена
+    переменных согласованы с docs/backend-handoff.md.
+    """
 
     yc_folder_id: str
-    yc_api_key: str
+    # SecretStr: ключ не попадёт в repr настроек и в лог.
+    yc_api_key: SecretStr
+
+    # yandex-openai — /v1/chat/completions (все модели каталога, в том числе
+    # Flash); yandex-native — /foundationModels/v1/completion (только
+    # YandexGPT, запасной вариант по досье 9.2).
+    llm_provider: Literal["yandex-openai", "yandex-native"] = "yandex-openai"
+    llm_model: str = "aliceai-llm-flash"
+    # Квота генерации — 10 одновременных запросов на каталог. Лимит — на
+    # процесс: при N воркерах uvicorn ставить не больше 10 / N.
+    llm_max_concurrency: int = Field(default=8, gt=0, le=10)
 
     model_config = SettingsConfigDict(
         env_file=".env",
