@@ -534,6 +534,16 @@ def test_agreement() -> None:
     assert result.confusion[(2, 1)] == 1
 
 
+def test_cohen_kappa_discounts_chance_agreement() -> None:
+    # Судья всегда ставит «верно»: совпадение 90 %, но каппа 0 — судья
+    # ничего не различает.
+    always_correct = agreement([2] * 9 + [0], [2] * 10)
+    assert always_correct.exact == pytest.approx(0.9)
+    assert always_correct.kappa == pytest.approx(0.0)
+    # Полное согласие на разных классах — каппа 1.
+    assert agreement([0, 1, 2, 2], [0, 1, 2, 2]).kappa == pytest.approx(1.0)
+
+
 # --- Проба лимита эмбеддера --------------------------------------------------
 
 
@@ -735,3 +745,4 @@ def test_embedding_dim_is_sent_and_kept_apart_in_cache() -> None:
     assert (
         client.cache_uri("doc") == "emb://folder/text-embeddings-v2-doc/latest?dim=768"
     )
+

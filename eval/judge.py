@@ -35,6 +35,13 @@ from eval.results import read_csv, write_csv
 
 JUDGE_PROMPT_VERSION = "judge-v1"
 AGREEMENT_TARGET = 0.85
+KAPPA_TARGET = 0.6
+MIN_CALIBRATION = 40
+"""Калибровка (задача 2.7, docs/ml-plan.md): не меньше 40 ручных оценок
+Артёма; судье доверяем при совпадении ≥ 85 % И каппе Коэна ≥ 0.6 —
+иначе в отчёт идут ручные оценки. Каппа нужна, потому что при перекосе
+классов (почти все ответы «верно») высокое совпадение бывает и у судьи,
+который всегда ставит «верно»."""
 
 _SYSTEM = """\
 Ты — строгий и справедливый проверяющий ответов ассистента, который отвечает \
@@ -135,6 +142,7 @@ class Agreement:
     exact: float
     within_one: float
     confusion: dict[tuple[int, int], int]
+    kappa: float = 0.0
 
 
 def agreement(manual: Sequence[int], judge: Sequence[int]) -> Agreement:
@@ -143,7 +151,23 @@ def agreement(manual: Sequence[int], judge: Sequence[int]) -> Agreement:
         return Agreement(0, 0.0, 0.0, {})
     exact = sum(1 for m, j in pairs if m == j) / len(pairs)
     within_one = sum(1 for m, j in pairs if abs(m - j) <= 1) / len(pairs)
-    return Agreement(len(pairs), exact, within_one, dict(Counter(pairs)))
+    return Agreement(
+        len(pairs), exact, within_one, dict(Counter(pairs)), cohen_kappa(pairs)
+    )
+
+
+def cohen_kappa(pairs: Sequence[tuple[int, int]]) -> float:
+    """Каппа Коэна: совпадение сверх случайного при тех же частотах оценок."""
+    n = len(pairs)
+    if n == 0:
+        return 0.0
+    observed = sum(1 for m, j in pairs if m == j) / n
+    manual = Counter(m for m, _ in pairs)
+    judge = Counter(j for _, j in pairs)
+    expected = sum(manual[k] * judge[k] for k in manual) / (n * n)
+    if expected == 1.0:
+        return 1.0 if observed == 1.0 else 0.0
+    return (observed - expected) / (1 - expected)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -169,14 +193,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Размеченных ответов: {result.n}")
         print(f"Точное совпадение: {result.exact:.1%} (цель ≥ {AGREEMENT_TARGET:.0%})")
         print(f"Расхождение не больше чем на 1 балл: {result.within_one:.1%}")
+        print(f"Каппа Коэна: {result.kappa:.2f} (цель ≥ {KAPPA_TARGET})")
         print("Матрица (человек, судья) → число:")
         for (human, judge), count in sorted(result.confusion.items()):
             print(f"  ({human}, {judge}) → {count}")
-        conclusion = (
-            "судье можно доверять"
-            if result.exact >= AGREEMENT_TARGET
-            else "править промпт"
-        )
+        if result.n < MIN_CALIBRATION:
+            conclusion = f"мало оценок: {result.n} < {MIN_CALIBRATION}"
+        elif result.exact >= AGREEMENT_TARGET and result.kappa >= KAPPA_TARGET:
+            conclusion = "судье можно доверять"
+        else:
+            conclusion = "в отчёт — ручные оценки; промпт судьи править"
         print(f"Вывод: {conclusion}.")
         return 0
 
