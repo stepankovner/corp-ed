@@ -342,6 +342,9 @@ class QaLog(TenantMixin, Base):
     prompt_version: Mapped[str] = mapped_column(String(32))
     # Пусто, если модель не вызывалась (строгий отказ без выдержек).
     llm_model: Mapped[str | None] = mapped_column(String(64))
+    # Версия из ответа провайдера (BH-26): алиас /latest молча меняет
+    # модель, а метрики по журналу должны быть привязаны к настоящей.
+    llm_model_version: Mapped[str | None] = mapped_column(String(128))
     best_vector_distance: Mapped[float | None]
     best_fulltext_score: Mapped[float | None]
     answer_given: Mapped[bool]

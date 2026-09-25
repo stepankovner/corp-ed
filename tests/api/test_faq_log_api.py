@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import AuditEvent, Chunk, Material, QaLog, Tenant, User
+from corp_ed.llm.fake import FakeAdapter
+from corp_ed.llm.types import FinishReason
 from corp_ed.prompts.faq import PROMPT_VERSION
 from corp_ed.services.retention_service import RetentionService
 from tests.api.conftest import bearer
@@ -107,6 +109,29 @@ async def test_strict_refusal_is_logged_without_model_or_credits(
     assert entry.answer_given is False
     assert entry.llm_model is None
     assert entry.credits == 0
+
+
+async def test_content_filter_is_200_refusal_with_one_log_row(
+    api: httpx.AsyncClient,
+    account: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+    fake_llm: FakeAdapter,
+) -> None:
+    """BH-25: приёмка ML — 200, origin=none, одна строка, один вызов."""
+    fake_llm.finish_reason = FinishReason.FILTERED
+    fake_llm.content = "Я не могу обсуждать эту тему."
+
+    response = await _ask(api, account, "Какие списки — основание для отказа?")
+
+    assert response.status_code == 200
+    assert response.json()["origin"] == "none"
+    assert response.json()["sources"] == []
+    assert "не могу обсуждать" not in response.json()["content"]
+    assert len(fake_llm.calls) == 1
+    [entry] = await _log(session, account.tenant_id)
+    assert entry.origin == "none"
+    assert entry.answer_given is False
 
 
 async def test_diagnostics_only_for_admin(

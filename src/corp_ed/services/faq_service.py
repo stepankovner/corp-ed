@@ -21,7 +21,7 @@ from corp_ed.domain.types import (
 )
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.types import Completion
+from corp_ed.llm.types import Completion, FinishReason
 from corp_ed.prompts.faq import (
     NOT_FOUND_ANSWER,
     PROMPT_VERSION,
@@ -144,7 +144,8 @@ class FaqService:
             if outcome.completions
             else 0
         )
-        model = outcome.completions[-1].model if outcome.completions else None
+        last = outcome.completions[-1] if outcome.completions else None
+        model = last.model if last else None
         answer_given = outcome.origin is AnswerOrigin.DOCUMENTS
 
         entry = await self.qa_log_repo.add(
@@ -157,6 +158,7 @@ class FaqService:
                 embedding_model=embedded.model,
                 prompt_version=PROMPT_VERSION,
                 llm_model=model,
+                llm_model_version=last.model_version if last else None,
                 best_vector_distance=nearest,
                 best_fulltext_score=found.best_fulltext,
                 answer_given=answer_given,
@@ -190,6 +192,7 @@ class FaqService:
             log_id=entry.id,
             diagnostics=AnswerDiagnostics(
                 model=model,
+                model_version=last.model_version if last else None,
                 prompt_version=PROMPT_VERSION,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -314,6 +317,8 @@ class FaqService:
             messages=build_faq_messages(question=question, matches=context),
             temperature=self.temperature,
         )
+        if completion.finish_reason is FinishReason.FILTERED:
+            return self._filtered(completion, reason="documents")
         # Модели иногда ставят в скобки номер пункта документа [4.2]
         # вместо номера выдержки: фронт такую ссылку не свяжет.
         content = normalize_citations(completion.content, context)
@@ -343,6 +348,24 @@ class FaqService:
             )
         return await self._general_answer(question, reason=reason)
 
+    @staticmethod
+    def _filtered(completion: Completion, *, reason: str) -> _Outcome:
+        """Провайдер пометил ответ фильтром содержимого (BH-25).
+
+        Это отказ, а не сбой: клиенту — фиксированный отказ без второго
+        вызова (общий промпт на тот же вопрос отфильтруется так же), а не
+        текст модели «Я не могу обсуждать…» — он без пометки и без
+        источников, фронт показал бы его как ответ по документам. Строка
+        в qa_log пишется как обычно: для отчёта о пробелах это промах.
+        """
+        logger.info("faq_content_filtered", stage=reason)
+        return _Outcome(
+            content=NOT_FOUND_ANSWER,
+            origin=AnswerOrigin.NONE,
+            sources=[],
+            completions=[completion],
+        )
+
     async def _general_answer(self, question: str, *, reason: str) -> _Outcome:
         """Ответ из общих знаний со строгой пометкой.
 
@@ -355,6 +378,8 @@ class FaqService:
             messages=build_general_messages(question),
             temperature=self.temperature,
         )
+        if completion.finish_reason is FinishReason.FILTERED:
+            return self._filtered(completion, reason="general")
         logger.info("faq_general_answer", reason=reason)
         return _Outcome(
             content=ensure_general_prefix(completion.content),

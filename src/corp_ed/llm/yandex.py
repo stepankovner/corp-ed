@@ -14,6 +14,7 @@ URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 _FINISH_REASONS = {
     "ALTERNATIVE_STATUS_FINAL": FinishReason.COMPLETED,
     "ALTERNATIVE_STATUS_TRUNCATED_FINAL": FinishReason.TRUNCATED,
+    "ALTERNATIVE_STATUS_CONTENT_FILTER": FinishReason.FILTERED,
 }
 
 

@@ -393,3 +393,68 @@ async def test_strict_mode_still_answers_from_documents(
 
     assert result.origin is AnswerOrigin.DOCUMENTS
     assert result.sources
+
+
+# --- фильтр содержимого провайдера (BH-25) ------------------------------------------
+
+
+async def test_content_filter_over_excerpts_is_a_refusal_without_second_call(
+    chunk_repo: ChunkRepository,
+    fake_embeddings: FakeEmbeddingAdapter,
+    material: Material,
+    employee: User,
+) -> None:
+    """Общий промпт на тот же вопрос отфильтруется так же — второго
+    вызова нет; текст модели «не могу обсуждать» клиенту не уходит."""
+    await chunk_repo.bulk_create([_chunk(material, 0, "Основания для отказа.")])
+    llm = FakeAdapter(
+        content="Я не могу обсуждать эту тему.", finish_reason=FinishReason.FILTERED
+    )
+
+    result = await _service(chunk_repo, fake_embeddings, llm).answer(
+        "Какие списки — основание для отказа?", employee
+    )
+
+    assert len(llm.calls) == 1
+    assert result.content == NOT_FOUND_ANSWER
+    assert result.origin is AnswerOrigin.NONE
+    assert result.answer_given is False
+    assert result.sources == []
+    assert result.diagnostics is not None
+    assert result.diagnostics.credits == 1  # вызов был — он оплачен
+
+
+async def test_content_filter_on_general_answer_is_a_refusal(
+    chunk_repo: ChunkRepository,
+    fake_embeddings: FakeEmbeddingAdapter,
+    employee: User,
+) -> None:
+    llm = FakeAdapter(content="Не могу.", finish_reason=FinishReason.FILTERED)
+
+    result = await _service(chunk_repo, fake_embeddings, llm).answer("Вопрос", employee)
+
+    assert len(llm.calls) == 1
+    assert result.content == NOT_FOUND_ANSWER
+    assert result.origin is AnswerOrigin.NONE
+
+
+async def test_model_version_is_kept_next_to_the_alias(
+    session: AsyncSession,
+    faq_service: FaqService,
+    material: Material,
+    chunk_repo: ChunkRepository,
+    employee: User,
+) -> None:
+    """BH-26: /latest молча меняет модель — по журналу это должно быть видно."""
+    await chunk_repo.bulk_create([_chunk(material, 0, "Отпуск составляет 28 дней.")])
+
+    result = await faq_service.answer("Сколько дней отпуска?", employee)
+
+    assert result.diagnostics is not None
+    assert result.diagnostics.model_version == "fake"
+    from sqlalchemy import select
+
+    from corp_ed.domain.models import QaLog
+
+    entry = (await session.execute(select(QaLog))).scalar_one()
+    assert (entry.llm_model, entry.llm_model_version) == ("fake", "fake")

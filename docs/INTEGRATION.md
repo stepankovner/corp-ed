@@ -1,6 +1,6 @@
 # Статус контракта ML ↔ бэкенд
 
-Сверка `docs/backend-handoff.md` (ML, v1.1) с кодом на 25 сентября 2026.
+Сверка `docs/backend-handoff.md` (ML, v1.2) с кодом на 25 сентября 2026.
 Кто что должен дальше — в конце. Правила разделения: ML пишет чистые
 функции и промпты (`domain/split.py`, `context.py`, `fusion.py`,
 `fulltext.py`, `query.py`, `gaps.py`, `ingest/preprocess.py`,
@@ -31,6 +31,8 @@
 | BH-21 ночная задача | ✅ | `services/gap_report_service.py`, `cli gaps` | пороги полнотекста не заданы до подбора (полнотекст в классификации не участвует) |
 | BH-22 таблицы кластеров | ✅ | миграция `925d32966b44` | + `embedding_model`, `prompt_version`; статус переживает пересборку |
 | BH-23 `GET /api/v1/gaps` | ✅ | `api/v1/endpoints/gaps.py` | роль `ADMIN` (пивот: `MANAGER` → `ADMIN`) |
+| BH-25 `content_filter` — отказ, а не 502 | ✅ | `llm/types.py::FinishReason.FILTERED`, `FaqService._filtered` | без второго вызова; `origin=none`, строка в `qa_log`, кредит за вызов списан |
+| BH-26 версия модели в `qa_log` | ✅ | `qa_log.llm_model_version`, `diagnostics.model_version` | отдельное поле, не конкатенация: что кладёт Яндекс в `model` для Flash — проверить на живом ответе |
 | BH-24 общий ответ с пометкой | ✅ | `services/faq_service.py` | поле `origin` (не `answer_source`), значения `documents\|general_knowledge\|none`; строгий режим — настройка компании, не переменная окружения |
 
 ## Что бэкенд ждёт от ML

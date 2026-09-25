@@ -27,6 +27,7 @@ URL = "https://llm.api.cloud.yandex.net/v1/chat/completions"
 _FINISH_REASONS = {
     "stop": FinishReason.COMPLETED,
     "length": FinishReason.TRUNCATED,
+    "content_filter": FinishReason.FILTERED,
 }
 
 
@@ -60,7 +61,7 @@ def parse_chat_response(body: Any, model: str, latency_ms: int) -> Completion:
         ) from exc
 
     if raw_reason not in _FINISH_REASONS:
-        # content_filter и прочее: ответа нет, повтор даст то же самое.
+        # Неизвестная причина: ответа нет, повтор даст то же самое.
         raise LLMError(f"unsupported finish reason: {raw_reason}", retryable=False)
 
     return Completion(

@@ -73,9 +73,12 @@ class AnswerDiagnostics:
     """Сведения для админа и eval (E5 — стоимость и модель ответа).
 
     model пуст, если модель не вызывалась (строгий отказ без выдержек).
+    model_version — что провайдер вернул в ответе: /latest переключается
+    на новую версию без предупреждения, по журналу это должно быть видно.
     """
 
     model: str | None
+    model_version: str | None
     prompt_version: str
     input_tokens: int
     output_tokens: int

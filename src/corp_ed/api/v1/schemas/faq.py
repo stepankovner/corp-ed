@@ -30,6 +30,7 @@ class AnswerDiagnosticsResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     model: str | None
+    model_version: str | None
     prompt_version: str
     input_tokens: int
     output_tokens: int

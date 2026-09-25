@@ -255,3 +255,35 @@ def test_factory_picks_adapter_by_provider(
     )
     gateway = build_llm_gateway(httpx.AsyncClient(), settings)
     assert isinstance(gateway, adapter_type)
+
+
+async def test_content_filter_is_a_finish_reason_not_an_error() -> None:
+    """BH-25: провайдер ответил и пометил ответ фильтром — это не 502."""
+    body = _chat_body("Я не могу обсуждать эту тему.", reason="content_filter")
+    completion = await _adapter(lambda r: httpx.Response(200, json=body)).generate(
+        MESSAGES
+    )
+    assert completion.finish_reason is FinishReason.FILTERED
+    assert completion.content == "Я не могу обсуждать эту тему."
+
+
+async def test_native_content_filter_status_maps_to_filtered() -> None:
+    body = {
+        "result": {
+            "alternatives": [
+                {
+                    "message": {"role": "assistant", "text": "Не могу."},
+                    "status": "ALTERNATIVE_STATUS_CONTENT_FILTER",
+                }
+            ],
+            "usage": {"inputTextTokens": "10", "completionTokens": "5"},
+            "modelVersion": "v",
+        }
+    }
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body))
+    )
+    completion = await YandexAdapter(
+        client=client, folder_id="f", api_key="k"
+    ).generate(MESSAGES)
+    assert completion.finish_reason is FinishReason.FILTERED
