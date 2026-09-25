@@ -38,6 +38,7 @@ from eval.datasets import EvalItem, load_dataset, select_split
 from eval.relevance import RetrievedChunk
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.retrieval_eval import evaluate_retrieval, format_report
+from eval.yandex import DEFAULT_EMBEDDING_MODEL, default_embedding_dim
 
 CACHE_PATH = Path("eval/.cache/embeddings.sqlite")
 FUSION_CANDIDATES = 50
@@ -151,14 +152,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rrf-k", type=int, default=60)
     parser.add_argument(
         "--embedding-model",
-        default="text-search",
-        help="семейство эмбеддингов: text-search, text-embeddings-v2",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help="семейство эмбеддингов: text-embeddings-v2 (решение 25.09), text-search",
     )
     parser.add_argument(
         "--embedding-dim",
         type=int,
         default=None,
-        help="размерность v2: 128, 256 (по умолчанию), 512, 768",
+        help="размерность v2: 128, 256, 512, 768 (по умолчанию — 768)",
     )
     parser.add_argument("--k", type=int, default=10, help="top-K выдачи")
     parser.add_argument("--glossary", type=Path, help="CSV term,expansion (M5)")
@@ -182,11 +183,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         crumbs_in_embed=not args.no_crumbs,
         title_in_crumbs=not args.crumbs_without_title,
     )
-    config = args.config or f"{chunking.name}-{args.retriever}" + (
-        "-glossary" if args.glossary else ""
-    ) + (
-        "" if args.embedding_model == "text-search" else f"-{args.embedding_model}"
-    ) + (f"-d{args.embedding_dim}" if args.embedding_dim else "")
+    embedding_dim = args.embedding_dim or default_embedding_dim(args.embedding_model)
+    dim_suffix = f"-d{embedding_dim}" if embedding_dim else ""
+    embedder = (
+        ""
+        if args.retriever == "bm25" or args.embedding_model == "text-search"
+        else f"-{args.embedding_model}{dim_suffix}"
+    )
+    config = (
+        args.config
+        or f"{chunking.name}-{args.retriever}"
+        + ("-glossary" if args.glossary else "")
+        + embedder
+    )
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
@@ -216,7 +225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             depth,
             args.workers,
             args.embedding_model,
-            args.embedding_dim,
+            embedding_dim,
         )
         if args.retriever == "vector":
             for item, ranking, dists in zip(items, vec_rank, vec_dist, strict=True):

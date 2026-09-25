@@ -1,7 +1,12 @@
 """Офлайн-e2e: конвейер /faq/ask без бэкенда (предпросмотр E4, E5 и Р1).
 
     python -m eval.offline_e2e --corpus corpus/ --dataset eval/private/golden.csv \\
-        --model yandexgpt-lite --limit 5 --max-distance 0.6
+        --limit 5
+
+По умолчанию — конфигурация, выбранная по задаче 1 (25.09): Alice AI LLM
+Flash через OpenAI-совместимый API, text-embeddings-v2 с размерностью 768,
+порог 0.51. Старая: --api native --model yandexgpt-lite
+--embedding-model text-search --max-distance 0.65.
 
 Официальные числа — через run_eval e2e (HTTP API бэкенда). Этот стенд
 нужен, пока API нет, и для перебора того, что на бэкенде меняется только
@@ -9,14 +14,14 @@
 «ответа нет» (Р1).
 
 Шаги повторяют бэкенд (docs/backend-handoff.md, BH-3 и BH-7):
-1. top-limit чанков: по косинусному расстоянию (text-search-query → doc)
+1. top-limit чанков: по косинусному расстоянию (<семейство>-query → doc)
    или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается
    (как faq_service сейчас); для гибрида — по лучшему векторному
    кандидату (контракт M1). Не осталось ни одного — LLM не вызывается:
    фраза отказа (strict) или общий ответ с пометкой (general, Р1);
 3. select_context — бюджет контекста в токенах;
-4. build_faq_messages (промпт PROMPT_VERSION) → YandexGPT →
+4. build_faq_messages (промпт PROMPT_VERSION) → LLM →
    normalize_citations ([4.2] → номер выдержки), как должен делать бэкенд.
 
 CSV совместим с run_eval score и eval.judge: те же колонки, что у
@@ -51,6 +56,13 @@ from eval.datasets import EvalItem, load_dataset, select_split
 from eval.metrics import percentile
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.run_eval import is_answered, looks_like_refusal, summarize_e2e
+from eval.yandex import (
+    DEFAULT_API,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_LLM,
+    DEFAULT_MAX_DISTANCE,
+    default_embedding_dim,
+)
 
 NotFoundMode = Literal["strict", "general"]
 Retriever = Literal["vector", "hybrid"]
@@ -184,7 +196,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--corpus", type=Path, required=True)
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--split", default="", help="только вопросы split (dev/test)")
-    parser.add_argument("--model", default="yandexgpt-lite")
+    parser.add_argument("--model", default=DEFAULT_LLM)
     parser.add_argument(
         "--temperature",
         type=float,
@@ -194,16 +206,24 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api",
         choices=("native", "openai"),
-        default="native",
-        help="native — как бэкенд (только YandexGPT); openai — все модели каталога",
+        default=DEFAULT_API,
+        help="openai — все модели каталога (бэкенд после BH-15); "
+        "native — только YandexGPT (бэкенд до переезда)",
     )
     parser.add_argument(
         "--max-tokens", type=int, default=1000, help="лимит выхода, с рассуждением"
     )
-    parser.add_argument("--embedding-model", default="text-search")
-    parser.add_argument("--embedding-dim", type=int, default=None)
+    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    parser.add_argument(
+        "--embedding-dim", type=int, default=None, help="по умолчанию 768 для v2"
+    )
     parser.add_argument("--limit", type=int, default=5, help="faq_limit (E4)")
-    parser.add_argument("--max-distance", type=float, default=0.6)
+    parser.add_argument(
+        "--max-distance",
+        type=float,
+        default=DEFAULT_MAX_DISTANCE,
+        help="0.51 — для v2-768 (предварительно); для text-search было 0.65",
+    )
     parser.add_argument("--context-tokens", type=int, default=3000)
     parser.add_argument(
         "--not-found",
@@ -234,8 +254,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     mode: NotFoundMode = args.not_found
     retriever: Retriever = args.retriever
+    embedding_dim = args.embedding_dim or default_embedding_dim(args.embedding_model)
+    embedder = (
+        ""
+        if args.embedding_model == "text-search"
+        else f"-{args.embedding_model}" + (f"-{embedding_dim}" if embedding_dim else "")
+    )
     config = args.config or (
-        f"offline-{args.model}-{chunking.name}-{retriever}"
+        f"offline-{args.model}-{chunking.name}-{retriever}{embedder}"
         f"-k{args.limit}-d{args.max_distance}-{mode}"
     )
 
@@ -254,7 +280,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         rrf_k=args.rrf_k,
         workers=args.workers,
         embedding_model=args.embedding_model,
-        embedding_dim=args.embedding_dim,
+        embedding_dim=embedding_dim,
     )
     client = YandexClient.from_env()
 
