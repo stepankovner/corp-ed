@@ -746,3 +746,38 @@ def test_embedding_dim_is_sent_and_kept_apart_in_cache() -> None:
         client.cache_uri("doc") == "emb://folder/text-embeddings-v2-doc/latest?dim=768"
     )
 
+
+# --- Сравнение с Алисой AI для бизнеса (задача 4) ------------------------------------
+
+
+def test_normalize_alice_and_our_answers_the_same_way() -> None:
+    from eval.alice_compare import normalize_answer
+
+    alice = (
+        "Я — Алиса. **Размер гранта** — до 5 млн рублей 🙂\n"
+        "Источник: [Положение](https://disk.yandex.ru/x)"
+    )
+    ours = "Размер гранта — до 5 млн рублей [1]."
+
+    assert normalize_answer(alice) == ("Размер гранта — до 5 млн рублей", True)
+    assert normalize_answer(ours) == ("Размер гранта — до 5 млн рублей.", True)
+    assert normalize_answer("В документах ответа нет.") == (
+        "В документах ответа нет.",
+        False,
+    )
+
+
+def test_alice_template_does_not_overwrite(tmp_path: Path) -> None:
+    from eval.alice_compare import main as alice_main
+
+    dataset = tmp_path / "demo.csv"
+    dataset.write_text(
+        "id,question,expected_answer,expected_material,expected_section,in_corpus,type\n"
+        'd01,"Размер гранта?","5 млн","Док","",true,fact\n',
+        encoding="utf-8",
+    )
+    out = tmp_path / "private" / "alice.csv"
+
+    assert alice_main(["template", "--dataset", str(dataset), "--out", str(out)]) == 0
+    assert "d01" in out.read_text(encoding="utf-8")
+    assert alice_main(["template", "--dataset", str(dataset), "--out", str(out)]) == 1
