@@ -68,13 +68,16 @@ def vector_rankings(
     limit: int,
     workers: int,
     embedding_model: str = "text-search",
+    embedding_dim: int | None = None,
 ) -> tuple[list[list[int]], list[list[float]]]:
     """Индексы чанков по близости и косинусные расстояния (1 − косинус)."""
     import numpy as np
 
     from eval.yandex import EmbeddingCache, YandexClient, embed_many
 
-    client = YandexClient.from_env(embedding_model=embedding_model)
+    client = YandexClient.from_env(
+        embedding_model=embedding_model, embedding_dim=embedding_dim
+    )
     cache = EmbeddingCache(CACHE_PATH)
 
     def progress(done: int, total: int) -> None:
@@ -151,6 +154,12 @@ def _parser() -> argparse.ArgumentParser:
         default="text-search",
         help="семейство эмбеддингов: text-search, text-embeddings-v2",
     )
+    parser.add_argument(
+        "--embedding-dim",
+        type=int,
+        default=None,
+        help="размерность v2: 128, 256 (по умолчанию), 512, 768",
+    )
     parser.add_argument("--k", type=int, default=10, help="top-K выдачи")
     parser.add_argument("--glossary", type=Path, help="CSV term,expansion (M5)")
     parser.add_argument("--workers", type=int, default=4)
@@ -175,7 +184,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     config = args.config or f"{chunking.name}-{args.retriever}" + (
         "-glossary" if args.glossary else ""
-    ) + ("" if args.embedding_model == "text-search" else f"-{args.embedding_model}")
+    ) + (
+        "" if args.embedding_model == "text-search" else f"-{args.embedding_model}"
+    ) + (f"-d{args.embedding_dim}" if args.embedding_dim else "")
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
@@ -200,7 +211,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         depth = args.k if args.retriever == "vector" else max(args.k, FUSION_CANDIDATES)
         vec_rank, vec_dist = vector_rankings(
-            chunks, queries, depth, args.workers, args.embedding_model
+            chunks,
+            queries,
+            depth,
+            args.workers,
+            args.embedding_model,
+            args.embedding_dim,
         )
         if args.retriever == "vector":
             for item, ranking, dists in zip(items, vec_rank, vec_dist, strict=True):

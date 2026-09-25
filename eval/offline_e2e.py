@@ -111,11 +111,12 @@ def retrieve(
     rrf_k: int = 60,
     workers: int = 4,
     embedding_model: str = "text-search",
+    embedding_dim: int | None = None,
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние."""
     depth = limit if retriever == "vector" else max(limit, FUSION_CANDIDATES)
     vec_rank, vec_dist = vector_rankings(
-        chunks, questions, depth, workers, embedding_model
+        chunks, questions, depth, workers, embedding_model, embedding_dim
     )
     if retriever == "vector":
         return [
@@ -200,6 +201,7 @@ def _parser() -> argparse.ArgumentParser:
         "--max-tokens", type=int, default=1000, help="лимит выхода, с рассуждением"
     )
     parser.add_argument("--embedding-model", default="text-search")
+    parser.add_argument("--embedding-dim", type=int, default=None)
     parser.add_argument("--limit", type=int, default=5, help="faq_limit (E4)")
     parser.add_argument("--max-distance", type=float, default=0.6)
     parser.add_argument("--context-tokens", type=int, default=3000)
@@ -252,6 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         rrf_k=args.rrf_k,
         workers=args.workers,
         embedding_model=args.embedding_model,
+        embedding_dim=args.embedding_dim,
     )
     client = YandexClient.from_env()
 

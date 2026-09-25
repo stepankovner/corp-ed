@@ -96,6 +96,7 @@ def setup(
         limit: int,
         workers: int,
         embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
     ) -> tuple[list[list[int]], list[list[float]]]:
         distances = {"Сколько": 0.3, "Какая": 0.8, "Можно": 0.4}
         return (

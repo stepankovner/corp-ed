@@ -195,3 +195,12 @@ def test_normalize_citations_unknown_number_becomes_text() -> None:
     assert normalize_citations("Ответ [7] и [0].", matches) == (
         "Ответ (п. 7) и (п. 0)."
     )
+
+
+def test_prompt_forbids_transferring_another_programs_terms() -> None:
+    system = build_faq_messages("Какой грант по программе «Развитие»?", [VACATION])[0]
+
+    # v2.2: на близких вопросах вне корпуса модель переносила условия одной
+    # программы на другую — правило 4 и пример запрещают это.
+    assert "не переноси её условия" in system.content
+    assert "по программе „Развитие“" in system.content
