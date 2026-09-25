@@ -701,3 +701,7 @@ CREATE TABLE gap_cluster_questions (
 | BH-17 `vector(768)` + переингест | P1 | 02.10 (лучше с BH-3) | — |
 | BH-18 порог 0.51 для v2-768 | P1 | с BH-17 | предварительно; финал — A8 к 12.10 |
 | BH-19 температура 0, `faq-v2.3` | P1 | с BH-15 | промпт готов |
+| BH-20 `qa_log` (`vector(768)`) | P1 | 06.10 | `PROMPT_VERSION`, `mask_pii` готовы |
+| BH-21 ночная задача пробелов | P1 | 06.10 | `classify_miss`, `cluster_questions`, gaps-v1 готовы |
+| BH-22 таблицы кластеров | P1 | 06.10 | — |
+| BH-23 `GET /api/v1/gaps` | P1 | с BH-22 | — |

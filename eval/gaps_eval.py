@@ -1,8 +1,9 @@
 """Оценка отчёта о пробелах на синтетике (задача ML 3.4).
 
     python -m eval.gaps_eval --corpus corpus/ --remove UMNIK --remove Pravila \\
-        --dataset silver.csv --dataset golden.csv --max-distance 0.506 \\
-        --embedding-model text-embeddings-v2 --embedding-dim 768
+        --dataset silver.csv --dataset golden.csv
+
+По умолчанию — решение по задаче 1: text-embeddings-v2 768, порог 0.51.
 
 Идея: из корпуса убираем 1–2 документа. Вопросы по убранным — истинные
 пробелы (в базе этого нет), по оставшимся — не пробелы. Прогоняем поиск
@@ -47,6 +48,11 @@ from eval.bm25 import BM25Index, tokenize
 from eval.corpus import ChunkingConfig, chunk_corpus, load_corpus
 from eval.datasets import EvalItem, load_dataset
 from eval.relevance import normalize_material
+from eval.yandex import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_MAX_DISTANCE,
+    default_embedding_dim,
+)
 
 
 def fulltext_coverage(question: str, index: BM25Index, texts: Sequence[str]) -> float:
@@ -82,9 +88,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="подстрока названия убираемого документа",
     )
     parser.add_argument("--dataset", type=Path, action="append", required=True)
-    parser.add_argument("--max-distance", type=float, required=True)
-    parser.add_argument("--embedding-model", default="text-search")
-    parser.add_argument("--embedding-dim", type=int, default=None)
+    parser.add_argument("--max-distance", type=float, default=DEFAULT_MAX_DISTANCE)
+    parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
+    parser.add_argument(
+        "--embedding-dim", type=int, default=None, help="по умолчанию 768 для v2"
+    )
     parser.add_argument("--empty", type=float, nargs="+", default=[0.3, 0.4, 0.5])
     parser.add_argument(
         "--strong", type=float, nargs="+", default=[0.6, 0.7, 0.8, 1.01]
@@ -101,6 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--out", type=Path, default=Path("eval/private/results/gaps"))
     args = parser.parse_args(argv)
+    embedding_dim = args.embedding_dim or default_embedding_dim(args.embedding_model)
 
     from eval.bench import vector_rankings
     from eval.yandex import EmbeddingCache, YandexClient, embed_many
@@ -142,7 +151,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     questions = [item.question for item, _ in labelled]
 
     _, distances = vector_rankings(
-        chunks, questions, 1, 4, args.embedding_model, args.embedding_dim
+        chunks, questions, 1, 4, args.embedding_model, embedding_dim
     )
     texts = [c.embed_text for c in chunks]
     index = BM25Index(texts)
@@ -150,7 +159,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     best = [d[0] if d else None for d in distances]
 
     client = YandexClient.from_env(
-        embedding_model=args.embedding_model, embedding_dim=args.embedding_dim
+        embedding_model=args.embedding_model, embedding_dim=embedding_dim
     )
     cache = EmbeddingCache(Path("eval/.cache/embeddings.sqlite"))
     query_vectors = [e.vector for e in embed_many(client, questions, "query", cache)]
@@ -162,7 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"Корпус без: {', '.join(sorted(removed))}. Вопросов: "
         + ", ".join(f"{k} {v}" for k, v in Counter(t for _, t in labelled).items())
         + f". Эмбеддер {args.embedding_model}"
-        + (f" {args.embedding_dim}" if args.embedding_dim else "")
+        + (f" {embedding_dim}" if embedding_dim else "")
         + f", порог {args.max_distance}.",
         "",
         "| empty | strong | gap: precision | recall | F1 "
