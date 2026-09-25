@@ -10,6 +10,7 @@ from corp_ed.domain.fulltext import to_fulltext_query
 from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
+from corp_ed.domain.query import expand_query
 from corp_ed.domain.types import (
     AnswerDiagnostics,
     AnswerOrigin,
@@ -31,6 +32,7 @@ from corp_ed.prompts.faq import (
     normalize_citations,
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
@@ -71,6 +73,7 @@ class FaqService:
         chunk_repo: ChunkRepository,
         qa_log_repo: QaLogRepository,
         tenant_repo: TenantRepository,
+        glossary_repo: GlossaryRepository,
         credits: CreditService,
         embedding_gateway: EmbeddingGateway,
         llm_gateway: LLMGateway,
@@ -85,6 +88,7 @@ class FaqService:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
         self.tenant_repo = tenant_repo
+        self.glossary_repo = glossary_repo
         self.credits = credits
         self.embedding_gateway = embedding_gateway
         self.llm_gateway = llm_gateway
@@ -119,10 +123,11 @@ class FaqService:
         usage = await self.credits.ensure_available()
         tenant = await self.tenant_repo.get_by_id(user.tenant_id)
         mode = NotFoundMode(tenant.not_found_mode) if tenant else NotFoundMode.GENERAL
-        embedded = await self.embedding_gateway.embed_query(question)
+        search_text = await self._search_text(question)
+        embedded = await self.embedding_gateway.embed_query(search_text)
 
         found = await self._retrieve(
-            question, embedded.embedding, limit=self.limit, retriever=self.retriever
+            search_text, embedded.embedding, limit=self.limit, retriever=self.retriever
         )
         # Порядок сохраняется: номер [n] в ответе модели — позиция выдержки
         # в context, и в том же порядке источники уходят клиенту.
@@ -202,14 +207,32 @@ class FaqService:
         расстояния и у тех вопросов, которые его не прошли. retriever —
         сравнить способы поиска на живой базе, не меняя настройку.
         """
-        embedded = await self.embedding_gateway.embed_query(question)
+        search_text = await self._search_text(question)
+        embedded = await self.embedding_gateway.embed_query(search_text)
         found = await self._retrieve(
-            question,
+            search_text,
             embedded.embedding,
             limit=limit,
             retriever=retriever or self.retriever,
         )
         return found.candidates
+
+    async def _search_text(self, question: str) -> str:
+        """Вопрос с расшифровками сокращений компании (M5, BH-14).
+
+        Только для поиска: эмбеддинг и полнотекст. В промпт модели уходит
+        исходный вопрос — текст из словаря, который пишет админ, не
+        становится инструкцией для модели, а ответ не «видит» того, чего
+        сотрудник не спрашивал.
+        """
+        glossary = await self.glossary_repo.as_mapping()
+        if not glossary:
+            return question
+        expanded = expand_query(question, glossary)
+        if expanded != question:
+            # Только факт: текст вопроса в логах — персональные данные.
+            logger.info("faq_question_expanded")
+        return expanded
 
     async def _retrieve(
         self,

@@ -14,6 +14,7 @@ from corp_ed.domain.types import AnswerOrigin, Retriever
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.faq_service import FaqService
@@ -50,6 +51,7 @@ def _service(
         chunk_repo=ChunkRepository(session),
         qa_log_repo=QaLogRepository(session),
         tenant_repo=TenantRepository(session),
+        glossary_repo=GlossaryRepository(session),
         credits=make_credit_service(session),
         embedding_gateway=fake_embeddings,
         llm_gateway=llm,

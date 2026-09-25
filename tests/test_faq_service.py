@@ -14,6 +14,7 @@ from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion, FinishReason, Message, Role, Usage
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.faq_service import FaqService
@@ -76,6 +77,7 @@ def _service(
         chunk_repo=chunk_repo,
         qa_log_repo=QaLogRepository(chunk_repo.session),
         tenant_repo=TenantRepository(chunk_repo.session),
+        glossary_repo=GlossaryRepository(chunk_repo.session),
         credits=make_credit_service(chunk_repo.session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,

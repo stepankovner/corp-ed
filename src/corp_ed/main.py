@@ -13,7 +13,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from corp_ed.api.v1.endpoints import audit, auth, faq, materials, usage, users
+from corp_ed.api.v1.endpoints import (
+    audit,
+    auth,
+    faq,
+    glossary,
+    materials,
+    usage,
+    users,
+)
 from corp_ed.core.config import LLMSettings, get_http_settings
 from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
@@ -171,6 +179,7 @@ app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
+app.include_router(glossary.router, prefix="/api/v1")
 
 
 @app.get("/")

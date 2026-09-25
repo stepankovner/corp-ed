@@ -357,3 +357,35 @@ class QaLog(TenantMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class GlossaryTerm(TenantMixin, Base):
+    """Сокращение компании и его расшифровка (M5, BH-14).
+
+    Заполняет админ компании. Перед поиском expand_query (ML) дописывает
+    к вопросу расшифровки найденных терминов: «Как оформить ДМС?» находит
+    документ, где написано «добровольное медицинское страхование».
+    Расшифровки идут только в поиск — в промпт модели уходит исходный
+    вопрос сотрудника.
+    """
+
+    __tablename__ = "glossary_terms"
+    __table_args__ = (
+        # «ДМС» и «дмс» — один термин: expand_query ищет без учёта регистра.
+        Index(
+            "uq_glossary_terms_tenant_term",
+            "tenant_id",
+            text("lower(term)"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    term: Mapped[str] = mapped_column(String(64))
+    expansion: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

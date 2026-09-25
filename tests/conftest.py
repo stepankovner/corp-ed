@@ -23,6 +23,7 @@ from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
@@ -224,6 +225,7 @@ def faq_service(
         chunk_repo=ChunkRepository(session),
         qa_log_repo=QaLogRepository(session),
         tenant_repo=TenantRepository(session),
+        glossary_repo=GlossaryRepository(session),
         credits=make_credit_service(session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,

@@ -49,6 +49,27 @@ def test_every_tenant_model_is_under_rls() -> None:
     assert tenant_tables <= set(TENANT_TABLES)
 
 
+@pytest.mark.parametrize("table", TENANT_TABLES)
+async def test_policy_is_enabled_and_forced(session: AsyncSession, table: str) -> None:
+    """Таблица из списка действительно под политикой — и для владельца
+    тоже (FORCE). Список без политики в базе ничего бы не защищал."""
+    row = (
+        await session.execute(
+            text(
+                "SELECT relrowsecurity, relforcerowsecurity FROM pg_class "
+                "WHERE relname = :table AND relkind = 'r'"
+            ),
+            {"table": table},
+        )
+    ).one()
+    assert tuple(row) == (True, True)
+    policies = await session.scalar(
+        text("SELECT count(*) FROM pg_policies WHERE tablename = :table"),
+        {"table": table},
+    )
+    assert policies and policies >= 1
+
+
 async def test_session_runs_without_bypass_privileges(session: AsyncSession) -> None:
     """Иначе все тесты ниже прошли бы впустую."""
     row = (

@@ -58,6 +58,10 @@ UPLOAD_PER_TENANT = RatePolicy("upload-tenant", limit=60, window=3600, fail_open
 # Создание и переиндексация материалов: каждый запрос — пачка платных
 # эмбеддингов в воркере.
 INGEST_PER_TENANT = RatePolicy("ingest-tenant", limit=120, window=3600, fail_open=True)
+# Правки словаря — руками админа; сотни в час — уже скрипт.
+GLOSSARY_PER_TENANT = RatePolicy(
+    "glossary-tenant", limit=300, window=3600, fail_open=True
+)
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:

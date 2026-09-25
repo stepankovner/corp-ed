@@ -34,6 +34,7 @@ from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.llm.yandex_openai import YandexOpenAIAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
@@ -43,6 +44,7 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
+from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.user_service import UserService
 
@@ -292,6 +294,20 @@ def get_qa_log_repository(
     return QaLogRepository(session)
 
 
+def get_glossary_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GlossaryRepository:
+    return GlossaryRepository(session)
+
+
+def get_glossary_service(
+    repository: Annotated[GlossaryRepository, Depends(get_glossary_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GlossaryService:
+    return GlossaryService(repository, audit, session)
+
+
 def get_credit_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
@@ -313,6 +329,7 @@ def get_faq_service(
     chunk_repo: Annotated[ChunkRepository, Depends(get_chunk_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
+    glossary_repo: Annotated[GlossaryRepository, Depends(get_glossary_repository)],
     credits: Annotated[CreditService, Depends(get_credit_service)],
     embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
     llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
@@ -323,6 +340,7 @@ def get_faq_service(
         chunk_repo=chunk_repo,
         qa_log_repo=qa_log_repo,
         tenant_repo=tenant_repo,
+        glossary_repo=glossary_repo,
         credits=credits,
         embedding_gateway=embedding_gateway,
         llm_gateway=llm_gateway,
