@@ -42,8 +42,9 @@ ML пишет только чистые функции (без БД, сети, �
 | `ml/r1-general` | #13 | Р1: общий ответ с пометкой, промпт `faq-v2.4` | BH-24 |
 | `ml/docs` | #14 | `docs/ml-summary.md`, `docs/ml-code-guide.md`, этот документ v1.2 | BH-25, BH-26 |
 | `ml/m2-sections` | #16 | M2: `Section`, `merge_chunks`, `select_sections` с окном; стенд `--context`, `--dry-run` | BH-13 |
+| `ml/golden-runs` | #17 | золотой dev: решения A7/A8/M1/M2, `eval.judge --api`, состав ТЗ — минимум | — (менять нечего) |
 
-#7–#16 вливаются после #6 — CI у них падает на той же ожидаемой ошибке.
+#7–#17 вливаются после #6 — CI у них падает на той же ожидаемой ошибке.
 #15 — PR бэкенда (`claude/gallant-pascal-xtb35t` → `main`, 62 коммита):
 ML-стек до `ml/docs` внутри, CI зелёный.
 
