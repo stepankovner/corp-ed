@@ -48,6 +48,23 @@ async def not_authenticated_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
+async def rate_limited_handler(request: Request, exc: Exception) -> JSONResponse:
+    retry_after = getattr(exc, "retry_after", 60)
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": str(exc)},
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
+async def service_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"detail": str(exc)},
+        headers={"Retry-After": "30"},
+    )
+
+
 async def weak_password_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

@@ -1,12 +1,24 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from corp_ed.api.v1.dependencies import (
     get_auth_service,
     get_current_user,
     get_current_user_allow_password_change,
     get_tenant_repository,
+)
+from corp_ed.api.v1.rate_limits import (
+    LOGIN_FAILURES_PER_ACCOUNT,
+    LOGIN_PER_IP,
+    PASSWORD_CHANGE_PER_USER,
+    REFRESH_PER_IP,
+    client_ip,
+    enforce,
+    ensure_not_locked,
+    forget,
+    get_rate_limiter,
+    record,
 )
 from corp_ed.api.v1.schemas.auth import (
     ChangePasswordRequest,
@@ -15,6 +27,8 @@ from corp_ed.api.v1.schemas.auth import (
     RefreshRequest,
     TokenResponse,
 )
+from corp_ed.core.exceptions import InvalidCredentialsError
+from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.models import User
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.auth_service import AuthService, TokenPair
@@ -52,18 +66,42 @@ async def read_me(
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    request: Request,
     data: LoginRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> TokenResponse:
-    pair = await auth_service.login(data.company_code, data.email, data.password)
+    """Вход. Два лимита против перебора (ASVS 6.3.1):
+
+    - на IP — все попытки: один адрес не перебирает много учёток;
+    - на учётку — только неудачные: распределённый перебор одной учётки
+      с многих адресов. Успешный вход счётчик обнуляет.
+    """
+    await enforce(limiter, LOGIN_PER_IP, client_ip(request))
+    account = f"{data.company_code.casefold()}:{data.email.casefold()}"
+    await ensure_not_locked(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
+
+    try:
+        pair = await auth_service.login(data.company_code, data.email, data.password)
+    except InvalidCredentialsError:
+        await record(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
+        raise
+
+    await forget(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
     return _tokens(pair)
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+)
 async def refresh(
+    request: Request,
     data: RefreshRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> TokenResponse:
+    await enforce(limiter, REFRESH_PER_IP, client_ip(request))
     return _tokens(await auth_service.refresh(data.refresh_token))
 
 
@@ -89,9 +127,14 @@ async def change_password(
     data: ChangePasswordRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     current_user: Annotated[User, Depends(get_current_user_allow_password_change)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> TokenResponse:
     """Сменить пароль. Все прежние сессии закрываются, возвращается
-    новая пара токенов для текущего устройства."""
+    новая пара токенов для текущего устройства.
+
+    Лимит — против подбора текущего пароля украденным access-токеном.
+    """
+    await enforce(limiter, PASSWORD_CHANGE_PER_USER, str(current_user.id))
     pair = await auth_service.change_password(
         current_user, data.current_password, data.new_password
     )

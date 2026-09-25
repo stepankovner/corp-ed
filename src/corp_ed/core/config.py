@@ -126,6 +126,10 @@ class HttpSettings(BaseSettings):
     # Лимит тела запроса. JSON-ручкам мегабайта хватает с запасом;
     # загрузке файлов — отдельный лимит (см. MAX_UPLOAD_BYTES в
     # api/v1/schemas/material.py и middleware).
+    # Redis для счётчиков лимитов (и очередей). Пусто — счётчики в памяти
+    # процесса: годится для разработки, но не для нескольких воркеров.
+    redis_url: SecretStr | None = None
+
     max_body_bytes: int = Field(default=1024 * 1024, gt=0)
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
 
@@ -156,6 +160,8 @@ class HttpSettings(BaseSettings):
                 raise ValueError("ALLOWED_HOSTS must be explicit in production")
             if "*" in self.cors_origins:
                 raise ValueError("CORS_ALLOWED_ORIGINS must not be * in production")
+            if self.redis_url is None:
+                raise ValueError("REDIS_URL is required in production")
         return self
 
 

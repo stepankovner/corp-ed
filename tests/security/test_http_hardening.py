@@ -169,6 +169,7 @@ def test_docs_are_disabled_in_production() -> None:
         **os.environ,
         "ENVIRONMENT": "production",
         "ALLOWED_HOSTS": "api.example.ru",
+        "REDIS_URL": "redis://localhost:6379/0",
     }
     code = (
         "from corp_ed.main import app;"

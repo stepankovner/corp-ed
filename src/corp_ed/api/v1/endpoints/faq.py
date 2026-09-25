@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 
 from corp_ed.api.v1.dependencies import get_current_user, get_faq_service
+from corp_ed.api.v1.rate_limits import FAQ_PER_USER, limit_by_user
 from corp_ed.api.v1.schemas.faq import (
     FaqAnswerResponse,
     FaqQuestionRequest,
@@ -13,7 +14,11 @@ from corp_ed.services.faq_service import FaqService
 router = APIRouter(prefix="/faq", tags=["faq"])
 
 
-@router.post("/ask", response_model=FaqAnswerResponse)
+@router.post(
+    "/ask",
+    response_model=FaqAnswerResponse,
+    dependencies=[Depends(limit_by_user(FAQ_PER_USER))],
+)
 async def ask_faq(
     data: FaqQuestionRequest,
     service: Annotated[FaqService, Depends(get_faq_service)],

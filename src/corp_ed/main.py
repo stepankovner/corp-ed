@@ -2,9 +2,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx
+import structlog
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from redis.asyncio import Redis
 from sqlalchemy import text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -20,6 +22,8 @@ from corp_ed.core.exception_handlers import (
     not_authenticated_handler,
     not_found_error_handler,
     permission_error_handler,
+    rate_limited_handler,
+    service_unavailable_handler,
     validation_error_handler,
     weak_password_handler,
 )
@@ -30,6 +34,7 @@ from corp_ed.core.exceptions import (
     NotAuthenticatedError,
     NotFoundError,
     PermissionError,
+    ServiceUnavailableError,
     TenantContextMissingError,
     TenantMismatchError,
     WeakPasswordError,
@@ -40,7 +45,15 @@ from corp_ed.core.middleware import (
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
 )
+from corp_ed.core.rate_limit import (
+    InMemoryRateLimiter,
+    RateLimitedError,
+    RateLimiter,
+    RedisRateLimiter,
+)
 from corp_ed.llm.errors import LLMError
+
+logger = structlog.get_logger()
 
 # Пути, где тело — файл, а не JSON: у них свой лимит размера.
 UPLOAD_PATH_SUFFIXES = ("/materials/upload",)
@@ -53,11 +66,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # должна ронять контейнер, а не превращаться в 500 на первом запросе.
     async with get_engine().connect() as connection:
         await connection.execute(text("SELECT 1"))
+    redis: Redis | None = None
+    limiter: RateLimiter
+    if http_settings.redis_url is not None:
+        redis = Redis.from_url(http_settings.redis_url.get_secret_value())
+        await redis.ping()
+        limiter = RedisRateLimiter(redis)
+    else:
+        logger.warning("rate_limiter_in_memory")
+        limiter = InMemoryRateLimiter()
+    app.state.rate_limiter = limiter
+
     app.state.http_client = httpx.AsyncClient()
     try:
         yield
     finally:
         await app.state.http_client.aclose()
+        if redis is not None:
+            await redis.aclose()
 
 
 http_settings = get_http_settings()
@@ -99,6 +125,8 @@ app.add_exception_handler(WeakPasswordError, weak_password_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(TenantContextMissingError, internal_error_handler)
 app.add_exception_handler(TenantMismatchError, internal_error_handler)
+app.add_exception_handler(RateLimitedError, rate_limited_handler)
+app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)
 
 # Выполняются в порядке, обратном добавлению. Снаружи внутрь:
 #   CORS → заголовки безопасности → request_id и ловушка 500 →

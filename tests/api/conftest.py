@@ -12,6 +12,7 @@ from corp_ed.api.v1.dependencies import (
 )
 from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
+from corp_ed.core.rate_limit import InMemoryRateLimiter
 from corp_ed.core.security import create_access_token, hash_password
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import Tenant, User, UserRole
@@ -50,6 +51,10 @@ async def api(
     app.dependency_overrides[get_embedding_gateway] = lambda: fake_embeddings
     app.dependency_overrides[get_llm_gateway] = lambda: fake_llm
     app.dependency_overrides[get_rag_settings] = lambda: settings
+    # lifespan в тестах не запускается (ASGITransport его не вызывает),
+    # поэтому лимитер ставится здесь — свежий на каждый тест, чтобы
+    # счётчики одного теста не влияли на другой.
+    app.state.rate_limiter = InMemoryRateLimiter()
 
     transport = httpx.ASGITransport(app=app)
 
