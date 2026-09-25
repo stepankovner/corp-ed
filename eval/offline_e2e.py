@@ -1,6 +1,6 @@
 """Офлайн-e2e: конвейер /faq/ask без бэкенда (предпросмотр E4, E5 и Р1).
 
-    python -m eval.offline_e2e --corpus corpus/ --dataset eval/golden.csv \\
+    python -m eval.offline_e2e --corpus corpus/ --dataset eval/private/golden.csv \\
         --model yandexgpt-lite --limit 5 --max-distance 0.6
 
 Официальные числа — через run_eval e2e (HTTP API бэкенда). Этот стенд
@@ -47,7 +47,7 @@ from corp_ed.prompts.faq import (
 )
 from eval.bench import FUSION_CANDIDATES, bm25_rankings, vector_rankings
 from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
-from eval.datasets import EvalItem, load_dataset
+from eval.datasets import EvalItem, load_dataset, select_split
 from eval.metrics import percentile
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.run_eval import is_answered, looks_like_refusal, summarize_e2e
@@ -241,8 +241,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     chunks = chunk_corpus(load_corpus(args.corpus), chunking)
     items: list[EvalItem] = load_dataset(args.dataset)
-    if args.split:
-        items = [item for item in items if item.split == args.split]
+    # Без --split holdout золотого набора не берём (select_split, задача 2.1).
+    items = select_split(items, args.split)
     print(f"Чанков: {len(chunks)} ({chunking.name}), вопросов: {len(items)}")
 
     retrieved = retrieve(

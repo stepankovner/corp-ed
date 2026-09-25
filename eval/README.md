@@ -20,21 +20,27 @@ uv pip install -r eval/requirements.txt   # numpy, стеммер, извлеч�
 
 ## Наборы вопросов
 
-### Золотой — `eval/golden.csv` (A5, пишется руками)
+### Золотой — `eval/private/golden.csv` (A5, пишется руками)
 
 ```
-id,question,expected_answer,expected_material,expected_section,in_corpus,type
+id,question,expected_answer,expected_material,expected_section,in_corpus,type[,level][,split]
 ```
 
+- Лежит в `eval/private/` — в git не попадает (живые вопросы). Как писать
+  вопросы — `docs/ml-golden-guide.md`.
 - 40 вопросов: 25 по корпусу (из них ≥ 5 `negation`), 10 вне корпуса,
   5 дословных из интервью Влада.
+- `level` — `тема` / `деталь` (или `topic` / `detail`).
+- `split` — `dev` / `holdout`, ставит `python -m eval.datasets split …`
+  (50/50 по слоям). **Holdout скрипты не берут без `--split holdout`** — он
+  открывается один раз, на финальном прогоне.
 - Типы: `fact`, `procedure`, `negation`, `comparison`, `out_of_corpus`.
 - **Соглашение:** у вопросов из интервью `id` начинается с `iv` (`iv01`…).
 - `expected_material` — название документа (расширение не важно).
 - `expected_section` — начало заголовка раздела: `3.1` совпадёт с
   «3.1 Продолжительность» и «3.1. Продолжительность», но не с «3.12».
 - Пример — `eval/golden.example.csv`. Проверка состава:
-  `python -m eval.datasets eval/golden.csv`.
+  `python -m eval.datasets eval/private/golden.csv`.
 
 Правильный чанк для золотого вопроса — из нужного документа и нужного раздела.
 
@@ -74,7 +80,7 @@ id,question,material,position,heading_path,evidence,split,chunk_config
 python -m eval.run_eval retrieval --dataset eval/silver.csv --config v2-400-50 --split dev
 
 # Сквозной: F1 отказа, латентность p50/p95
-python -m eval.run_eval e2e --dataset eval/golden.csv --config lite-k5
+python -m eval.run_eval e2e --dataset eval/private/golden.csv --config lite-k5
 
 # После ручной разметки колонки correct (0/1/2) в CSV из e2e:
 python -m eval.run_eval score --results eval/results/2026-10-02_lite-k5_e2e.csv
@@ -124,7 +130,7 @@ python -m eval.bench --corpus docs/ --dataset eval/silver.csv --split dev \
 окружения: `faq_limit` (E4), модель (E5), порог (A8), режим Р1.
 
 ```bash
-python -m eval.offline_e2e --corpus docs/ --dataset eval/golden.csv \
+python -m eval.offline_e2e --corpus docs/ --dataset eval/private/golden.csv \
     --model yandexgpt-lite --limit 5 --max-distance 0.6 [--not-found general]
 ```
 
@@ -147,7 +153,7 @@ python -m eval.compare eval/results/A.csv eval/results/B.csv --metric rr
 ## Порог отказа (A8)
 
 ```bash
-python -m eval.run_eval retrieval --dataset eval/golden.csv --config v2-400-50
+python -m eval.run_eval retrieval --dataset eval/private/golden.csv --config v2-400-50
 python -m eval.threshold eval/results/<дата>_v2-400-50_retrieval.csv
 ```
 

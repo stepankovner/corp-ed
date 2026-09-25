@@ -1,7 +1,14 @@
 """Наборы вопросов для eval: золотой (A5) и серебряный (A6).
 
-Золотой — eval/golden.csv, формат из ТЗ:
+Золотой — eval/private/golden.csv (живые вопросы, в git не попадает),
+формат из ТЗ:
     id,question,expected_answer,expected_material,expected_section,in_corpus,type
+и две необязательные колонки (задача 2.1, 25.09):
+    level — topic (вопрос на уровне темы) / detail (про конкретную деталь);
+            по-русски тоже можно: тема / деталь;
+    split — dev / holdout, ставит `python -m eval.datasets split`.
+Holdout не открывается до финального прогона: скрипты берут только dev,
+пока holdout не запрошен явно (`--split holdout`), см. select_split.
 
 Серебряный — eval/silver.csv (пишет generate_silver.py):
     id,question,material,position,heading_path,evidence,split,chunk_config
@@ -10,12 +17,16 @@
 префиксом «iv» (iv01…iv05) — в формате ТЗ нет отдельной колонки для
 источника вопроса, а в проверке состава их нужно посчитать.
 
-Проверка состава: python -m eval.datasets eval/golden.csv
+Проверка:  python -m eval.datasets eval/private/golden.csv
+Разбиение: python -m eval.datasets split eval/private/golden.csv
+Как писать вопросы — docs/ml-golden-guide.md.
 """
 
 import csv
+import hashlib
+import re
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +51,9 @@ SILVER_COLUMNS = (
     "chunk_config",
 )
 INTERVIEW_PREFIX = "iv"
+LEVELS = ("topic", "detail")
+_LEVEL_ALIASES = {"тема": "topic", "деталь": "detail"}
+SPLITS = ("dev", "holdout")
 
 _TRUE = {"true", "1", "yes", "да"}
 _FALSE = {"false", "0", "no", "нет", ""}
@@ -58,6 +72,7 @@ class EvalItem:
     expected_section: str = ""
     evidence: str = ""
     split: str = ""
+    level: str = ""
 
 
 def _parse_bool(value: str, *, row_id: str) -> bool:
@@ -102,6 +117,13 @@ def _golden_item(row: dict[str, str]) -> EvalItem:
         )
     if not row["question"].strip():
         raise ValueError(f"{row_id}: empty question")
+    level = row.get("level", "").strip().casefold()
+    level = _LEVEL_ALIASES.get(level, level)
+    if level and level not in LEVELS:
+        raise ValueError(f"{row_id}: unknown level {level!r}, expected {LEVELS}")
+    split = row.get("split", "").strip().casefold()
+    if split and split not in SPLITS:
+        raise ValueError(f"{row_id}: unknown split {split!r}, expected {SPLITS}")
     return EvalItem(
         id=row_id,
         question=row["question"].strip(),
@@ -110,6 +132,8 @@ def _golden_item(row: dict[str, str]) -> EvalItem:
         expected_answer=row["expected_answer"].strip(),
         expected_material=row["expected_material"].strip(),
         expected_section=row["expected_section"].strip(),
+        level=level,
+        split=split,
     )
 
 
@@ -152,7 +176,12 @@ def check_golden_composition(items: list[EvalItem]) -> list[str]:
             f"negation среди вопросов по корпусу: {len(negation)}, нужно ≥ 5"
         )
 
+    seen: dict[str, str] = {}
     for item in items:
+        key = _question_key(item.question)
+        if key in seen:
+            problems.append(f"{item.id}: тот же вопрос, что {seen[key]}")
+        seen.setdefault(key, item.id)
         if item.in_corpus and item.type == "out_of_corpus":
             problems.append(f"{item.id}: in_corpus=true, но type=out_of_corpus")
         if not item.in_corpus and item.type != "out_of_corpus":
@@ -161,12 +190,101 @@ def check_golden_composition(items: list[EvalItem]) -> list[str]:
             problems.append(f"{item.id}: вопрос по корпусу без expected_material")
         if item.in_corpus and not item.expected_answer:
             problems.append(f"{item.id}: вопрос по корпусу без expected_answer")
+        if item.in_corpus and not item.level:
+            problems.append(f"{item.id}: вопрос по корпусу без level (topic / detail)")
     return problems
 
 
+def _question_key(question: str) -> str:
+    return " ".join(
+        re.sub(r"[^\w\s]", " ", question.casefold().replace("ё", "е")).split()
+    )
+
+
+def select_split(items: list[EvalItem], split: str) -> list[EvalItem]:
+    """Вопросы нужного split. Без явного split holdout НЕ отдаётся.
+
+    Holdout золотого набора открывается один раз — на финальном прогоне
+    (задача 2.6). Всё, что подбирает параметры, должно видеть только dev,
+    иначе итоговые числа завышены подгонкой.
+    """
+    if split:
+        return [item for item in items if item.split == split]
+    return [item for item in items if item.split != "holdout"]
+
+
+def stratified_split(
+    items: list[EvalItem], *, seed: str = "corp-ed", holdout_share: float = 0.5
+) -> dict[str, str]:
+    """id → dev / holdout, поровну внутри каждого слоя.
+
+    Слой — (по корпусу или нет, тип, уровень, из интервью или нет): так в
+    dev и holdout одинаковая доля отрицаний, сравнений и вопросов вне
+    корпуса. Порядок внутри слоя — по хешу seed + id: детерминированно и не
+    зависит от порядка строк. Нечётный остаток слоя уходит то в dev, то в
+    holdout, по очереди между слоями, чтобы итог был близок к 50/50.
+    """
+    if not 0 < holdout_share < 1:
+        raise ValueError("holdout_share must be in (0, 1)")
+    strata: dict[tuple[bool, str, str, bool], list[EvalItem]] = defaultdict(list)
+    for item in items:
+        key = (
+            item.in_corpus,
+            item.type,
+            item.level,
+            item.id.startswith(INTERVIEW_PREFIX),
+        )
+        strata[key].append(item)
+
+    assignment: dict[str, str] = {}
+    extra_to_holdout = False
+    for key in sorted(strata):
+        group = sorted(
+            strata[key],
+            key=lambda item: hashlib.sha256(f"{seed}:{item.id}".encode()).hexdigest(),
+        )
+        exact = len(group) * holdout_share
+        holdout = int(exact)
+        if exact - holdout > 1e-9:
+            holdout += int(extra_to_holdout)
+            extra_to_holdout = not extra_to_holdout
+        for position, item in enumerate(group):
+            assignment[item.id] = "holdout" if position < holdout else "dev"
+    return assignment
+
+
+def write_split(
+    path: Path, assignment: dict[str, str], out: Path | None = None
+) -> None:
+    """Дописать колонку split в CSV набора (остальные колонки как были)."""
+    with path.open(encoding="utf-8-sig", newline="") as file:
+        reader = csv.DictReader(file)
+        fields = list(reader.fieldnames or [])
+        rows = list(reader)
+    if "split" not in fields:
+        fields.append("split")
+    for row in rows:
+        row["split"] = assignment[row["id"].strip()]
+    with (out or path).open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 2 and argv[0] == "split":
+        path = Path(argv[1])
+        items = load_dataset(path)
+        if any(item.split for item in items):
+            print("split уже проставлен — не переразбиваю (holdout мог быть открыт).")
+            return 1
+        assignment = stratified_split(items)
+        write_split(path, assignment)
+        counts = Counter(assignment.values())
+        print(f"dev {counts['dev']}, holdout {counts['holdout']} → {path}")
+        return 0
     if len(argv) != 1:
-        print("usage: python -m eval.datasets <golden.csv>")
+        print("usage: python -m eval.datasets [split] <golden.csv>")
         return 2
     items = load_dataset(Path(argv[0]))
     types = Counter(item.type for item in items)

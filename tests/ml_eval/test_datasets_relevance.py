@@ -8,6 +8,9 @@ from eval.datasets import (
     EvalItem,
     check_golden_composition,
     load_dataset,
+    select_split,
+    stratified_split,
+    write_split,
 )
 from eval.relevance import (
     RetrievedChunk,
@@ -111,14 +114,17 @@ def test_load_rejects_unknown_format(tmp_path: Path) -> None:
         load_dataset(path)
 
 
-def _item(item_id: str, in_corpus: bool, question_type: str) -> EvalItem:
+def _item(
+    item_id: str, in_corpus: bool, question_type: str, level: str = "detail"
+) -> EvalItem:
     return EvalItem(
         id=item_id,
-        question="?",
+        question=f"Вопрос {item_id}?",
         in_corpus=in_corpus,
         type=question_type,
         expected_answer="ответ" if in_corpus else "",
         expected_material="Док" if in_corpus else "",
+        level=level if in_corpus else "",
     )
 
 
@@ -247,3 +253,121 @@ def test_canonical_ranking() -> None:
         gold_key(GOLDEN),
         gold_key(GOLDEN),
     ]
+
+
+# --- Золотой набор: уровень, split, разбиение (задача 2.1) --------------------------
+
+
+def test_golden_level_and_split_columns(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "golden.csv",
+        (*GOLDEN_COLUMNS, "level", "split"),
+        [
+            [
+                "g01",
+                "Сколько дней?",
+                "28",
+                "Док",
+                "3.1",
+                "true",
+                "fact",
+                "Деталь",
+                "dev",
+            ],
+            [
+                "g02",
+                "Про что документ?",
+                "про отпуск",
+                "Док",
+                "",
+                "true",
+                "fact",
+                "тема",
+                "",
+            ],
+        ],
+    )
+
+    first, second = load_dataset(path)
+
+    assert (first.level, first.split) == ("detail", "dev")
+    assert (second.level, second.split) == ("topic", "")
+
+
+def test_golden_rejects_unknown_level(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "golden.csv",
+        (*GOLDEN_COLUMNS, "level"),
+        [["g01", "Вопрос?", "ответ", "Док", "", "true", "fact", "средний"]],
+    )
+
+    with pytest.raises(ValueError, match="unknown level"):
+        load_dataset(path)
+
+
+def test_composition_reports_duplicates_and_missing_level() -> None:
+    items = [
+        _item("g01", True, "fact"),
+        EvalItem("g02", "вопрос G01?!", True, "fact", "ответ", "Док"),
+    ]
+
+    problems = check_golden_composition(items)
+
+    # Регистр, «ё» и знаки препинания не делают вопрос новым.
+    assert any("g02: тот же вопрос, что g01" in p for p in problems)
+    assert any("g02: вопрос по корпусу без level" in p for p in problems)
+
+
+def _golden_40() -> list[EvalItem]:
+    return (
+        [_item(f"g{i:02}", True, "negation", "detail") for i in range(5)]
+        + [_item(f"g{i:02}", True, "fact", "detail") for i in range(5, 17)]
+        + [_item(f"g{i:02}", True, "fact", "topic") for i in range(17, 25)]
+        + [_item(f"o{i:02}", False, "out_of_corpus") for i in range(10)]
+        + [_item(f"iv{i:02}", True, "procedure", "topic") for i in range(5)]
+    )
+
+
+def test_stratified_split_balances_every_stratum() -> None:
+    items = _golden_40()
+
+    assignment = stratified_split(items)
+
+    assert sorted(assignment) == sorted(item.id for item in items)
+    for prefix, total in (("o", 10), ("iv", 5)):
+        holdout = [
+            i for i, s in assignment.items() if i.startswith(prefix) and s == "holdout"
+        ]
+        assert len(holdout) in (total // 2, (total + 1) // 2)
+    negation = [assignment[f"g{i:02}"] for i in range(5)]
+    assert negation.count("holdout") in (2, 3)
+    # Нечётные слои (5 отрицаний, 5 из интервью) делятся по очереди: итог 20/20.
+    assert list(assignment.values()).count("holdout") == 20
+
+
+def test_stratified_split_is_deterministic_and_order_free() -> None:
+    items = _golden_40()
+
+    assert stratified_split(items) == stratified_split(list(reversed(items)))
+    assert stratified_split(items, seed="другой") != stratified_split(items)
+
+
+def test_select_split_hides_holdout_unless_asked() -> None:
+    dev = EvalItem("g01", "a?", True, "fact", split="dev")
+    holdout = EvalItem("g02", "b?", True, "fact", split="holdout")
+    plain = EvalItem("s01", "c?", True, "silver")
+
+    assert select_split([dev, holdout, plain], "") == [dev, plain]
+    assert select_split([dev, holdout, plain], "holdout") == [holdout]
+
+
+def test_write_split_adds_column(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "golden.csv",
+        GOLDEN_COLUMNS,
+        [["g01", "Вопрос?", "ответ", "Док", "", "true", "fact"]],
+    )
+
+    write_split(path, {"g01": "holdout"})
+
+    assert load_dataset(path)[0].split == "holdout"
