@@ -14,6 +14,7 @@ from corp_ed.core.exceptions import (
 from corp_ed.core.password_policy import validate_password
 from corp_ed.core.security import generate_temporary_password, hash_password
 from corp_ed.domain.models import User, UserRole
+from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.user_repository import UserRepository
 
@@ -39,10 +40,12 @@ class UserService:
         self,
         repository: UserRepository,
         refresh_repo: RefreshTokenRepository,
+        audit: AuditRepository,
         session: AsyncSession,
     ) -> None:
         self.repository = repository
         self.refresh_repo = refresh_repo
+        self.audit = audit
         self.session = session
 
     async def list_users(self) -> list[User]:
@@ -50,6 +53,7 @@ class UserService:
 
     async def create_user(
         self,
+        actor: User,
         *,
         email: str,
         full_name: str | None,
@@ -81,6 +85,14 @@ class UserService:
                 must_change_password=True,
             )
         )
+        self.audit.record(
+            AuditAction.USER_CREATED,
+            tenant_id=user.tenant_id,
+            actor_id=actor.id,
+            target_type="user",
+            target_id=user.id,
+            details={"role": role.value},
+        )
         await self.session.commit()
 
         logger.info("user_created", user_id=str(user.id), role=role.value)
@@ -101,6 +113,7 @@ class UserService:
         не дожидаясь истечения access-токена.
         """
         user = await self._get(user_id)
+        before = {"role": user.role.value, "is_active": user.is_active}
 
         changes_access = (role is not None and role is not user.role) or (
             is_active is not None and is_active is not user.is_active
@@ -126,6 +139,18 @@ class UserService:
             user.token_version += 1
             await self.refresh_repo.revoke_user(user.id, datetime.now(UTC))
 
+        self.audit.record(
+            AuditAction.USER_UPDATED,
+            tenant_id=user.tenant_id,
+            actor_id=actor.id,
+            target_type="user",
+            target_id=user.id,
+            details={
+                "before": before,
+                "after": {"role": user.role.value, "is_active": user.is_active},
+                "full_name_changed": full_name is not None,
+            },
+        )
         await self.session.commit()
         logger.info(
             "user_updated",
@@ -149,6 +174,13 @@ class UserService:
         user.must_change_password = True
         user.token_version += 1
         await self.refresh_repo.revoke_user(user.id, datetime.now(UTC))
+        self.audit.record(
+            AuditAction.USER_PASSWORD_RESET,
+            tenant_id=user.tenant_id,
+            actor_id=actor.id,
+            target_type="user",
+            target_id=user.id,
+        )
         await self.session.commit()
 
         logger.info("password_reset", user_id=str(user.id), actor_id=str(actor.id))

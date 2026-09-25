@@ -10,7 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy import text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from corp_ed.api.v1.endpoints import auth, faq, materials, users
+from corp_ed.api.v1.endpoints import audit, auth, faq, materials, users
 from corp_ed.core.config import get_http_settings
 from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
@@ -107,6 +107,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
+app.include_router(audit.router, prefix="/api/v1")
 
 
 @app.get("/")

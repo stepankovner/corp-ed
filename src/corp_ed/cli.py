@@ -23,6 +23,7 @@ from collections.abc import Sequence
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
+from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.tenant_service import TenantService
@@ -48,7 +49,10 @@ def _parser() -> argparse.ArgumentParser:
 async def _run(args: argparse.Namespace) -> int:
     async with get_session_maker()() as session:
         service = TenantService(
-            TenantRepository(session), UserRepository(session), session
+            TenantRepository(session),
+            UserRepository(session),
+            AuditRepository(session),
+            session,
         )
         if args.command == "create-tenant":
             result = await service.provision(

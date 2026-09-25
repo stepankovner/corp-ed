@@ -225,12 +225,16 @@ async def test_last_admin_guard_in_service(
     менять нельзя. Проверка — второй рубеж на случай новых путей вызова
     (CLI, фоновые задачи), поэтому тестируется на уровне сервиса."""
     from corp_ed.core.exceptions import LastAdminError
+    from corp_ed.repositories.audit_repository import AuditRepository
     from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
     from corp_ed.repositories.user_repository import UserRepository
     from corp_ed.services.user_service import UserService
 
     service = UserService(
-        UserRepository(session), RefreshTokenRepository(session), session
+        UserRepository(session),
+        RefreshTokenRepository(session),
+        AuditRepository(session),
+        session,
     )
     actor = User(
         id=uuid4(),

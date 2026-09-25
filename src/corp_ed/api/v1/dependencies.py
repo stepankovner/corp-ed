@@ -23,6 +23,7 @@ from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
+from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
@@ -57,15 +58,22 @@ def get_refresh_token_repository(
     return RefreshTokenRepository(session)
 
 
+def get_audit_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AuditRepository:
+    return AuditRepository(session)
+
+
 def get_auth_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     refresh_repo: Annotated[
         RefreshTokenRepository, Depends(get_refresh_token_repository)
     ],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AuthService:
-    return AuthService(tenant_repo, user_repo, refresh_repo, session)
+    return AuthService(tenant_repo, user_repo, refresh_repo, audit, session)
 
 
 def get_user_service(
@@ -73,9 +81,10 @@ def get_user_service(
     refresh_repo: Annotated[
         RefreshTokenRepository, Depends(get_refresh_token_repository)
     ],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserService:
-    return UserService(user_repo, refresh_repo, session)
+    return UserService(user_repo, refresh_repo, audit, session)
 
 
 async def get_current_user_allow_password_change(
@@ -226,6 +235,7 @@ def get_material_service(
         EmbeddingGateway,
         Depends(get_embedding_gateway),
     ],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
     session: Annotated[
         AsyncSession,
         Depends(get_session),
@@ -239,6 +249,7 @@ def get_material_service(
         material_repo=material_repo,
         chunk_repo=chunk_repo,
         embedding_gateway=embedding_gateway,
+        audit=audit,
         session=session,
         chunk_tokens=settings.chunk_tokens,
         overlap_tokens=settings.overlap_tokens,

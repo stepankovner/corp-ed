@@ -8,6 +8,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from corp_ed.core.request_context import current_client_ip, current_request_id
+
 logger = structlog.get_logger()
 
 INTERNAL_ERROR_DETAIL = "Внутренняя ошибка сервера"
@@ -36,6 +38,8 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
+        current_request_id.set(request_id)
+        current_client_ip.set(request.client.host if request.client else None)
 
         try:
             response = await call_next(request)

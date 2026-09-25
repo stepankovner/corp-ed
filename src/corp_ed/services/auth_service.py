@@ -23,6 +23,7 @@ from corp_ed.core.security import (
 )
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import RefreshToken, User
+from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -57,11 +58,13 @@ class AuthService:
         tenant_repo: TenantRepository,
         user_repo: UserRepository,
         refresh_repo: RefreshTokenRepository,
+        audit: AuditRepository,
         session: AsyncSession,
     ) -> None:
         self.tenant_repo = tenant_repo
         self.user_repo = user_repo
         self.refresh_repo = refresh_repo
+        self.audit = audit
         self.session = session
 
     async def login(self, company_code: str, email: str, password: str) -> TokenPair:
@@ -85,11 +88,25 @@ class AuthService:
         password_ok = verify_password(password, user.hashed_password if user else None)
 
         if user is None or not password_ok or not user.is_active:
+            reason = _failure_reason(tenant is not None, user, password_ok)
             logger.info(
                 "login_failed",
                 tenant_id=str(tenant.id) if tenant else None,
-                reason=_failure_reason(tenant is not None, user, password_ok),
+                reason=reason,
             )
+            # В журнал — и попытка по несуществующему адресу: серия таких
+            # записей и есть след перебора. Коммитится только запись.
+            self.audit.record(
+                AuditAction.LOGIN_FAILED,
+                tenant_id=tenant.id if tenant else None,
+                actor_id=user.id if user else None,
+                details={
+                    "reason": reason,
+                    "company_code": company_code.casefold(),
+                    "email": email.casefold(),
+                },
+            )
+            await self.session.commit()
             raise InvalidCredentialsError()
 
         with tenant_scope(user.tenant_id):
@@ -97,6 +114,9 @@ class AuthService:
                 user.hashed_password = hash_password(password)
             user.last_login_at = _now()
             pair = await self._issue(user, family_id=uuid4())
+            self.audit.record(
+                AuditAction.LOGIN_SUCCEEDED, tenant_id=user.tenant_id, actor_id=user.id
+            )
             await self.session.commit()
 
         logger.info(
@@ -119,6 +139,12 @@ class AuthService:
 
         if record.used_at is not None or record.revoked_at is not None:
             await self.refresh_repo.revoke_family(record.family_id, now)
+            self.audit.record(
+                AuditAction.REFRESH_REUSE_DETECTED,
+                tenant_id=record.tenant_id,
+                actor_id=record.user_id,
+                details={"family_id": str(record.family_id)},
+            )
             await self.session.commit()
             logger.warning(
                 "refresh_token_reuse_detected",
@@ -159,11 +185,17 @@ class AuthService:
         record = await self.refresh_repo.get_by_hash(hash_refresh_token(raw_token))
         if record is not None and record.user_id == user.id:
             await self.refresh_repo.revoke_family(record.family_id, _now())
+        self.audit.record(
+            AuditAction.LOGOUT, tenant_id=user.tenant_id, actor_id=user.id
+        )
         await self.session.commit()
 
     async def logout_everywhere(self, user: User) -> None:
         """Выйти на всех устройствах: и refresh, и уже выданные access."""
         await self._invalidate_sessions(user)
+        self.audit.record(
+            AuditAction.LOGOUT_EVERYWHERE, tenant_id=user.tenant_id, actor_id=user.id
+        )
         await self.session.commit()
         logger.info("logout_everywhere", user_id=str(user.id))
 
@@ -185,6 +217,9 @@ class AuthService:
         user.must_change_password = False
         await self._invalidate_sessions(user)
         pair = await self._issue(user, family_id=uuid4())
+        self.audit.record(
+            AuditAction.PASSWORD_CHANGED, tenant_id=user.tenant_id, actor_id=user.id
+        )
         await self.session.commit()
 
         logger.info("password_changed", user_id=str(user.id))

@@ -39,6 +39,7 @@ async def create_user(
     current_user: AdminUser,
 ) -> UserCreatedResponse:
     created = await service.create_user(
+        current_user,
         email=data.email,
         full_name=data.full_name,
         role=data.role,

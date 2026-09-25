@@ -13,10 +13,12 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from corp_ed.core.database import Base
+from corp_ed.core.db_policies import apply_all
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import Material, Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
+from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.services.faq_service import FaqService
@@ -44,6 +46,8 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
         await conn.execute(text("CREATE SCHEMA public"))
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # Триггеры и политики, которых нет в моделях (см. db_policies).
+        await conn.run_sync(apply_all)
     try:
         yield engine
     finally:
@@ -121,6 +125,7 @@ def material_service(
         material_repo=MaterialRepository(session),
         chunk_repo=ChunkRepository(session),
         embedding_gateway=fake_embeddings,
+        audit=AuditRepository(session),
         session=session,
         # Крошечный бюджет: каждый абзац фикстуры ложится в свой чанк.
         chunk_tokens=5,

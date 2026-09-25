@@ -7,13 +7,19 @@ from corp_ed.core.exceptions import ConflictError
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.tenant_service import InvalidCompanyCodeError, TenantService
 
 
 def _service(session: AsyncSession) -> TenantService:
-    return TenantService(TenantRepository(session), UserRepository(session), session)
+    return TenantService(
+        TenantRepository(session),
+        UserRepository(session),
+        AuditRepository(session),
+        session,
+    )
 
 
 async def test_provision_creates_tenant_and_admin(session: AsyncSession) -> None:

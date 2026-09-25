@@ -8,6 +8,7 @@ from corp_ed.core.exceptions import ConflictError, DomainError
 from corp_ed.core.security import generate_temporary_password, hash_password
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 
@@ -44,10 +45,12 @@ class TenantService:
         self,
         tenant_repo: TenantRepository,
         user_repo: UserRepository,
+        audit: AuditRepository,
         session: AsyncSession,
     ) -> None:
         self.tenant_repo = tenant_repo
         self.user_repo = user_repo
+        self.audit = audit
         self.session = session
 
     async def provision(
@@ -78,6 +81,15 @@ class TenantService:
                     must_change_password=True,
                 )
             )
+            # actor_id пуст: действие выполнено из CLI на сервере, а не
+            # пользователем системы. Это и есть отметка «сделала команда».
+            self.audit.record(
+                AuditAction.TENANT_CREATED,
+                tenant_id=tenant.id,
+                target_type="tenant",
+                target_id=tenant.id,
+                details={"company_code": code, "admin_user_id": str(admin.id)},
+            )
             await self.session.commit()
 
         logger.info("tenant_provisioned", tenant_id=str(tenant.id), company_code=code)
@@ -96,6 +108,12 @@ class TenantService:
         if tenant is None:
             raise ConflictError(f"Компании с кодом '{company_code}' нет")
         tenant.is_active = active
+        self.audit.record(
+            AuditAction.TENANT_RESUMED if active else AuditAction.TENANT_SUSPENDED,
+            tenant_id=tenant.id,
+            target_type="tenant",
+            target_id=tenant.id,
+        )
         await self.session.commit()
         logger.info("tenant_status_changed", tenant_id=str(tenant.id), active=active)
         return tenant

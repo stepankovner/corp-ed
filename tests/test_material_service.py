@@ -11,6 +11,7 @@ from corp_ed.domain.models import (
     Tenant,
 )
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
+from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.services.material_service import MaterialService
@@ -24,6 +25,7 @@ def _roomy_service(
         material_repo=MaterialRepository(session),
         chunk_repo=ChunkRepository(session),
         embedding_gateway=embeddings,
+        audit=AuditRepository(session),
         session=session,
         chunk_tokens=400,
         overlap_tokens=50,

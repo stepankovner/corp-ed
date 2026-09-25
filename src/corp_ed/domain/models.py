@@ -1,5 +1,6 @@
 import enum
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
@@ -7,6 +8,7 @@ from sqlalchemy import (
     ARRAY,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -14,6 +16,7 @@ from sqlalchemy import (
     func,
     true,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from corp_ed.core.database import Base
@@ -134,6 +137,45 @@ class Chunk(TenantMixin, Base):
     embedding: Mapped[list[float]] = mapped_column(Vector(256))
     model: Mapped[str]
     model_version: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AuditEvent(Base):
+    """Запись журнала аудита: кто, что, над чем, когда, откуда.
+
+    Не TenantMixin намеренно: часть событий происходит до того, как
+    тенант известен (неудачный вход с неверным кодом компании), и такие
+    записи должны сохраниться. Поэтому tenant_id допускает NULL, а
+    выборки для админа фильтруются по нему явно.
+
+    Журнал только дописывается: UPDATE запрещён триггером в базе,
+    DELETE — только для записей старше срока хранения (см. миграцию).
+    Защита на уровне базы, а не кода: запись о действии не должна
+    исчезать вместе с тем, кто это действие совершил.
+    """
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
+    )
+    actor_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    action: Mapped[str] = mapped_column(String(64))
+    target_type: Mapped[str | None] = mapped_column(String(32))
+    target_id: Mapped[str | None] = mapped_column(String(64))
+    ip: Mapped[str | None] = mapped_column(String(45))
+    request_id: Mapped[str | None] = mapped_column(String(36))
+    details: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

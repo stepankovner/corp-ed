@@ -25,7 +25,9 @@ async def create_material(
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: Annotated[User, Depends(require_role(UserRole.ADMIN))],
 ) -> MaterialResponse:
-    material = await service.create(title=data.title, content=data.content)
+    material = await service.create(
+        current_user, title=data.title, content=data.content
+    )
     return MaterialResponse.model_validate(material)
 
 

@@ -4,10 +4,11 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
-from corp_ed.domain.models import Chunk, Material
+from corp_ed.domain.models import Chunk, Material, User
 from corp_ed.domain.split import split_document
 from corp_ed.ingest.preprocess import preprocess
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
+from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 
@@ -22,6 +23,7 @@ class MaterialService:
         material_repo: MaterialRepository,
         chunk_repo: ChunkRepository,
         embedding_gateway: EmbeddingGateway,
+        audit: AuditRepository,
         session: AsyncSession,
         chunk_tokens: int,
         overlap_tokens: int,
@@ -29,12 +31,14 @@ class MaterialService:
         self.material_repo = material_repo
         self.chunk_repo = chunk_repo
         self.embedding_gateway = embedding_gateway
+        self.audit = audit
         self.session = session
         self.chunk_tokens = chunk_tokens
         self.overlap_tokens = overlap_tokens
 
     async def create(
         self,
+        actor: User,
         *,
         title: str,
         content: str,
@@ -45,6 +49,13 @@ class MaterialService:
         )
 
         await self.material_repo.create(material)
+        self.audit.record(
+            AuditAction.MATERIAL_CREATED,
+            tenant_id=material.tenant_id,
+            actor_id=actor.id,
+            target_type="material",
+            target_id=material.id,
+        )
         await self.session.commit()
 
         logger.info(
