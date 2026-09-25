@@ -106,9 +106,12 @@ def test_general_messages_require_prefix() -> None:
 
 
 def test_general_prefix_text_is_as_agreed() -> None:
-    assert (
-        GENERAL_ANSWER_PREFIX == "В документах компании ответа нет. Общая информация:"
+    # Р1, 25.09: пометка прямо говорит, что ответ не из документов компании.
+    assert GENERAL_ANSWER_PREFIX == (
+        "В документах компании ответа нет. "
+        "Ниже — общая информация, не из документов компании:"
     )
+    assert is_not_found(GENERAL_ANSWER_PREFIX)
 
 
 @pytest.mark.parametrize(
@@ -123,6 +126,9 @@ def test_general_prefix_text_is_as_agreed() -> None:
         # Так пишет lite (прогон 24.09): продолжение с маленькой буквы.
         "В документах компании ответа нет. Общая информация: "
         "служебная записка пишется так.",
+        # Новая пометка в одну строку с ответом.
+        "В документах компании ответа нет. Ниже - общая информация, "
+        "не из документов компании: служебная записка пишется так.",
     ],
 )
 def test_ensure_general_prefix(answer: str) -> None:

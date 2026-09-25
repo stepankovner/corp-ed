@@ -66,6 +66,8 @@ def test_defaults_are_the_task1_decision() -> None:
     )
     assert default_embedding_dim(args.embedding_model) == 768
     assert default_embedding_dim("text-search") is None
+    # Р1 (25.09): ответа в документах нет — общий ответ с пометкой.
+    assert args.not_found == "general"
 
 
 class _FakeYandex:
@@ -156,7 +158,10 @@ def test_strict_mode_refuses_without_llm(
 ) -> None:
     corpus, dataset, fake = setup
 
-    rows = {row["id"]: row for row in _run(corpus, dataset, tmp_path / "out")}
+    rows = {
+        row["id"]: row
+        for row in _run(corpus, dataset, tmp_path / "out", "--not-found", "strict")
+    }
 
     # q2 дальше порога 0.51: LLM не вызывается, фиксированная фраза отказа.
     assert len(fake.prompts) == 2
@@ -191,6 +196,42 @@ def test_general_mode_answers_with_prefix(
     assert rows["q2"]["answer"].startswith(GENERAL_ANSWER_PREFIX)
     # Общий ответ — не ответ по документам: для F1 отказа это отказ.
     assert rows["q2"]["answered"] == "False"
+    assert (rows["q2"]["general_answer"], rows["q2"]["general_after_refusal"]) == (
+        "True",
+        "False",
+    )
+    # q3: отказ своими словами — не NOT_FOUND_ANSWER, второго вызова нет.
+    assert rows["q3"]["general_answer"] == "False"
+
+
+def test_general_answer_after_model_refusal(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    corpus, dataset, fake = setup
+    # По выдержкам (перед вопросом — пустая строка) модель отказывает фразой
+    # NOT_FOUND_ANSWER, в общем промпте вопрос идёт первой строкой.
+    fake.answers = {
+        "\n\nВопрос сотрудника: Можно ли перенести": NOT_FOUND_ANSWER,
+        "Вопрос сотрудника: Можно ли перенести": "Обычно перенос согласуют заранее.",
+        **fake.answers,
+    }
+
+    rows = {row["id"]: row for row in _run(corpus, dataset, tmp_path / "out")}
+
+    # q1 — ответ по выдержкам, q2 — общий без выдержек, q3 — два вызова.
+    assert len(fake.prompts) == 4
+    q3 = rows["q3"]
+    assert q3["answer"] == (
+        f"{GENERAL_ANSWER_PREFIX}\nОбычно перенос согласуют заранее."
+    )
+    assert (q3["general_answer"], q3["general_after_refusal"]) == ("True", "True")
+    assert q3["answered"] == "False" and q3["n_sources"] == "1"
+    # Токены и задержка — сумма двух вызовов.
+    assert (q3["llm_calls"], q3["input_tokens"], q3["latency_ms"]) == (
+        "2",
+        "200",
+        "100",
+    )
 
 
 def test_gate_by_best_distance() -> None:
@@ -214,7 +255,15 @@ def test_hybrid_mode_gates_by_vector_distance(
 
     rows = {
         row["id"]: row
-        for row in _run(corpus, dataset, tmp_path / "out", "--retriever", "hybrid")
+        for row in _run(
+            corpus,
+            dataset,
+            tmp_path / "out",
+            "--retriever",
+            "hybrid",
+            "--not-found",
+            "strict",
+        )
     }
 
     # q2: BM25 что-то нашёл бы, но лучший вектор 0.8 > 0.6 — отказ без LLM.
