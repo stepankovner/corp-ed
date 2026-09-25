@@ -131,11 +131,11 @@ def test_malformed_body_is_llm_error(body: Any) -> None:
     assert info.value.retryable is False
 
 
-def test_content_filter_is_llm_error() -> None:
+def test_unknown_finish_reason_is_llm_error() -> None:
+    """Неизвестная причина — не сбой сети, повтор не поможет: LLMError без
+    ретрая. content_filter сюда больше не входит (BH-25)."""
     with pytest.raises(LLMError):
-        parse_chat_response(
-            _chat_body(reason="content_filter"), model="m", latency_ms=1
-        )
+        parse_chat_response(_chat_body(reason="function_call"), model="m", latency_ms=1)
 
 
 async def test_non_json_success_body_is_llm_error() -> None:
