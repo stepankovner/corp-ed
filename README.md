@@ -109,6 +109,7 @@ docs/             ARCHITECTURE, DECISIONS, RISKS, SECURITY, DEPLOY, INTEGRATION,
 | [`docs/SECURITY.md`](docs/SECURITY.md) | модель угроз, меры с тестами, соответствие OWASP, чек-лист пентеста |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | роли базы, переменные, прокси, cron, бэкапы, ротация |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | статус контракта с ML (BH-1…24) |
+| [`docs/WORKLOG.md`](docs/WORKLOG.md) | журнал работ: статистика тестов, что сделано, ошибки и исправления, план MVP |
 | [`docs/backend-handoff.md`](docs/backend-handoff.md), `ml-*.md` | документы ML |
 
 ## Лицензии
