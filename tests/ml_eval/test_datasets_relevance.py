@@ -138,6 +138,17 @@ def test_composition_matches_spec() -> None:
     assert check_golden_composition(items) == []
 
 
+def test_composition_allows_more_questions_than_spec() -> None:
+    # Числа ТЗ — минимум: в dev добавлен запас (25.09), это не ошибка.
+    items = (
+        [_item(f"g{i:02}", True, "negation" if i < 6 else "fact") for i in range(37)]
+        + [_item(f"o{i:02}", False, "out_of_corpus") for i in range(10)]
+        + [_item(f"iv{i:02}", True, "procedure") for i in range(5)]
+    )
+
+    assert check_golden_composition(items) == []
+
+
 def test_composition_problems_are_reported() -> None:
     items = [_item("g01", True, "fact"), _item("g02", False, "fact")]
 
