@@ -171,6 +171,8 @@ def check_golden_composition(items: list[EvalItem]) -> list[str]:
     outside = [item for item in regular if not item.in_corpus]
     negation = [item for item in in_corpus if item.type == "negation"]
 
+    # Числа ТЗ — минимум: больше вопросов не вредит (25.09 в dev добавлен
+    # запас, чтобы разница в 1–2 вопроса между конфигурациями не была шумом).
     expectations = [
         (len(items), 40, "всего вопросов"),
         (len(in_corpus), 25, "по корпусу (без интервью)"),
@@ -178,8 +180,8 @@ def check_golden_composition(items: list[EvalItem]) -> list[str]:
         (len(interview), 5, f"от людей (id на «{INTERVIEW_PREFIX}»)"),
     ]
     for actual, expected, label in expectations:
-        if actual != expected:
-            problems.append(f"{label}: {actual}, по ТЗ {expected}")
+        if actual < expected:
+            problems.append(f"{label}: {actual}, по ТЗ не меньше {expected}")
     if len(negation) < 5:
         problems.append(
             f"negation среди вопросов по корпусу: {len(negation)}, нужно ≥ 5"

@@ -32,6 +32,7 @@ from pathlib import Path
 
 from corp_ed.llm.types import Message, Role
 from eval.results import read_csv, write_csv
+from eval.yandex import DEFAULT_API, DEFAULT_LLM
 
 JUDGE_PROMPT_VERSION = "judge-v1"
 AGREEMENT_TARGET = 0.85
@@ -173,7 +174,11 @@ def cohen_kappa(pairs: Sequence[tuple[int, int]]) -> float:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m eval.judge")
     parser.add_argument("--results", type=Path, required=True)
-    parser.add_argument("--model", default="yandexgpt")
+    # По умолчанию — модель и API из решения по задаче 1 (Flash через
+    # OpenAI-совместимый API); калибровка судьи — задача 2.7, до неё
+    # оценки судьи предварительные при любой модели.
+    parser.add_argument("--model", default=DEFAULT_LLM)
+    parser.add_argument("--api", choices=("native", "openai"), default=DEFAULT_API)
     parser.add_argument(
         "--calibrate",
         action="store_true",
@@ -217,7 +222,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             format_excerpts(row.get("sources", "")),
         )
         verdict = parse_verdict(
-            client.complete(messages, model=args.model, temperature=0.0).text
+            client.complete(
+                messages, model=args.model, temperature=0.0, api=args.api
+            ).text
         )
         row["judge_correct"] = "" if verdict is None else str(verdict.correct)
         row["judge_faithful"] = "" if verdict is None else str(verdict.faithful)
