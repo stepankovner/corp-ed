@@ -28,7 +28,7 @@ import httpx
 
 from corp_ed.connectors.base import AdapterAuthError, AdapterConfigError, AdapterError
 from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth, TokenSet
-from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 USER_AGENT = "corp-ed-connector/1.0"
 PAGE_SIZE = 50
@@ -206,8 +206,9 @@ class Bitrix24Client:
             raise AdapterError("download_url_foreign")
         await self._pace()
         try:
-            response = await self._http.get(
+            response = await self._http.download(
                 url,
+                max_bytes=max_bytes,
                 headers={
                     "User-Agent": USER_AGENT,
                     "Accept": "*/*",
@@ -216,6 +217,8 @@ class Bitrix24Client:
                 },
                 timeout=DOWNLOAD_TIMEOUT,
             )
+        except OutboundTooLargeError as exc:
+            raise AdapterError("document_too_large") from exc
         except httpx.TimeoutException as exc:
             raise AdapterError("timeout", retryable=True) from exc
         except httpx.HTTPError as exc:
@@ -229,13 +232,7 @@ class Bitrix24Client:
         if content_type.startswith("text/html"):
             # Ссылка истекла или нет прав: портал отдаёт страницу, а не файл.
             raise AdapterError("download_failed")
-        length = response.headers.get("content-length")
-        if length is not None and length.isdigit() and int(length) > max_bytes:
-            raise AdapterError("document_too_large")
-        data = response.content
-        if len(data) > max_bytes:
-            raise AdapterError("document_too_large")
-        return data
+        return response.content
 
     # --- внутреннее ---------------------------------------------------------------
 

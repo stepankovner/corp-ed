@@ -109,6 +109,7 @@ async def oauth_api(
             session,
             http,
             resolver=public_resolver,
+            limiter=app.state.rate_limiter,
         )
 
     app.dependency_overrides[get_connector_service] = dependency
@@ -336,6 +337,55 @@ async def test_callback_exchanges_code_and_creates_grant(
     assert mine.json()[0]["grant_status"] == "active"
     # Токен проверен на портале прямо в обратном вызове.
     assert ("profile", {}) in portal.calls
+
+
+async def test_state_is_single_use(
+    oauth_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    portal: FakePortal,
+    session: AsyncSession,
+) -> None:
+    """Повтор перехваченного редиректа с новым кодом не даёт грант."""
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, state = await start(oauth_api, account, connector_id)
+    first = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": AUTH_CODE, "state": state}
+    )
+    assert redirect_query(first)["status"] == "ok"
+    portal.codes["code-again"] = EMPLOYEE_ID
+    second = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": "code-again", "state": state}
+    )
+    assert redirect_query(second) == {
+        "tab": "mine",
+        "status": "error",
+        "error_code": "state_reused",
+    }
+    # Код на портал не ушёл: обмен остановлен до сервера авторизации.
+    assert "code-again" in portal.codes
+    with tenant_scope(require_tenant()):
+        events = await session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.action == AuditAction.CONNECTOR_OAUTH_FAILED.value
+            )
+        )
+        assert [e.details["code"] for e in events] == []
+
+
+async def test_state_is_consumed_even_when_exchange_fails(
+    oauth_api: httpx.AsyncClient, admin_account: User, account: User, portal: FakePortal
+) -> None:
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, state = await start(oauth_api, account, connector_id)
+    first = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": "stale", "state": state}
+    )
+    assert redirect_query(first)["error_code"] == "invalid_grant"
+    second = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": AUTH_CODE, "state": state}
+    )
+    assert redirect_query(second)["error_code"] == "state_reused"
 
 
 async def test_callback_with_bad_state_redirects_with_error(

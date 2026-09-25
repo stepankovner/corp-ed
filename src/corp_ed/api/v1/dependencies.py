@@ -26,6 +26,7 @@ from corp_ed.core.exceptions import (
     PermissionError,
 )
 from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
@@ -377,6 +378,7 @@ def get_outbound_client(
 
 
 def get_connector_service(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     audit: Annotated[AuditRepository, Depends(get_audit_repository)],
     registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
@@ -384,6 +386,8 @@ def get_connector_service(
     settings: Annotated[ConnectorSettings, Depends(get_connector_settings)],
     http: Annotated[OutboundClient, Depends(get_outbound_client)],
 ) -> ConnectorService:
+    # Лимитер приложения (Redis или память) — для одноразовости state OAuth.
+    limiter: RateLimiter | None = getattr(request.app.state, "rate_limiter", None)
     return ConnectorService(
         ConnectorRepository(session),
         GrantRepository(session),
@@ -396,4 +400,5 @@ def get_connector_service(
         settings,
         session,
         http,
+        limiter=limiter,
     )

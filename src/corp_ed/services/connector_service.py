@@ -43,6 +43,7 @@ from corp_ed.core.outbound import (
     Resolver,
     validate_outbound_url,
 )
+from corp_ed.core.rate_limit import RateLimiter, RateLimiterUnavailableError
 from corp_ed.core.secrets import SecretBox, SecretDecryptionError
 from corp_ed.core.security import create_oauth_state, decode_oauth_state
 from corp_ed.core.tenant_context import tenant_scope
@@ -71,6 +72,9 @@ CHECK_TIMEOUT = 20.0
 """Проверка учётных данных — один запрос к системе клиента; дольше —
 источник недоступен, а не «подумаем ещё»."""
 RUNS_LIMIT = 50
+OAUTH_STATE_ONCE = "connector-oauth-state"
+"""Ключ лимитера для одноразовости state: первый вызов с этим jti
+проходит, второй — нет (RISKS №33)."""
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,7 @@ class ConnectorService:
         http: OutboundClient,
         *,
         resolver: Resolver | None = None,
+        limiter: RateLimiter | None = None,
     ) -> None:
         self.connectors = connectors
         self.grants = grants
@@ -121,6 +126,9 @@ class ConnectorService:
         self.session = session
         self.http = http
         self.resolver = resolver
+        # Одноразовость state: тот же лимитер, что у ручек (Redis в бою,
+        # память в разработке). None — только в CLI и старых тестах.
+        self.limiter = limiter
 
     # --- каталог и чтение -----------------------------------------------------
 
@@ -381,11 +389,38 @@ class ConnectorService:
             user_id = UUID(str(payload["sub"]))
             tenant_id = UUID(str(payload["tenant_id"]))
             connector_id = UUID(str(payload["connector_id"]))
+            jti = str(payload["jti"])
         except (jwt.PyJWTError, KeyError, ValueError, TypeError):
             logger.warning("connector_oauth_state_invalid")
             return OAuthResult(None, "state_invalid")
+        reused = await self._state_reused(jti)
+        if reused is not None:
+            return OAuthResult(None, reused)
         with tenant_scope(tenant_id):
             return await self._oauth_exchange(user_id, connector_id, code)
+
+    async def _state_reused(self, jti: str) -> str | None:
+        """Погасить state: повтор перехваченного редиректа не пройдёт.
+
+        Окно — срок жизни state: дальше подпись отвергнет его сама.
+        Лимитер недоступен — отказ (fail closed): без него нельзя
+        доказать, что state свежий.
+        """
+        if self.limiter is None:
+            return None
+        try:
+            decision = await self.limiter.hit(
+                f"{OAUTH_STATE_ONCE}:{jti}",
+                limit=1,
+                window=self.settings.oauth_state_ttl_minutes * 60,
+            )
+        except RateLimiterUnavailableError:
+            logger.error("connector_oauth_state_store_unavailable")
+            return "temporarily_unavailable"
+        if not decision.allowed:
+            logger.warning("connector_oauth_state_reused")
+            return "state_reused"
+        return None
 
     async def _oauth_exchange(
         self, user_id: UUID, connector_id: UUID, code: str

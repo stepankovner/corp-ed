@@ -6,12 +6,14 @@ DNS rebinding: запрос уходит на проверенный IP, а не
 """
 
 import ipaddress
+from collections.abc import AsyncIterator
 
 import httpx
 import pytest
 
 from corp_ed.core.outbound import (
     OutboundClient,
+    OutboundTooLargeError,
     OutboundURLError,
     is_public_address,
     validate_outbound_url,
@@ -250,3 +252,69 @@ async def test_redirect_can_be_returned_as_is() -> None:
     assert response.status_code == 301
     assert response.headers["location"] == "https://new.example.com/x"
     assert seen == ["portal.example.com"]
+
+
+async def test_download_stops_reading_past_the_limit() -> None:
+    """Тело больше лимита обрывается по ходу чтения, а не после."""
+    served: list[int] = []
+
+    async def body() -> AsyncIterator[bytes]:
+        for index in range(100):
+            served.append(index)
+            yield b"x" * 1024
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_Stream(body()))
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    with pytest.raises(OutboundTooLargeError):
+        await client.download("https://portal.example.com/f", max_bytes=4096)
+    assert len(served) < 100
+
+    small = await client.download("https://portal.example.com/f", max_bytes=1 << 20)
+    assert small.status_code == 200
+    assert len(small.content) == 100 * 1024
+
+
+async def test_download_trusts_content_length_only_to_refuse_early() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-length": "999999"}, content=b"ok")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    with pytest.raises(OutboundTooLargeError):
+        await client.download("https://portal.example.com/f", max_bytes=10)
+
+
+async def test_download_follows_checked_redirects() -> None:
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.headers["host"])
+        if request.headers["host"] == "portal.example.com":
+            return httpx.Response(
+                302, headers={"location": "https://cdn.example.com/f"}
+            )
+        return httpx.Response(200, content=b"data")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    downloaded = await client.download("https://portal.example.com/f", max_bytes=100)
+    assert downloaded.content == b"data"
+    assert hosts == ["portal.example.com", "cdn.example.com"]
+
+
+class _Stream(httpx.AsyncByteStream):
+    def __init__(self, chunks: AsyncIterator[bytes]) -> None:
+        self._chunks = chunks
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        async for chunk in self._chunks:
+            yield chunk

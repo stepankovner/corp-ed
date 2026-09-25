@@ -46,6 +46,21 @@ class OutboundURLError(ValueError):
         self.code = code
 
 
+class OutboundTooLargeError(Exception):
+    """Тело ответа больше лимита: чтение оборвано, остаток не скачан."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(f"response body exceeds {limit} bytes")
+        self.limit = limit
+
+
+@dataclass(frozen=True)
+class Downloaded:
+    status_code: int
+    headers: httpx.Headers
+    content: bytes
+
+
 @dataclass(frozen=True)
 class OutboundTarget:
     url: str
@@ -214,6 +229,55 @@ class OutboundClient:
                     kwargs.pop("data", None)
                 continue
             return response
+        raise OutboundURLError("too_many_redirects")
+
+    async def download(
+        self,
+        url: str,
+        *,
+        max_bytes: int,
+        headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+    ) -> Downloaded:
+        """GET с потоковым чтением тела не больше max_bytes.
+
+        Файл из системы клиента читается кусками и обрывается, как
+        только превысил лимит: портал, который отдаёт гигабайт вместо
+        документа, не займёт память воркера. Заголовок Content-Length
+        проверяется до чтения — но ему нельзя верить, поэтому считаем и
+        сами. Редиректы — как в request: каждый адрес проверяется.
+        """
+        current = url
+        for _ in range(self._max_redirects + 1):
+            target = await validate_outbound_url(current, resolver=self._resolver)
+            request_headers = {**(headers or {}), "Host": target.host_header}
+            request = self._client.build_request(
+                "GET",
+                target.pinned_url,
+                headers=request_headers,
+                timeout=timeout,
+                extensions={"sni_hostname": target.host},
+            )
+            response = await self._client.send(request, stream=True)
+            try:
+                if response.is_redirect and "location" in response.headers:
+                    current = urljoin(target.url, response.headers["location"])
+                    continue
+                length = response.headers.get("content-length")
+                if length is not None and length.isdigit() and int(length) > max_bytes:
+                    raise OutboundTooLargeError(max_bytes)
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise OutboundTooLargeError(max_bytes)
+                    chunks.append(chunk)
+                return Downloaded(
+                    response.status_code, response.headers, b"".join(chunks)
+                )
+            finally:
+                await response.aclose()
         raise OutboundURLError("too_many_redirects")
 
     async def get(self, url: str, **kwargs: Any) -> httpx.Response:
