@@ -65,6 +65,28 @@ async def service_unavailable_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
+async def unacceptable_file_handler(request: Request, exc: Exception) -> JSONResponse:
+    code = getattr(exc, "code", "unsupported_format")
+    return JSONResponse(
+        status_code=(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
+            if code == "unsupported_format"
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        ),
+        content={"detail": str(exc), "code": code},
+    )
+
+
+async def duplicate_material_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content={
+            "detail": str(exc),
+            "material_id": str(getattr(exc, "material_id", "")),
+        },
+    )
+
+
 async def weak_password_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

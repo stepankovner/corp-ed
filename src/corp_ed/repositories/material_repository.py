@@ -30,3 +30,14 @@ class MaterialRepository:
             select(Material).order_by(Material.created_at.desc())
         )
         return list(result)
+
+    async def get_by_sha256(self, sha256: str) -> Material | None:
+        result = await self.session.scalars(
+            select(Material).where(Material.source_sha256 == sha256)
+        )
+        return result.first()
+
+    async def delete(self, material: Material) -> None:
+        # Чанки и задачи удаляет база: ON DELETE CASCADE на внешних ключах.
+        await self.session.delete(material)
+        await self.session.flush()

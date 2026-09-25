@@ -128,10 +128,28 @@ class RefreshToken(Base):
 
 class Material(TenantMixin, Base):
     __tablename__ = "materials"
+    __table_args__ = (
+        # Один и тот же файл дважды в одной компании — дубль выдержек в
+        # выдаче и двойная цена эмбеддингов.
+        Index(
+            "uq_materials_tenant_sha256",
+            "tenant_id",
+            "source_sha256",
+            unique=True,
+            postgresql_where=text("source_sha256 IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     title: Mapped[str]
     content: Mapped[str]
+    # Исходный файл не хранится (меньше персональных данных у нас) —
+    # только извлечённый текст и сведения о файле для справки и дублей.
+    # Для текста, вставленного в форму, поля пустые.
+    source_filename: Mapped[str | None] = mapped_column(String(255))
+    source_format: Mapped[str | None] = mapped_column(String(16))
+    source_sha256: Mapped[str | None] = mapped_column(String(64))
+    source_size: Mapped[int | None]
     status: Mapped[MaterialStatus] = mapped_column(
         default=MaterialStatus.PENDING, server_default="PENDING"
     )

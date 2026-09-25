@@ -95,3 +95,23 @@ class ServiceUnavailableError(DomainError):
 
     def __init__(self) -> None:
         super().__init__("Сервис временно недоступен, попробуйте позже")
+
+
+class UnacceptableFileError(DomainError):
+    """Загруженный файл не принят: формат, кодировка, скан без текста.
+
+    code — машинный код для фронта, текст — для человека. Подробностей
+    парсера наружу нет. HTTP 415 для неподдерживаемого формата, иначе 422.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class DuplicateMaterialError(ConflictError):
+    """Такой же файл уже загружен в эту компанию."""
+
+    def __init__(self, material_id: object) -> None:
+        super().__init__("Этот файл уже загружен")
+        self.material_id = material_id

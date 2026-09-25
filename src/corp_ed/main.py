@@ -19,6 +19,7 @@ from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
+    duplicate_material_handler,
     internal_error_handler,
     invalid_credentials_handler,
     llm_error_handler,
@@ -27,12 +28,14 @@ from corp_ed.core.exception_handlers import (
     permission_error_handler,
     rate_limited_handler,
     service_unavailable_handler,
+    unacceptable_file_handler,
     validation_error_handler,
     weak_password_handler,
 )
 from corp_ed.core.exceptions import (
     ConflictError,
     DomainError,
+    DuplicateMaterialError,
     InvalidCredentialsError,
     NotAuthenticatedError,
     NotFoundError,
@@ -40,6 +43,7 @@ from corp_ed.core.exceptions import (
     ServiceUnavailableError,
     TenantContextMissingError,
     TenantMismatchError,
+    UnacceptableFileError,
     WeakPasswordError,
 )
 from corp_ed.core.logging import configure_logging
@@ -184,6 +188,8 @@ app.add_exception_handler(TenantContextMissingError, internal_error_handler)
 app.add_exception_handler(TenantMismatchError, internal_error_handler)
 app.add_exception_handler(RateLimitedError, rate_limited_handler)
 app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)
+app.add_exception_handler(UnacceptableFileError, unacceptable_file_handler)
+app.add_exception_handler(DuplicateMaterialError, duplicate_material_handler)
 
 # Выполняются в порядке, обратном добавлению. Снаружи внутрь:
 #   CORS → заголовки безопасности → request_id и ловушка 500 →
