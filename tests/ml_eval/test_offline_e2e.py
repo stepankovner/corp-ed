@@ -270,3 +270,90 @@ def test_hybrid_mode_gates_by_vector_distance(
     assert rows["q2"]["answer"] == NOT_FOUND_ANSWER and len(fake.prompts) == 2
     assert rows["q1"]["n_sources"] == "1"
     assert float(rows["q1"]["best_distance"]) == pytest.approx(0.3)
+
+
+# --- small-to-big (M2): --context sections | window, --dry-run -------------------
+
+TWO_CHUNK_SECTION = (
+    "# Положение\n\n## Отпуск\n\nОтпуск составляет 28 календарных дней. "
+    "Перенос отпуска возможен по заявлению работника."
+)
+GOLDEN_EVIDENCE = (
+    "id,question,expected_answer,expected_material,expected_section,in_corpus,type,"
+    "evidence\n"
+    "q1,Сколько дней отпуска?,28,Положение,,true,fact,возможен по заявлению работника\n"
+)
+
+
+def _two_chunk_corpus(corpus: Path, dataset: Path) -> None:
+    # Лимит 20 токенов: секция «Отпуск» режется на два чанка по предложению.
+    (corpus / "Положение.md").write_text(TWO_CHUNK_SECTION, encoding="utf-8")
+    dataset.write_text(GOLDEN_EVIDENCE, encoding="utf-8")
+
+
+def test_context_sections_puts_whole_section_into_prompt(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+    flags = ("--chunk-tokens", "20", "--overlap-tokens", "0", "--not-found", "strict")
+
+    chunks_only = _run(corpus, dataset, tmp_path / "chunks", *flags)
+    sections = _run(
+        corpus, dataset, tmp_path / "sections", "--context", "sections", *flags
+    )
+
+    # Найден первый чанк; в chunks цитата эталона из второго чанка модели не
+    # показана, в sections — секция целиком, и цитата в контексте.
+    assert (chunks_only[0]["context_kinds"], chunks_only[0]["evidence_in_context"]) == (
+        "chunk",
+        "False",
+    )
+    assert (sections[0]["context_kinds"], sections[0]["evidence_in_context"]) == (
+        "section",
+        "True",
+    )
+    assert int(sections[0]["context_tokens"]) > int(chunks_only[0]["context_tokens"])
+    assert "Перенос отпуска возможен" in fake.prompts[-1]
+    assert "[1] Положение > Отпуск" in fake.prompts[-1]
+
+
+def test_context_window_needs_no_sections_table(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+
+    rows = _run(
+        corpus,
+        dataset,
+        tmp_path / "out",
+        "--context",
+        "window",
+        "--neighbours",
+        "1",
+        "--chunk-tokens",
+        "20",
+        "--overlap-tokens",
+        "0",
+        "--not-found",
+        "strict",
+    )
+
+    assert rows[0]["context_kinds"] == "window"
+    assert rows[0]["evidence_in_context"] == "True"
+    assert fake.prompts[-1].count("Положение > Отпуск") == 1
+
+
+def test_dry_run_measures_context_without_llm(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+
+    rows = _run(corpus, dataset, tmp_path / "out", "--dry-run", "--context", "sections")
+
+    assert fake.prompts == []
+    assert rows[0]["llm_calls"] == "0"
+    assert rows[0]["evidence_in_context"] == "True"
+    assert int(rows[0]["context_tokens"]) > 0

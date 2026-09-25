@@ -781,3 +781,26 @@ def test_alice_template_does_not_overwrite(tmp_path: Path) -> None:
     assert alice_main(["template", "--dataset", str(dataset), "--out", str(out)]) == 0
     assert "d01" in out.read_text(encoding="utf-8")
     assert alice_main(["template", "--dataset", str(dataset), "--out", str(out)]) == 1
+
+
+def test_section_corpus_matches_chunk_corpus() -> None:
+    from eval.corpus import Document, section_corpus
+
+    documents = [
+        Document(
+            title="Док",
+            markdown="# Док\n\n## Раздел 1\n\nПервый абзац. Второй абзац.\n\n"
+            "## Раздел 2\n\nТретий абзац.",
+        )
+    ]
+    config = ChunkingConfig(chunk_tokens=8, overlap_tokens=0)
+
+    chunks = chunk_corpus(documents, config)
+    sections = section_corpus(documents, config)
+
+    # Каждый чанк знает свою секцию, а в секции лежит тот же llm_text — по
+    # нему select_sections находит чанк среди соседей.
+    assert {c.section_id for c in chunks} == set(sections)
+    assert all(c.llm_text in sections[c.section_id].chunks for c in chunks)
+    assert all(s.content for s in sections.values())
+    assert section_corpus(documents, ChunkingConfig(version="v1")) == {}
