@@ -1,5 +1,6 @@
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.cli import _parser
@@ -7,6 +8,7 @@ from corp_ed.core.exceptions import ConflictError
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
 from corp_ed.domain.models import AuditEvent, Tenant, User, UserRole
+from corp_ed.domain.types import NotFoundMode
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -163,3 +165,72 @@ def test_cli_create_tenant_requires_seats() -> None:
 def test_cli_set_seats() -> None:
     args = _parser().parse_args(["set-seats", "--code", "acme", "--seats", "80"])
     assert (args.command, args.code, args.seats) == ("set-seats", "acme", 80)
+
+
+async def test_new_tenant_gets_general_answers_by_default(
+    session: AsyncSession,
+) -> None:
+    result = await _service(session).provision(
+        company_code="acme",
+        name="A",
+        admin_email="a@b.ru",
+        admin_full_name=None,
+        seats=30,
+    )
+    assert result.tenant.not_found_mode == "general"
+
+
+async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
+    service = _service(session)
+    await service.provision(
+        company_code="acme",
+        name="A",
+        admin_email="a@b.ru",
+        admin_full_name=None,
+        seats=30,
+    )
+
+    tenant = await service.set_not_found_mode("acme", NotFoundMode.STRICT)
+
+    assert tenant.not_found_mode == "strict"
+    event = (
+        await session.execute(
+            select(AuditEvent).where(
+                AuditEvent.action == "tenant.not_found_mode_changed"
+            )
+        )
+    ).scalar_one()
+    assert event.details == {"from": "general", "to": "strict"}
+
+
+async def test_database_rejects_unknown_not_found_mode(
+    session: AsyncSession, tenant_ctx: Tenant
+) -> None:
+    """Опечатка в режиме мимо CLI (ручной SQL) не должна молча включить
+    неизвестное поведение: CHECK в базе."""
+    with pytest.raises(IntegrityError):
+        await session.execute(
+            update(Tenant)
+            .where(Tenant.id == tenant_ctx.id)
+            .values(not_found_mode="lenient")
+        )
+    await session.rollback()
+
+
+async def test_database_rejects_non_positive_seats(
+    session: AsyncSession, tenant_ctx: Tenant
+) -> None:
+    with pytest.raises(IntegrityError):
+        await session.execute(
+            update(Tenant).where(Tenant.id == tenant_ctx.id).values(seats=0)
+        )
+    await session.rollback()
+
+
+def test_cli_not_found_mode() -> None:
+    args = _parser().parse_args(
+        ["set-not-found-mode", "--code", "acme", "--mode", "strict"]
+    )
+    assert args.mode == "strict"
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["set-not-found-mode", "--code", "acme", "--mode", "x"])

@@ -3,6 +3,7 @@
     python -m corp_ed.cli create-tenant --code acme --name "ACME" --seats 50 \\
         --admin-email admin@acme.ru [--admin-name "Иван Петров"]
     python -m corp_ed.cli set-seats --code acme --seats 80
+    python -m corp_ed.cli set-not-found-mode --code acme --mode strict
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
@@ -27,6 +28,7 @@ from corp_ed.core.config import get_settings
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
+from corp_ed.domain.types import NotFoundMode
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -47,10 +49,24 @@ def _parser() -> argparse.ArgumentParser:
     )
     create.add_argument("--admin-email", required=True)
     create.add_argument("--admin-name", default=None)
+    create.add_argument(
+        "--not-found-mode",
+        choices=[mode.value for mode in NotFoundMode],
+        default=NotFoundMode.GENERAL.value,
+        help="нет ответа в документах: общий ответ с пометкой или отказ",
+    )
 
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")
     seats.add_argument("--code", required=True)
     seats.add_argument("--seats", required=True, type=int)
+
+    not_found = commands.add_parser(
+        "set-not-found-mode", help="ответ, когда в документах ответа нет"
+    )
+    not_found.add_argument("--code", required=True)
+    not_found.add_argument(
+        "--mode", required=True, choices=[mode.value for mode in NotFoundMode]
+    )
 
     for name in ("suspend-tenant", "resume-tenant"):
         command = commands.add_parser(name)
@@ -104,10 +120,12 @@ async def _run(args: argparse.Namespace) -> int:
                 admin_email=args.admin_email,
                 admin_full_name=args.admin_name,
                 seats=args.seats,
+                not_found_mode=NotFoundMode(args.not_found_mode),
             )
             print(f"company_code:       {result.tenant.company_code}")
             print(f"tenant_id:          {result.tenant.id}")
             print(f"seats:              {result.tenant.seats}")
+            print(f"not_found_mode:     {result.tenant.not_found_mode}")
             print(f"admin_email:        {result.admin.email}")
             print(f"temporary_password: {result.temporary_password}")
             print("Пароль показан один раз. Сменить при первом входе.")
@@ -116,6 +134,13 @@ async def _run(args: argparse.Namespace) -> int:
         if args.command == "set-seats":
             tenant = await service.set_seats(args.code, args.seats)
             print(f"{tenant.company_code}: seats={tenant.seats}")
+            return 0
+
+        if args.command == "set-not-found-mode":
+            tenant = await service.set_not_found_mode(
+                args.code, NotFoundMode(args.mode)
+            )
+            print(f"{tenant.company_code}: not_found_mode={tenant.not_found_mode}")
             return 0
 
         tenant = await service.set_active(

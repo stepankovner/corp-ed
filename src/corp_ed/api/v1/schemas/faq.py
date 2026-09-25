@@ -29,7 +29,7 @@ class AnswerDiagnosticsResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    model: str
+    model: str | None
     prompt_version: str
     input_tokens: int
     output_tokens: int
@@ -40,10 +40,15 @@ class AnswerDiagnosticsResponse(BaseModel):
 class FaqAnswerResponse(BaseModel):
     """Ответ ассистента.
 
-    origin = general_knowledge — в документах компании ответа нет, ответ
-    из общих знаний: content начинается с «В документах компании ответа
-    нет. Общая информация:», sources пуст. Фронт обязан показать это
-    явно (плашка), а не только текстом.
+    origin:
+    - documents — ответ по документам компании, sources — выдержки;
+    - general_knowledge — в документах ответа нет, ответ из общих
+      знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах
+      компании ответа нет. Ниже — общая информация, не из документов
+      компании:»), sources пуст. Фронт обязан показать это явно
+      (плашка), а не только текстом;
+    - none — в документах ответа нет, компания в строгом режиме:
+      content = NOT_FOUND_ANSWER, sources пуст.
 
     answer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).
     """

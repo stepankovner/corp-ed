@@ -64,7 +64,13 @@ class IngestJobStatus(enum.Enum):
 
 class Tenant(Base):
     __tablename__ = "tenants"
-    __table_args__ = (CheckConstraint("seats > 0", name="ck_tenants_seats_positive"),)
+    __table_args__ = (
+        CheckConstraint("seats > 0", name="ck_tenants_seats_positive"),
+        CheckConstraint(
+            "not_found_mode IN ('general', 'strict')",
+            name="ck_tenants_not_found_mode",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     company_code: Mapped[str] = mapped_column(unique=True, index=True)
@@ -75,6 +81,11 @@ class Tenant(Base):
     # Оплаченные места. Пул кредитов на месяц = места × кредитов на место
     # (досье 10.2). Задаёт команда при подключении (CLI).
     seats: Mapped[int] = mapped_column(default=30, server_default="30")
+    # Ответ, когда в документах ничего нет: general или strict
+    # (NotFoundMode). Выбирается с клиентом при подключении (CLI).
+    not_found_mode: Mapped[str] = mapped_column(
+        String(16), default="general", server_default="general"
+    )
 
 
 class User(TenantMixin, Base):
@@ -301,6 +312,10 @@ class QaLog(TenantMixin, Base):
     __table_args__ = (
         Index("ix_qa_log_tenant_created", "tenant_id", "created_at"),
         CheckConstraint("feedback IN (-1, 1)", name="ck_qa_log_feedback"),
+        CheckConstraint(
+            "origin IN ('documents', 'general_knowledge', 'none')",
+            name="ck_qa_log_origin",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -313,7 +328,8 @@ class QaLog(TenantMixin, Base):
     question_embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
     embedding_model: Mapped[str] = mapped_column(String(64))
     prompt_version: Mapped[str] = mapped_column(String(32))
-    llm_model: Mapped[str] = mapped_column(String(64))
+    # Пусто, если модель не вызывалась (строгий отказ без выдержек).
+    llm_model: Mapped[str | None] = mapped_column(String(64))
     best_vector_distance: Mapped[float | None]
     best_fulltext_score: Mapped[float | None]
     answer_given: Mapped[bool]

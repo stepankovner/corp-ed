@@ -8,11 +8,18 @@ from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.context import select_context
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
-from corp_ed.domain.types import AnswerDiagnostics, AnswerOrigin, ChunkMatch, FaqAnswer
+from corp_ed.domain.types import (
+    AnswerDiagnostics,
+    AnswerOrigin,
+    ChunkMatch,
+    FaqAnswer,
+    NotFoundMode,
+)
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion
 from corp_ed.prompts.faq import (
+    NOT_FOUND_ANSWER,
     PROMPT_VERSION,
     build_faq_messages,
     build_general_messages,
@@ -22,6 +29,7 @@ from corp_ed.prompts.faq import (
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
 
 logger = structlog.get_logger()
@@ -42,6 +50,7 @@ class FaqService:
         self,
         chunk_repo: ChunkRepository,
         qa_log_repo: QaLogRepository,
+        tenant_repo: TenantRepository,
         credits: CreditService,
         embedding_gateway: EmbeddingGateway,
         llm_gateway: LLMGateway,
@@ -53,6 +62,7 @@ class FaqService:
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
+        self.tenant_repo = tenant_repo
         self.credits = credits
         self.embedding_gateway = embedding_gateway
         self.llm_gateway = llm_gateway
@@ -68,6 +78,8 @@ class FaqService:
         Решение продукта (25.09, режим Р1 «общий ответ с пометкой»):
         сотрудник не упирается в «не знаю», но ответ не из документов
         всегда помечен — текстом в первой строке и полем origin.
+        Компания в строгом режиме (NotFoundMode.STRICT) вместо этого
+        получает честный отказ, как в досье v3.2 (BH-24).
 
         Выдержки, не прошедшие порог max_distance, в модель не уходят:
         нерелевантный контекст дороже и толкает модель выдать чужой
@@ -80,6 +92,8 @@ class FaqService:
         стоить ни эмбеддинга, ни вызова модели (досье 10.2).
         """
         usage = await self.credits.ensure_available()
+        tenant = await self.tenant_repo.get_by_id(user.tenant_id)
+        mode = NotFoundMode(tenant.not_found_mode) if tenant else NotFoundMode.GENERAL
         embedded = await self.embedding_gateway.embed_query(question)
 
         matches = await self.chunk_repo.search(
@@ -94,12 +108,17 @@ class FaqService:
         context = select_context(relevant, max_tokens=self.context_max_tokens)
         nearest = matches[0].distance if matches else None
 
-        outcome = await self._answer(question, context)
+        outcome = await self._answer(question, context, mode)
 
         input_tokens = sum(c.usage.input_tokens for c in outcome.completions)
         output_tokens = sum(c.usage.output_tokens for c in outcome.completions)
-        credits = self.credits.cost(input_tokens + output_tokens)
-        model = outcome.completions[-1].model
+        # Строгий отказ без выдержек не вызывал модель — и не стоит кредита.
+        credits = (
+            self.credits.cost(input_tokens + output_tokens)
+            if outcome.completions
+            else 0
+        )
+        model = outcome.completions[-1].model if outcome.completions else None
         answer_given = outcome.origin is AnswerOrigin.DOCUMENTS
 
         entry = await self.qa_log_repo.add(
@@ -169,9 +188,11 @@ class FaqService:
         entry.feedback = feedback
         await self.session.commit()
 
-    async def _answer(self, question: str, context: list[ChunkMatch]) -> _Outcome:
+    async def _answer(
+        self, question: str, context: list[ChunkMatch], mode: NotFoundMode
+    ) -> _Outcome:
         if not context:
-            return await self._general_answer(question, reason="no_relevant_excerpts")
+            return await self._not_found(question, mode, reason="no_relevant_excerpts")
 
         completion = await self.llm_gateway.generate(
             messages=build_faq_messages(question=question, matches=context),
@@ -184,9 +205,9 @@ class FaqService:
         # Выдержки нашлись, но модель по ним отказала: в документах
         # ответа нет — это тот же случай, что и пустой поиск.
         if is_not_found(content):
-            general = await self._general_answer(question, reason="model_refusal")
-            general.completions.insert(0, completion)
-            return general
+            fallback = await self._not_found(question, mode, reason="model_refusal")
+            fallback.completions.insert(0, completion)
+            return fallback
 
         return _Outcome(
             content=content,
@@ -194,6 +215,17 @@ class FaqService:
             sources=context,
             completions=[completion],
         )
+
+    async def _not_found(
+        self, question: str, mode: NotFoundMode, *, reason: str
+    ) -> _Outcome:
+        """В документах ответа нет: общий ответ или честный отказ."""
+        if mode is NotFoundMode.STRICT:
+            logger.info("faq_not_found_strict", reason=reason)
+            return _Outcome(
+                content=NOT_FOUND_ANSWER, origin=AnswerOrigin.NONE, sources=[]
+            )
+        return await self._general_answer(question, reason=reason)
 
     async def _general_answer(self, question: str, *, reason: str) -> _Outcome:
         """Ответ из общих знаний со строгой пометкой.

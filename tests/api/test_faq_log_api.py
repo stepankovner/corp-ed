@@ -91,6 +91,24 @@ async def test_general_answer_is_logged_as_not_given(
     assert entry.source_chunk_ids == []
 
 
+async def test_strict_refusal_is_logged_without_model_or_credits(
+    api: httpx.AsyncClient, account: User, tenant_ctx: Tenant, session: AsyncSession
+) -> None:
+    tenant_ctx.not_found_mode = "strict"
+    await session.commit()
+
+    response = await _ask(api, account, "Как настроить VPN?")
+
+    assert response.status_code == 200
+    assert response.json()["origin"] == "none"
+    assert response.json()["sources"] == []
+    [entry] = await _log(session, account.tenant_id)
+    assert entry.origin == "none"
+    assert entry.answer_given is False
+    assert entry.llm_model is None
+    assert entry.credits == 0
+
+
 async def test_diagnostics_only_for_admin(
     api: httpx.AsyncClient, account: User, admin_account: User, material: Material
 ) -> None:

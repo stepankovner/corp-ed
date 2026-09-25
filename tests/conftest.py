@@ -222,6 +222,7 @@ def faq_service(
     return FaqService(
         chunk_repo=ChunkRepository(session),
         qa_log_repo=QaLogRepository(session),
+        tenant_repo=TenantRepository(session),
         credits=make_credit_service(session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,

@@ -30,6 +30,7 @@ class AuditAction(StrEnum):
     MATERIAL_UPDATED = "material.updated"
     MATERIAL_DELETED = "material.deleted"
     TENANT_SEATS_CHANGED = "tenant.seats_changed"
+    TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
     CREDITS_WARNING = "credits.warning"
     CREDITS_EXHAUSTED = "credits.exhausted"
 

@@ -311,6 +311,7 @@ def get_credit_service(
 def get_faq_service(
     chunk_repo: Annotated[ChunkRepository, Depends(get_chunk_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
+    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     credits: Annotated[CreditService, Depends(get_credit_service)],
     embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
     llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
@@ -320,6 +321,7 @@ def get_faq_service(
     return FaqService(
         chunk_repo=chunk_repo,
         qa_log_repo=qa_log_repo,
+        tenant_repo=tenant_repo,
         credits=credits,
         embedding_gateway=embedding_gateway,
         llm_gateway=llm_gateway,

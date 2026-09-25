@@ -31,17 +31,35 @@ class AnswerOrigin(StrEnum):
     из общих знаний. Такой ответ всегда помечен: первой строкой текста
     (GENERAL_ANSWER_PREFIX) и этим полем — фронт показывает предупреждение
     по полю, не разбирая текст.
+    NONE — в документах ответа нет, а компания выбрала строгий режим:
+    честный отказ NOT_FOUND_ANSWER без ответа из общих знаний.
     """
 
     DOCUMENTS = "documents"
     GENERAL_KNOWLEDGE = "general_knowledge"
+    NONE = "none"
+
+
+class NotFoundMode(StrEnum):
+    """Что делать, когда в документах ответа нет (Р1, BH-24).
+
+    GENERAL — ответ из общих знаний со строгой пометкой (решение 25.09,
+    по умолчанию). STRICT — честный отказ, как в досье v3.2: для
+    компаний, которым нельзя ничего сверх их документов.
+    """
+
+    GENERAL = "general"
+    STRICT = "strict"
 
 
 @dataclass(frozen=True)
 class AnswerDiagnostics:
-    """Сведения для админа и eval (E5 — стоимость и модель ответа)."""
+    """Сведения для админа и eval (E5 — стоимость и модель ответа).
 
-    model: str
+    model пуст, если модель не вызывалась (строгий отказ без выдержек).
+    """
+
+    model: str | None
     prompt_version: str
     input_tokens: int
     output_tokens: int

@@ -7,7 +7,7 @@ from corp_ed.domain.models import (
     Tenant,
     User,
 )
-from corp_ed.domain.types import AnswerOrigin
+from corp_ed.domain.types import AnswerOrigin, NotFoundMode
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.llm.gateway import LLMGateway
@@ -15,6 +15,7 @@ from corp_ed.llm.types import Completion, FinishReason, Message, Role, Usage
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.faq_service import FaqService
 from tests.conftest import make_credit_service
 
@@ -73,6 +74,7 @@ def _service(
     return FaqService(
         chunk_repo=chunk_repo,
         qa_log_repo=QaLogRepository(chunk_repo.session),
+        tenant_repo=TenantRepository(chunk_repo.session),
         credits=make_credit_service(chunk_repo.session),
         embedding_gateway=fake_embeddings,
         llm_gateway=fake_llm,
@@ -312,3 +314,74 @@ async def test_sources_follow_excerpt_order(
     assert user_message.content.index("Ближний.") < user_message.content.index(
         "Дальний."
     )
+
+
+# --- строгий режим компании (BH-24) --------------------------------------------
+
+
+async def _strict(session: AsyncSession, tenant: Tenant) -> None:
+    tenant.not_found_mode = NotFoundMode.STRICT.value
+    await session.commit()
+
+
+async def test_strict_mode_refuses_without_calling_model(
+    session: AsyncSession,
+    faq_service: FaqService,
+    fake_llm: FakeAdapter,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    """Компания выбрала честный отказ: общий ответ ей не нужен, а модель
+    без выдержек вызывать не за чем — ни токенов, ни кредитов."""
+    await _strict(session, tenant_ctx)
+
+    result = await faq_service.answer("Как настроить VPN?", employee)
+
+    assert result.content == NOT_FOUND_ANSWER
+    assert result.origin is AnswerOrigin.NONE
+    assert result.answer_given is False
+    assert result.sources == []
+    assert fake_llm.calls == []
+    assert result.diagnostics is not None
+    assert result.diagnostics.model is None
+    assert result.diagnostics.credits == 0
+
+
+async def test_strict_mode_hides_model_refusal_without_second_call(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    fake_embeddings: FakeEmbeddingAdapter,
+    material: Material,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    await _strict(session, tenant_ctx)
+    await chunk_repo.bulk_create([_chunk(material, 0, "Про другое.")])
+    llm = ScriptedLLM(f"{NOT_FOUND_ANSWER} Но вообще обычно так.")
+
+    result = await _service(chunk_repo, fake_embeddings, llm).answer("Вопрос", employee)
+
+    assert len(llm.calls) == 1
+    # Клиенту — ровно фиксированный отказ, без «но вообще» от модели.
+    assert result.content == NOT_FOUND_ANSWER
+    assert result.origin is AnswerOrigin.NONE
+    assert result.sources == []
+    assert result.diagnostics is not None
+    assert result.diagnostics.credits == 1
+
+
+async def test_strict_mode_still_answers_from_documents(
+    session: AsyncSession,
+    faq_service: FaqService,
+    material: Material,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    await _strict(session, tenant_ctx)
+    await chunk_repo.bulk_create([_chunk(material, 0, "Отпуск составляет 28 дней.")])
+
+    result = await faq_service.answer("Сколько дней отпуска?", employee)
+
+    assert result.origin is AnswerOrigin.DOCUMENTS
+    assert result.sources

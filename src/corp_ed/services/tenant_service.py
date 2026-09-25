@@ -8,6 +8,7 @@ from corp_ed.core.exceptions import ConflictError, DomainError
 from corp_ed.core.security import generate_temporary_password, hash_password
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.domain.types import NotFoundMode
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -70,10 +71,12 @@ class TenantService:
         admin_email: str,
         admin_full_name: str | None,
         seats: int,
+        not_found_mode: NotFoundMode = NotFoundMode.GENERAL,
     ) -> ProvisionedTenant:
         """Создать компанию и её первого администратора одной транзакцией.
 
         seats — оплаченные места: от них считается пул кредитов.
+        not_found_mode — что отвечать, когда в документах ответа нет.
         """
         code = company_code.strip().casefold()
         if not _COMPANY_CODE.fullmatch(code):
@@ -83,7 +86,12 @@ class TenantService:
             raise ConflictError(f"Компания с кодом '{code}' уже существует")
 
         tenant = await self.tenant_repo.create(
-            Tenant(company_code=code, name=name, seats=seats)
+            Tenant(
+                company_code=code,
+                name=name,
+                seats=seats,
+                not_found_mode=not_found_mode.value,
+            )
         )
         temporary = generate_temporary_password()
 
@@ -108,6 +116,7 @@ class TenantService:
                     "company_code": code,
                     "admin_user_id": str(admin.id),
                     "seats": seats,
+                    "not_found_mode": not_found_mode.value,
                 },
             )
             await self.session.commit()
@@ -165,6 +174,30 @@ class TenantService:
             tenant_id=str(tenant.id),
             previous=previous,
             seats=seats,
+        )
+        return tenant
+
+    async def set_not_found_mode(self, company_code: str, mode: NotFoundMode) -> Tenant:
+        """Переключить ответ «в документах ответа нет» для компании.
+
+        Действует со следующего вопроса. Уже данные ответы и их origin в
+        журнале не меняются.
+        """
+        tenant = await self.tenant_repo.get_by_company_code(company_code)
+        if tenant is None:
+            raise ConflictError(f"Компании с кодом '{company_code}' нет")
+        previous = tenant.not_found_mode
+        tenant.not_found_mode = mode.value
+        self.audit.record(
+            AuditAction.TENANT_NOT_FOUND_MODE_CHANGED,
+            tenant_id=tenant.id,
+            target_type="tenant",
+            target_id=tenant.id,
+            details={"from": previous, "to": mode.value},
+        )
+        await self.session.commit()
+        logger.info(
+            "tenant_not_found_mode_changed", tenant_id=str(tenant.id), mode=mode.value
         )
         return tenant
 
