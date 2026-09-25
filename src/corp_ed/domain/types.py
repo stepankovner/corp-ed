@@ -95,3 +95,12 @@ class FaqAnswer:
     log_id: UUID | None = None
     """Запись qa_log — к ней сотрудник ставит 👍/👎."""
     diagnostics: AnswerDiagnostics | None = None
+
+
+class GapStatus(StrEnum):
+    """Что админ сделал с пробелом в отчёте (BH-22)."""
+
+    NEW = "new"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    DISMISSED = "dismissed"

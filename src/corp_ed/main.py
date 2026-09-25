@@ -17,6 +17,7 @@ from corp_ed.api.v1.endpoints import (
     audit,
     auth,
     faq,
+    gaps,
     glossary,
     materials,
     usage,
@@ -180,6 +181,7 @@ app.include_router(faq.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
+app.include_router(gaps.router, prefix="/api/v1")
 
 
 @app.get("/")

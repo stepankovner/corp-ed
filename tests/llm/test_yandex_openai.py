@@ -11,10 +11,13 @@ from typing import Any
 import httpx
 import pytest
 
+from corp_ed.core.config import LLMSettings
 from corp_ed.llm.errors import LLMError
+from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.llm.types import FinishReason, Message, Role
 from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_openai import YandexOpenAIAdapter, parse_chat_response
+from corp_ed.prompts.gaps import GAP_LABEL_SCHEMA
 
 MESSAGES = [
     Message(role=Role.SYSTEM, content="Ты ассистент."),
@@ -186,3 +189,69 @@ async def test_native_adapter_malformed_body_is_llm_error(body: Any) -> None:
     with pytest.raises(LLMError) as info:
         await adapter.generate(MESSAGES)
     assert info.value.retryable is False
+
+
+# --- строгий JSON (подпись кластеров пробелов, gaps-v1) --------------------------
+
+
+async def test_response_format_is_passed_as_is() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json=_chat_body('{"title": "x", "missing": "y"}'))
+
+    await _adapter(handler).generate(MESSAGES, response_format=GAP_LABEL_SCHEMA)
+    await _adapter(handler).generate(MESSAGES)
+
+    assert seen[0]["response_format"] == GAP_LABEL_SCHEMA
+    # Без схемы — поля нет вовсе: свободный текст, как у ответов FAQ.
+    assert "response_format" not in seen[1]
+
+
+async def test_native_adapter_maps_schema_to_json_schema_field() -> None:
+    seen: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "result": {
+                    "alternatives": [
+                        {
+                            "message": {"role": "assistant", "text": "{}"},
+                            "status": "ALTERNATIVE_STATUS_FINAL",
+                        }
+                    ],
+                    "usage": {"inputTextTokens": "10", "completionTokens": "5"},
+                    "modelVersion": "v",
+                }
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = YandexAdapter(client=client, folder_id="f", api_key="k")
+
+    await adapter.generate(MESSAGES, response_format=GAP_LABEL_SCHEMA)
+
+    assert seen[0]["jsonSchema"] == {
+        "schema": GAP_LABEL_SCHEMA["json_schema"]["schema"]
+    }
+    assert "response_format" not in seen[0]
+
+
+@pytest.mark.parametrize(
+    ("provider", "adapter_type"),
+    [("yandex-openai", YandexOpenAIAdapter), ("yandex-native", YandexAdapter)],
+)
+def test_factory_picks_adapter_by_provider(
+    provider: str, adapter_type: type[object]
+) -> None:
+    settings = LLMSettings(
+        yc_folder_id="f",
+        yc_api_key="k",  # type: ignore[arg-type]
+        llm_provider=provider,  # type: ignore[arg-type]
+    )
+    gateway = build_llm_gateway(httpx.AsyncClient(), settings)
+    assert isinstance(gateway, adapter_type)

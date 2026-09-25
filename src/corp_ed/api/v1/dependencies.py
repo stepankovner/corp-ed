@@ -27,13 +27,13 @@ from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
 from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
+from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.throttle import Throttle
-from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
-from corp_ed.llm.yandex_openai import YandexOpenAIAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.gap_repository import GapRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
@@ -44,6 +44,7 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
+from corp_ed.services.gap_service import GapService
 from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.user_service import UserService
@@ -237,23 +238,7 @@ def get_llm_gateway(
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
     semaphore: Annotated[asyncio.Semaphore | None, Depends(get_llm_semaphore)],
 ) -> LLMGateway:
-    """Провайдер по настройке LLM_PROVIDER. Тип возврата — контракт:
-    сервисы не знают, какой адаптер им достался."""
-    if settings.llm_provider == "yandex-native":
-        return YandexAdapter(
-            client=client,
-            folder_id=settings.yc_folder_id,
-            api_key=settings.yc_api_key.get_secret_value(),
-            model=settings.llm_model,
-            concurrency=semaphore,
-        )
-    return YandexOpenAIAdapter(
-        client=client,
-        folder_id=settings.yc_folder_id,
-        api_key=settings.yc_api_key.get_secret_value(),
-        model=settings.llm_model,
-        concurrency=semaphore,
-    )
+    return build_llm_gateway(client, settings, semaphore)
 
 
 def get_material_repository(
@@ -306,6 +291,13 @@ def get_glossary_service(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> GlossaryService:
     return GlossaryService(repository, audit, session)
+
+
+def get_gap_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> GapService:
+    return GapService(GapRepository(session), audit, session)
 
 
 def get_credit_service(

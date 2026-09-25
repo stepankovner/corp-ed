@@ -8,6 +8,7 @@
     python -m corp_ed.cli resume-tenant --code acme
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
     python -m corp_ed.cli purge        # удалить данные старше срока хранения
+    python -m corp_ed.cli gaps (--code acme | --all)   # отчёт о пробелах
 
 Почему CLI, а не HTTP-ручка «суперадмина»: по досье (10.1) компании
 подключает команда после созвона. Ручка с правом создавать тенантов
@@ -24,14 +25,18 @@ import asyncio
 import sys
 from collections.abc import Sequence
 
-from corp_ed.core.config import get_settings
+import httpx
+
+from corp_ed.core.config import GapsSettings, LLMSettings, RagSettings, get_settings
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
 from corp_ed.domain.types import NotFoundMode
+from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
 from corp_ed.services.tenant_service import TenantService
@@ -84,6 +89,13 @@ def _parser() -> argparse.ArgumentParser:
 
     commands.add_parser("purge", help="удалить данные старше срока хранения")
 
+    gaps = commands.add_parser(
+        "gaps", help="пересобрать отчёт о пробелах (раз в сутки, после purge)"
+    )
+    gaps_scope = gaps.add_mutually_exclusive_group(required=True)
+    gaps_scope.add_argument("--code", help="одна компания")
+    gaps_scope.add_argument("--all", action="store_true", help="все активные")
+
     return parser
 
 
@@ -94,6 +106,9 @@ async def _run(args: argparse.Namespace) -> int:
         ).purge()
         print(f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}")
         return 0
+
+    if args.command == "gaps":
+        return await _gaps(None if args.all else args.code)
 
     if args.command == "reindex":
         reports = await ReindexService(get_session_maker()).reindex(
@@ -148,6 +163,27 @@ async def _run(args: argparse.Namespace) -> int:
         )
         print(f"{tenant.company_code}: is_active={tenant.is_active}")
         return 0
+
+
+async def _gaps(company_code: str | None) -> int:
+    llm_settings = LLMSettings()  # type: ignore[call-arg]
+    rag = RagSettings()  # type: ignore[call-arg]
+    async with httpx.AsyncClient() as client:
+        service = GapReportService(
+            get_session_maker(),
+            build_llm_gateway(client, llm_settings),
+            GapsSettings(),  # type: ignore[call-arg]
+            max_distance=rag.faq_max_distance,
+        )
+        reports = await service.run(company_code)
+    for report in reports:
+        status = "ОШИБКА" if report.failed else "ok"
+        print(
+            f"{report.company_code}: {status}, вопросов {report.window}, "
+            f"кандидатов {report.candidates}, пробелов {report.clusters}, "
+            f"подписано {report.labeled}"
+        )
+    return 1 if any(report.failed for report in reports) else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

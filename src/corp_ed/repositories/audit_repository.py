@@ -32,6 +32,7 @@ class AuditAction(StrEnum):
     GLOSSARY_TERM_CREATED = "glossary.created"
     GLOSSARY_TERM_UPDATED = "glossary.updated"
     GLOSSARY_TERM_DELETED = "glossary.deleted"
+    GAP_STATUS_CHANGED = "gap.status_changed"
     TENANT_SEATS_CHANGED = "tenant.seats_changed"
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
     CREDITS_WARNING = "credits.warning"

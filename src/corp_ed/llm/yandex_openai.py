@@ -104,8 +104,9 @@ class YandexOpenAIAdapter(LLMGateway):
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
-        payload = {
+        payload: dict[str, Any] = {
             "model": model_uri(self._folder_id, self._model),
             "messages": [
                 {"role": m.role.value, "content": m.content} for m in messages
@@ -113,6 +114,8 @@ class YandexOpenAIAdapter(LLMGateway):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if response_format is not None:
+            payload["response_format"] = response_format
         timings: list[int] = []
 
         async def do_request() -> httpx.Response:

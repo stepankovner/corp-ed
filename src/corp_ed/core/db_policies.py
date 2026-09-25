@@ -72,7 +72,15 @@ TENANT_SETTING = "app.tenant_id"
 через set_config(..., is_local => true): значение живёт до конца
 транзакции и не переезжает с соединением пула в чужой запрос."""
 
-TENANT_TABLES = ("users", "materials", "chunks", "qa_log", "glossary_terms")
+TENANT_TABLES = (
+    "users",
+    "materials",
+    "chunks",
+    "qa_log",
+    "glossary_terms",
+    "gap_clusters",
+    "gap_cluster_questions",
+)
 """Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
 проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,
 ищется при входе до того, как тенант известен), refresh_tokens (ищется

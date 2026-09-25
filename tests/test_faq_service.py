@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.config import EMBEDDING_DIM
@@ -47,6 +49,7 @@ class ScriptedLLM(LLMGateway):
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
         self.calls.append(messages)
         return Completion(

@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     Computed,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     SmallInteger,
@@ -388,4 +389,60 @@ class GlossaryTerm(TenantMixin, Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GapCluster(TenantMixin, Base):
+    """Пробел в документах: группа похожих вопросов без ответа (BH-22).
+
+    Пересобирается ночной задачей (services/gap_report_service.py) из
+    qa_log за окно. id и статус переживают пересборку, если группа
+    узнаётся по общим вопросам. title и missing — подпись модели
+    (промпт gaps-v1) по вопросам после mask_pii.
+    """
+
+    __tablename__ = "gap_clusters"
+    __table_args__ = (
+        Index("ix_gap_clusters_tenant_priority", "tenant_id", "priority"),
+        CheckConstraint(
+            "status IN ('new', 'in_progress', 'resolved', 'dismissed')",
+            name="ck_gap_clusters_status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    title: Mapped[str] = mapped_column(String(200))
+    missing: Mapped[str] = mapped_column(Text, default="", server_default="")
+    priority: Mapped[float] = mapped_column(Float)
+    question_count: Mapped[int]
+    user_count: Mapped[int]
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    # Версия промпта подписи; пусто — подписать не удалось, повторить
+    # следующей ночью. Смена версии — повод подписать заново.
+    prompt_version: Mapped[str] = mapped_column(String(32), default="")
+    # Векторы разных моделей эмбеддингов не кластеризуются вместе.
+    embedding_model: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class GapClusterQuestion(TenantMixin, Base):
+    """Вопрос из qa_log в кластере пробела.
+
+    Удаление строки журнала (срок хранения) убирает её и отсюда.
+    """
+
+    __tablename__ = "gap_cluster_questions"
+
+    cluster_id: Mapped[UUID] = mapped_column(
+        ForeignKey("gap_clusters.id", ondelete="CASCADE"), primary_key=True
+    )
+    qa_log_id: Mapped[UUID] = mapped_column(
+        ForeignKey("qa_log.id", ondelete="CASCADE"), primary_key=True, index=True
     )

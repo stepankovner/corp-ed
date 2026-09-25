@@ -44,8 +44,9 @@ class YandexAdapter(LLMGateway):
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
-        payload = {
+        payload: dict[str, Any] = {
             "modelUri": f"gpt://{self._folder_id}/{self._model}",
             "completionOptions": {
                 "stream": False,
@@ -54,6 +55,9 @@ class YandexAdapter(LLMGateway):
             },
             "messages": [{"role": m.role.value, "text": m.content} for m in messages],
         }
+        if response_format is not None:
+            # Нативный API принимает саму JSON-схему в поле jsonSchema.
+            payload["jsonSchema"] = {"schema": response_format["json_schema"]["schema"]}
 
         timings: list[int] = []
 

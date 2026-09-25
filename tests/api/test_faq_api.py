@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,7 @@ class FailingLLM(LLMGateway):
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
         raise LLMError("провайдер недоступен", retryable=True)
 

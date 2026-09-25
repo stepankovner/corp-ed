@@ -169,6 +169,51 @@ class RagSettings(BaseSettings):
         return self
 
 
+class GapsSettings(BaseSettings):
+    """Ночной отчёт о пробелах (BH-21).
+
+    cluster_distance и half_life_days — значения ML (задача 3), без
+    дефолтов, как у RAG_*. Пороги полнотекста для classify_miss ML
+    просит подобрать заново на живых логах (ts_rank_cd, а не доля слов,
+    как в замере): пока они не заданы, полнотекст в классификации не
+    участвует — пробелом считается всё, где вектор не прошёл порог.
+    Окно и потолки — инженерные ограничения бэкенда, с дефолтами.
+    """
+
+    cluster_distance: float = Field(gt=0, lt=2)
+    half_life_days: float = Field(gt=0)
+    strong_fulltext: float | None = Field(default=None, ge=0)
+    empty_fulltext: float | None = Field(default=None, ge=0)
+    off_topic_distance: float | None = Field(default=None, gt=0, le=2)
+    window_days: int = Field(default=30, gt=0, le=90)
+    # Кластеризация ML — O(n³): 2 000 вопросов — ~9 с, 4 000 — больше минуты.
+    max_questions: int = Field(default=2000, gt=0, le=5000)
+    # Один вопрос — ещё не тема; в отчёт идут группы от двух вопросов.
+    min_cluster_size: int = Field(default=2, gt=0)
+    # Подписей за ночь на компанию: ~0,05 ₽ каждая, остальные — завтра.
+    max_labels_per_run: int = Field(default=50, gt=0)
+
+    model_config = SettingsConfigDict(
+        env_prefix="GAPS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @model_validator(mode="after")
+    def validate_fulltext_thresholds(self) -> Self:
+        # Половина пары — это почти наверняка забытая переменная.
+        if (self.strong_fulltext is None) != (self.empty_fulltext is None):
+            raise ValueError("set both GAPS_STRONG_FULLTEXT and GAPS_EMPTY_FULLTEXT")
+        if (
+            self.strong_fulltext is not None
+            and self.empty_fulltext is not None
+            and self.empty_fulltext > self.strong_fulltext
+        ):
+            raise ValueError("GAPS_EMPTY_FULLTEXT must not exceed GAPS_STRONG_FULLTEXT")
+        return self
+
+
 class BillingSettings(BaseSettings):
     """Пул кредитов компании (досье 10.2).
 
