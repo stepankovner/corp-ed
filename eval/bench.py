@@ -20,6 +20,8 @@
 
     # M5 (предпросмотр): вопросы, расширенные словарём сокращений
     python -m eval.bench ... --glossary glossary.csv
+    # M6 (эксперимент): переформулировки вопроса моделью + RRF (вызов LLM с кэшем)
+    python -m eval.bench ... --multi-query 3 [--mq-weight 0.5]
 
 Сравнить два прогона статистически: python -m eval.compare A.csv B.csv
 """
@@ -32,13 +34,20 @@ from datetime import date
 from pathlib import Path
 
 from corp_ed.domain.fusion import rrf_merge
-from corp_ed.domain.query import expand_query
+from corp_ed.domain.query import expand_query, fuse_query_rankings
+from corp_ed.prompts.multi_query import PROMPT_VERSION as MQ_PROMPT_VERSION
 from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
 from eval.datasets import EvalItem, load_dataset, select_split
+from eval.multi_query import paraphrase_questions
 from eval.relevance import RetrievedChunk
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.retrieval_eval import evaluate_retrieval, format_report
-from eval.yandex import DEFAULT_EMBEDDING_MODEL, default_embedding_dim
+from eval.yandex import (
+    DEFAULT_API,
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_LLM,
+    default_embedding_dim,
+)
 
 CACHE_PATH = Path("eval/.cache/embeddings.sqlite")
 FUSION_CANDIDATES = 50
@@ -163,6 +172,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--k", type=int, default=10, help="top-K выдачи")
     parser.add_argument("--glossary", type=Path, help="CSV term,expansion (M5)")
+    parser.add_argument(
+        "--multi-query",
+        type=int,
+        default=0,
+        help="M6: переформулировок на вопрос (0 — выкл.; вызов LLM с кэшем)",
+    )
+    parser.add_argument(
+        "--mq-weight", type=float, default=1.0, help="M6: вес переформулировки в RRF"
+    )
+    parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
+    parser.add_argument("--api", choices=("native", "openai"), default=DEFAULT_API)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
         "--config", default="", help="имя конфигурации (по умолчанию из флагов)"
@@ -190,10 +210,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.retriever == "bm25" or args.embedding_model == "text-search"
         else f"-{args.embedding_model}{dim_suffix}"
     )
+    mq_name = (
+        f"-mq{args.multi_query}"
+        + (f"-w{args.mq_weight}" if args.mq_weight != 1.0 else "")
+        if args.multi_query
+        else ""
+    )
     config = (
         args.config
         or f"{chunking.name}-{args.retriever}"
         + ("-glossary" if args.glossary else "")
+        + mq_name
         + embedder
     )
 
@@ -209,44 +236,83 @@ def main(argv: Sequence[str] | None = None) -> int:
     glossary = load_glossary(args.glossary) if args.glossary else {}
     queries = [expand_query(item.question, glossary) for item in items]
 
-    retrieved: dict[str, list[RetrievedChunk]] = {}
-    best_vector: dict[str, float | None] = {}
+    # M6: переформулировки — один вызов LLM на вопрос, с кэшем. Ищем по
+    # вопросу и по каждой переформулировке, сливаем fuse_query_rankings.
+    paraphrases: list[list[str]] = [[] for _ in items]
+    if args.multi_query:
+        from eval.yandex import YandexClient
 
+        paraphrases = [
+            p.queries
+            for p in paraphrase_questions(
+                YandexClient.from_env(),
+                [item.question for item in items],
+                count=args.multi_query,
+                model=args.mq_model,
+                api=args.api,
+            )
+        ]
+        print(
+            f"Переформулировок ({MQ_PROMPT_VERSION}): "
+            f"{sum(map(len, paraphrases))} на {len(items)} вопросов"
+        )
+    flat = [*queries, *(query for group in paraphrases for query in group)]
+    depth = (
+        args.k
+        if args.retriever != "hybrid" and not args.multi_query
+        else max(args.k, FUSION_CANDIDATES)
+    )
+
+    # Ранжирование каждого запроса: индексы чанков и расстояния векторной
+    # ветки (у BM25 расстояний нет, у гибрида — только у найденных вектором).
+    ranked: list[tuple[list[int], dict[int, float]]]
     if args.retriever == "bm25":
-        for item, ranking in zip(
-            items, bm25_rankings(chunks, queries, args.k), strict=True
-        ):
-            retrieved[item.id] = [_retrieved(chunks[i], None) for i in ranking]
+        ranked = [(ranking, {}) for ranking in bm25_rankings(chunks, flat, depth)]
     else:
-        depth = args.k if args.retriever == "vector" else max(args.k, FUSION_CANDIDATES)
         vec_rank, vec_dist = vector_rankings(
             chunks,
-            queries,
+            flat,
             depth,
             args.workers,
             args.embedding_model,
             embedding_dim,
         )
         if args.retriever == "vector":
-            for item, ranking, dists in zip(items, vec_rank, vec_dist, strict=True):
-                retrieved[item.id] = [
-                    _retrieved(chunks[i], d)
-                    for i, d in zip(ranking, dists, strict=True)
-                ]
-                best_vector[item.id] = dists[0] if dists else None
+            ranked = [
+                (ranking, dict(zip(ranking, dists, strict=True)))
+                for ranking, dists in zip(vec_rank, vec_dist, strict=True)
+            ]
         else:
             weights = [float(w) for w in args.weights.split(",")]
-            text_rank = bm25_rankings(chunks, queries, depth)
-            for item, v_rank, v_dist, t_rank in zip(
-                items, vec_rank, vec_dist, text_rank, strict=True
-            ):
-                distance_of = dict(zip(v_rank, v_dist, strict=True))
-                merged = rrf_merge([v_rank, t_rank], weights, k=args.rrf_k)[: args.k]
-                retrieved[item.id] = [
-                    _retrieved(chunks[i], distance_of.get(i)) for i, _ in merged
-                ]
-                # M1: после RRF порог отказа — по лучшему векторному кандидату.
-                best_vector[item.id] = v_dist[0] if v_dist else None
+            text_rank = bm25_rankings(chunks, flat, depth)
+            ranked = [
+                (
+                    [i for i, _ in rrf_merge([v_rank, t_rank], weights, k=args.rrf_k)],
+                    dict(zip(v_rank, v_dist, strict=True)),
+                )
+                for v_rank, v_dist, t_rank in zip(
+                    vec_rank, vec_dist, text_rank, strict=True
+                )
+            ]
+
+    retrieved: dict[str, list[RetrievedChunk]] = {}
+    best_vector: dict[str, float | None] = {}
+    offset = len(items)
+    for index, item in enumerate(items):
+        ranking, distance_of = ranked[index]
+        extra = [ranked[offset + j][0] for j in range(len(paraphrases[index]))]
+        offset += len(extra)
+        if extra:
+            ranking = fuse_query_rankings(
+                ranking, extra, paraphrase_weight=args.mq_weight, k=args.rrf_k
+            )
+        retrieved[item.id] = [
+            _retrieved(chunks[i], distance_of.get(i)) for i in ranking[: args.k]
+        ]
+        if args.retriever != "bm25":
+            # M1/M6: порог отказа — по лучшему векторному кандидату ИСХОДНОГО
+            # вопроса, не по скору RRF.
+            best_vector[item.id] = min(distance_of.values(), default=None)
 
     report = evaluate_retrieval(items, retrieved)
     for row in report.rows:

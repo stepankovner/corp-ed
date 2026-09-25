@@ -16,12 +16,20 @@ Flash через OpenAI-совместимый API, text-embeddings-v2 с раз
 Шаги повторяют бэкенд (docs/backend-handoff.md, BH-3 и BH-7):
 1. top-limit чанков: по косинусному расстоянию (<семейство>-query → doc)
    или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
+   --multi-query N (M6): модель переписывает вопрос N способами
+   (prompts.multi_query, mq-v1), ищем по всем и сливаем RRF
+   (fuse_query_rankings); порог тогда — по лучшему расстоянию исходного
+   вопроса;
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается
    (как faq_service сейчас); для гибрида — по лучшему векторному
    кандидату (контракт M1). Не осталось ни одного — ответ по выдержкам не
    вызывается: общий ответ с пометкой (general, Р1 — по умолчанию) или
    фраза отказа (strict);
-3. select_context — бюджет контекста в токенах;
+3. select_context — бюджет контекста в токенах; --context sections|window —
+   small-to-big (M2, select_sections): на место найденного чанка встаёт
+   его секция целиком или окно соседей. Колонки context_kinds,
+   context_tokens и evidence_in_context (цитата эталона попала в
+   контекст) считаются и без LLM: --dry-run — бесплатный замер;
 4. build_faq_messages (промпт PROMPT_VERSION) → LLM →
    normalize_citations ([4.2] → номер выдержки), как должен делать бэкенд;
 5. general: модель по выдержкам ответила отказом (is_not_found) — второй
@@ -37,14 +45,21 @@ import argparse
 import json
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Literal
 
-from corp_ed.domain.context import select_context
+from corp_ed.domain.context import (
+    ContextBlock,
+    Section,
+    select_context,
+    select_sections,
+)
 from corp_ed.domain.fusion import rrf_merge
+from corp_ed.domain.query import fuse_query_rankings
+from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import (
     NOT_FOUND_ANSWER,
@@ -56,9 +71,17 @@ from corp_ed.prompts.faq import (
     normalize_citations,
 )
 from eval.bench import FUSION_CANDIDATES, bm25_rankings, vector_rankings
-from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
+from eval.corpus import (
+    BenchChunk,
+    ChunkingConfig,
+    chunk_corpus,
+    load_corpus,
+    section_corpus,
+)
 from eval.datasets import EvalItem, load_dataset, select_split
 from eval.metrics import percentile
+from eval.multi_query import Paraphrased, paraphrase_questions
+from eval.relevance import EVIDENCE_MIN_COVERAGE, evidence_coverage
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.run_eval import is_answered, looks_like_refusal, summarize_e2e
 from eval.yandex import (
@@ -72,6 +95,7 @@ from eval.yandex import (
 
 NotFoundMode = Literal["strict", "general"]
 Retriever = Literal["vector", "hybrid"]
+ContextMode = Literal["chunks", "sections", "window"]
 
 _CITATION = re.compile(r"\[(\d+)\]")
 _SECTION_CITATION = re.compile(r"\[\d+(?:\.\d+)+\.?\]")
@@ -87,6 +111,8 @@ class OfflineMatch:
     heading_path: list[str] = field(default_factory=list)
     distance: float | None = 0.0
     """Косинусное расстояние; None — чанк нашёл только BM25 (гибрид)."""
+    section_id: str = ""
+    """Ключ секции в section_corpus — для select_sections (M2)."""
 
     @classmethod
     def from_chunk(cls, chunk: BenchChunk, distance: float | None) -> "OfflineMatch":
@@ -95,6 +121,7 @@ class OfflineMatch:
             title=chunk.material,
             heading_path=chunk.heading_path,
             distance=distance,
+            section_id=chunk.section_id,
         )
 
 
@@ -119,6 +146,42 @@ def gate_by_best_distance(
     return list(matches)
 
 
+def build_context(
+    matches: Sequence[OfflineMatch],
+    *,
+    mode: ContextMode,
+    sections: Mapping[str, Section],
+    max_tokens: int,
+    neighbours: int,
+) -> list[ContextBlock[OfflineMatch]]:
+    """Выдержки для промпта: чанки (как бэкенд сейчас) или small-to-big (M2).
+
+    sections — секция целиком, если влезает, иначе окно соседей, иначе
+    чанк; window — то же без таблицы sections: только окно или чанк
+    (BH-13, вариант без новой таблицы).
+    """
+    if mode == "chunks":
+        return [
+            ContextBlock(
+                content=match.content,
+                title=match.title,
+                heading_path=match.heading_path,
+                match=match,
+                kind="chunk",
+            )
+            for match in select_context(matches, max_tokens)
+        ]
+    known: Mapping[str, Section | str] = (
+        sections
+        if mode == "sections"
+        else {
+            key: Section(content=None, chunks=section.chunks)
+            for key, section in sections.items()
+        }
+    )
+    return select_sections(matches, known, max_tokens, neighbours=neighbours)
+
+
 def retrieve(
     chunks: Sequence[BenchChunk],
     questions: Sequence[str],
@@ -130,38 +193,90 @@ def retrieve(
     workers: int = 4,
     embedding_model: str = "text-search",
     embedding_dim: int | None = None,
+    paraphrases: Sequence[Sequence[str]] | None = None,
+    paraphrase_weight: float = 1.0,
 ) -> list[tuple[list[OfflineMatch], float | None]]:
-    """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние."""
-    depth = limit if retriever == "vector" else max(limit, FUSION_CANDIDATES)
-    vec_rank, vec_dist = vector_rankings(
-        chunks, questions, depth, workers, embedding_model, embedding_dim
+    """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
+
+    paraphrases (M6) — переформулировки каждого вопроса: выдачи по ним
+    сливаются с выдачей по вопросу (fuse_query_rankings). Расстояние у
+    чанка — до ИСХОДНОГО вопроса; у найденного только переформулировкой
+    его нет (None), поэтому с multi-query порог — по лучшему расстоянию
+    исходного вопроса, как в гибриде.
+    """
+    groups = [list(group) for group in paraphrases] if paraphrases else []
+    flat = [*questions, *(query for group in groups for query in group)]
+    depth = (
+        limit
+        if retriever == "vector" and not any(groups)
+        else max(limit, FUSION_CANDIDATES)
     )
-    if retriever == "vector":
-        return [
-            (
-                [
-                    OfflineMatch.from_chunk(chunks[i], d)
-                    for i, d in zip(ranking, dists, strict=True)
-                ],
-                dists[0] if dists else None,
-            )
-            for ranking, dists in zip(vec_rank, vec_dist, strict=True)
-        ]
-    text_rank = bm25_rankings(chunks, questions, depth)
+    ranked = rank_queries(
+        chunks,
+        flat,
+        retriever=retriever,
+        depth=depth,
+        weights=weights,
+        rrf_k=rrf_k,
+        workers=workers,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+    )
     results: list[tuple[list[OfflineMatch], float | None]] = []
-    for v_rank, v_dist, t_rank in zip(vec_rank, vec_dist, text_rank, strict=True):
-        distance_of = dict(zip(v_rank, v_dist, strict=True))
-        merged = rrf_merge([v_rank, t_rank], list(weights), k=rrf_k)[:limit]
+    offset = len(questions)
+    for index in range(len(questions)):
+        ranking, distance_of = ranked[index]
+        extra = [
+            ranked[offset + j][0] for j in range(len(groups[index]) if groups else 0)
+        ]
+        offset += len(extra)
+        if extra:
+            ranking = fuse_query_rankings(
+                ranking, extra, paraphrase_weight=paraphrase_weight, k=rrf_k
+            )
         results.append(
             (
                 [
                     OfflineMatch.from_chunk(chunks[i], distance_of.get(i))
-                    for i, _ in merged
+                    for i in ranking[:limit]
                 ],
-                v_dist[0] if v_dist else None,
+                min(distance_of.values(), default=None),
             )
         )
     return results
+
+
+def rank_queries(
+    chunks: Sequence[BenchChunk],
+    queries: Sequence[str],
+    *,
+    retriever: Retriever,
+    depth: int,
+    weights: Sequence[float],
+    rrf_k: int,
+    workers: int,
+    embedding_model: str,
+    embedding_dim: int | None,
+) -> list[tuple[list[int], dict[int, float]]]:
+    """Для каждого запроса: индексы чанков по убыванию и расстояния векторной
+    ветки (у гибрида — после RRF вектора и BM25; расстояния только у тех,
+    кого нашёл вектор)."""
+    vec_rank, vec_dist = vector_rankings(
+        chunks, queries, depth, workers, embedding_model, embedding_dim
+    )
+    if retriever == "vector":
+        return [
+            (ranking, dict(zip(ranking, dists, strict=True)))
+            for ranking, dists in zip(vec_rank, vec_dist, strict=True)
+        ]
+    text_rank = bm25_rankings(chunks, queries, depth)
+    return [
+        (
+            [i for i, _ in rrf_merge([v_rank, t_rank], list(weights), k=rrf_k)],
+            dict(zip(v_rank, v_dist, strict=True)),
+        )
+        for v_rank, v_dist, t_rank in zip(vec_rank, vec_dist, text_rank, strict=True)
+    ]
 
 
 def citation_numbers(answer: str) -> list[int]:
@@ -232,6 +347,33 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--context-tokens", type=int, default=3000)
     parser.add_argument(
+        "--context",
+        choices=("chunks", "sections", "window"),
+        default="chunks",
+        help="M2: chunks — как бэкенд сейчас; sections — секция целиком, если "
+        "влезает, иначе окно соседей, иначе чанк; window — без таблицы "
+        "sections: чанк ± --neighbours по секции",
+    )
+    parser.add_argument(
+        "--neighbours", type=int, default=1, help="M2: соседей с каждой стороны"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="без вызовов LLM: только поиск и контекст (бесплатно)",
+    )
+    parser.add_argument(
+        "--multi-query",
+        type=int,
+        default=0,
+        help="M6: сколько переформулировок вопроса искать вместе с ним "
+        "(0 — выключено; один вызов LLM на вопрос, кэшируется)",
+    )
+    parser.add_argument(
+        "--mq-weight", type=float, default=1.0, help="M6: вес переформулировки в RRF"
+    )
+    parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
+    parser.add_argument(
         "--not-found",
         choices=("strict", "general"),
         default="general",
@@ -262,22 +404,53 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     mode: NotFoundMode = args.not_found
     retriever: Retriever = args.retriever
+    context_mode: ContextMode = args.context
     embedding_dim = args.embedding_dim or default_embedding_dim(args.embedding_model)
     embedder = (
         ""
         if args.embedding_model == "text-search"
         else f"-{args.embedding_model}" + (f"-{embedding_dim}" if embedding_dim else "")
     )
+    context_name = {
+        "chunks": "",
+        "sections": "-sections",
+        "window": f"-window{args.neighbours}",
+    }[context_mode]
+    mq_name = (
+        f"-mq{args.multi_query}"
+        + (f"-w{args.mq_weight}" if args.mq_weight != 1.0 else "")
+        if args.multi_query
+        else ""
+    )
     config = args.config or (
         f"offline-{args.model}-{chunking.name}-{retriever}{embedder}"
-        f"-k{args.limit}-d{args.max_distance}-{mode}"
+        f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}{mq_name}"
+        + ("-dry" if args.dry_run else "")
     )
 
-    chunks = chunk_corpus(load_corpus(args.corpus), chunking)
+    documents = load_corpus(args.corpus)
+    chunks = chunk_corpus(documents, chunking)
+    sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
     # Без --split holdout золотого набора не берём (select_split, задача 2.1).
     items = select_split(items, args.split)
     print(f"Чанков: {len(chunks)} ({chunking.name}), вопросов: {len(items)}")
+
+    # M6: переформулировки — один вызов LLM на вопрос, с кэшем; идёт и при
+    # --dry-run (это не ответ, а поиск), повторно — бесплатно.
+    paraphrased: list[Paraphrased] = [Paraphrased() for _ in items]
+    if args.multi_query:
+        paraphrased = paraphrase_questions(
+            YandexClient.from_env(),
+            [item.question for item in items],
+            count=args.multi_query,
+            model=args.mq_model,
+            api=args.api,
+        )
+        print(
+            f"Переформулировок: {sum(len(p.queries) for p in paraphrased)} "
+            f"на {len(items)} вопросов, из кэша {sum(p.cached for p in paraphrased)}"
+        )
 
     retrieved = retrieve(
         chunks,
@@ -289,10 +462,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         workers=args.workers,
         embedding_model=args.embedding_model,
         embedding_dim=embedding_dim,
+        paraphrases=[p.queries for p in paraphrased] if args.multi_query else None,
+        paraphrase_weight=args.mq_weight,
     )
-    client = YandexClient.from_env()
+    # --dry-run: LLM не вызывается — поиск и контекст замеряются бесплатно.
+    client = None if args.dry_run else YandexClient.from_env()
 
     def ask(messages: list[Message]) -> Completion:
+        assert client is not None
         return client.complete(
             messages,
             model=args.model,
@@ -305,24 +482,37 @@ def main(argv: Sequence[str] | None = None) -> int:
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
     ):
+        # С multi-query у чанка из переформулировки нет расстояния до вопроса,
+        # поэтому порог — по лучшему расстоянию исходного вопроса (как M1).
         relevant = (
             relevant_matches(found, args.max_distance)
-            if retriever == "vector"
+            if retriever == "vector" and not args.multi_query
             else gate_by_best_distance(found, best, args.max_distance)
         )
-        selected = select_context(relevant, args.context_tokens)
+        selected = build_context(
+            relevant,
+            mode=context_mode,
+            sections=sections,
+            max_tokens=args.context_tokens,
+            neighbours=args.neighbours,
+        )
+        context_text = "\n".join(block.content for block in selected)
 
         calls: list[Completion] = []
         raw = answer = NOT_FOUND_ANSWER
         general = False
-        if selected:
+        if selected and not args.dry_run:
             calls.append(ask(build_faq_messages(item.question, selected)))
             raw = calls[-1].text.strip()
             answer = normalize_citations(raw, selected)
         # Р1 (решено 25.09): ответа в документах нет — ни одна выдержка не
         # прошла порог или модель по выдержкам ответила отказом — общий ответ
         # со строгой пометкой, что он не из документов компании.
-        if mode == "general" and (not selected or is_not_found(raw)):
+        if (
+            mode == "general"
+            and not args.dry_run
+            and (not selected or is_not_found(raw))
+        ):
             calls.append(ask(build_general_messages(item.question)))
             answer = ensure_general_prefix(calls[-1].text.strip())
             general = True
@@ -349,7 +539,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
-                "sources": _sources_json(selected),
+                "sources": _sources_json([block.match for block in selected]),
+                # M2: из чего собран контекст и сколько он стоит в токенах.
+                "context_kinds": ",".join(block.kind for block in selected),
+                "context_tokens": count_tokens(context_text) if selected else 0,
+                # Цитата эталона в контексте, который увидела модель (только у
+                # вопросов с evidence — золотой набор). Бесплатная метрика M2:
+                # не «нашли чанк», а «модели показали текст с ответом».
+                "evidence_in_context": (
+                    ""
+                    if not item.evidence
+                    else evidence_coverage(item.evidence, context_text)
+                    >= EVIDENCE_MIN_COVERAGE
+                ),
+                # M6: переформулировки и их цена (отдельно от вызова ответа).
+                "mq_queries": " | ".join(paraphrased[number - 1].queries),
+                "mq_input_tokens": paraphrased[number - 1].input_tokens,
+                "mq_output_tokens": paraphrased[number - 1].output_tokens,
+                "mq_latency_ms": round(paraphrased[number - 1].latency_ms),
                 "latency_ms": round(latency),
                 "extra": "",
                 "correct": "",
@@ -391,7 +598,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         "llm_calls": sum(int(str(row["llm_calls"])) for row in rows),
         "general_answers": sum(1 for row in rows if row["general_answer"]),
         "general_after_refusal": sum(1 for row in rows if row["general_after_refusal"]),
+        "context_tokens": sum(int(str(row["context_tokens"])) for row in rows),
+        "whole_sections": sum(
+            str(row["context_kinds"]).split(",").count("section") for row in rows
+        ),
+        "windows": sum(
+            str(row["context_kinds"]).split(",").count("window") for row in rows
+        ),
     }
+    with_evidence = [row for row in rows if row["evidence_in_context"] != ""]
+    extra["with_evidence"] = len(with_evidence)
+    extra["evidence_in_context"] = sum(
+        1 for row in with_evidence if row["evidence_in_context"]
+    )
+    extra["mq_input_tokens"] = sum(int(str(row["mq_input_tokens"])) for row in rows)
+    extra["mq_output_tokens"] = sum(int(str(row["mq_output_tokens"])) for row in rows)
+    if args.multi_query:
+        print(
+            f"Переформулировки (M6): токенов вход {extra['mq_input_tokens']}, "
+            f"выход {extra['mq_output_tokens']}; из кэша "
+            f"{sum(p.cached for p in paraphrased)} из {len(paraphrased)}"
+        )
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
     append_summary(
@@ -404,31 +631,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             "dataset": args.dataset.name + (f":{args.split}" if args.split else ""),
             "results_file": path.name,
             "notes": args.notes
-            or f"{PROMPT_VERSION}; {chunking.name}; ctx={args.context_tokens}",
+            or f"{PROMPT_VERSION}; {chunking.name}; ctx={args.context_tokens}; "
+            f"context={context_name.lstrip('-') or 'chunks'}",
         },
     )
     print(
-        f"\nF1 отказа {float(str(summary['f1'])):.3f} "
-        f"(precision {float(str(summary['precision'])):.3f}, "
-        f"recall {float(str(summary['recall'])):.3f}); "
-        f"отказов своими словами: {summary['refusal_paraphrases']}"
+        f"\nКонтекст ({context_mode}): токенов {extra['context_tokens']}, "
+        f"секций целиком {extra['whole_sections']}, окон {extra['windows']}; "
+        f"цитата эталона в контексте: {extra['evidence_in_context']} "
+        f"из {extra['with_evidence']}"
     )
-    print(
-        f"Ответов без ссылок [n]: {extra['uncited_answers']} из {len(answered_rows)}; "
-        f"ссылок на несуществующие выдержки: {extra['invalid_citations']}; "
-        f"ответов с номерами пунктов вида [2.2]: {extra['section_answers']}"
-    )
-    print(
-        f"LLM p50/p95: {float(str(summary['latency_p50_ms'])):.0f} / "
-        f"{float(str(summary['latency_p95_ms'])):.0f} мс; "
-        f"вызовов {extra['llm_calls']}, токенов вход {extra['input_tokens']}, "
-        f"выход {extra['output_tokens']}"
-    )
-    if mode == "general":
+    if args.dry_run:
+        print("LLM не вызывался (--dry-run): F1, ссылки и задержки не считались")
+    else:
         print(
-            f"Общих ответов с пометкой: {extra['general_answers']}, из них после "
-            f"отказа по выдержкам: {extra['general_after_refusal']}"
+            f"F1 отказа {float(str(summary['f1'])):.3f} "
+            f"(precision {float(str(summary['precision'])):.3f}, "
+            f"recall {float(str(summary['recall'])):.3f}); "
+            f"отказов своими словами: {summary['refusal_paraphrases']}"
         )
+        print(
+            f"Ответов без ссылок [n]: {extra['uncited_answers']} "
+            f"из {len(answered_rows)}; "
+            f"ссылок на несуществующие выдержки: {extra['invalid_citations']}; "
+            f"ответов с номерами пунктов вида [2.2]: {extra['section_answers']}"
+        )
+        print(
+            f"LLM p50/p95: {float(str(summary['latency_p50_ms'])):.0f} / "
+            f"{float(str(summary['latency_p95_ms'])):.0f} мс; "
+            f"вызовов {extra['llm_calls']}, токенов вход {extra['input_tokens']}, "
+            f"выход {extra['output_tokens']}"
+        )
+        if mode == "general":
+            print(
+                f"Общих ответов с пометкой: {extra['general_answers']}, из них "
+                f"после отказа по выдержкам: {extra['general_after_refusal']}"
+            )
     print(f"Результаты: {path}")
     print("Разметка correct и подсчёт: python -m eval.run_eval score --results …")
     return 0

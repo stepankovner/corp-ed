@@ -122,6 +122,7 @@ python -m eval.bench --corpus docs/ --dataset eval/silver.csv --split dev \
 | `--chunk-tokens N --overlap-tokens M` | E3 |
 | `--retriever hybrid --weights 1.0,0.5` | M1 (предпросмотр) |
 | `--glossary glossary.csv` | M5 (CSV `term,expansion`) |
+| `--multi-query 3 [--mq-weight 0.5]` | M6: переформулировки вопроса моделью (mq-v1, один вызов LLM на вопрос, кэш `eval/.cache/multi_query.json`) + RRF с исходным вопросом; порог — по расстоянию исходного вопроса. На золотом dev не помогло (25.09) |
 
 Эмбеддинги по умолчанию — `text-embeddings-v2` с размерностью 768 (решение
 по задаче 1, 25.09). Старые: `--embedding-model text-search`.
@@ -155,6 +156,20 @@ e2e` — расстояния, токены и проверки ссылок: `c
 `section_citations` (номер пункта документа вида `[2.2]` вместо номера
 выдержки). `latency_ms` — только вызов LLM.
 
+**Small-to-big (M2):** `--context sections` — на место найденного чанка
+встаёт его секция целиком, если влезает в бюджет, иначе окно «чанк ±
+`--neighbours`» по секции, иначе сам чанк; `--context window` — то же без
+секции целиком (вариант без таблицы `sections`). Колонки `context_kinds`
+(из чего собран контекст), `context_tokens` и `evidence_in_context`
+(дословная цитата эталона попала в контекст — только у вопросов с
+`evidence`). `--dry-run` — без вызовов LLM: поиск и контекст считаются
+бесплатно, F1 и ссылки — нет.
+
+```bash
+python -m eval.offline_e2e --corpus docs/ --dataset eval/private/golden.csv \
+    --dry-run --context sections
+```
+
 ## Сравнение двух прогонов
 
 ```bash
@@ -181,7 +196,7 @@ F1 отказа по порогам и 2–3 кандидата. **Финаль�
 | Скрипт | Задача |
 |---|---|
 | `python -m eval.probe_embedding_limit` | A1: лимит входа `text-search-doc`, молчаливая обрезка, символов на токен |
-| `python -m eval.judge --results …_e2e.csv` | M4: LLM-судья; `--calibrate` — совпадение с ручной разметкой (цель ≥ 85%) |
+| `python -m eval.judge --results …_e2e.csv` | M4: LLM-судья (по умолчанию Flash через OpenAI-совместимый API; `--model`, `--api native`); `--calibrate` — совпадение с ручной разметкой (цель ≥ 85%) |
 | `python -m eval.bench_reranker` | M3: задержка bge-reranker-v2-m3 на CPU (нужен `sentence-transformers`) |
 
 ## Результаты

@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from corp_ed.domain.split import format_breadcrumbs, split_document, split_into_chunks
+from corp_ed.domain.context import Section
+from corp_ed.domain.split import (
+    SectionDraft,
+    format_breadcrumbs,
+    split_into_chunks,
+    split_sections,
+)
 from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
 
 SUPPORTED_SUFFIXES = (".md", ".txt", ".docx", ".pdf")
@@ -31,6 +37,12 @@ class BenchChunk:
     heading_path: list[str]
     embed_text: str
     llm_text: str
+    section_id: str = ""
+    """Ключ секции в section_corpus (M2); у нарезки v1 секций нет."""
+
+
+def section_key(title: str, position: int) -> str:
+    return f"{title}#s{position}"
 
 
 @dataclass(frozen=True)
@@ -109,35 +121,60 @@ def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[Benc
             )
             continue
 
-        for draft in split_document(
-            document.markdown,
-            title=document.title,
-            chunk_tokens=config.chunk_tokens,
-            overlap_tokens=config.overlap_tokens,
-        ):
-            embed_text = draft.embed_text
-            if not config.crumbs_in_embed:
-                embed_text = _replace_crumbs(
-                    embed_text, document.title, draft.heading_path, ""
+        for section in _sections(document, config):
+            for draft in section.chunks:
+                embed_text = draft.embed_text
+                if not config.crumbs_in_embed:
+                    embed_text = _replace_crumbs(
+                        embed_text, document.title, draft.heading_path, ""
+                    )
+                elif not config.title_in_crumbs:
+                    embed_text = _replace_crumbs(
+                        embed_text,
+                        document.title,
+                        draft.heading_path,
+                        format_breadcrumbs("", draft.heading_path),
+                    )
+                chunks.append(
+                    BenchChunk(
+                        id=f"{document.title}#{draft.position}",
+                        material=document.title,
+                        position=draft.position,
+                        heading_path=draft.heading_path,
+                        embed_text=embed_text,
+                        llm_text=draft.llm_text,
+                        section_id=section_key(document.title, section.position),
+                    )
                 )
-            elif not config.title_in_crumbs:
-                embed_text = _replace_crumbs(
-                    embed_text,
-                    document.title,
-                    draft.heading_path,
-                    format_breadcrumbs("", draft.heading_path),
-                )
-            chunks.append(
-                BenchChunk(
-                    id=f"{document.title}#{draft.position}",
-                    material=document.title,
-                    position=draft.position,
-                    heading_path=draft.heading_path,
-                    embed_text=embed_text,
-                    llm_text=draft.llm_text,
-                )
-            )
     return chunks
+
+
+def section_corpus(
+    documents: list[Document], config: ChunkingConfig
+) -> dict[str, Section]:
+    """Секции по section_id для select_sections (M2): текст целиком и чанки
+    по порядку. Та же нарезка, что в chunk_corpus, поэтому llm_text чанков
+    совпадает с BenchChunk.llm_text — по нему select_sections находит чанк
+    в секции. У нарезки v1 секций нет."""
+    if config.version == "v1":
+        return {}
+    return {
+        section_key(document.title, section.position): Section(
+            content=section.llm_text,
+            chunks=[chunk.llm_text for chunk in section.chunks],
+        )
+        for document in documents
+        for section in _sections(document, config)
+    }
+
+
+def _sections(document: Document, config: ChunkingConfig) -> list[SectionDraft]:
+    return split_sections(
+        document.markdown,
+        title=document.title,
+        chunk_tokens=config.chunk_tokens,
+        overlap_tokens=config.overlap_tokens,
+    )
 
 
 def _replace_crumbs(

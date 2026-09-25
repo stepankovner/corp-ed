@@ -55,6 +55,7 @@ split_document(md, title=…, chunk_tokens=400, overlap_tokens=50) ── domain
 ```
 вопрос
   │  (M5, не в проде) expand_query — расшифровать сокращения ── domain/query.py
+  │  (M6, только стенд) переформулировки моделью + RRF ── prompts/multi_query.py
   │  [бэкенд] эмбеддинг text-embeddings-v2-query → top-5 ближайших чанков
   │  (M1, не в проде) + полнотекст → rrf_merge ─────── domain/fusion.py, fulltext.py
   ▼
@@ -242,6 +243,14 @@ ChunkDraft(
   тоже не хуже прочих. **Порог по очкам RRF ставить нельзя**: лучший всегда
   получает ~1/61, даже если вся выдача — мусор. Порог — по расстоянию
   лучшего *векторного* кандидата.
+- `fuse_query_rankings(original, paraphrased, paraphrase_weight)` — M6
+  multi-query: модель переписала вопрос тремя способами
+  (`prompts/multi_query.py`, mq-v1), по каждому своя выдача, всё
+  сливается тем же RRF; исходный вопрос — вес 1.0 и первый в списке. На
+  золотом dev это **не помогло** (25.09): переформулировки голосуют за
+  похожие чужие чанки и перевешивают точное попадание исходного
+  вопроса. Оставлено как инструмент стенда (`--multi-query N`), в проде
+  не используется.
 
 ### 3.7. `prompts/faq.py` — промпт ответа (`faq-v2.4`)
 
@@ -514,12 +523,13 @@ src/corp_ed/
   domain/markdown.py       общие утилиты Markdown
   domain/split.py          нарезка v2, крошки, два текста, разделы
   domain/context.py        бюджет контекста, small-to-big
-  domain/query.py          словарь сокращений (M5)
+  domain/query.py          словарь сокращений (M5), слияние переформулировок (M6)
   domain/fulltext.py       запрос для полнотекстового поиска (M1)
   domain/fusion.py         RRF (M1)
   domain/gaps.py           отчёт о пробелах: классификация, кластеры, приоритет, ПДн
   prompts/faq.py           промпт ответа faq-v2.4, ссылки, общий ответ
   prompts/gaps.py          промпт подписи кластера gaps-v1
+  prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)
 eval/                      наборы, метрики, стенды, судья, клиент Яндекса (раздел 4)
 tests/                     test_preprocess, test_split_document, test_faq_prompt,
                            test_context, test_retrieval_utils, test_gaps, ml_eval/

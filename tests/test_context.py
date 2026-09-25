@@ -1,6 +1,12 @@
 from dataclasses import dataclass, field
 
-from corp_ed.domain.context import ContextBlock, select_context, select_sections
+from corp_ed.domain.context import (
+    ContextBlock,
+    Section,
+    merge_chunks,
+    select_context,
+    select_sections,
+)
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.prompts.faq import build_faq_messages
 
@@ -108,7 +114,7 @@ def test_chunk_without_known_section() -> None:
             title="Док",
             heading_path=[],
             match=chunk,
-            whole_section=False,
+            kind="chunk",
         )
     ]
 
@@ -132,3 +138,82 @@ def test_context_blocks_fit_the_prompt() -> None:
     user = build_faq_messages("Вопрос?", blocks)[1].content
 
     assert "[1] Положение > 3.2\nВся секция." in user
+
+
+# --- окно соседей и склейка чанков (M2) -----------------------------------------
+
+
+def _section_chunks() -> list[str]:
+    # Как из split_sections: общая строка-крошки, перекрытие — целые
+    # предложения с конца предыдущего чанка в начале следующего.
+    return [
+        "Док > 3\nПервое предложение. Второе предложение.",
+        "Док > 3\nВторое предложение.\n\nТретье предложение. Четвёртое.",
+        "Док > 3\nЧетвёртое.\nПятое предложение.",
+    ]
+
+
+def test_merge_chunks_keeps_crumbs_once_and_drops_overlap() -> None:
+    assert merge_chunks(_section_chunks()) == (
+        "Док > 3\nПервое предложение. Второе предложение.\n\n"
+        "Третье предложение. Четвёртое.\nПятое предложение."
+    )
+
+
+def test_merge_chunks_without_overlap_joins_with_newline() -> None:
+    assert merge_chunks(["Док\nАбзац один.", "Док\nАбзац два."]) == (
+        "Док\nАбзац один.\nАбзац два."
+    )
+    # Первая строка разная — это не крошки, ничего не убирается.
+    assert merge_chunks(["первый чанк", "второй чанк"]) == "первый чанк\nвторой чанк"
+    assert merge_chunks(["один"]) == "один"
+    assert merge_chunks([]) == ""
+
+
+def test_window_when_section_does_not_fit() -> None:
+    texts = _section_chunks()
+    section = Section(content="x" * 3000, chunks=texts)  # 1000 токенов
+    match = Chunk(content=texts[1])
+
+    blocks = select_sections([match], {"s": section}, max_tokens=100, neighbours=1)
+
+    assert [(b.kind, b.whole_section) for b in blocks] == [("window", False)]
+    assert blocks[0].content == merge_chunks(texts)
+    assert blocks[0].match is match
+
+
+def test_window_shrinks_to_fit_and_covers_neighbours() -> None:
+    texts = [f"Док\n{letter * 30}" for letter in "abcde"]  # по 12 токенов
+    section = Section(content=None, chunks=texts)
+    ranked = [Chunk(content=texts[2]), Chunk(content=texts[3]), Chunk(content=texts[0])]
+
+    # ±2 (53 токена) не влезает, ±1 (32) — да; texts[3] уже внутри окна,
+    # texts[0] сам по себе (12) в остаток 8 не влезает.
+    blocks = select_sections(ranked, {"s": section}, max_tokens=40, neighbours=2)
+
+    assert [(b.kind, b.match) for b in blocks] == [("window", ranked[0])]
+    assert blocks[0].content == merge_chunks(texts[1:4])
+
+
+def test_no_sections_table_and_no_neighbours_is_plain_chunk() -> None:
+    chunk = Chunk(content="Док\nтекст")
+    section = Section(content=None, chunks=["Док\nтекст"])
+
+    blocks = select_sections([chunk], {"s": section}, max_tokens=100)
+
+    assert [b.kind for b in blocks] == ["chunk"]
+
+
+def test_same_chunk_twice_is_taken_once() -> None:
+    chunk = Chunk(content="Док\nтекст")
+    section = Section(chunks=["Док\nтекст"])
+
+    assert len(select_sections([chunk, chunk], {"s": section}, max_tokens=100)) == 1
+
+
+def test_section_text_as_plain_string_still_works() -> None:
+    chunk = Chunk(content="чанк")
+
+    blocks = select_sections([chunk], {"s": "секция"}, max_tokens=100, neighbours=1)
+
+    assert [(b.content, b.kind) for b in blocks] == [("секция", "section")]
