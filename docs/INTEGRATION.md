@@ -1,6 +1,6 @@
 # Статус контракта ML ↔ бэкенд
 
-Сверка `docs/backend-handoff.md` (ML, v1.2) с кодом на 25 сентября 2026.
+Сверка `docs/backend-handoff.md` (ML, после PR #16–#18) с кодом на 25 сентября 2026 (ночь).
 Кто что должен дальше — в конце. Правила разделения: ML пишет чистые
 функции и промпты (`domain/split.py`, `context.py`, `fusion.py`,
 `fulltext.py`, `query.py`, `gaps.py`, `ingest/preprocess.py`,
@@ -19,13 +19,13 @@
 | BH-9 `RagSettings` и `.env.example` | ✅ | `core/config.py` | размеры в токенах |
 | BH-10 тест промпта | ✅ | `tests/test_faq_service.py` | — |
 | BH-11 `qa_log` минимум | ✅ (заменён BH-20) | — | — |
-| BH-12 гибридный поиск (M1) | ✅ под флагом | `RAG_RETRIEVER=vector\|hybrid`, `chunk_repository.search_fulltext` | включение — решение ML по золотому набору |
-| BH-13 small-to-big (M2) | ⏸ | — | контракт черновой, финал к 13.10 |
+| BH-12 гибридный поиск (M1) | ✅ под флагом | `RAG_RETRIEVER=vector\|hybrid`, `chunk_repository.search_fulltext` | решение ML по золотому dev (25.09): остаётся `vector` |
+| BH-13 small-to-big (M2) | ⏸ после MVP | — | контракт чистовой 25.09 (таблица `sections`, `split_sections`, `select_sections`, `RAG_CONTEXT_MODE`); решение ML по золотому dev: +2/37 цитат за +50 % токенов — не встраивать до замера судьёй |
 | BH-14 словарь сокращений (M5) | ✅ | `services/glossary_service.py`, `/api/v1/glossary` | расшифровки только в поиск, не в промпт |
 | BH-15 адаптер OpenAI-совместимого API | ✅ | `llm/yandex_openai.py`, `llm/factory.py` | + `response_format` для строгого JSON |
 | BH-16 модель и размерность в конфиге | ✅ | `LLMSettings` | `EMBEDDING_DIM` — константа схемы, проверяется на старте |
 | BH-17 `vector(768)` + переингест | ✅ | миграция `97d70ebf2e07` | переингест ставится самой миграцией |
-| BH-18 порог 0.51 | ✅ предварительно | `.env.example` | финал — A8 к 12.10 |
+| BH-18 порог 0.51 | ✅ подтверждён на золотом dev (25.09) | `.env.example` | финал — holdout к 12.10 |
 | BH-19 температура и версия промпта | ✅ | `qa_log.prompt_version` | — |
 | BH-20 `qa_log` | ✅ | `domain/models.py::QaLog` | вопрос после `mask_pii`; `user_id` nullable (`SET NULL`); `best_fulltext_score` вместо `best_fulltext_rank`; + `origin`, токены, кредиты |
 | BH-21 ночная задача | ✅ | `services/gap_report_service.py`, `cli gaps` | пороги полнотекста не заданы до подбора (полнотекст в классификации не участвует) |
@@ -39,11 +39,11 @@
 
 | Что | Зачем | Срок по плану ML |
 |---|---|---|
-| Финальный `RAG_FAQ_MAX_DISTANCE` (A8 на живом API) | порог отказа | 12.10 |
-| Решение по `RAG_RETRIEVER=hybrid` и весу полнотекста | включить гибрид | после золотого набора |
+| Финальный `RAG_FAQ_MAX_DISTANCE` (A8 на holdout) | порог отказа; на dev остаётся 0.51 | 12.10 |
+| Решение по `RAG_RETRIEVER=hybrid` | на dev остаётся `vector`; пересмотр на holdout | 12.10 |
 | Пороги `GAPS_STRONG_FULLTEXT` / `GAPS_EMPTY_FULLTEXT` на `ts_rank_cd` | различать gap и retrieval_miss | по живым логам |
 | Замер случая (б) Р1 (отказ модели при найденных выдержках → общий ответ) | не противоречит ли общий ответ документам | задача 2.3/2.4 |
-| Контракт small-to-big (BH-13) | таблица `sections`, `select_sections` | 13.10 |
+| Решение «встраивать ли M2» после судьи на золотом dev | BH-13: таблица `sections`, `select_sections`, `RAG_CONTEXT_MODE` | после MVP |
 
 ## Что ML ждёт от бэкенда
 
@@ -52,6 +52,7 @@
 | Стенд с `/faq/search` и `/faq/ask` для `eval.run_eval` | код готов; развёртывание — `DEPLOY.md` |
 | `diagnostics` в ответе `/faq/ask` для E5 (модель, токены, кредиты, расстояние) | ✅ только ADMIN |
 | `fulltext_rank` в `/faq/search` для подбора порогов пробелов | ✅ |
+| `source_url` в источниках ответа (коннекторы) | ✅ поле `FaqSourceResponse.source_url`, пусто у загрузок |
 
 ## Договорённости, которые нельзя молча менять
 
