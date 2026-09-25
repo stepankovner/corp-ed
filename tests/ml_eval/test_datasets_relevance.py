@@ -294,6 +294,36 @@ def test_golden_level_and_split_columns(tmp_path: Path) -> None:
     assert (second.level, second.split) == ("topic", "")
 
 
+def test_golden_evidence_decides_relevance(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path / "golden.csv",
+        (*GOLDEN_COLUMNS, "level", "evidence", "author"),
+        [
+            [
+                "g01",
+                "За сколько подавать заявление?",
+                "За 14 дней",
+                "Положение об отпусках",
+                "3",
+                "true",
+                "fact",
+                "деталь",
+                "Заявление подаётся не позднее чем за 14 дней.",
+                "llm",
+            ]
+        ],
+    )
+
+    (item,) = load_dataset(path)
+    same_section = _chunk("Отпуск — 28 дней.", ["3 Отпуск"])
+    with_quote = _chunk("…Заявление подаётся не позднее чем за 14 дней.", ["3 Отпуск"])
+
+    # Раздел 3 — несколько чанков: засчитывается только чанк с цитатой.
+    assert item.evidence == "Заявление подаётся не позднее чем за 14 дней."
+    assert not is_relevant(item, same_section)
+    assert is_relevant(item, with_quote)
+
+
 def test_golden_rejects_unknown_level(tmp_path: Path) -> None:
     path = _write(
         tmp_path / "golden.csv",
