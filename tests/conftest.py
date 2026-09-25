@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 
 from corp_ed.core.database import Base
 from corp_ed.core.tenant_context import current_tenant
-from corp_ed.domain.models import Brief, Material, Tenant, Track, User, UserRole
+from corp_ed.domain.models import Material, Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -69,36 +69,18 @@ async def tenant_ctx(session: AsyncSession) -> AsyncGenerator[Tenant]:
 
 
 @pytest.fixture
-async def manager(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    manager = User(
+async def admin(session: AsyncSession, tenant_ctx: Tenant) -> User:
+    admin = User(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
-        email="manager@test.com",
-        role=UserRole.MANAGER,
+        email="admin@test.com",
+        role=UserRole.ADMIN,
         hashed_password="hashed",
     )
-    session.add(manager)
+    session.add(admin)
     await session.commit()
 
-    return manager
-
-
-@pytest.fixture
-async def brief(session: AsyncSession, manager: User) -> Brief:
-    brief = Brief(
-        id=uuid4(),
-        tenant_id=manager.tenant_id,
-        author_id=manager.id,
-        track=Track.MARKETING,
-        role_title="Marketing Intern",
-        goals="Learn marketing",
-        tasks="Assist with campaigns",
-        intern_level="junior",
-    )
-    session.add(brief)
-    await session.commit()
-
-    return brief
+    return admin
 
 
 @pytest.fixture
@@ -106,7 +88,6 @@ async def material(session: AsyncSession, tenant_ctx: Tenant) -> Material:
     material = Material(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
-        track=Track.MARKETING,
         title="Регламент отпусков",
         content="Первый абзац.\n\nВторой абзац.\n\nТретий абзац.",
     )
@@ -164,14 +145,14 @@ def faq_service(
 
 
 @pytest.fixture
-async def intern(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    intern = User(
+async def employee(session: AsyncSession, tenant_ctx: Tenant) -> User:
+    employee = User(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
-        email="intern@test.com",
-        role=UserRole.INTERN,
+        email="employee@test.com",
+        role=UserRole.EMPLOYEE,
         hashed_password="hashed",
     )
-    session.add(intern)
+    session.add(employee)
     await session.commit()
-    return intern
+    return employee

@@ -22,7 +22,7 @@ async def test_user_is_visible_within_tenant(
         email="a@b.c",
         hashed_password="x",
         full_name=None,
-        role=UserRole.MANAGER,
+        role=UserRole.ADMIN,
     )
     session.add(user)
     await session.commit()
@@ -44,7 +44,7 @@ async def test_write_with_foreign_tenant_id_is_rejected(
         email="a@b.c",
         hashed_password="x",
         full_name=None,
-        role=UserRole.MANAGER,
+        role=UserRole.ADMIN,
     )
     session.add(user)
 
@@ -60,7 +60,7 @@ async def test_tenant_id_inferred_from_context(
         email="a@b.c",
         hashed_password="x",
         full_name=None,
-        role=UserRole.MANAGER,
+        role=UserRole.ADMIN,
     )
     session.add(user)
     await session.commit()
@@ -77,7 +77,7 @@ async def test_write_without_tenant_context_is_rejected(session: AsyncSession) -
         email="a@b.c",
         hashed_password="x",
         full_name=None,
-        role=UserRole.MANAGER,
+        role=UserRole.ADMIN,
     )
     session.add(user)
     with pytest.raises(TenantContextMissingError):
@@ -93,7 +93,7 @@ async def test_tenant_id_cannot_be_changed(
         email="a@b.c",
         hashed_password="x",
         full_name=None,
-        role=UserRole.MANAGER,
+        role=UserRole.ADMIN,
     )
     session.add(user1)
     await session.commit()

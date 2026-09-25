@@ -23,11 +23,9 @@ router = APIRouter(prefix="/materials", tags=["materials"])
 async def create_material(
     data: MaterialCreateRequest,
     service: Annotated[MaterialService, Depends(get_material_service)],
-    current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))],
+    current_user: Annotated[User, Depends(require_role(UserRole.ADMIN))],
 ) -> MaterialResponse:
-    material = await service.create(
-        track=data.track, title=data.title, content=data.content
-    )
+    material = await service.create(title=data.title, content=data.content)
     return MaterialResponse.model_validate(material)
 
 
@@ -35,7 +33,7 @@ async def create_material(
 async def ingest_material(
     material_id: UUID,
     service: Annotated[MaterialService, Depends(get_material_service)],
-    current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))],
+    current_user: Annotated[User, Depends(require_role(UserRole.ADMIN))],
 ) -> IngestResponse:
     length = await service.ingest(material_id=material_id)
     return IngestResponse(material_id=material_id, chunks=length)

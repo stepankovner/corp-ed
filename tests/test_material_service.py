@@ -9,7 +9,6 @@ from corp_ed.domain.models import (
     Chunk,
     Material,
     Tenant,
-    Track,
 )
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -177,7 +176,6 @@ async def test_embedding_is_computed_from_embed_text(
 ) -> None:
     """В эмбеддинг уходит текст без разметки, в промпт — Markdown (BH-3)."""
     material = Material(
-        track=Track.MARKETING,
         title="Положение.docx",
         content="# Раздел 1\n\nСрок — **14 дней**.",
     )
@@ -202,7 +200,6 @@ async def test_heading_path_is_stored(
     fake_embeddings: FakeEmbeddingAdapter,
 ) -> None:
     material = Material(
-        track=Track.MARKETING,
         title="Положение об отпусках",
         content="# Раздел 3\n\n## 3.2 Перенос отпуска\n\nПо заявлению.",
     )

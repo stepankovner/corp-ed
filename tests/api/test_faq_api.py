@@ -21,10 +21,10 @@ class FailingLLM(LLMGateway):
 
 
 async def test_faq_empty_database_returns_no_answer(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     fake_llm,
 ) -> None:
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": "Что написано в материалах?"},
     )
@@ -39,7 +39,7 @@ async def test_faq_empty_database_returns_no_answer(
 
 
 async def test_faq_returns_answer_with_source(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     material: Material,
     chunk_repo,
     session: AsyncSession,
@@ -57,7 +57,7 @@ async def test_faq_returns_answer_with_source(
     await chunk_repo.bulk_create(chunks=[chunk])
     await session.commit()
 
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": "Что написано?"},
     )
@@ -76,10 +76,10 @@ async def test_faq_returns_answer_with_source(
 
 
 async def test_faq_empty_question_returns_422(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     fake_embeddings,
 ) -> None:
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": ""},
     )
@@ -89,7 +89,7 @@ async def test_faq_empty_question_returns_422(
 
 
 async def test_faq_llm_error_returns_502(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     material: Material,
     chunk_repo,
     session: AsyncSession,
@@ -108,7 +108,7 @@ async def test_faq_llm_error_returns_502(
 
     app.dependency_overrides[get_llm_gateway] = lambda: FailingLLM()
 
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": "Что написано?"},
     )

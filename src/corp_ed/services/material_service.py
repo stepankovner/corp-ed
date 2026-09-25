@@ -4,7 +4,7 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
-from corp_ed.domain.models import Chunk, Material, Track
+from corp_ed.domain.models import Chunk, Material
 from corp_ed.domain.split import split_document
 from corp_ed.ingest.preprocess import preprocess
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
@@ -36,12 +36,10 @@ class MaterialService:
     async def create(
         self,
         *,
-        track: Track,
         title: str,
         content: str,
     ) -> Material:
         material = Material(
-            track=track,
             title=title,
             content=content,
         )

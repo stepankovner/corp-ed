@@ -18,17 +18,13 @@ from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
-from corp_ed.repositories.brief_repository import BriefRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.repositories.program_repository import ProgramRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.material_service import MaterialService
-from corp_ed.services.program_service import ProgramService
-from corp_ed.services.user_service import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
@@ -37,13 +33,6 @@ def get_user_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserRepository:
     return UserRepository(session)
-
-
-def get_user_service(
-    repository: Annotated[UserRepository, Depends(get_user_repository)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> UserService:
-    return UserService(repository, session)
 
 
 def get_tenant_repository(
@@ -101,7 +90,7 @@ def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
     юзеров с одной из перечисленных ролей. Иначе — 403.
 
     Пример использования на эндпоинте:
-        current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))]
+        current_user: Annotated[User, Depends(require_role(UserRole.ADMIN))]
     """
 
     def checker(
@@ -151,12 +140,6 @@ def get_llm_gateway(
     )
 
 
-def get_brief_repository(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> BriefRepository:
-    return BriefRepository(session)
-
-
 def get_material_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MaterialRepository:
@@ -167,21 +150,6 @@ def get_chunk_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ChunkRepository:
     return ChunkRepository(session)
-
-
-def get_program_repository(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> ProgramRepository:
-    return ProgramRepository(session)
-
-
-def get_program_service(
-    program_repo: Annotated[ProgramRepository, Depends(get_program_repository)],
-    brief_repo: Annotated[BriefRepository, Depends(get_brief_repository)],
-    gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> ProgramService:
-    return ProgramService(program_repo, brief_repo, gateway, session)
 
 
 def get_material_service(

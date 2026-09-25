@@ -4,25 +4,23 @@ from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import ARRAY, DateTime, ForeignKey, Text, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from corp_ed.core.database import Base
 from corp_ed.domain.mixins import TenantMixin
 
 
 class UserRole(enum.Enum):
-    MANAGER = "manager"
-    INTERN = "intern"
+    """Роль сотрудника внутри своей компании.
 
+    ADMIN — управляет документами и пользователями компании, видит
+    отладку поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы.
+    Заводить компании (тенанты) не может ни одна роль: это делает
+    команда Kronto через CLI на сервере (см. corp_ed.cli).
+    """
 
-class Track(enum.Enum):
-    MARKETING = "marketing"
-    ANALYTICS = "analytics"
-
-
-class ProgramStatus(enum.Enum):
-    DRAFT = "draft"
-    APPROVED = "approved"
+    ADMIN = "admin"
+    EMPLOYEE = "employee"
 
 
 class Tenant(Base):
@@ -50,41 +48,10 @@ class User(TenantMixin, Base):
     )
 
 
-class Brief(TenantMixin, Base):
-    __tablename__ = "briefs"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    author_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
-    track: Mapped[Track]
-    role_title: Mapped[str]
-    goals: Mapped[str]
-    tasks: Mapped[str]
-    intern_level: Mapped[str]
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class Program(TenantMixin, Base):
-    __tablename__ = "programs"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    brief_id: Mapped[UUID] = mapped_column(ForeignKey("briefs.id"))
-    intern_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
-    status: Mapped[ProgramStatus] = mapped_column(default=ProgramStatus.DRAFT)
-    content: Mapped[str]
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-    brief: Mapped["Brief"] = relationship()
-
-
 class Material(TenantMixin, Base):
     __tablename__ = "materials"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    track: Mapped[Track]
     title: Mapped[str]
     content: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import TenantContextMissingError
 from corp_ed.core.tenant_context import current_tenant
-from corp_ed.domain.models import Chunk, Material, Tenant, Track
+from corp_ed.domain.models import Chunk, Material, Tenant
 from corp_ed.domain.types import ChunkMatch
 from corp_ed.repositories.chunk_repository import ChunkRepository
 
@@ -119,7 +119,6 @@ async def test_search_does_not_return_foreign_tenant_chunk(
     foreign_material = Material(
         id=uuid4(),
         tenant_id=foreign_tenant.id,
-        track=Track.MARKETING,
         title="Foreign tenant material",
         content="Foreign tenant material",
     )
@@ -204,7 +203,6 @@ async def test_search_skips_foreign_material_with_same_title(
     foreign_material = Material(
         id=uuid4(),
         tenant_id=foreign_tenant.id,
-        track=Track.MARKETING,
         title=material.title,
         content="Чужой регламент",
     )

@@ -3,8 +3,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from corp_ed.domain.models import Track
-
 # Ингест синхронный: ~0.7 с на чанк. 20 000 символов при chunk_tokens=400
 # (≈1200 символов тела) дают ~17 чанков ≈ 12 с. Поднимать только вместе
 # с переездом ингеста в фоновые задачи.
@@ -12,9 +10,8 @@ MAX_MATERIAL_LENGTH = 20_000
 
 
 class MaterialCreateRequest(BaseModel):
-    """Материал отдела в виде текста (загрузка файлов — позже)."""
+    """Документ компании в виде текста (Markdown или простой текст)."""
 
-    track: Track
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=MAX_MATERIAL_LENGTH)
 
@@ -25,7 +22,6 @@ class MaterialResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    track: Track
     title: str
     created_at: datetime
 

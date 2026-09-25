@@ -63,18 +63,18 @@ async def api(
 
 
 @pytest.fixture
-def manager_client(
+def admin_client(
     api: httpx.AsyncClient,
-    manager: User,
+    admin: User,
 ) -> httpx.AsyncClient:
-    app.dependency_overrides[get_current_user] = _as(manager)
+    app.dependency_overrides[get_current_user] = _as(admin)
     return api
 
 
 @pytest.fixture
-def intern_client(
+def employee_client(
     api: httpx.AsyncClient,
-    intern: User,
+    employee: User,
 ) -> httpx.AsyncClient:
-    app.dependency_overrides[get_current_user] = _as(intern)
+    app.dependency_overrides[get_current_user] = _as(employee)
     return api

@@ -8,15 +8,14 @@ from corp_ed.domain.models import Chunk, Material, User
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 
 
-async def test_manager_can_create_material(
-    manager_client: httpx.AsyncClient,
-    manager: User,
+async def test_admin_can_create_material(
+    admin_client: httpx.AsyncClient,
+    admin: User,
     session: AsyncSession,
 ) -> None:
-    response = await manager_client.post(
+    response = await admin_client.post(
         "/api/v1/materials",
         json={
-            "track": "marketing",
             "title": "Регламент отпусков",
             "content": "Первый абзац.",
         },
@@ -32,17 +31,16 @@ async def test_manager_can_create_material(
     material = await session.get(Material, UUID(body["id"]))
 
     assert material is not None
-    assert material.tenant_id == manager.tenant_id
+    assert material.tenant_id == admin.tenant_id
 
 
-async def test_intern_cannot_create_material(
-    intern_client: httpx.AsyncClient,
+async def test_employee_cannot_create_material(
+    employee_client: httpx.AsyncClient,
     session: AsyncSession,
 ) -> None:
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/materials",
         json={
-            "track": "marketing",
             "title": "Регламент отпусков",
             "content": "Первый абзац.",
         },
@@ -62,7 +60,6 @@ async def test_create_material_requires_authentication(
     response = await api.post(
         "/api/v1/materials",
         json={
-            "track": "marketing",
             "title": "Регламент отпусков",
             "content": "Первый абзац.",
         },
@@ -72,12 +69,12 @@ async def test_create_material_requires_authentication(
 
 
 async def test_ingest_material(
-    manager_client: httpx.AsyncClient,
+    admin_client: httpx.AsyncClient,
     material: Material,
     session: AsyncSession,
     fake_embeddings: FakeEmbeddingAdapter,
 ) -> None:
-    response = await manager_client.post(
+    response = await admin_client.post(
         f"/api/v1/materials/{material.id}/ingest",
     )
 
@@ -99,9 +96,9 @@ async def test_ingest_material(
 
 
 async def test_ingest_material_not_found(
-    manager_client: httpx.AsyncClient,
+    admin_client: httpx.AsyncClient,
 ) -> None:
-    response = await manager_client.post(
+    response = await admin_client.post(
         f"/api/v1/materials/{uuid4()}/ingest",
     )
 

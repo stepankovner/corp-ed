@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from corp_ed.api.v1.endpoints import auth, faq, materials, programs, users
+from corp_ed.api.v1.endpoints import auth, faq, materials
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     domain_fallback_handler,
@@ -39,14 +39,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="corp-ed",
-    description="AI-конструктор адаптации стажёров",
+    description="Kronto — ИИ-ассистент по внутренним документам компании",
     version="0.1.0",
     lifespan=lifespan,
 )
 
-app.include_router(users.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
-app.include_router(programs.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
 
