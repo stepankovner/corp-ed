@@ -16,11 +16,15 @@
 to_fulltext_query — там все слова соединятся через «or».
 
 Сравнить с multi-query (M6) на eval: если словарь закрывает большую часть
-случаев, лишний вызов LLM на переформулировки не нужен.
+случаев, лишний вызов LLM на переформулировки не нужен. Слияние выдач по
+переформулировкам — fuse_query_rankings ниже; сами переформулировки
+делает модель (prompts.multi_query).
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping, Sequence
+
+from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 
 _CYRILLIC_ENDING = "[а-яё]{0,3}"
 
@@ -67,3 +71,28 @@ def _term_pattern(term: str) -> re.Pattern[str]:
             rf"(?<!\w)(?:{escaped}{_CYRILLIC_ENDING}|(?i:{escaped}))(?!\w)"
         )
     return re.compile(rf"(?<!\w){escaped}(?!\w)", re.IGNORECASE)
+
+
+def fuse_query_rankings[T: Hashable](
+    original: Sequence[T],
+    paraphrased: Sequence[Sequence[T]],
+    *,
+    paraphrase_weight: float = 1.0,
+    k: int = DEFAULT_RRF_K,
+) -> list[T]:
+    """Multi-query (M6): выдачи по исходному вопросу и переформулировкам → одна.
+
+    RRF: исходный вопрос — с весом 1.0 и первым в списке (при равных
+    скорах его порядок побеждает), каждая переформулировка — с весом
+    paraphrase_weight. Чанк, который нашла только переформулировка,
+    попадает в выдачу, но ниже тех, кого нашли несколько запросов.
+
+    Порог отказа остаётся на расстоянии ИСХОДНОГО вопроса: скор RRF для
+    порога не годится (domain.fusion), а расстояние переформулировки —
+    это расстояние до другого текста.
+    """
+    if paraphrase_weight < 0:
+        raise ValueError("paraphrase_weight must be non-negative")
+    rankings = [original, *paraphrased]
+    weights = [1.0, *([paraphrase_weight] * len(paraphrased))]
+    return [item for item, _ in rrf_merge(rankings, weights, k=k)]

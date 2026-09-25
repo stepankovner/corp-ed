@@ -357,3 +357,63 @@ def test_dry_run_measures_context_without_llm(
     assert rows[0]["llm_calls"] == "0"
     assert rows[0]["evidence_in_context"] == "True"
     assert int(rows[0]["context_tokens"]) > 0
+
+
+# --- multi-query (M6): --multi-query N ---------------------------------------------
+
+
+def test_multi_query_brings_paraphrase_hits_into_context(
+    setup: tuple[Path, Path, _FakeYandex],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+
+    # Исходный вопрос находит первый чанк, переформулировка про перенос —
+    # второй; расстояние есть только у вопроса (0.3 — проходит порог).
+    def rankings_by_text(
+        chunks: Sequence[object],
+        queries: Sequence[str],
+        limit: int,
+        workers: int,
+        embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
+    ) -> tuple[list[list[int]], list[list[float]]]:
+        ranks = [[1] if "перенос" in q.casefold() else [0] for q in queries]
+        dists = [[0.35] if "перенос" in q.casefold() else [0.3] for q in queries]
+        return ranks, dists
+
+    from eval.multi_query import Paraphrased
+
+    monkeypatch.setattr(offline_e2e, "vector_rankings", rankings_by_text)
+    monkeypatch.setattr(
+        offline_e2e,
+        "paraphrase_questions",
+        lambda client, questions, **kwargs: [
+            Paraphrased(["Перенос отпуска правила"], input_tokens=120, output_tokens=30)
+            for _ in questions
+        ],
+    )
+
+    rows = _run(
+        corpus,
+        dataset,
+        tmp_path / "out",
+        "--multi-query",
+        "1",
+        "--chunk-tokens",
+        "20",
+        "--overlap-tokens",
+        "0",
+        "--not-found",
+        "strict",
+    )
+
+    assert rows[0]["mq_queries"] == "Перенос отпуска правила"
+    assert rows[0]["n_sources"] == "2"
+    assert rows[0]["evidence_in_context"] == "True"
+    assert (rows[0]["mq_input_tokens"], rows[0]["mq_output_tokens"]) == ("120", "30")
+    # Ответ модель получает по исходному вопросу, с обеими выдержками.
+    assert "Сколько дней отпуска?" in fake.prompts[-1]
+    assert "[2] Положение > Отпуск" in fake.prompts[-1]

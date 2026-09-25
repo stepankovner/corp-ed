@@ -16,6 +16,10 @@ Flash через OpenAI-совместимый API, text-embeddings-v2 с раз
 Шаги повторяют бэкенд (docs/backend-handoff.md, BH-3 и BH-7):
 1. top-limit чанков: по косинусному расстоянию (<семейство>-query → doc)
    или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
+   --multi-query N (M6): модель переписывает вопрос N способами
+   (prompts.multi_query, mq-v1), ищем по всем и сливаем RRF
+   (fuse_query_rankings); порог тогда — по лучшему расстоянию исходного
+   вопроса;
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается
    (как faq_service сейчас); для гибрида — по лучшему векторному
    кандидату (контракт M1). Не осталось ни одного — ответ по выдержкам не
@@ -54,6 +58,7 @@ from corp_ed.domain.context import (
     select_sections,
 )
 from corp_ed.domain.fusion import rrf_merge
+from corp_ed.domain.query import fuse_query_rankings
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import (
@@ -75,6 +80,7 @@ from eval.corpus import (
 )
 from eval.datasets import EvalItem, load_dataset, select_split
 from eval.metrics import percentile
+from eval.multi_query import Paraphrased, paraphrase_questions
 from eval.relevance import EVIDENCE_MIN_COVERAGE, evidence_coverage
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.run_eval import is_answered, looks_like_refusal, summarize_e2e
@@ -187,38 +193,90 @@ def retrieve(
     workers: int = 4,
     embedding_model: str = "text-search",
     embedding_dim: int | None = None,
+    paraphrases: Sequence[Sequence[str]] | None = None,
+    paraphrase_weight: float = 1.0,
 ) -> list[tuple[list[OfflineMatch], float | None]]:
-    """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние."""
-    depth = limit if retriever == "vector" else max(limit, FUSION_CANDIDATES)
-    vec_rank, vec_dist = vector_rankings(
-        chunks, questions, depth, workers, embedding_model, embedding_dim
+    """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
+
+    paraphrases (M6) — переформулировки каждого вопроса: выдачи по ним
+    сливаются с выдачей по вопросу (fuse_query_rankings). Расстояние у
+    чанка — до ИСХОДНОГО вопроса; у найденного только переформулировкой
+    его нет (None), поэтому с multi-query порог — по лучшему расстоянию
+    исходного вопроса, как в гибриде.
+    """
+    groups = [list(group) for group in paraphrases] if paraphrases else []
+    flat = [*questions, *(query for group in groups for query in group)]
+    depth = (
+        limit
+        if retriever == "vector" and not any(groups)
+        else max(limit, FUSION_CANDIDATES)
     )
-    if retriever == "vector":
-        return [
-            (
-                [
-                    OfflineMatch.from_chunk(chunks[i], d)
-                    for i, d in zip(ranking, dists, strict=True)
-                ],
-                dists[0] if dists else None,
-            )
-            for ranking, dists in zip(vec_rank, vec_dist, strict=True)
-        ]
-    text_rank = bm25_rankings(chunks, questions, depth)
+    ranked = rank_queries(
+        chunks,
+        flat,
+        retriever=retriever,
+        depth=depth,
+        weights=weights,
+        rrf_k=rrf_k,
+        workers=workers,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+    )
     results: list[tuple[list[OfflineMatch], float | None]] = []
-    for v_rank, v_dist, t_rank in zip(vec_rank, vec_dist, text_rank, strict=True):
-        distance_of = dict(zip(v_rank, v_dist, strict=True))
-        merged = rrf_merge([v_rank, t_rank], list(weights), k=rrf_k)[:limit]
+    offset = len(questions)
+    for index in range(len(questions)):
+        ranking, distance_of = ranked[index]
+        extra = [
+            ranked[offset + j][0] for j in range(len(groups[index]) if groups else 0)
+        ]
+        offset += len(extra)
+        if extra:
+            ranking = fuse_query_rankings(
+                ranking, extra, paraphrase_weight=paraphrase_weight, k=rrf_k
+            )
         results.append(
             (
                 [
                     OfflineMatch.from_chunk(chunks[i], distance_of.get(i))
-                    for i, _ in merged
+                    for i in ranking[:limit]
                 ],
-                v_dist[0] if v_dist else None,
+                min(distance_of.values(), default=None),
             )
         )
     return results
+
+
+def rank_queries(
+    chunks: Sequence[BenchChunk],
+    queries: Sequence[str],
+    *,
+    retriever: Retriever,
+    depth: int,
+    weights: Sequence[float],
+    rrf_k: int,
+    workers: int,
+    embedding_model: str,
+    embedding_dim: int | None,
+) -> list[tuple[list[int], dict[int, float]]]:
+    """Для каждого запроса: индексы чанков по убыванию и расстояния векторной
+    ветки (у гибрида — после RRF вектора и BM25; расстояния только у тех,
+    кого нашёл вектор)."""
+    vec_rank, vec_dist = vector_rankings(
+        chunks, queries, depth, workers, embedding_model, embedding_dim
+    )
+    if retriever == "vector":
+        return [
+            (ranking, dict(zip(ranking, dists, strict=True)))
+            for ranking, dists in zip(vec_rank, vec_dist, strict=True)
+        ]
+    text_rank = bm25_rankings(chunks, queries, depth)
+    return [
+        (
+            [i for i, _ in rrf_merge([v_rank, t_rank], list(weights), k=rrf_k)],
+            dict(zip(v_rank, v_dist, strict=True)),
+        )
+        for v_rank, v_dist, t_rank in zip(vec_rank, vec_dist, text_rank, strict=True)
+    ]
 
 
 def citation_numbers(answer: str) -> list[int]:
@@ -305,6 +363,17 @@ def _parser() -> argparse.ArgumentParser:
         help="без вызовов LLM: только поиск и контекст (бесплатно)",
     )
     parser.add_argument(
+        "--multi-query",
+        type=int,
+        default=0,
+        help="M6: сколько переформулировок вопроса искать вместе с ним "
+        "(0 — выключено; один вызов LLM на вопрос, кэшируется)",
+    )
+    parser.add_argument(
+        "--mq-weight", type=float, default=1.0, help="M6: вес переформулировки в RRF"
+    )
+    parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
+    parser.add_argument(
         "--not-found",
         choices=("strict", "general"),
         default="general",
@@ -347,9 +416,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "sections": "-sections",
         "window": f"-window{args.neighbours}",
     }[context_mode]
+    mq_name = (
+        f"-mq{args.multi_query}"
+        + (f"-w{args.mq_weight}" if args.mq_weight != 1.0 else "")
+        if args.multi_query
+        else ""
+    )
     config = args.config or (
         f"offline-{args.model}-{chunking.name}-{retriever}{embedder}"
-        f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}"
+        f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}{mq_name}"
         + ("-dry" if args.dry_run else "")
     )
 
@@ -361,6 +436,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     items = select_split(items, args.split)
     print(f"Чанков: {len(chunks)} ({chunking.name}), вопросов: {len(items)}")
 
+    # M6: переформулировки — один вызов LLM на вопрос, с кэшем; идёт и при
+    # --dry-run (это не ответ, а поиск), повторно — бесплатно.
+    paraphrased: list[Paraphrased] = [Paraphrased() for _ in items]
+    if args.multi_query:
+        paraphrased = paraphrase_questions(
+            YandexClient.from_env(),
+            [item.question for item in items],
+            count=args.multi_query,
+            model=args.mq_model,
+            api=args.api,
+        )
+        print(
+            f"Переформулировок: {sum(len(p.queries) for p in paraphrased)} "
+            f"на {len(items)} вопросов, из кэша {sum(p.cached for p in paraphrased)}"
+        )
+
     retrieved = retrieve(
         chunks,
         [item.question for item in items],
@@ -371,6 +462,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         workers=args.workers,
         embedding_model=args.embedding_model,
         embedding_dim=embedding_dim,
+        paraphrases=[p.queries for p in paraphrased] if args.multi_query else None,
+        paraphrase_weight=args.mq_weight,
     )
     # --dry-run: LLM не вызывается — поиск и контекст замеряются бесплатно.
     client = None if args.dry_run else YandexClient.from_env()
@@ -389,9 +482,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
     ):
+        # С multi-query у чанка из переформулировки нет расстояния до вопроса,
+        # поэтому порог — по лучшему расстоянию исходного вопроса (как M1).
         relevant = (
             relevant_matches(found, args.max_distance)
-            if retriever == "vector"
+            if retriever == "vector" and not args.multi_query
             else gate_by_best_distance(found, best, args.max_distance)
         )
         selected = build_context(
@@ -457,6 +552,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else evidence_coverage(item.evidence, context_text)
                     >= EVIDENCE_MIN_COVERAGE
                 ),
+                # M6: переформулировки и их цена (отдельно от вызова ответа).
+                "mq_queries": " | ".join(paraphrased[number - 1].queries),
+                "mq_input_tokens": paraphrased[number - 1].input_tokens,
+                "mq_output_tokens": paraphrased[number - 1].output_tokens,
+                "mq_latency_ms": round(paraphrased[number - 1].latency_ms),
                 "latency_ms": round(latency),
                 "extra": "",
                 "correct": "",
@@ -511,6 +611,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     extra["evidence_in_context"] = sum(
         1 for row in with_evidence if row["evidence_in_context"]
     )
+    extra["mq_input_tokens"] = sum(int(str(row["mq_input_tokens"])) for row in rows)
+    extra["mq_output_tokens"] = sum(int(str(row["mq_output_tokens"])) for row in rows)
+    if args.multi_query:
+        print(
+            f"Переформулировки (M6): токенов вход {extra['mq_input_tokens']}, "
+            f"выход {extra['mq_output_tokens']}; из кэша "
+            f"{sum(p.cached for p in paraphrased)} из {len(paraphrased)}"
+        )
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
     append_summary(

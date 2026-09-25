@@ -22,6 +22,8 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+# кэш стенда: эмбеддинги и переформулировки (eval.bench, eval.multi_query)
+eval/.cache/
 .coverage
 htmlcov/
 
