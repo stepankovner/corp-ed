@@ -196,7 +196,7 @@ F1 отказа по порогам и 2–3 кандидата. **Финаль�
 | Скрипт | Задача |
 |---|---|
 | `python -m eval.probe_embedding_limit` | A1: лимит входа `text-search-doc`, молчаливая обрезка, символов на токен |
-| `python -m eval.judge --results …_e2e.csv` | M4: LLM-судья (по умолчанию Flash через OpenAI-совместимый API; `--model`, `--api native`); `--calibrate` — совпадение с ручной разметкой (цель ≥ 85%) |
+| `python -m eval.judge --results …_e2e.csv` | M4: LLM-судья (по умолчанию Flash через OpenAI-совместимый API; `--model`, `--api native`); `--calibrate` — совпадение с ручной разметкой `correct` (цель ≥ 85 %, каппа ≥ 0,6), можно несколько `*_judged.csv` сразу. Калибровка 26.09: 34/38, каппа 0,77 |
 | `python -m eval.bench_reranker` | M3: задержка bge-reranker-v2-m3 на CPU (нужен `sentence-transformers`) |
 
 ## Результаты

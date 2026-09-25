@@ -804,3 +804,31 @@ def test_section_corpus_matches_chunk_corpus() -> None:
     assert all(c.llm_text in sections[c.section_id].chunks for c in chunks)
     assert all(s.content for s in sections.values())
     assert section_corpus(documents, ChunkingConfig(version="v1")) == {}
+
+
+def test_judge_calibrate_accepts_several_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # 40 оценок могут лежать в разных прогонах: калибровка — по всем сразу.
+    import eval.judge as judge
+
+    header = "id,question,answer,correct,judge_correct\n"
+    a = tmp_path / "a_e2e_judged.csv"
+    b = tmp_path / "b_e2e_judged.csv"
+    a.write_text(header + "q1,в,о,2,2\nq2,в,о,0,0\nq3,в,о,2,\n", encoding="utf-8")
+    b.write_text(header + "q1,в,о,2,1\nq4,в,о,1,1\n", encoding="utf-8")
+
+    code = judge.main(["--results", str(a), str(b), "--calibrate"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    # q3 без вердикта судьи не считается; итого 4 оценки из двух файлов.
+    assert "Размеченных ответов: 4 (файлов: 2)" in out
+    assert "мало оценок" in out
+
+
+def test_judge_needs_exactly_one_file_without_calibrate(tmp_path: Path) -> None:
+    import eval.judge as judge
+
+    with pytest.raises(SystemExit):
+        judge.main(["--results", str(tmp_path / "a.csv"), str(tmp_path / "b.csv")])
