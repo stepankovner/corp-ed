@@ -75,6 +75,11 @@ ML-стек до `ml/docs` внутри, CI зелёный.
   `material_title` и `fulltext_rank`, принимает `retriever`.
 - **Найдено при сверке:** BH-25 (`content_filter` уходит клиенту как 502),
   BH-26 (версия модели не пишется в `qa_log`). Оба ниже.
+- **Решения ML по золотому dev (25.09, вечер; `docs/ml-report.md`,
+  раздел «Золотой dev»):** текущие значения остаются —
+  `RAG_CHUNK_TOKENS=400/50`, `RAG_FAQ_LIMIT=5`, `RAG_FAQ_MAX_DISTANCE=0.51`,
+  `RAG_RETRIEVER=vector`, крошки с названием документа; M2 (BH-13) —
+  после MVP. Менять ничего не нужно. Финал — на holdout к 12.10.
 - **Роли после разворота продукта — ADMIN и EMPLOYEE.** Где в пунктах
   написано MANAGER, читать ADMIN; где INTERN — EMPLOYEE.
 - ML-ветки обновляются только новыми коммитами и слияниями, без
