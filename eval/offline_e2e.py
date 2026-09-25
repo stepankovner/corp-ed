@@ -8,7 +8,7 @@
 переменными окружения: faq_limit (E4), модель (E5), порог (A8), режим
 «ответа нет» (Р1).
 
-Шаги повторяют бэкенд (docs/ml-backend-contracts.md):
+Шаги повторяют бэкенд (docs/backend-handoff.md, BH-3 и BH-7):
 1. top-limit чанков: по косинусному расстоянию (text-search-query → doc)
    или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается

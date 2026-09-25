@@ -6,7 +6,7 @@ run_eval ходит только сюда, в БД и во внутреннос�
 - POST /api/v1/auth/login  {company_code, email, password} → {access_token}
 - POST /api/v1/faq/search  {question, limit} → top-K чанков с расстояниями,
   без LLM. Отладочный, только для админа. ЗАДАЧА БЭКЕНДУ (до 1.10);
-  предлагаемый ответ — в docs/ml-backend-contracts.md.
+  предлагаемый ответ — в docs/backend-handoff.md (BH-5).
 - POST /api/v1/faq/ask     {question} → {content, answer_given, sources}
 
 Разбор ответов терпим к именам полей (chunk_id / id, llm_text / content,
