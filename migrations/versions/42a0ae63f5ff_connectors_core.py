@@ -150,8 +150,12 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     # Документы коннекторов вместе с ними: без connector_id они потеряли
-    # бы источник и стали бы неотличимы от ручных загрузок.
+    # бы источник и стали бы неотличимы от ручных загрузок. Под FORCE RLS
+    # владелец без app.tenant_id не видит ни строки — снимаем FORCE на
+    # время удаления (правило из core/db_policies.py).
+    op.execute("ALTER TABLE materials NO FORCE ROW LEVEL SECURITY")
     op.execute("DELETE FROM materials WHERE connector_id IS NOT NULL")
+    op.execute("ALTER TABLE materials FORCE ROW LEVEL SECURITY")
     op.drop_index('uq_materials_tenant_sha256', table_name='materials')
     op.create_index(
         'uq_materials_tenant_sha256', 'materials', ['tenant_id', 'source_sha256'],
