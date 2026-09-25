@@ -122,6 +122,7 @@ python -m eval.bench --corpus docs/ --dataset eval/silver.csv --split dev \
 | `--chunk-tokens N --overlap-tokens M` | E3 |
 | `--retriever hybrid --weights 1.0,0.5` | M1 (предпросмотр) |
 | `--glossary glossary.csv` | M5 (CSV `term,expansion`) |
+| `--multi-query 3 [--mq-weight 0.5]` | M6: переформулировки вопроса моделью (mq-v1, один вызов LLM на вопрос, кэш `eval/.cache/multi_query.json`) + RRF с исходным вопросом; порог — по расстоянию исходного вопроса. На золотом dev не помогло (25.09) |
 
 Эмбеддинги по умолчанию — `text-embeddings-v2` с размерностью 768 (решение
 по задаче 1, 25.09). Старые: `--embedding-model text-search`.
