@@ -216,6 +216,8 @@ def get_embedding_gateway(
         client=client,
         folder_id=settings.yc_folder_id,
         api_key=settings.yc_api_key.get_secret_value(),
+        family=settings.embedding_model,
+        dim=settings.embedding_dim,
         query_throttle=query_throttle,
     )
 

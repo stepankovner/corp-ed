@@ -94,6 +94,11 @@ def rls_statements(tables: tuple[str, ...] = TENANT_TABLES) -> list[str]:
     FORCE — политика действует и для владельца таблицы. Обходят её
     только суперпользователь и роли с BYPASSRLS, поэтому приложение
     обязано работать под ролью без них (проверяется на старте).
+
+    Следствие для МИГРАЦИЙ с данными: владелец схемы тоже видит ноль
+    строк без app.tenant_id. DELETE/UPDATE по всем компаниям — через
+    TRUNCATE или внутри ALTER TABLE ... NO FORCE / FORCE в той же
+    транзакции (пример — ревизия 97d70ebf2e07).
     """
     statements: list[str] = []
     for table in tables:

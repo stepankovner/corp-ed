@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import (
     Chunk,
     Material,
@@ -22,7 +23,7 @@ def _chunk(material: Material, position: int, content: str) -> Chunk:
         heading_path=["Раздел 3", "3.1 Продолжительность"],
         embed_text=content,
         content=content,
-        embedding=[0.1] * 256,
+        embedding=[0.1] * EMBEDDING_DIM,
         model="fake",
         model_version="fake",
     )
@@ -114,7 +115,7 @@ async def test_general_answer_when_chunks_too_far(
     chunk_repo: ChunkRepository,
 ) -> None:
     chunk = _chunk(material, 0, "Совсем про другое.")
-    chunk.embedding = [0.9] + [0.1] * 255
+    chunk.embedding = [0.9] + [0.1] * (EMBEDDING_DIM - 1)
     await chunk_repo.bulk_create([chunk])
     llm = ScriptedLLM("Обычно так.")
 
@@ -279,7 +280,7 @@ async def test_sources_follow_excerpt_order(
     """Номер [n] в ответе — позиция в источниках, порядок обязан совпадать."""
     near = _chunk(material, 0, "Ближний.")
     far = _chunk(material, 1, "Дальний.")
-    far.embedding = [0.2] * 128 + [0.1] * 128
+    far.embedding = [0.2] * (EMBEDDING_DIM // 2) + [0.1] * (EMBEDDING_DIM // 2)
     await chunk_repo.bulk_create([far, near])
 
     result = await _service(chunk_repo, fake_embeddings, fake_llm).answer("Вопрос")

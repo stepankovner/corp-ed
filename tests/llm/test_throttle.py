@@ -8,6 +8,7 @@ import httpx
 import pytest
 from redis.asyncio import Redis
 
+from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.llm.throttle import (
     InMemoryThrottle,
     RedisThrottle,
@@ -73,7 +74,11 @@ async def test_every_attempt_takes_a_slot(monkeypatch: pytest.MonkeyPatch) -> No
         httpx.Response(429, json={}),
         httpx.Response(
             200,
-            json={"embedding": [0.1] * 256, "numTokens": "5", "modelVersion": "v"},
+            json={
+                "embedding": [0.1] * EMBEDDING_DIM,
+                "numTokens": "5",
+                "modelVersion": "v",
+            },
         ),
     ]
     client = httpx.AsyncClient(

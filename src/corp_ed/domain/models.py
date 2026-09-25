@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
 from corp_ed.domain.mixins import TenantMixin
 
@@ -163,7 +164,7 @@ class Chunk(TenantMixin, Base):
     embed_text: Mapped[str] = mapped_column(Text, default="", server_default="")
     # Крошки + Markdown (llm_text) — то, что уходит в промпт.
     content: Mapped[str]
-    embedding: Mapped[list[float]] = mapped_column(Vector(256))
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
     model: Mapped[str]
     model_version: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(

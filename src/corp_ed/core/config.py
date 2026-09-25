@@ -4,6 +4,13 @@ from typing import Literal, Self
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+EMBEDDING_DIM = 768
+"""Размерность эмбеддингов — свойство СХЕМЫ базы (chunks.embedding
+vector(768)), а не только настройка. text-embeddings-v2 с dim=768 —
+решение ML от 25.09 (MRR +0,048 к 256, p = 0,003). Сменить её можно
+только миграцией колонки и полной переиндексацией: векторы разных
+размерностей и моделей несравнимы."""
+
 MIN_SECRET_KEY_LENGTH = 32
 """HS256 подписывает ключом произвольной длины, но ключ короче размера
 хеша (32 байта) перебирается офлайн по одному перехваченному токену.
@@ -77,11 +84,30 @@ class LLMSettings(BaseSettings):
     # процесс: при N воркерах uvicorn ставить не больше 10 / N.
     llm_max_concurrency: int = Field(default=8, gt=0, le=10)
 
+    # Эмбеддинги — пара моделей <семейство>-doc / <семейство>-query.
+    # Смена семейства без переиндексации смешает в выдаче векторы двух
+    # моделей: расстояния несравнимы, порог отказа теряет смысл.
+    embedding_model: Literal["text-embeddings-v2", "text-search"] = "text-embeddings-v2"
+    embedding_dim: int = EMBEDDING_DIM
+
     # Эмбеддинги: квота 10 запросов в секунду на каталог, общая для API и
     # воркера. Вопросам сотрудников — своя доля, ингесту — своя, в сумме
     # с запасом до квоты (BH-4: «поиск приоритетнее ингеста»).
     embedding_query_rps: float = Field(default=3.0, gt=0)
     embedding_ingest_rps: float = Field(default=6.0, gt=0)
+
+    @model_validator(mode="after")
+    def validate_embedding_dim(self) -> Self:
+        # Лучше не стартовать, чем писать векторы, которые не лягут в
+        # колонку, или — хуже — искать ими по чужой размерности.
+        if self.embedding_dim != EMBEDDING_DIM:
+            raise ValueError(
+                f"EMBEDDING_DIM={self.embedding_dim} does not match the schema "
+                f"({EMBEDDING_DIM}); changing it needs a migration and a reindex"
+            )
+        if self.embedding_model == "text-search" and self.embedding_dim != 256:
+            raise ValueError("text-search produces 256-dimensional vectors only")
+        return self
 
     @model_validator(mode="after")
     def validate_embedding_quota(self) -> Self:

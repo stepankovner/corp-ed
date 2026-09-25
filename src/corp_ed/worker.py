@@ -182,6 +182,8 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             client=client,
             folder_id=llm.yc_folder_id,
             api_key=llm.yc_api_key.get_secret_value(),
+            family=llm.embedding_model,
+            dim=llm.embedding_dim,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
         worker = IngestWorker(get_session_maker(), gateway, rag)

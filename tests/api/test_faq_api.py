@@ -2,6 +2,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import get_llm_gateway
+from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import Chunk, Material
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
@@ -53,7 +54,7 @@ async def test_faq_returns_answer_with_source(
         material_id=material.id,
         position=0,
         content="Первый чанк.",
-        embedding=[0.1] * 256,
+        embedding=[0.1] * EMBEDDING_DIM,
         model="fake",
         model_version="fake",
     )
@@ -103,7 +104,7 @@ async def test_faq_llm_error_returns_502(
         material_id=material.id,
         position=0,
         content="Первый чанк.",
-        embedding=[0.1] * 256,
+        embedding=[0.1] * EMBEDDING_DIM,
         model="fake",
         model_version="fake",
     )

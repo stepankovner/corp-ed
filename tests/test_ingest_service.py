@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.models import (
     Chunk,
@@ -119,7 +120,8 @@ async def test_metadata_into_database(
 
     assert chunks
     assert all(
-        chunk.model == "text-search-doc" and chunk.model_version == "fake"
+        chunk.model == f"text-embeddings-v2-doc@{EMBEDDING_DIM}"
+        and chunk.model_version == "fake"
         for chunk in chunks
     )
 
