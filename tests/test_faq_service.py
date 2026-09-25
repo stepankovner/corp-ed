@@ -7,7 +7,7 @@ from corp_ed.domain.models import (
     Tenant,
     User,
 )
-from corp_ed.domain.types import AnswerOrigin, NotFoundMode
+from corp_ed.domain.types import AnswerOrigin, NotFoundMode, Retriever
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.llm.gateway import LLMGateway
@@ -70,6 +70,7 @@ def _service(
     max_distance: float = 0.6,
     context_max_tokens: int = 3000,
     temperature: float = 0.0,
+    retriever: Retriever = Retriever.VECTOR,
 ) -> FaqService:
     return FaqService(
         chunk_repo=chunk_repo,
@@ -83,6 +84,8 @@ def _service(
         max_distance=max_distance,
         context_max_tokens=context_max_tokens,
         temperature=temperature,
+        retriever=retriever,
+        fulltext_weight=0.5,
     )
 
 

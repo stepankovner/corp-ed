@@ -146,6 +146,12 @@ class RagSettings(BaseSettings):
     # Для FAQ 0: при 0.3 ответ на один и тот же вопрос по одним и тем же
     # выдержкам переключался «ответил ↔ отказал» (замер ML 24.09, BH-8).
     faq_temperature: float = Field(ge=0, le=1)
+    # Способ поиска (M1, BH-12): vector или hybrid. Переключает ML по
+    # замеру на золотом наборе, поэтому тоже без дефолта.
+    retriever: Literal["vector", "hybrid"]
+    # Вес полнотекстовой ветки в RRF (вектор — 1.0). Стартовое 0.5 — ТЗ
+    # и оптимум Битрикс24; вес выше 1.0 у них ухудшал качество.
+    fulltext_weight: float = Field(gt=0, le=2)
 
     model_config = SettingsConfigDict(
         env_prefix="RAG_",

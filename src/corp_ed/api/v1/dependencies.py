@@ -25,6 +25,7 @@ from corp_ed.core.exceptions import (
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
+from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.throttle import Throttle
@@ -330,4 +331,6 @@ def get_faq_service(
         max_distance=settings.faq_max_distance,
         context_max_tokens=settings.context_max_tokens,
         temperature=settings.faq_temperature,
+        retriever=Retriever(settings.retriever),
+        fulltext_weight=settings.fulltext_weight,
     )

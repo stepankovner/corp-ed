@@ -40,6 +40,8 @@ RAG = RagSettings(
     faq_max_distance=0.6,
     context_max_tokens=3000,
     faq_temperature=0.0,
+    retriever="vector",
+    fulltext_weight=0.5,
 )
 
 

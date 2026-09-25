@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from uuid import UUID
 
 import structlog
@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.context import select_context
+from corp_ed.domain.fulltext import to_fulltext_query
+from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.types import (
@@ -14,6 +16,7 @@ from corp_ed.domain.types import (
     ChunkMatch,
     FaqAnswer,
     NotFoundMode,
+    Retriever,
 )
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
@@ -33,6 +36,23 @@ from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
 
 logger = structlog.get_logger()
+
+FUSION_CANDIDATES = 50
+"""Глубина каждой ветки перед слиянием RRF — как в замерах ML
+(eval/bench.py). Слияние топ-5 с топ-5 теряет чанки, которые ни одна
+ветка не ставит в пятёрку, но обе держат высоко."""
+
+
+@dataclass(frozen=True)
+class _Retrieval:
+    candidates: list[ChunkMatch]
+    """top-limit в итоговом порядке, без порога."""
+    relevant: list[ChunkMatch]
+    """Прошедшие порог — только они могут попасть в промпт."""
+    nearest: float | None
+    """Расстояние лучшего ВЕКТОРНОГО кандидата (qa_log, классы пробелов)."""
+    best_fulltext: float | None
+    """ts_rank_cd лучшего полнотекстового совпадения; None — пусто."""
 
 
 @dataclass
@@ -59,6 +79,8 @@ class FaqService:
         max_distance: float,
         context_max_tokens: int,
         temperature: float,
+        retriever: Retriever,
+        fulltext_weight: float,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -71,6 +93,8 @@ class FaqService:
         self.max_distance = max_distance
         self.context_max_tokens = context_max_tokens
         self.temperature = temperature
+        self.retriever = retriever
+        self.fulltext_weight = fulltext_weight
 
     async def answer(self, question: str, user: User) -> FaqAnswer:
         """Ответить по документам, а если в них ответа нет — из общих знаний.
@@ -83,7 +107,8 @@ class FaqService:
 
         Выдержки, не прошедшие порог max_distance, в модель не уходят:
         нерелевантный контекст дороже и толкает модель выдать чужой
-        пункт за ответ.
+        пункт за ответ. Как именно применяется порог — зависит от
+        способа поиска (_retrieve).
 
         Каждый ответ пишется в qa_log (BH-20) в той же транзакции:
         версия промпта, модель, лучшее расстояние, токены и кредиты.
@@ -96,17 +121,13 @@ class FaqService:
         mode = NotFoundMode(tenant.not_found_mode) if tenant else NotFoundMode.GENERAL
         embedded = await self.embedding_gateway.embed_query(question)
 
-        matches = await self.chunk_repo.search(
-            embedding=embedded.embedding,
-            limit=self.limit,
+        found = await self._retrieve(
+            question, embedded.embedding, limit=self.limit, retriever=self.retriever
         )
-        relevant: list[ChunkMatch] = [
-            match for match in matches if match.distance <= self.max_distance
-        ]
         # Порядок сохраняется: номер [n] в ответе модели — позиция выдержки
         # в context, и в том же порядке источники уходят клиенту.
-        context = select_context(relevant, max_tokens=self.context_max_tokens)
-        nearest = matches[0].distance if matches else None
+        context = select_context(found.relevant, max_tokens=self.context_max_tokens)
+        nearest = found.nearest
 
         outcome = await self._answer(question, context, mode)
 
@@ -132,6 +153,7 @@ class FaqService:
                 prompt_version=PROMPT_VERSION,
                 llm_model=model,
                 best_vector_distance=nearest,
+                best_fulltext_score=found.best_fulltext,
                 answer_given=answer_given,
                 origin=outcome.origin.value,
                 source_chunk_ids=[source.id for source in outcome.sources],
@@ -171,14 +193,85 @@ class FaqService:
             ),
         )
 
-    async def search(self, question: str, limit: int) -> list[ChunkMatch]:
+    async def search(
+        self, question: str, limit: int, retriever: Retriever | None = None
+    ) -> list[ChunkMatch]:
         """Отладка поиска для eval (BH-5): top-K без порога и без LLM.
 
         Порог здесь не применяется: для подбора порога (A8) нужны
-        расстояния и у тех вопросов, которые его не прошли.
+        расстояния и у тех вопросов, которые его не прошли. retriever —
+        сравнить способы поиска на живой базе, не меняя настройку.
         """
         embedded = await self.embedding_gateway.embed_query(question)
-        return await self.chunk_repo.search(embedding=embedded.embedding, limit=limit)
+        found = await self._retrieve(
+            question,
+            embedded.embedding,
+            limit=limit,
+            retriever=retriever or self.retriever,
+        )
+        return found.candidates
+
+    async def _retrieve(
+        self,
+        question: str,
+        embedding: list[float],
+        *,
+        limit: int,
+        retriever: Retriever,
+    ) -> _Retrieval:
+        """Найти выдержки и решить, какие из них проходят порог.
+
+        VECTOR: порог — на каждой выдержке. HYBRID (M1, BH-12): вектор и
+        полнотекст по FUSION_CANDIDATES, слияние RRF с весами 1.0 и
+        fulltext_weight; порог — на лучшем ВЕКТОРНОМ кандидате: прошёл —
+        в промпт идёт вся выдача, нет — ответа в документах нет. Скор RRF
+        зависит только от рангов, порог по нему ставить нельзя (ML).
+
+        Полнотекстовая ветка считается и в режиме VECTOR (одна строка):
+        её лучший ранг — сигнал отчёта о пробелах (classify_miss),
+        «точное совпадение было, а вектор промахнулся».
+        """
+        query = to_fulltext_query(question)
+        if retriever is Retriever.VECTOR:
+            vector = await self.chunk_repo.search(embedding=embedding, limit=limit)
+            fulltext = (
+                await self.chunk_repo.search_fulltext(query, embedding, limit=1)
+                if query
+                else []
+            )
+            return _Retrieval(
+                candidates=vector,
+                relevant=[m for m in vector if m.distance <= self.max_distance],
+                nearest=vector[0].distance if vector else None,
+                best_fulltext=fulltext[0].fulltext_rank if fulltext else None,
+            )
+
+        depth = max(limit, FUSION_CANDIDATES)
+        vector = await self.chunk_repo.search(embedding=embedding, limit=depth)
+        # Пустая строка (вопрос из одних знаков) — ветку не вызывать.
+        fulltext = (
+            await self.chunk_repo.search_fulltext(query, embedding, limit=depth)
+            if query
+            else []
+        )
+        ranks = {m.id: m.fulltext_rank for m in fulltext}
+        by_id = {m.id: m for m in fulltext} | {
+            m.id: replace(m, fulltext_rank=ranks.get(m.id)) for m in vector
+        }
+        merged = rrf_merge(
+            [[m.id for m in vector], [m.id for m in fulltext]],
+            weights=[1.0, self.fulltext_weight],
+            k=DEFAULT_RRF_K,
+        )
+        candidates = [by_id[chunk_id] for chunk_id, _ in merged[:limit]]
+        nearest = vector[0].distance if vector else None
+        passed = nearest is not None and nearest <= self.max_distance
+        return _Retrieval(
+            candidates=candidates,
+            relevant=candidates if passed else [],
+            nearest=nearest,
+            best_fulltext=fulltext[0].fulltext_rank if fulltext else None,
+        )
 
     async def rate(self, user: User, log_id: UUID, feedback: int) -> None:
         """👍/👎 к своему ответу. Чужой ответ — 404, как несуществующий."""

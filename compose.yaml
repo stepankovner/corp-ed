@@ -25,6 +25,8 @@ services:
       - RAG_FAQ_MAX_DISTANCE=${RAG_FAQ_MAX_DISTANCE}
       - RAG_CONTEXT_MAX_TOKENS=${RAG_CONTEXT_MAX_TOKENS}
       - RAG_FAQ_TEMPERATURE=${RAG_FAQ_TEMPERATURE}
+      - RAG_RETRIEVER=${RAG_RETRIEVER}
+      - RAG_FULLTEXT_WEIGHT=${RAG_FULLTEXT_WEIGHT}
     depends_on:
       db:
         condition: service_healthy

@@ -204,6 +204,7 @@ async def test_search_returns_matches_without_threshold(
         "heading_path",
         "content",
         "distance",
+        "fulltext_rank",
     }
 
 

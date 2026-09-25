@@ -21,6 +21,10 @@ class ChunkMatch:
     distance: float
     title: str
     heading_path: list[str]
+    fulltext_rank: float | None = None
+    """ts_rank_cd по полнотекстовой ветке; None — чанк найден только
+    вектором. distance известен всегда: полнотекстовая ветка считает его
+    тем же запросом."""
 
 
 class AnswerOrigin(StrEnum):
@@ -38,6 +42,18 @@ class AnswerOrigin(StrEnum):
     DOCUMENTS = "documents"
     GENERAL_KNOWLEDGE = "general_knowledge"
     NONE = "none"
+
+
+class Retriever(StrEnum):
+    """Как искать выдержки (M1, BH-12).
+
+    VECTOR — только векторный поиск, порог на каждой выдержке.
+    HYBRID — вектор + полнотекст, слияние RRF; порог — на лучшем
+    векторном кандидате (скор RRF зависит только от рангов).
+    """
+
+    VECTOR = "vector"
+    HYBRID = "hybrid"
 
 
 class NotFoundMode(StrEnum):

@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from corp_ed.api.v1.schemas.base import RequestModel
-from corp_ed.domain.types import AnswerOrigin
+from corp_ed.domain.types import AnswerOrigin, Retriever
 
 MAX_QUESTION_LENGTH = 1000
 MAX_SEARCH_LIMIT = 50
@@ -66,6 +66,9 @@ class FaqAnswerResponse(BaseModel):
 class FaqSearchRequest(RequestModel):
     question: str = Field(min_length=1, max_length=MAX_QUESTION_LENGTH)
     limit: int = Field(default=10, ge=1, le=MAX_SEARCH_LIMIT)
+    # Сравнить способы поиска на живой базе, не меняя RAG_RETRIEVER.
+    # Не задан — как в /faq/ask.
+    retriever: Retriever | None = None
 
 
 class FaqSearchMatch(BaseModel):
@@ -78,6 +81,7 @@ class FaqSearchMatch(BaseModel):
     heading_path: list[str]
     content: str
     distance: float
+    fulltext_rank: float | None
 
 
 class FaqSearchResponse(BaseModel):

@@ -7,6 +7,7 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     ARRAY,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -20,8 +21,8 @@ from sqlalchemy import (
     text,
     true,
 )
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
@@ -184,6 +185,7 @@ class Chunk(TenantMixin, Base):
     __tablename__ = "chunks"
     __table_args__ = (
         UniqueConstraint("material_id", "position", name="uq_chunk_material_position"),
+        Index("ix_chunks_fts", "fts", postgresql_using="gin"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -198,6 +200,15 @@ class Chunk(TenantMixin, Base):
     # Крошки + текст без разметки. По нему считается эмбеддинг; хранится,
     # чтобы из него же строилась полнотекстовая ветка поиска (M1).
     embed_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # Полнотекстовая ветка гибридного поиска (M1, BH-12). Считает сама
+    # база из embed_text — тот же текст, что у эмбеддинга, поэтому ветки
+    # видят одно и то же. deferred: в Python вектор лексем не нужен.
+    fts: Mapped[str] = deferred(
+        mapped_column(
+            TSVECTOR,
+            Computed("to_tsvector('russian', embed_text)", persisted=True),
+        )
+    )
     # Крошки + Markdown (llm_text) — то, что уходит в промпт.
     content: Mapped[str]
     embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))

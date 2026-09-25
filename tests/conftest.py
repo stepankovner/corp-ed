@@ -18,6 +18,7 @@ from corp_ed.core.database import Base
 from corp_ed.core.db_policies import apply_all
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import Material, Tenant, User, UserRole
+from corp_ed.domain.types import Retriever
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
@@ -231,6 +232,8 @@ def faq_service(
         max_distance=0.6,
         context_max_tokens=3000,
         temperature=0.0,
+        retriever=Retriever.VECTOR,
+        fulltext_weight=0.5,
     )
 
 
