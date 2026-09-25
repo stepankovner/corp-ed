@@ -155,6 +155,20 @@ e2e` — расстояния, токены и проверки ссылок: `c
 `section_citations` (номер пункта документа вида `[2.2]` вместо номера
 выдержки). `latency_ms` — только вызов LLM.
 
+**Small-to-big (M2):** `--context sections` — на место найденного чанка
+встаёт его секция целиком, если влезает в бюджет, иначе окно «чанк ±
+`--neighbours`» по секции, иначе сам чанк; `--context window` — то же без
+секции целиком (вариант без таблицы `sections`). Колонки `context_kinds`
+(из чего собран контекст), `context_tokens` и `evidence_in_context`
+(дословная цитата эталона попала в контекст — только у вопросов с
+`evidence`). `--dry-run` — без вызовов LLM: поиск и контекст считаются
+бесплатно, F1 и ссылки — нет.
+
+```bash
+python -m eval.offline_e2e --corpus docs/ --dataset eval/private/golden.csv \
+    --dry-run --context sections
+```
+
 ## Сравнение двух прогонов
 
 ```bash
