@@ -14,7 +14,7 @@
 | Тесты | **1066 passed**, 0 skipped при `TEST_REDIS_URL`; ~2 мин с Postgres и Redis |
 | Покрытие | **92 %** (ветвевое), порог в CI 85 % |
 | Проверки | ruff (E, W, F, I, N, UP, B, SIM, **S**) по всему репозиторию, ruff format, mypy strict на `src` — чисто |
-| CI на HEAD | до этого коммита — [CI #118](https://github.com/stepankovner/corp-ed/actions/runs/36165635276) ✅, [Security #16](https://github.com/stepankovner/corp-ed/actions/runs/36165635240) ✅ (`313133a`); прогон по этапу 2 — после пуша |
+| CI на HEAD | [CI #124](https://github.com/stepankovner/corp-ed/actions/runs/36177421372) ✅ (линт, mypy, 1066 тестов, миграции на пустой базе, образ без root), [Security #22](https://github.com/stepankovner/corp-ed/actions/runs/36177421337) ✅ (`cd99dd6`) |
 | Миграции | 14 ревизий, без изменений на этапе 2 (схема этапа 1 покрыла OAuth: `external_user_id`, шифрованные `credentials` у грантов и подключений) |
 | Слияния ML | 5 (`ml/alice-compare` ×2, `ml/docs` ×2, `ml/multi-query` — с #16 M2, #17 золотой dev, #18 multi-query), файлы ML не редактировались |
 | Живая проверка этапа 2 | **не выполнена**: сетевая политика окружения не пропускает `*.bitrix24.ru`, `oauth.bitrix24.tech`, `apidocs.bitrix24.ru` (см. «Этап 2», что нужно от команды) |
