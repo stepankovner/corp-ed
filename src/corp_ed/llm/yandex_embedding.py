@@ -6,6 +6,7 @@ import httpx
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.retry import call_with_retry
+from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.types import EmbeddingResult
 
 URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
@@ -46,8 +47,15 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
         max_attempts: int = 3,
         base_delay: float = 1.0,
         read_timeout: float = 60.0,
+        document_throttle: Throttle | None = None,
+        query_throttle: Throttle | None = None,
     ):
         self._client = client
+        # Квота эмбеддингов — 10 запросов в секунду на каталог, общая для
+        # вопросов и ингеста. У каждой стороны свой темп, чтобы воркер не
+        # съедал квоту, пока сотрудник ждёт ответа (BH-4).
+        self._document_throttle = document_throttle
+        self._query_throttle = query_throttle
         self._folder_id = folder_id
         self._api_key = api_key
         self._max_attempts = max_attempts
@@ -55,16 +63,22 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
         self._read_timeout = read_timeout
 
     async def embed_document(self, text: str) -> EmbeddingResult:
-        return await self._embed(text, "text-search-doc")
+        return await self._embed(text, "text-search-doc", self._document_throttle)
 
     async def embed_query(self, text: str) -> EmbeddingResult:
-        return await self._embed(text, "text-search-query")
+        return await self._embed(text, "text-search-query", self._query_throttle)
 
-    async def _embed(self, text: str, model: str) -> EmbeddingResult:
+    async def _embed(
+        self, text: str, model: str, throttle: Throttle | None
+    ) -> EmbeddingResult:
         payload = {"modelUri": f"emb://{self._folder_id}/{model}/latest", "text": text}
         timings: list[int] = []
 
         async def do_request() -> httpx.Response:
+            # Слот берёт КАЖДАЯ попытка, в том числе повтор после 429:
+            # иначе повторы «все разом» снова упираются в квоту.
+            if throttle is not None:
+                await throttle.acquire()
             started = time.perf_counter()
             response = await self._client.post(
                 URL,

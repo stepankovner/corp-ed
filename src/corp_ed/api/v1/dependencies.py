@@ -22,11 +22,13 @@ from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.llm.yandex_openai import YandexOpenAIAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -197,14 +199,24 @@ def get_llm_semaphore(request: Request) -> asyncio.Semaphore | None:
     return semaphore
 
 
+def get_query_throttle(request: Request) -> Throttle | None:
+    throttle: Throttle | None = getattr(
+        request.app.state, "embedding_query_throttle", None
+    )
+    return throttle
+
+
 def get_embedding_gateway(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+    query_throttle: Annotated[Throttle | None, Depends(get_query_throttle)],
 ) -> EmbeddingGateway:
+    """В API эмбеддинги нужны только для вопросов; документы считает воркер."""
     return YandexEmbeddingAdapter(
         client=client,
         folder_id=settings.yc_folder_id,
         api_key=settings.yc_api_key.get_secret_value(),
+        query_throttle=query_throttle,
     )
 
 
@@ -244,37 +256,23 @@ def get_chunk_repository(
     return ChunkRepository(session)
 
 
+def get_ingest_job_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IngestJobRepository:
+    return IngestJobRepository(session)
+
+
 def get_material_service(
-    material_repo: Annotated[
-        MaterialRepository,
-        Depends(get_material_repository),
-    ],
-    chunk_repo: Annotated[
-        ChunkRepository,
-        Depends(get_chunk_repository),
-    ],
-    embedding_gateway: Annotated[
-        EmbeddingGateway,
-        Depends(get_embedding_gateway),
-    ],
+    material_repo: Annotated[MaterialRepository, Depends(get_material_repository)],
+    job_repo: Annotated[IngestJobRepository, Depends(get_ingest_job_repository)],
     audit: Annotated[AuditRepository, Depends(get_audit_repository)],
-    session: Annotated[
-        AsyncSession,
-        Depends(get_session),
-    ],
-    settings: Annotated[
-        RagSettings,
-        Depends(get_rag_settings),
-    ],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MaterialService:
     return MaterialService(
         material_repo=material_repo,
-        chunk_repo=chunk_repo,
-        embedding_gateway=embedding_gateway,
+        job_repo=job_repo,
         audit=audit,
         session=session,
-        chunk_tokens=settings.chunk_tokens,
-        overlap_tokens=settings.overlap_tokens,
     )
 
 

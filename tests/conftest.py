@@ -21,8 +21,10 @@ from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.services.faq_service import FaqService
+from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.material_service import MaterialService
 
 load_dotenv()
@@ -152,20 +154,40 @@ def chunk_repo(session: AsyncSession) -> ChunkRepository:
 
 
 @pytest.fixture
-def material_service(
+def ingest_service(
     session: AsyncSession,
     fake_embeddings: FakeEmbeddingAdapter,
-) -> MaterialService:
-    return MaterialService(
+) -> IngestService:
+    return IngestService(
         material_repo=MaterialRepository(session),
         chunk_repo=ChunkRepository(session),
         embedding_gateway=fake_embeddings,
-        audit=AuditRepository(session),
         session=session,
         # Крошечный бюджет: каждый абзац фикстуры ложится в свой чанк.
         chunk_tokens=5,
         overlap_tokens=0,
     )
+
+
+@pytest.fixture
+def material_service(session: AsyncSession) -> MaterialService:
+    return MaterialService(
+        material_repo=MaterialRepository(session),
+        job_repo=IngestJobRepository(session),
+        audit=AuditRepository(session),
+        session=session,
+    )
+
+
+@pytest.fixture
+def session_maker(
+    engine: AsyncEngine, session: AsyncSession
+) -> async_sessionmaker[AsyncSession]:
+    """Фабрика сессий для кода, который открывает их сам (воркер, CLI).
+
+    Зависит от session, чтобы таблицы уже были очищены.
+    """
+    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture

@@ -24,3 +24,9 @@ class MaterialRepository:
         await self.session.flush()
         await self.session.refresh(material)
         return material
+
+    async def list_all(self) -> list[Material]:
+        result = await self.session.scalars(
+            select(Material).order_by(Material.created_at.desc())
+        )
+        return list(result)

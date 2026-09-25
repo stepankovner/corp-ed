@@ -22,6 +22,12 @@ class TenantRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_all(self) -> list[Tenant]:
+        result = await self.session.scalars(
+            select(Tenant).order_by(Tenant.company_code)
+        )
+        return list(result)
+
     async def get_by_id(self, tenant_id: UUID) -> Tenant | None:
         return await self.session.get(Tenant, tenant_id)
 

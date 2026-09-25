@@ -55,6 +55,7 @@ from corp_ed.core.rate_limit import (
     RedisRateLimiter,
 )
 from corp_ed.llm.errors import LLMError
+from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle
 
 logger = structlog.get_logger()
 
@@ -83,7 +84,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Семафор генерации — один на процесс: адаптер создаётся на запрос.
     # Размер читается лениво: без YC-ключей (тесты, alembic) он не нужен.
-    app.state.llm_semaphore = asyncio.Semaphore(_llm_concurrency())
+    concurrency, query_rps = _llm_limits()
+    app.state.llm_semaphore = asyncio.Semaphore(concurrency)
+    # Темп эмбеддингов вопросов — общий с воркером через Redis (квота
+    # каталога одна). Сотрудник ждёт слота не дольше нескольких секунд.
+    app.state.embedding_query_throttle = (
+        RedisThrottle(redis, "embedding-query", query_rps, max_wait=QUERY_MAX_WAIT)
+        if redis is not None
+        else InMemoryThrottle(query_rps, max_wait=QUERY_MAX_WAIT)
+    )
 
     app.state.http_client = httpx.AsyncClient()
     try:
@@ -94,14 +103,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await redis.aclose()
 
 
-def _llm_concurrency() -> int:
+QUERY_MAX_WAIT = 5.0
+
+
+def _llm_limits() -> tuple[int, float]:
     try:
-        return LLMSettings().llm_max_concurrency  # type: ignore[call-arg]
+        settings = LLMSettings()  # type: ignore[call-arg]
     except ValidationError:
         # Нет ключей провайдера — ответы всё равно не заработают, а
         # запуск ради остальных ручек (вход, пользователи) нужен.
         logger.warning("llm_settings_missing")
-        return 1
+        return 1, 1.0
+    return settings.llm_max_concurrency, settings.embedding_query_rps
 
 
 async def _check_database_role(connection: AsyncConnection) -> None:

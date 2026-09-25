@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    text,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -34,6 +35,27 @@ class UserRole(enum.Enum):
 
     ADMIN = "admin"
     EMPLOYEE = "employee"
+
+
+class MaterialStatus(enum.Enum):
+    """Где материал на пути к поиску.
+
+    PENDING — поставлен в очередь, PROCESSING — воркер нарезает и считает
+    эмбеддинги, READY — чанки на месте, FAILED — не получилось (причина —
+    кодом в status_error, подробности только в логе).
+    """
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class IngestJobStatus(enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
 
 
 class Tenant(Base):
@@ -109,6 +131,13 @@ class Material(TenantMixin, Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     title: Mapped[str]
     content: Mapped[str]
+    status: Mapped[MaterialStatus] = mapped_column(
+        default=MaterialStatus.PENDING, server_default="PENDING"
+    )
+    # Код причины, а не текст исключения: админ компании видит его в
+    # интерфейсе, а трассировка и ответ провайдера — только в логе.
+    status_error: Mapped[str | None] = mapped_column(String(64))
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -178,4 +207,52 @@ class AuditEvent(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class IngestJob(Base):
+    """Задача фонового ингеста (нарезка + эмбеддинги + замена чанков).
+
+    Очередь — таблица в Postgres: задача ставится в той же транзакции,
+    что и материал, поэтому не теряется между базой и брокером и не
+    появляется для материала, чья транзакция откатилась.
+
+    Не TenantMixin и не под RLS намеренно: воркер забирает задачи всех
+    компаний по очереди и до выбора задачи тенанта не знает. В таблице
+    только идентификаторы; содержимое материала воркер читает уже в
+    контексте тенанта задачи.
+    """
+
+    __tablename__ = "ingest_jobs"
+    __table_args__ = (
+        # Не больше одной активной задачи на материал: повторный запрос
+        # переиндексации не плодит параллельные пересчёты одного документа.
+        Index(
+            "uq_ingest_jobs_active_material",
+            "material_id",
+            unique=True,
+            postgresql_where=text("status IN ('QUEUED', 'RUNNING')"),
+        ),
+        Index("ix_ingest_jobs_queue", "status", "run_after"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    material_id: Mapped[UUID] = mapped_column(
+        ForeignKey("materials.id", ondelete="CASCADE")
+    )
+    status: Mapped[IngestJobStatus] = mapped_column(default=IngestJobStatus.QUEUED)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(String(64))
+    run_after: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

@@ -77,6 +77,18 @@ class LLMSettings(BaseSettings):
     # процесс: при N воркерах uvicorn ставить не больше 10 / N.
     llm_max_concurrency: int = Field(default=8, gt=0, le=10)
 
+    # Эмбеддинги: квота 10 запросов в секунду на каталог, общая для API и
+    # воркера. Вопросам сотрудников — своя доля, ингесту — своя, в сумме
+    # с запасом до квоты (BH-4: «поиск приоритетнее ингеста»).
+    embedding_query_rps: float = Field(default=3.0, gt=0)
+    embedding_ingest_rps: float = Field(default=6.0, gt=0)
+
+    @model_validator(mode="after")
+    def validate_embedding_quota(self) -> Self:
+        if self.embedding_query_rps + self.embedding_ingest_rps > 10:
+            raise ValueError("embedding rps shares exceed the folder quota of 10")
+        return self
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -8,24 +8,23 @@ from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.models import (
     Chunk,
     Material,
+    MaterialStatus,
     Tenant,
 )
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
-from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.services.material_service import MaterialService
+from corp_ed.services.ingest_service import IngestService
 
 
 def _roomy_service(
     session: AsyncSession, embeddings: FakeEmbeddingAdapter
-) -> MaterialService:
+) -> IngestService:
     """Сервис с боевым размером чанка: короткий документ — один чанк."""
-    return MaterialService(
+    return IngestService(
         material_repo=MaterialRepository(session),
         chunk_repo=ChunkRepository(session),
         embedding_gateway=embeddings,
-        audit=AuditRepository(session),
         session=session,
         chunk_tokens=400,
         overlap_tokens=50,
@@ -34,10 +33,10 @@ def _roomy_service(
 
 async def test_ingest_create_chunks(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     session: AsyncSession,
 ) -> None:
-    length: int = await material_service.ingest(material.id)
+    length: int = await ingest_service.ingest(material.id)
 
     stmt = select(Chunk).where(Chunk.material_id == material.id)
 
@@ -50,10 +49,10 @@ async def test_ingest_create_chunks(
 
 async def test_positions_are_sorted(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     session: AsyncSession,
 ) -> None:
-    length: int = await material_service.ingest(material.id)
+    length: int = await ingest_service.ingest(material.id)
 
     stmt = (
         select(Chunk).where(Chunk.material_id == material.id).order_by(Chunk.position)
@@ -75,10 +74,10 @@ async def test_positions_are_sorted(
 
 async def test_chunks_content_matches_material(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     session: AsyncSession,
 ) -> None:
-    await material_service.ingest(material.id)
+    await ingest_service.ingest(material.id)
 
     stmt = (
         select(Chunk).where(Chunk.material_id == material.id).order_by(Chunk.position)
@@ -97,10 +96,10 @@ async def test_chunks_content_matches_material(
 
 async def test_ingest_call_embed_document(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     fake_embeddings: FakeEmbeddingAdapter,
 ) -> None:
-    length: int = await material_service.ingest(material.id)
+    length: int = await ingest_service.ingest(material.id)
 
     assert len(fake_embeddings.document_calls) == length
     assert fake_embeddings.query_calls == []
@@ -108,10 +107,10 @@ async def test_ingest_call_embed_document(
 
 async def test_metadata_into_database(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     session: AsyncSession,
 ) -> None:
-    await material_service.ingest(material.id)
+    await ingest_service.ingest(material.id)
 
     stmt = select(Chunk).where(Chunk.material_id == material.id)
 
@@ -127,11 +126,11 @@ async def test_metadata_into_database(
 
 async def test_subsequent_ingest_replaces_chunks(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     session: AsyncSession,
 ) -> None:
-    first_length = await material_service.ingest(material.id)
-    second_length = await material_service.ingest(material.id)
+    first_length = await ingest_service.ingest(material.id)
+    second_length = await ingest_service.ingest(material.id)
 
     stmt = select(Chunk).where(Chunk.material_id == material.id)
     result = await session.execute(stmt)
@@ -142,25 +141,25 @@ async def test_subsequent_ingest_replaces_chunks(
 
 
 async def test_material_not_found(
-    material_service: MaterialService,
+    ingest_service: IngestService,
     tenant_ctx: Tenant,
 ) -> None:
 
     with pytest.raises(NotFoundError):
-        await material_service.ingest(uuid4())
+        await ingest_service.ingest(uuid4())
 
 
 async def test_empty_content_clears_old_chunks(
     material: Material,
-    material_service: MaterialService,
+    ingest_service: IngestService,
     session: AsyncSession,
 ) -> None:
-    await material_service.ingest(material.id)
+    await ingest_service.ingest(material.id)
 
     material.content = ""
     await session.commit()
 
-    length: int = await material_service.ingest(material.id)
+    length: int = await ingest_service.ingest(material.id)
 
     stmt = select(Chunk).where(Chunk.material_id == material.id)
 
@@ -220,3 +219,16 @@ async def test_heading_path_is_stored(
     assert chunk.content.startswith(
         "Положение об отпусках > Раздел 3 > 3.2 Перенос отпуска\n"
     )
+
+
+async def test_ingest_marks_material_ready(
+    material: Material,
+    ingest_service: IngestService,
+    session: AsyncSession,
+) -> None:
+    await ingest_service.ingest(material.id)
+    await session.refresh(material)
+
+    assert material.status is MaterialStatus.READY
+    assert material.indexed_at is not None
+    assert material.status_error is None

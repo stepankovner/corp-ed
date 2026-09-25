@@ -55,6 +55,9 @@ PASSWORD_CHANGE_PER_USER = RatePolicy(
 FAQ_PER_USER = RatePolicy("faq-user", limit=30, window=60, fail_open=True)
 SEARCH_PER_USER = RatePolicy("search-user", limit=60, window=60, fail_open=True)
 UPLOAD_PER_TENANT = RatePolicy("upload-tenant", limit=60, window=3600, fail_open=True)
+# Создание и переиндексация материалов: каждый запрос — пачка платных
+# эмбеддингов в воркере.
+INGEST_PER_TENANT = RatePolicy("ingest-tenant", limit=120, window=3600, fail_open=True)
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:

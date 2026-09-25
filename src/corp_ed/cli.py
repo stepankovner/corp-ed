@@ -4,6 +4,7 @@
         --admin-email admin@acme.ru [--admin-name "Иван Петров"]
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
+    python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
 
 Почему CLI, а не HTTP-ручка «суперадмина»: по досье (10.1) компании
 подключает команда после созвона. Ручка с правом создавать тенантов
@@ -26,6 +27,7 @@ from corp_ed.core.logging import configure_logging
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.tenant_service import TenantService
 
 
@@ -43,10 +45,31 @@ def _parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--code", required=True)
 
+    reindex = commands.add_parser(
+        "reindex", help="поставить все материалы в очередь на переиндексацию"
+    )
+    scope = reindex.add_mutually_exclusive_group(required=True)
+    scope.add_argument("--code", help="одна компания")
+    scope.add_argument("--all", action="store_true", help="все компании")
+    reindex.add_argument(
+        "--dry-run", action="store_true", help="только посчитать материалы"
+    )
+
     return parser
 
 
 async def _run(args: argparse.Namespace) -> int:
+    if args.command == "reindex":
+        reports = await ReindexService(get_session_maker()).reindex(
+            company_code=None if args.all else args.code, dry_run=args.dry_run
+        )
+        for report in reports:
+            print(
+                f"{report.company_code}: материалов {report.materials}, "
+                f"поставлено в очередь {report.queued}"
+            )
+        return 0
+
     async with get_session_maker()() as session:
         service = TenantService(
             TenantRepository(session),
