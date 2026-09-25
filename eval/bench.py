@@ -34,7 +34,7 @@ from pathlib import Path
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import expand_query
 from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
-from eval.datasets import EvalItem, load_dataset
+from eval.datasets import EvalItem, load_dataset, select_split
 from eval.relevance import RetrievedChunk
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.retrieval_eval import evaluate_retrieval, format_report
@@ -200,8 +200,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
     items: list[EvalItem] = load_dataset(args.dataset)
-    if args.split:
-        items = [item for item in items if item.split == args.split]
+    # Без --split holdout золотого набора не берём (select_split, задача 2.1).
+    items = select_split(items, args.split)
     print(
         f"Документов: {len(documents)}, чанков: {len(chunks)}, вопросов: {len(items)}"
     )

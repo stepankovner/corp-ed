@@ -1,7 +1,7 @@
 """Прогон eval через HTTP API (A6).
 
-    python -m eval.run_eval retrieval --dataset eval/golden.csv --config v2-400-50
-    python -m eval.run_eval e2e       --dataset eval/golden.csv --config lite-k5
+    python -m eval.run_eval retrieval --dataset eval/private/golden.csv --config v2
+    python -m eval.run_eval e2e       --dataset eval/private/golden.csv --config lite-k5
     python -m eval.run_eval score     --results eval/results/2026-10-02_lite-k5_e2e.csv
 
 retrieval — POST /faq/search: Hit Rate@1/3/5/10, MRR с 95% CI, «воронка»,
@@ -29,7 +29,7 @@ from pathlib import Path
 
 from corp_ed.prompts.faq import is_not_found
 from eval.api_client import CorpEdClient
-from eval.datasets import EvalItem, load_dataset
+from eval.datasets import EvalItem, load_dataset, select_split
 from eval.metrics import percentile, refusal_prf
 from eval.relevance import RetrievedChunk
 from eval.results import RESULTS_DIR, append_summary, read_csv, results_path, write_csv
@@ -253,7 +253,8 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _select(items: list[EvalItem], split: str) -> list[EvalItem]:
-    return [item for item in items if item.split == split] if split else items
+    # Holdout золотого набора — только явно (--split holdout), задача 2.6.
+    return select_split(items, split)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
