@@ -2,8 +2,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from corp_ed.api.v1.schemas.base import RequestModel
 
-class FaqQuestionRequest(BaseModel):
+
+class FaqQuestionRequest(RequestModel):
     question: str = Field(min_length=1, max_length=1000)
 
 

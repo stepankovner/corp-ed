@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.domain.models import Material
@@ -12,7 +13,11 @@ class MaterialRepository:
         self.session = session
 
     async def get_by_id(self, material_id: UUID) -> Material | None:
-        return await self.session.get(Material, material_id)
+        # select, а не session.get: см. UserRepository.get_by_id.
+        result = await self.session.scalars(
+            select(Material).where(Material.id == material_id)
+        )
+        return result.first()
 
     async def create(self, material: Material) -> Material:
         self.session.add(material)

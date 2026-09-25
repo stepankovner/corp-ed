@@ -25,7 +25,9 @@ async def test_removed_endpoint_is_not_routed(
 ) -> None:
     response = await api.request(method, path, json={})
 
-    assert response.status_code == 404
+    # 405 — путь совпал с шаблоном другой ручки (PATCH /users/{user_id}),
+    # но такого действия нет. Для клиента это тот же «не существует».
+    assert response.status_code in (404, 405)
 
 
 def test_no_route_mentions_old_concept() -> None:

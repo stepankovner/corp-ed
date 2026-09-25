@@ -5,7 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import TenantContextMissingError, TenantMismatchError
+from corp_ed.core.tenant_context import current_tenant, tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.repositories.user_repository import UserRepository
 
 
 async def test_tenant_context_is_required(session: AsyncSession) -> None:
@@ -106,3 +108,44 @@ async def test_tenant_id_cannot_be_changed(
 
     with pytest.raises(TenantMismatchError):
         await session.commit()
+
+
+async def test_get_by_id_does_not_bypass_filter_via_identity_map(
+    tenant_ctx: Tenant, session: AsyncSession
+) -> None:
+    """session.get отдаёт объект из identity map без SQL — мимо фильтра.
+
+    Найдено тестом токена с чужим tenant_id: пользователь уже был
+    загружен в сессию, и get вернул его для другого тенанта.
+    Репозитории ищут по id через select, и фильтр применяется всегда.
+    """
+    user = User(
+        id=uuid4(),
+        tenant_id=tenant_ctx.id,
+        email="a@b.c",
+        hashed_password="x",
+        role=UserRole.ADMIN,
+    )
+    session.add(user)
+    await session.commit()
+    assert user in session  # объект в identity map
+
+    other = Tenant(id=uuid4(), company_code="other", name="Other Co")
+    session.add(other)
+    await session.commit()
+
+    with tenant_scope(other.id):
+        assert await UserRepository(session).get_by_id(user.id) is None
+
+
+async def test_tenant_scope_restores_previous_value(tenant_ctx: Tenant) -> None:
+    other = uuid4()
+    with tenant_scope(other):
+        assert current_tenant.get() == other
+    assert current_tenant.get() == tenant_ctx.id
+
+
+async def test_tenant_scope_restores_on_exception(tenant_ctx: Tenant) -> None:
+    with pytest.raises(RuntimeError), tenant_scope(uuid4()):
+        raise RuntimeError
+    assert current_tenant.get() == tenant_ctx.id

@@ -47,6 +47,13 @@ async def not_authenticated_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
+async def weak_password_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": str(exc)},
+    )
+
+
 async def llm_error_handler(
     request: Request,
     exc: Exception,

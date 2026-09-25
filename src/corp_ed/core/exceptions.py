@@ -55,3 +55,32 @@ class TenantMismatchError(Exception):
     изменён у существующей записи. Серверная ошибка (500),
     клиент исправить не может.
     """
+
+
+class WeakPasswordError(DomainError):
+    """Пароль не проходит политику (core/password_policy.py). HTTP 422."""
+
+
+class PasswordChangeRequiredError(PermissionError):
+    """Пароль выдан администратором и ещё не сменён.
+
+    До смены доступны только /auth/me, /auth/change-password и
+    /auth/logout: временный пароль видел кто-то кроме владельца.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("Требуется сменить временный пароль")
+
+
+class LastAdminError(ConflictError):
+    """Операция оставила бы компанию без активного администратора."""
+
+    def __init__(self) -> None:
+        super().__init__("В компании должен остаться хотя бы один администратор")
+
+
+class SelfModificationError(ConflictError):
+    """Администратор пытается снять роль или заблокировать сам себя."""
+
+    def __init__(self) -> None:
+        super().__init__("Нельзя изменить собственную роль или заблокировать себя")

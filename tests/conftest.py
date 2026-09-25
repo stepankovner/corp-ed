@@ -24,6 +24,12 @@ from corp_ed.services.material_service import MaterialService
 
 load_dotenv()
 TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
+# Настройки читаются лениво (lru_cache), поэтому окружение можно
+# дополнить до первого обращения. В CI нет ни SECRET_KEY, ни
+# DATABASE_URL — тестам с настоящими токенами они нужны. Ключ —
+# только для тестов, длина проходит проверку Settings.
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-" + "x" * 32)
+os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
 
 
 @pytest.fixture(scope="session")

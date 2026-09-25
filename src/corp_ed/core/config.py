@@ -1,8 +1,13 @@
 from functools import lru_cache
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+MIN_SECRET_KEY_LENGTH = 32
+"""HS256 подписывает ключом произвольной длины, но ключ короче размера
+хеша (32 байта) перебирается офлайн по одному перехваченному токену.
+`openssl rand -hex 32` даёт 64 символа."""
 
 
 class Settings(BaseSettings):
@@ -11,7 +16,14 @@ class Settings(BaseSettings):
     # Окружение
     environment: str = "development"
     debug: bool = False
-    secret_key: str
+    # SecretStr: repr и логи показывают «**********», а не ключ.
+    secret_key: SecretStr
+
+    # Токены. Дефолты — решение по безопасности, а не по ML, поэтому они
+    # здесь есть: короткий access ограничивает окно украденного токена,
+    # refresh ротируется при каждом использовании (см. DECISIONS.md).
+    access_token_ttl_minutes: int = Field(default=15, gt=0, le=60)
+    refresh_token_ttl_days: int = Field(default=14, gt=0, le=90)
 
     # База данных
     database_url: str
@@ -21,6 +33,21 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, value: SecretStr) -> SecretStr:
+        # Падать на старте: со слабым ключом токены подделываются, и
+        # это не видно ни в одном логе.
+        if len(value.get_secret_value()) < MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters"
+            )
+        return value
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
 
 
 @lru_cache

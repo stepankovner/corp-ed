@@ -5,11 +5,11 @@ description = "AI-powered onboarding programs for interns"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "argon2-cffi>=25.1.0",
     "asyncpg>=0.31.0",
     "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "numpy>=2.0",
-    "passlib[argon2]>=1.7.4",
     "pgvector>=0.5.0",
     "pydantic-settings>=2.14.1",
     "pydantic[email]>=2.13.4",
@@ -37,7 +37,6 @@ dev = [
     "python-dotenv>=1.2.2",
     "ruff>=0.15.16",
     "snowballstemmer>=3.1.1",
-    "types-passlib>=1.7.7.20260211",
 ]
 
 [tool.ruff]
