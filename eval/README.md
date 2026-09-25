@@ -139,7 +139,9 @@ python -m eval.offline_e2e --corpus docs/ --dataset eval/private/golden.csv \
 
 По умолчанию — решение по задаче 1 (25.09): Alice AI LLM Flash
 (`--api openai --model aliceai-llm-flash`), `text-embeddings-v2` 768, порог
-0.51. Старая конфигурация: `--api native --model yandexgpt-lite
+0.51. Режим Р1 — `general` (решение 25.09): когда ответа в документах нет
+(выдержки не прошли порог или модель по ним отказала), общий ответ с
+пометкой «не из документов компании»; `--not-found strict` — только отказ. Старая конфигурация: `--api native --model yandexgpt-lite
 --embedding-model text-search --max-distance 0.65`.
 
 CSV совместим с `run_eval score` и `eval.judge`. Сверх колонок `run_eval

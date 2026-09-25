@@ -18,11 +18,14 @@ Flash через OpenAI-совместимый API, text-embeddings-v2 с раз
    или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается
    (как faq_service сейчас); для гибрида — по лучшему векторному
-   кандидату (контракт M1). Не осталось ни одного — LLM не вызывается:
-   фраза отказа (strict) или общий ответ с пометкой (general, Р1);
+   кандидату (контракт M1). Не осталось ни одного — ответ по выдержкам не
+   вызывается: общий ответ с пометкой (general, Р1 — по умолчанию) или
+   фраза отказа (strict);
 3. select_context — бюджет контекста в токенах;
 4. build_faq_messages (промпт PROMPT_VERSION) → LLM →
-   normalize_citations ([4.2] → номер выдержки), как должен делать бэкенд.
+   normalize_citations ([4.2] → номер выдержки), как должен делать бэкенд;
+5. general: модель по выдержкам ответила отказом (is_not_found) — второй
+   вызов, общий ответ с пометкой (колонка general_after_refusal).
 
 CSV совместим с run_eval score и eval.judge: те же колонки, что у
 run_eval e2e, плюс служебные (расстояния, токены, ссылки).
@@ -42,12 +45,14 @@ from typing import Literal
 
 from corp_ed.domain.context import select_context
 from corp_ed.domain.fusion import rrf_merge
+from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import (
     NOT_FOUND_ANSWER,
     PROMPT_VERSION,
     build_faq_messages,
     build_general_messages,
     ensure_general_prefix,
+    is_not_found,
     normalize_citations,
 )
 from eval.bench import FUSION_CANDIDATES, bm25_rankings, vector_rankings
@@ -61,6 +66,7 @@ from eval.yandex import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_LLM,
     DEFAULT_MAX_DISTANCE,
+    Completion,
     default_embedding_dim,
 )
 
@@ -228,8 +234,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--not-found",
         choices=("strict", "general"),
-        default="strict",
-        help="Р1: strict — только фраза отказа; general — общий ответ с пометкой",
+        default="general",
+        help="Р1 (решено 25.09): general — общий ответ с пометкой «не из документов "
+        "компании», и когда выдержек нет, и когда модель по ним отказала; "
+        "strict — только фраза отказа",
     )
     parser.add_argument("--retriever", choices=("vector", "hybrid"), default="vector")
     parser.add_argument(
@@ -284,6 +292,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     client = YandexClient.from_env()
 
+    def ask(messages: list[Message]) -> Completion:
+        return client.complete(
+            messages,
+            model=args.model,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            api=args.api,
+        )
+
     rows: list[dict[str, object]] = []
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
@@ -295,31 +312,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         selected = select_context(relevant, args.context_tokens)
 
-        messages = None
-        if selected:
-            messages = build_faq_messages(item.question, selected)
-        elif mode == "general":
-            messages = build_general_messages(item.question)
-
+        calls: list[Completion] = []
         raw = answer = NOT_FOUND_ANSWER
-        latency, tokens_in, tokens_out, reasoning, finish = 0.0, 0, 0, 0, ""
-        if messages is not None:
-            completion = client.complete(
-                messages,
-                model=args.model,
-                temperature=args.temperature,
-                max_tokens=args.max_tokens,
-                api=args.api,
-            )
-            raw = completion.text.strip()
-            answer = (
-                normalize_citations(raw, selected)
-                if selected
-                else ensure_general_prefix(raw)
-            )
-            latency = completion.latency_ms
-            tokens_in, tokens_out = completion.input_tokens, completion.output_tokens
-            reasoning, finish = completion.reasoning_tokens, completion.finish_reason
+        general = False
+        if selected:
+            calls.append(ask(build_faq_messages(item.question, selected)))
+            raw = calls[-1].text.strip()
+            answer = normalize_citations(raw, selected)
+        # Р1 (решено 25.09): ответа в документах нет — ни одна выдержка не
+        # прошла порог или модель по выдержкам ответила отказом — общий ответ
+        # со строгой пометкой, что он не из документов компании.
+        if mode == "general" and (not selected or is_not_found(raw)):
+            calls.append(ask(build_general_messages(item.question)))
+            answer = ensure_general_prefix(calls[-1].text.strip())
+            general = True
+
+        latency = sum(c.latency_ms for c in calls)
+        tokens_in = sum(c.input_tokens for c in calls)
+        tokens_out = sum(c.output_tokens for c in calls)
+        reasoning = sum(c.reasoning_tokens for c in calls)
+        finish = calls[-1].finish_reason if calls else ""
 
         answered = is_answered(answer, answer_given=bool(selected))
         rows.append(
@@ -333,6 +345,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "answer": answer,
                 "answered": answered,
                 "answer_given": bool(selected),
+                "general_answer": general,
+                "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
                 "sources": _sources_json(selected),
@@ -349,6 +363,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # неё номеров вне 1..k и [2.2] в ответе уже нет.
                 "invalid_citations": len(invalid_citations(raw, len(selected))),
                 "section_citations": section_citations(raw),
+                "llm_calls": len(calls),
                 "input_tokens": tokens_in,
                 "output_tokens": tokens_out,
                 "reasoning_tokens": reasoning,
@@ -373,7 +388,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "section_answers": sum(1 for row in rows if row["section_citations"]),
         "input_tokens": sum(int(str(row["input_tokens"])) for row in rows),
         "output_tokens": sum(int(str(row["output_tokens"])) for row in rows),
-        "llm_calls": len(llm_latencies),
+        "llm_calls": sum(int(str(row["llm_calls"])) for row in rows),
+        "general_answers": sum(1 for row in rows if row["general_answer"]),
+        "general_after_refusal": sum(1 for row in rows if row["general_after_refusal"]),
     }
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
@@ -407,6 +424,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"вызовов {extra['llm_calls']}, токенов вход {extra['input_tokens']}, "
         f"выход {extra['output_tokens']}"
     )
+    if mode == "general":
+        print(
+            f"Общих ответов с пометкой: {extra['general_answers']}, из них после "
+            f"отказа по выдержкам: {extra['general_after_refusal']}"
+        )
     print(f"Результаты: {path}")
     print("Разметка correct и подсчёт: python -m eval.run_eval score --results …")
     return 0
