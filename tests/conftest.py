@@ -90,6 +90,11 @@ async def engine() -> AsyncGenerator[AsyncEngine]:
         cursor = dbapi_connection.cursor()
         cursor.execute(f"SET ROLE {APP_ROLE}")
         cursor.close()
+        # SET ROLE транзакционный, а драйвер открывает транзакцию сам. Без
+        # commit первый же откат на новом соединении (сессия закрыта без
+        # commit, ROLLBACK при возврате в пул) вернул бы суперпользователя —
+        # и тесты RLS молча проверяли бы не ту роль.
+        dbapi_connection.commit()
 
     try:
         yield engine

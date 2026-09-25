@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from corp_ed.core.database import Base
 from corp_ed.core.db_policies import TENANT_TABLES
@@ -81,6 +81,33 @@ async def test_session_runs_without_bypass_privileges(session: AsyncSession) -> 
         )
     ).one()
     assert tuple(row) == (False, False)
+
+
+async def test_role_survives_rollback_on_fresh_connections(engine: AsyncEngine) -> None:
+    """Регрессия: SET ROLE в первой транзакции соединения откатывался
+    вместе с ней, и соединение возвращалось в пул суперпользователем.
+    Несколько соединений сразу — чтобы пулу пришлось открыть новые."""
+    connections = [await engine.connect() for _ in range(4)]
+    for connection in connections:
+        await connection.rollback()
+    for connection in connections:
+        await connection.close()
+
+    connections = [await engine.connect() for _ in range(4)]
+    try:
+        for connection in connections:
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT rolsuper, rolbypassrls FROM pg_roles "
+                        "WHERE rolname = current_user"
+                    )
+                )
+            ).one()
+            assert tuple(row) == (False, False)
+    finally:
+        for connection in connections:
+            await connection.close()
 
 
 async def test_raw_sql_sees_only_current_tenant(session: AsyncSession) -> None:
