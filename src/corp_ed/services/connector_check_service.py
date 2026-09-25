@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from corp_ed.connectors.base import (
     AdapterError,
     FetchedFile,
+    FetchedMarkdown,
     FetchedPage,
     RemoteDocument,
     SourceAdapter,
@@ -23,6 +24,7 @@ from corp_ed.connectors.html import html_to_markdown
 from corp_ed.core.outbound import OutboundURLError
 from corp_ed.ingest.extract import ExtractionError, SourceFormat, detect_format
 from corp_ed.ingest.sandbox import extract_isolated
+from corp_ed.services.connector_sync_service import markdown_as_is
 
 Extractor = Callable[[SourceFormat, bytes], Awaitable[str]]
 CHECK_TIMEOUT = 20.0
@@ -127,6 +129,16 @@ async def _fetch(
                 document.title,
                 format="html",
                 size=len(content.html.encode("utf-8")),
+                chars=len(markdown),
+                sha256=hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            )
+        if isinstance(content, FetchedMarkdown):
+            markdown = markdown_as_is(content.markdown)
+            return FetchReport(
+                document.external_id,
+                document.title,
+                format="md",
+                size=len(content.markdown.encode("utf-8")),
                 chars=len(markdown),
                 sha256=hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
             )

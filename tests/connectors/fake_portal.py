@@ -58,13 +58,21 @@ class FakePortal:
     pages: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     blocks: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     group_kb_supported: bool = False
+    # База знаний 2.0 (REST 3.0): базы, документы, scope note.
+    collections: list[dict[str, Any]] = field(default_factory=list)
+    notes: dict[str, dict[str, Any]] = field(default_factory=dict)
+    note_scope: bool = True
+    note_denied: set[str] = field(default_factory=set)
+    note_truncated: bool = False
     rate_limit_hits: int = 0
     redirect_to: str | None = None
     download_host: str | None = None
     download_content_type: str = "application/octet-stream"
     canned: dict[str, Any] = field(default_factory=dict)
-    """method → JSON (или (status, JSON)): ответ как есть, без состояния."""
+    """method → JSON (или (status, JSON)): ответ как есть, без состояния.
+    Список — ответы по очереди, последний повторяется."""
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    paths: list[str] = field(default_factory=list)
     auth_log: list[tuple[str, str]] = field(default_factory=list)
     downloads: list[str] = field(default_factory=list)
     issued: int = 0
@@ -215,6 +223,47 @@ class FakePortal:
     def hide(self, user_id: str, *object_ids: str) -> None:
         self.hidden.setdefault(user_id, set()).update(object_ids)
 
+    def add_collection(
+        self, collection_id: int, name: str, *, position: int | None = None
+    ) -> int:
+        self.collections.append(
+            {
+                "id": collection_id,
+                "name": name,
+                "position": position if position is not None else collection_id * 100,
+                "policyLevel": "view",
+                "createdBy": 1,
+                "updatedBy": 1,
+                "createdAt": "2026-04-20T12:00:00Z",
+                "updatedAt": "2026-04-21T09:15:30Z",
+            }
+        )
+        return collection_id
+
+    def add_note(
+        self,
+        note_id: int,
+        collection_id: int,
+        title: str,
+        markdown: str,
+        *,
+        parent: int | None = None,
+        updated: str = "2026-04-21T09:15:30Z",
+    ) -> int:
+        self.notes[str(note_id)] = {
+            "id": note_id,
+            "collectionId": collection_id,
+            "parentId": parent,
+            "title": title,
+            "markdown": markdown,
+            "position": len(self.notes) + 1,
+            "createdBy": 1,
+            "updatedBy": 1,
+            "createdAt": "2026-04-20T12:00:00Z",
+            "updatedAt": updated,
+        }
+        return note_id
+
     # --- обработка ------------------------------------------------------------------
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -228,12 +277,16 @@ class FakePortal:
             return self._download(request)
         if self.redirect_to and path.startswith("/rest/"):
             return httpx.Response(301, headers={"location": self.redirect_to})
+        if path.startswith("/rest/api/"):
+            return self._rest(request, v3=True)
         if path.startswith("/rest/"):
             return self._rest(request)
         return httpx.Response(404, text="not found")
 
-    def _rest(self, request: httpx.Request) -> httpx.Response:
-        segments = request.url.path.removeprefix("/rest/").split("/")
+    def _rest(self, request: httpx.Request, *, v3: bool = False) -> httpx.Response:
+        prefix = "/rest/api/" if v3 else "/rest/"
+        self.paths.append(request.url.path)
+        segments = request.url.path.removeprefix(prefix).split("/")
         try:
             body = json.loads(request.content or b"{}")
         except ValueError:
@@ -264,6 +317,8 @@ class FakePortal:
             return _error(503, "QUERY_LIMIT_EXCEEDED")
         if method in self.canned:
             canned = self.canned[method]
+            if isinstance(canned, list):
+                canned = canned.pop(0) if len(canned) > 1 else canned[0]
             if isinstance(canned, tuple):
                 status, payload = canned
                 return (
@@ -272,11 +327,77 @@ class FakePortal:
                     else httpx.Response(status, text=payload)
                 )
             return httpx.Response(200, json=canned)
+        if v3:
+            if not method.startswith("note."):
+                return _error(404, "ERROR_METHOD_NOT_FOUND")
+            if not self.note_scope:
+                return _error_v3(403, "INSUFFICIENTSCOPEEXCEPTION")
+            v3_handler = getattr(self, "_v3_" + method.replace(".", "_"), None)
+            if v3_handler is None:
+                return _error(404, "ERROR_METHOD_NOT_FOUND")
+            v3_result = v3_handler(user_id, body)
+            if isinstance(v3_result, httpx.Response):
+                return v3_result
+            return httpx.Response(200, json={"result": v3_result, "time": {}})
         handler = getattr(self, "_m_" + method.replace(".", "_"), None)
         if handler is None:
             return _error(404, "ERROR_METHOD_NOT_FOUND")
         result = handler(user_id, body)
         return result if isinstance(result, httpx.Response) else _ok(result)
+
+    # --- REST 3.0: база знаний 2.0 -------------------------------------------
+
+    def _v3_note_collection_list(self, user_id: str, body: dict[str, Any]) -> Any:
+        pagination = body.get("pagination") or {}
+        limit = int(pagination.get("limit") or 50)
+        ordered = sorted(self.collections, key=lambda c: (c["position"], c["id"]))
+        after = pagination.get("afterCursor")
+        if isinstance(after, dict):
+            key = (int(after.get("position", 0)), int(after.get("id", 0)))
+            ordered = [c for c in ordered if (c["position"], c["id"]) > key]
+        page = ordered[:limit]
+        next_cursor = (
+            {"position": page[-1]["position"], "id": page[-1]["id"]}
+            if len(ordered) > limit
+            else None
+        )
+        return {"items": page, "nextCursor": next_cursor}
+
+    def _v3_note_document_tree_list(self, user_id: str, body: dict[str, Any]) -> Any:
+        collection_id = body.get("collectionId")
+        if collection_id is None:
+            return _error_v3(400, "VALIDATION_REQUESTVALIDATIONEXCEPTION")
+        if not any(c["id"] == collection_id for c in self.collections):
+            return _error_v3(400, "ENTITYNOTFOUNDEXCEPTION")
+
+        def children_of(parent: int | None) -> list[dict[str, Any]]:
+            nodes = [
+                n
+                for n in self.notes.values()
+                if n["collectionId"] == collection_id and n["parentId"] == parent
+            ]
+            return [
+                {
+                    "id": n["id"],
+                    "collectionId": n["collectionId"],
+                    "parentId": n["parentId"],
+                    "title": n["title"],
+                    "position": n["position"],
+                    "children": children_of(n["id"]),
+                }
+                for n in sorted(nodes, key=lambda n: n["position"])
+            ]
+
+        return {"items": children_of(None), "truncated": self.note_truncated}
+
+    def _v3_note_document_get(self, user_id: str, body: dict[str, Any]) -> Any:
+        note_id = str(body.get("id"))
+        if note_id in self.note_denied:
+            return _error_v3(403, "ACCESSDENIEDEXCEPTION")
+        item = self.notes.get(note_id)
+        if item is None:
+            return _error_v3(400, "ENTITYNOTFOUNDEXCEPTION")
+        return {"item": item}
 
     # --- методы --------------------------------------------------------------------
 
@@ -435,6 +556,13 @@ def _error(status: int, code: str) -> httpx.Response:
     return httpx.Response(status, json={"error": code, "error_description": code})
 
 
+def _error_v3(status: int, code: str) -> httpx.Response:
+    return httpx.Response(
+        status,
+        json={"error": {"code": f"BITRIX_REST_V3_EXCEPTION_{code}", "message": code}},
+    )
+
+
 def sample_portal(host: str = DEFAULT_HOST) -> FakePortal:
     """Портал с общим диском, диском группы, личными дисками и базой знаний."""
     portal = FakePortal(host=host)
@@ -476,4 +604,19 @@ def sample_portal(host: str = DEFAULT_HOST) -> FakePortal:
     portal.add_page(site, "573", "Командировки", "trips", published=None)
     portal.add_block("573", 4, "<p>Суточные — 700 рублей.</p>")
     portal.add_page(site, "600", "Пустая", "empty")
+    docs = portal.add_collection(1, "Продуктовая документация")
+    portal.add_note(10, docs, "Введение", "# Введение\n\nКак устроен продукт.")
+    portal.add_note(
+        11,
+        docs,
+        "Глава 1",
+        "# Глава 1\n\nПервые шаги.",
+        parent=10,
+        updated="2026-05-01T10:00:00Z",
+    )
+    portal.add_note(12, docs, "Пустая заметка", "   ", parent=10)
+    rules = portal.add_collection(2, "Регламенты 2.0")
+    portal.add_note(
+        20, rules, "Отпуск 2.0", "Отпуск — 28 дней, заявление за две недели."
+    )
     return portal

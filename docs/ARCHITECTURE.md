@@ -281,7 +281,8 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 через `OutboundClient` (2 запроса/с, `next`-страницы, коды ошибок,
 редирект = «портал переехал», скачивание только с хоста портала),
 модули `disk` (общий диск и группы), `disk_personal`, `knowledge_base`
-(сайты KNOWLEDGE/GROUP → страницы → HTML блоков). `cli connector-check`
+(сайты KNOWLEDGE/GROUP → страницы → HTML блоков), `knowledge_base_v2`
+(REST 3.0 `note.*` → Markdown как есть). `cli connector-check`
 гоняет адаптер против источника без базы и умеет записывать ответы в
 фикстуры. Планировщик
 воркера раз в минуту ставит в `connector_sync_jobs` подключения с

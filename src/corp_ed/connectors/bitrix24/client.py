@@ -126,9 +126,17 @@ class Bitrix24Client:
     # --- вызовы -----------------------------------------------------------------
 
     async def call(
-        self, method: str, params: Mapping[str, Any] | None = None
+        self,
+        method: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        v3: bool = False,
     ) -> dict[str, Any]:
         """Вызвать метод; вернуть весь ответ (result, total, next, time).
+
+        v3 — REST 3.0 (адрес /rest/api/, единый формат ответа, ошибка
+        объектом {code, message}); коды REST 3.0 приводятся к тем же
+        нашим кодам, что у старой версии.
 
         Ошибка источника — AdapterError с кодом Битрикс24 в нижнем
         регистре; отвергнутая авторизация — AdapterAuthError; не тот
@@ -137,7 +145,7 @@ class Bitrix24Client:
         refreshed = False
         backoff = iter(RATE_LIMIT_BACKOFF)
         while True:
-            response = await self._post(method, params)
+            response = await self._post(method, params, v3=v3)
             if response.is_redirect:
                 raise AdapterError("portal_moved")
             data = _json(response)
@@ -145,7 +153,7 @@ class Bitrix24Client:
             if data is not None and not error and "result" in data:
                 self._record(method, params, data)
                 return data
-            code = str(error or "").lower()
+            code = _error_code(error)
             self._record(method, params, data if data is not None else response.text)
             if code == "expired_token" and isinstance(self._auth, OAuthAuth):
                 if refreshed:
@@ -232,15 +240,25 @@ class Bitrix24Client:
     # --- внутреннее ---------------------------------------------------------------
 
     async def _post(
-        self, method: str, params: Mapping[str, Any] | None
+        self, method: str, params: Mapping[str, Any] | None, *, v3: bool = False
     ) -> httpx.Response:
         await self._pace()
         body: dict[str, Any] = dict(params or {})
         if isinstance(self._auth, OAuthAuth):
-            url = f"{self._portal}rest/{method}.json"
+            url = (
+                f"{self._portal}rest/api/{method}"
+                if v3
+                else f"{self._portal}rest/{method}.json"
+            )
             body["auth"] = self._auth.tokens.access_token
         else:
-            url = f"{self._auth.url.rstrip('/')}/{method}.json"
+            base = self._auth.url.rstrip("/")
+            if v3:
+                # Вебхук REST 3.0: /rest/api/{user}/{code}/{method}.
+                prefix, _, credentials = base.partition("/rest/")
+                url = f"{prefix}/rest/api/{credentials}/{method}"
+            else:
+                url = f"{base}/{method}.json"
         try:
             return await self._http.post(
                 url,
@@ -285,6 +303,29 @@ def _json(response: httpx.Response) -> dict[str, Any] | None:
     except ValueError:
         return None
     return data if isinstance(data, dict) else None
+
+
+_V3_PREFIX = "bitrix_rest_v3_exception_"
+_V3_CODES = {
+    "insufficientscopeexception": "insufficient_scope",
+    "accessdeniedexception": "access_denied",
+    "entitynotfoundexception": "error_not_found",
+    "validation_requestvalidationexception": "error_argument",
+    "unknowndtopropertyexception": "error_argument",
+    "unknownfilteroperatorexception": "error_argument",
+    "invalidjsonexception": "error_argument",
+}
+
+
+def _error_code(error: Any) -> str:
+    """Код ошибки старого REST (строка) и REST 3.0 (объект) — одной строкой."""
+    if isinstance(error, dict):
+        error = error.get("code", "")
+    code = str(error or "").lower()
+    if code.startswith(_V3_PREFIX):
+        short = code.removeprefix(_V3_PREFIX)
+        return _V3_CODES.get(short, f"v3_{short}")
+    return code
 
 
 def _error(status: int, code: str) -> AdapterError:

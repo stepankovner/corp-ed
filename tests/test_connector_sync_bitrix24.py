@@ -280,6 +280,42 @@ async def test_dead_employee_token_expires_only_that_grant(
         assert (await reload(session, connector)).status == ConnectorStatus.ACTIVE.value
 
 
+async def test_knowledge_base_v2_documents_are_stored_as_markdown(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    employee: User,
+    secrets: SecretBox,
+    portal: FakePortal,
+    service: ConnectorSyncService,
+) -> None:
+    connector = await make_connector(
+        session, secrets, portal, modules=["knowledge_base_v2"]
+    )
+    await make_grant(session, secrets, connector, employee)
+
+    outcome = await run(service, connector)
+
+    assert outcome.status is SyncRunStatus.PARTIAL  # пустая заметка
+    assert outcome.stats.added == 3
+    assert outcome.stats.failed == 1
+    with tenant_scope(tenant_ctx.id):
+        materials = await materials_of(session, connector)
+        assert set(materials) == {"note:10", "note:11", "note:20"}
+        chapter = materials["note:11"]
+        assert chapter.source_format == "md"
+        assert chapter.content == "# Глава 1\n\nПервые шаги."
+        assert chapter.external_version == "2026-05-01T10:00:00Z"
+        assert chapter.source_url == f"{portal.portal}knowledge/"
+        assert await access_of(session, chapter) == {employee.id}
+    # Повторный запуск: версии не изменились — документы не перечитываются.
+    calls_before = len(portal.calls)
+    outcome = await run(service, connector)
+    assert outcome.stats.updated == 0
+    gets = [m for m, _ in portal.calls[calls_before:] if m == "note.document.get"]
+    # Версия известна только из note.document.get — он вызывается при обходе.
+    assert len(gets) == 4
+
+
 async def test_missing_scope_stops_connector_as_config_error(
     session: AsyncSession,
     tenant_ctx: Tenant,

@@ -187,6 +187,7 @@ async def test_kinds_describe_bitrix24_oauth(
         "disk",
         "disk_personal",
         "knowledge_base",
+        "knowledge_base_v2",
     ]
 
 

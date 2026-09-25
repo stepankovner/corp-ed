@@ -90,7 +90,15 @@ class FetchedPage:
     html: str
 
 
-FetchedContent = FetchedFile | FetchedPage
+@dataclass(frozen=True)
+class FetchedMarkdown:
+    """Документ, который источник отдаёт уже в Markdown (База знаний 2.0
+    Битрикс24, Яндекс Вики): в конвейер идёт как есть, без очистки HTML."""
+
+    markdown: str
+
+
+FetchedContent = FetchedFile | FetchedPage | FetchedMarkdown
 
 
 @dataclass(frozen=True)

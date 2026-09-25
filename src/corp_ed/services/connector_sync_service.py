@@ -26,6 +26,7 @@
 """
 
 import hashlib
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -41,6 +42,7 @@ from corp_ed.connectors.base import (
     AdapterError,
     FetchedContent,
     FetchedFile,
+    FetchedMarkdown,
     FetchedPage,
     RemoteDocument,
     SourceAdapter,
@@ -66,7 +68,12 @@ from corp_ed.domain.types import (
     SyncRunStatus,
     SyncTrigger,
 )
-from corp_ed.ingest.extract import ExtractionError, SourceFormat, detect_format
+from corp_ed.ingest.extract import (
+    MAX_EXTRACTED_CHARS,
+    ExtractionError,
+    SourceFormat,
+    detect_format,
+)
 from corp_ed.ingest.sandbox import extract_isolated
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.connector_repository import (
@@ -91,6 +98,7 @@ ERROR_SOURCE_UNAVAILABLE = "source_unavailable"
 ERROR_BUDGET = "budget_exhausted"
 ERROR_INTERNAL = "internal_error"
 SOURCE_FORMAT_HTML = "html"
+SOURCE_FORMAT_MARKDOWN = SourceFormat.MD.value
 
 
 @dataclass
@@ -472,6 +480,14 @@ class ConnectorSyncService:
                 "source_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
                 "source_size": len(content.html.encode("utf-8")),
             }
+        if isinstance(content, FetchedMarkdown):
+            markdown = markdown_as_is(content.markdown)
+            return markdown, {
+                "source_filename": None,
+                "source_format": SOURCE_FORMAT_MARKDOWN,
+                "source_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+                "source_size": len(content.markdown.encode("utf-8")),
+            }
         raise ExtractionError("unsupported_format")
 
     async def _apply_access(
@@ -600,6 +616,17 @@ class ConnectorSyncService:
             connector.last_error_code = run.error_code
         session.add_all([row, connector])
         await session.commit()
+
+
+def markdown_as_is(markdown: str) -> str:
+    """Markdown источника — те же границы, что у разбора файла: не пусто
+    и не больше MAX_EXTRACTED_CHARS."""
+    text = markdown.strip()
+    if len(text) > MAX_EXTRACTED_CHARS:
+        raise ExtractionError("document_too_large")
+    if not re.search(r"\w", text):
+        raise ExtractionError("no_text")
+    return text
 
 
 def _work_done(stats: SyncStats) -> int:

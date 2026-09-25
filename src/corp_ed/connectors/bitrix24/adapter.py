@@ -19,6 +19,7 @@ from corp_ed.connectors.base import (
 )
 from corp_ed.connectors.bitrix24 import disk as disk_module
 from corp_ed.connectors.bitrix24 import knowledge_base as kb_module
+from corp_ed.connectors.bitrix24 import notes as notes_module
 from corp_ed.connectors.bitrix24.client import (
     MIN_INTERVAL,
     Bitrix24Client,
@@ -49,6 +50,9 @@ SPEC = KindSpec(
         ModuleSpec(disk_module.MODULE_DISK, "Общий диск и диски групп"),
         ModuleSpec(disk_module.MODULE_DISK_PERSONAL, "Мой диск сотрудника"),
         ModuleSpec(kb_module.MODULE_KNOWLEDGE_BASE, "База знаний"),
+        ModuleSpec(
+            notes_module.MODULE_KNOWLEDGE_BASE_V2, "База знаний 2.0 (scope note)"
+        ),
     ),
     config_fields=(
         FieldSpec("portal", "Адрес портала (https://…bitrix24.ru/)"),
@@ -63,6 +67,7 @@ SPEC = KindSpec(
     url_field="portal",
     extra={
         "app_scopes": "disk,landing",
+        "app_scopes_optional": "note — для модуля knowledge_base_v2",
         "oauth_callback_path": OAUTH_CALLBACK_PATH,
     },
 )
@@ -73,6 +78,8 @@ class Bitrix24Adapter:
         self._client = client
         self._max_bytes = max_bytes
         self._user_id: str | None = None
+        # Модуль базы знаний 2.0 держит содержимое между list и fetch.
+        self._notes: notes_module.NotesModule | None = None
 
     @property
     def refreshed_credentials(self) -> Mapping[str, str] | None:
@@ -102,6 +109,10 @@ class Bitrix24Adapter:
         if kb_module.MODULE_KNOWLEDGE_BASE in wanted:
             async for document in kb_module.KnowledgeBaseModule(self._client).walk():
                 yield document
+        if notes_module.MODULE_KNOWLEDGE_BASE_V2 in wanted:
+            self._notes = notes_module.NotesModule(self._client)
+            async for document in self._notes.walk():
+                yield document
 
     async def fetch(
         self, document: RemoteDocument, *, max_bytes: int
@@ -113,6 +124,10 @@ class Bitrix24Adapter:
             return await disk.fetch(document, max_bytes=max_bytes)
         if document.external_id.startswith(kb_module.PREFIX):
             return await kb_module.KnowledgeBaseModule(self._client).fetch(document)
+        if document.external_id.startswith(notes_module.PREFIX):
+            if self._notes is None:
+                self._notes = notes_module.NotesModule(self._client)
+            return await self._notes.fetch(document)
         raise AdapterError("unknown_document")
 
 

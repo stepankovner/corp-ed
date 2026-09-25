@@ -26,7 +26,7 @@ def args(
         "kind": "bitrix24",
         "config": [f"portal={portal.portal}"],
         "credential": [f"webhook={portal.webhook}"],
-        "module": ["disk", "knowledge_base"],
+        "module": ["disk", "knowledge_base", "knowledge_base_v2"],
         "limit": 50,
         "fetch": 1,
         "record": str(record) if record else None,
@@ -48,6 +48,8 @@ async def test_check_lists_and_fetches(
     assert "[knowledge_base] kb:KNOWLEDGE:985 «Отпуск»" in out
     assert "скачано disk:102: txt" in out
     assert "скачано kb:KNOWLEDGE:985: html" in out
+    assert "[knowledge_base_v2] note:10 «Введение»" in out
+    assert "скачано note:10: md" in out
     files = sorted(record.glob("*.json"))
     assert files and files[0].name == "001-profile.json"
     dumped = "\n".join(f.read_text(encoding="utf-8") for f in files)

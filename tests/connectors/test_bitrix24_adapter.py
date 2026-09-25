@@ -86,7 +86,12 @@ def test_spec_is_per_user_with_oauth() -> None:
     assert SPEC.kind == KIND == "bitrix24"
     assert SPEC.mode is ConnectorMode.PER_USER
     assert SPEC.user_auth is UserAuth.OAUTH and SPEC.oauth
-    assert [m.name for m in SPEC.modules] == ["disk", "disk_personal", "knowledge_base"]
+    assert [m.name for m in SPEC.modules] == [
+        "disk",
+        "disk_personal",
+        "knowledge_base",
+        "knowledge_base_v2",
+    ]
     assert [f.name for f in SPEC.config_fields] == ["portal", "client_id"]
     assert [f.name for f in SPEC.app_credential_fields] == ["client_secret"]
     assert SPEC.app_credential_fields[0].secret
