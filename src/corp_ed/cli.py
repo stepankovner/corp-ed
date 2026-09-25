@@ -187,8 +187,10 @@ async def _gaps(company_code: str | None) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    configure_logging()
+    # Сначала аргументы: `--help` и ошибка в них не должны требовать
+    # SECRET_KEY и DATABASE_URL, которые читает настройка логирования.
     args = _parser().parse_args(argv)
+    configure_logging()
     try:
         return asyncio.run(_run(args))
     except DomainError as exc:

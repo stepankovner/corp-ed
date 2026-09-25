@@ -1,3 +1,7 @@
+import os
+import subprocess
+import sys
+
 import pytest
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -234,3 +238,17 @@ def test_cli_not_found_mode() -> None:
     assert args.mode == "strict"
     with pytest.raises(SystemExit):
         _parser().parse_args(["set-not-found-mode", "--code", "acme", "--mode", "x"])
+
+
+def test_cli_help_needs_no_settings() -> None:
+    """`--help` в контейнере без .env (проверка образа в CI) не должен
+    падать на чтении SECRET_KEY и DATABASE_URL."""
+    result = subprocess.run(
+        [sys.executable, "-m", "corp_ed.cli", "--help"],
+        env={"PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "create-tenant" in result.stdout

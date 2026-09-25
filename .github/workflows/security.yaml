@@ -74,32 +74,36 @@ jobs:
       - uses: actions/checkout@v5
       - name: Build image
         run: docker build -t corp-ed:scan .
+      # Сканер — официальный образ с ghcr (без лимитов Docker Hub); tag
+      # latest осознанно: устаревший сканер пропускает новые проверки, а
+      # его результат не входит в поставку. Закрепить по digest — RISKS №18.
+      - name: Pull scanner
+        run: docker pull -q ghcr.io/aquasecurity/trivy:latest
       # Падает на HIGH/CRITICAL, для которых уже есть исправление: без
       # исправления сборку не спасти, такие — в отчёт, не в блокировку.
       - name: Scan image
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: corp-ed:scan
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: HIGH,CRITICAL
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/" \
+            ghcr.io/aquasecurity/trivy:latest image \
+            --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            --pkg-types os,library corp-ed:scan
       - name: Scan Dockerfile and compose for misconfiguration
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          scan-type: config
-          scan-ref: .
-          exit-code: "1"
-          severity: HIGH,CRITICAL
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" -v "$HOME/.cache/trivy:/root/.cache/" \
+            ghcr.io/aquasecurity/trivy:latest config \
+            --exit-code 1 --severity HIGH,CRITICAL /work
       # Состав образа (CycloneDX) — для сертификации и разбора инцидентов:
       # «есть ли у нас пакет X версии Y» отвечается без пересборки.
       - name: SBOM
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: corp-ed:scan
-          format: cyclonedx
-          output: sbom.cdx.json
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/work" -v "$HOME/.cache/trivy:/root/.cache/" \
+            ghcr.io/aquasecurity/trivy:latest image \
+            --format cyclonedx --output /work/sbom.cdx.json corp-ed:scan
       - uses: actions/upload-artifact@v4
         with:
           name: sbom-cyclonedx
