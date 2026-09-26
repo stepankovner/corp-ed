@@ -22,8 +22,6 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-# кэш стенда: эмбеддинги и переформулировки (eval.bench, eval.multi_query)
-eval/.cache/
 .coverage
 htmlcov/
 
@@ -49,3 +47,6 @@ scripts/
 # Золотой набор с живыми вопросами, документы компаний, ответы моделей
 # на них. Репозиторий публичный — такие файлы только здесь.
 eval/private/
+
+# кэш стенда: эмбеддинги и переформулировки (eval.bench, eval.multi_query)
+eval/.cache/
