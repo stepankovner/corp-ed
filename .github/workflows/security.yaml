@@ -1,0 +1,111 @@
+name: Security
+
+# Проверки, которые ловят проблемы без изменения кода: новые CVE в
+# зависимостях и в базовом образе. Поэтому — ещё и по расписанию.
+on:
+  push:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"   # понедельник, 06:17 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.8.17"
+
+jobs:
+  dependencies:
+    name: Known vulnerabilities in dependencies (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      # Проверяется ровно то, что уходит в образ: боевые зависимости из
+      # uv.lock, без dev-группы. --no-deps: список уже полный и закреплён.
+      - name: Export locked production requirements
+        run: uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt
+      # Тот же Python, что в образе: часть пакетов не ставится на другой.
+      - name: pip-audit
+        run: uvx --python 3.12 pip-audit --requirement requirements.txt --no-deps --strict --desc on
+
+  secrets:
+    name: Secrets in history (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0   # вся история: ключ, удалённый следующим коммитом, всё ещё в ней
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  codeql:
+    name: Static analysis (CodeQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write   # результаты — во вкладку Security репозитория
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
+        with:
+          languages: python
+          queries: security-extended
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
+        with:
+          category: "/language:python"
+
+  image:
+    name: Image vulnerabilities and SBOM (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build image
+        run: docker build -t corp-ed:scan .
+      # Сканер — официальный образ с ghcr (без лимитов Docker Hub); tag
+      # latest осознанно: устаревший сканер пропускает новые проверки, а
+      # его результат не входит в поставку. Закрепить по digest — RISKS №18.
+      - name: Pull scanner
+        run: docker pull -q ghcr.io/aquasecurity/trivy:latest
+      # Падает на HIGH/CRITICAL, для которых уже есть исправление: без
+      # исправления сборку не спасти, такие — в отчёт, не в блокировку.
+      - name: Scan image
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/" \
+            ghcr.io/aquasecurity/trivy:latest image \
+            --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
+            --pkg-types os,library corp-ed:scan
+      - name: Scan Dockerfile and compose for misconfiguration
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" -v "$HOME/.cache/trivy:/root/.cache/" \
+            ghcr.io/aquasecurity/trivy:latest config \
+            --exit-code 1 --severity HIGH,CRITICAL /work
+      # Состав образа (CycloneDX) — для сертификации и разбора инцидентов:
+      # «есть ли у нас пакет X версии Y» отвечается без пересборки.
+      - name: SBOM
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/work" -v "$HOME/.cache/trivy:/root/.cache/" \
+            ghcr.io/aquasecurity/trivy:latest image \
+            --format cyclonedx --output /work/sbom.cdx.json corp-ed:scan
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 90

@@ -5,9 +5,24 @@ on:
   pull_request:
     branches: [main]
 
+# Токен workflow — только чтение. Ни одному шагу здесь не нужно писать в
+# репозиторий; утёкший токен с правом записи — это подмена кода.
+permissions:
+  contents: read
+
+# Новый push в ту же ветку отменяет ещё бегущий прогон.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.8.17"
+
 jobs:
   checks:
+    name: Lint, types, tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -23,15 +38,26 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Лимиты частоты и квота эмбеддингов: тесты Redis-реализаций
+      # пропускаются без TEST_REDIS_URL, а пропуск в CI — дыра.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
-          version: "latest"
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -39,7 +65,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --dev
 
-      - name: Run ruff (linter)
+      - name: Run ruff (linter, incl. bandit rules)
         run: uv run ruff check
 
       - name: Run ruff (formatter check)
@@ -48,7 +74,115 @@ jobs:
       - name: Run mypy (type checker)
         run: uv run mypy
 
-      - name: Run pytest
+      - name: Run pytest with coverage threshold
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:5432/corp_ed_test
-        run: uv run pytest -q
+          TEST_REDIS_URL: redis://localhost:6379/15
+        run: uv run pytest -q --cov --cov-report=term --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+  migrations:
+    name: Migrations on a fresh database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: corp_ed
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: corp_ed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: localhost
+      PGUSER: corp_ed
+      PGPASSWORD: postgres
+      # Миграции идут под владельцем схемы БЕЗ суперпользователя — как в
+      # бою. Под суперпользователем FORCE RLS не действует, и миграция,
+      # которая под ним проходит, может молча не увидеть ни одной строки
+      # у настоящего владельца (docs/DECISIONS.md, ловушка RLS).
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://corp_ed_owner:owner@localhost:5432/corp_ed_migrations
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv python install 3.12 && uv sync --frozen --dev
+
+      - name: Create a non-superuser schema owner
+        run: |
+          psql -v ON_ERROR_STOP=1 -d corp_ed <<'SQL'
+          CREATE ROLE corp_ed_owner LOGIN PASSWORD 'owner'
+              NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE corp_ed_migrations OWNER corp_ed_owner;
+          SQL
+          # Расширение ставит администратор базы, не миграция (нужен superuser).
+          psql -v ON_ERROR_STOP=1 -d corp_ed_migrations -c "CREATE EXTENSION IF NOT EXISTS vector"
+
+      - name: Upgrade, check drift, downgrade, upgrade
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Application role has data access only
+        # Скрипт запускает администратор базы (в Docker — POSTGRES_USER при
+        # первой инициализации тома): создать роль владелец схемы не вправе.
+        env:
+          POSTGRES_USER: corp_ed
+          POSTGRES_DB: corp_ed_migrations
+          APP_DB_PASSWORD: app
+        run: |
+          sh deploy/postgres/10-app-role.sh
+          export PGUSER=corp_ed_app PGPASSWORD=app PGDATABASE=corp_ed_migrations
+          # Данные — можно.
+          psql -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM tenants"
+          # DDL — нельзя.
+          if psql -c "CREATE TABLE should_fail (id int)"; then
+            echo "::error::application role can create tables"; exit 1
+          fi
+          # Ни SUPERUSER, ни BYPASSRLS.
+          test "$(psql -tAc "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")" = "f"
+
+  image:
+    name: Docker image builds and runs unprivileged
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build image
+        run: docker build -t corp-ed:ci .
+
+      - name: Image smoke test
+        run: |
+          # Не root.
+          test "$(docker run --rm corp-ed:ci id -u)" != "0"
+          # Приложение импортируется, CLI и alembic на месте.
+          docker run --rm -e SECRET_KEY=ci-only-secret-key-0123456789abcdef -e DATABASE_URL=postgresql+asyncpg://x:x@db/x \
+            corp-ed:ci python -c "import corp_ed.main, corp_ed.worker, corp_ed.cli"
+          docker run --rm corp-ed:ci python -m corp_ed.cli --help >/dev/null
+          docker run --rm corp-ed:ci alembic --help >/dev/null
+          # Песочница парсера: rlimits ставятся в дочернем процессе.
+          docker run --rm corp-ed:ci python -c "import resource, corp_ed.ingest.extract_worker"

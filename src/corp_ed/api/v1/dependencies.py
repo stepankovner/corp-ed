@@ -1,36 +1,73 @@
+import asyncio
 from collections.abc import Callable
 from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
 import httpx
+import jwt
 from fastapi import Depends, Request
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.core.config import LLMSettings, RagSettings
+from corp_ed.connectors.registry import AdapterRegistry, default_registry
+from corp_ed.core.config import (
+    BillingSettings,
+    ConnectorSettings,
+    LLMSettings,
+    RagSettings,
+    get_billing_settings,
+    get_connector_settings,
+)
 from corp_ed.core.database import get_session
-from corp_ed.core.exceptions import NotAuthenticatedError, PermissionError
+from corp_ed.core.exceptions import (
+    NotAuthenticatedError,
+    PasswordChangeRequiredError,
+    PermissionError,
+)
+from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.rate_limit import RateLimiter
+from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
+from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
+from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.yandex import YandexAdapter
+from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
-from corp_ed.repositories.brief_repository import BriefRepository
+from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
+from corp_ed.repositories.connector_repository import (
+    ConnectorRepository,
+    GrantRepository,
+    SyncRunRepository,
+)
+from corp_ed.repositories.connector_sync_job_repository import (
+    ConnectorSyncJobRepository,
+)
+from corp_ed.repositories.gap_repository import GapRepository
+from corp_ed.repositories.glossary_repository import GlossaryRepository
+from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.repositories.program_repository import ProgramRepository
+from corp_ed.repositories.qa_log_repository import QaLogRepository
+from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.connector_service import ConnectorService
+from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
+from corp_ed.services.gap_service import GapService
+from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.material_service import MaterialService
-from corp_ed.services.program_service import ProgramService
 from corp_ed.services.user_service import UserService
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# auto_error=False: без заголовка FastAPI отдал бы свой 403. Отсутствие
+# токена — это «не доказал, кто ты», то есть 401 с WWW-Authenticate,
+# и его формирует наш обработчик NotAuthenticatedError.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_user_repository(
@@ -39,60 +76,112 @@ def get_user_repository(
     return UserRepository(session)
 
 
-def get_user_service(
-    repository: Annotated[UserRepository, Depends(get_user_repository)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> UserService:
-    return UserService(repository, session)
-
-
 def get_tenant_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TenantRepository:
     return TenantRepository(session)
 
 
+def get_refresh_token_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RefreshTokenRepository:
+    return RefreshTokenRepository(session)
+
+
+def get_audit_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AuditRepository:
+    return AuditRepository(session)
+
+
 def get_auth_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    refresh_repo: Annotated[
+        RefreshTokenRepository, Depends(get_refresh_token_repository)
+    ],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AuthService:
-    return AuthService(tenant_repo, user_repo)
+    return AuthService(tenant_repo, user_repo, refresh_repo, audit, session)
 
 
-async def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
+def get_user_service(
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    refresh_repo: Annotated[
+        RefreshTokenRepository, Depends(get_refresh_token_repository)
+    ],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserService:
+    return UserService(user_repo, refresh_repo, audit, session)
+
+
+async def get_current_user_allow_password_change(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
 ) -> User:
-    """Зависимость защищённых эндпоинтов: проверяет токен, возвращает User.
+    """Проверить токен и вернуть пользователя — даже с временным паролем.
 
     Ставит tenant в контекст ИЗ ТОКЕНА (не из заголовка-заглушки) — это и есть
     боевая изоляция: подменить tenant нельзя, он внутри подписанного токена.
+
+    Любая проблема с токеном — 401 с одним и тем же смыслом «сессия
+    недействительна». 500 здесь недопустим: он сообщает атакующему, что
+    подпись прошла, а дальше что-то сломалось.
     """
-    # Шаг 1-2: декодировать токен и проверить подпись.
-    # decode кинет исключение, если токен битый или истёк (exp).
+    if credentials is None:
+        raise NotAuthenticatedError()
+
+    # Шаг 1-2: подпись, срок, издатель, аудитория, тип токена.
     try:
-        payload = decode_access_token(token)
-    except Exception as exc:
+        payload = decode_access_token(credentials.credentials)
+    except jwt.PyJWTError as exc:
         raise NotAuthenticatedError("Невалидный или истёкший токен") from exc
 
-    # Шаг 3: достать данные из payload, строки -> UUID.
-    user_id_raw = payload.get("sub")
-    tenant_id_raw = payload.get("tenant_id")
-    if user_id_raw is None or tenant_id_raw is None:
-        raise NotAuthenticatedError("Токен без обязательных полей")
-
-    user_id = UUID(user_id_raw)
-    tenant_id = UUID(tenant_id_raw)
+    # Шаг 3: данные из payload. Токен подписан нами, но формат полей
+    # всё равно проверяется: ключ мог утечь, а код — поменяться.
+    try:
+        user_id = UUID(payload["sub"])
+        tenant_id = UUID(payload["tenant_id"])
+        token_version = int(payload["ver"])
+    except (KeyError, TypeError, ValueError, AttributeError) as exc:
+        raise NotAuthenticatedError("Токен без обязательных полей") from exc
 
     # Шаг 4: сначала ставим tenant в контекст — ИЗ ТОКЕНА, не из заголовка.
     current_tenant.set(tenant_id)
     # теперь хук изоляции при SELECT увидит правильный tenant и добавит WHERE tenant_id
+    tenant = await tenant_repo.get_by_id(tenant_id)
     user = await user_repo.get_by_id(user_id)
 
-    # проверить, что юзер существует и активен
-    if user is None or not user.is_active:
-        raise NotAuthenticatedError("Пользователь не найден или неактивен")
+    # Шаг 5: компания и пользователь активны, токен не отозван сменой
+    # пароля, роли, блокировкой или «выйти везде».
+    if (
+        tenant is None
+        or not tenant.is_active
+        or user is None
+        # Явная сверка, а не только хук: изоляция не должна держаться на
+        # одном механизме (см. DECISIONS.md, session.get и identity map).
+        or user.tenant_id != tenant_id
+        or not user.is_active
+        or user.token_version != token_version
+    ):
+        raise NotAuthenticatedError("Сессия недействительна")
 
+    return user
+
+
+async def get_current_user(
+    user: Annotated[User, Depends(get_current_user_allow_password_change)],
+) -> User:
+    """Зависимость защищённых эндпоинтов: проверяет токен, возвращает User.
+
+    Пользователь с временным паролем сюда не проходит (403): временный
+    пароль знает администратор, выдавший его.
+    """
+    if user.must_change_password:
+        raise PasswordChangeRequiredError()
     return user
 
 
@@ -101,7 +190,7 @@ def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
     юзеров с одной из перечисленных ролей. Иначе — 403.
 
     Пример использования на эндпоинте:
-        current_user: Annotated[User, Depends(require_role(UserRole.MANAGER))]
+        current_user: Annotated[User, Depends(require_role(UserRole.ADMIN))]
     """
 
     def checker(
@@ -129,32 +218,42 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return client
 
 
+def get_llm_semaphore(request: Request) -> asyncio.Semaphore | None:
+    semaphore: asyncio.Semaphore | None = getattr(
+        request.app.state, "llm_semaphore", None
+    )
+    return semaphore
+
+
+def get_query_throttle(request: Request) -> Throttle | None:
+    throttle: Throttle | None = getattr(
+        request.app.state, "embedding_query_throttle", None
+    )
+    return throttle
+
+
 def get_embedding_gateway(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+    query_throttle: Annotated[Throttle | None, Depends(get_query_throttle)],
 ) -> EmbeddingGateway:
+    """В API эмбеддинги нужны только для вопросов; документы считает воркер."""
     return YandexEmbeddingAdapter(
         client=client,
         folder_id=settings.yc_folder_id,
-        api_key=settings.yc_api_key,
+        api_key=settings.yc_api_key.get_secret_value(),
+        family=settings.embedding_model,
+        dim=settings.embedding_dim,
+        query_throttle=query_throttle,
     )
 
 
 def get_llm_gateway(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+    semaphore: Annotated[asyncio.Semaphore | None, Depends(get_llm_semaphore)],
 ) -> LLMGateway:
-    return YandexAdapter(
-        client=client,
-        folder_id=settings.yc_folder_id,
-        api_key=settings.yc_api_key,
-    )
-
-
-def get_brief_repository(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> BriefRepository:
-    return BriefRepository(session)
+    return build_llm_gateway(client, settings, semaphore)
 
 
 def get_material_repository(
@@ -169,75 +268,137 @@ def get_chunk_repository(
     return ChunkRepository(session)
 
 
-def get_program_repository(
+def get_ingest_job_repository(
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> ProgramRepository:
-    return ProgramRepository(session)
-
-
-def get_program_service(
-    program_repo: Annotated[ProgramRepository, Depends(get_program_repository)],
-    brief_repo: Annotated[BriefRepository, Depends(get_brief_repository)],
-    gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> ProgramService:
-    return ProgramService(program_repo, brief_repo, gateway, session)
+) -> IngestJobRepository:
+    return IngestJobRepository(session)
 
 
 def get_material_service(
-    material_repo: Annotated[
-        MaterialRepository,
-        Depends(get_material_repository),
-    ],
-    chunk_repo: Annotated[
-        ChunkRepository,
-        Depends(get_chunk_repository),
-    ],
-    embedding_gateway: Annotated[
-        EmbeddingGateway,
-        Depends(get_embedding_gateway),
-    ],
-    session: Annotated[
-        AsyncSession,
-        Depends(get_session),
-    ],
-    settings: Annotated[
-        RagSettings,
-        Depends(get_rag_settings),
-    ],
+    material_repo: Annotated[MaterialRepository, Depends(get_material_repository)],
+    job_repo: Annotated[IngestJobRepository, Depends(get_ingest_job_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MaterialService:
     return MaterialService(
         material_repo=material_repo,
-        chunk_repo=chunk_repo,
-        embedding_gateway=embedding_gateway,
+        job_repo=job_repo,
+        audit=audit,
         session=session,
-        chunk_size=settings.chunk_size,
-        overlap=settings.chunk_overlap,
+    )
+
+
+def get_qa_log_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> QaLogRepository:
+    return QaLogRepository(session)
+
+
+def get_glossary_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GlossaryRepository:
+    return GlossaryRepository(session)
+
+
+def get_glossary_service(
+    repository: Annotated[GlossaryRepository, Depends(get_glossary_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> GlossaryService:
+    return GlossaryService(repository, audit, session)
+
+
+def get_gap_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> GapService:
+    return GapService(GapRepository(session), audit, session)
+
+
+def get_credit_service(
+    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
+    qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    settings: Annotated[BillingSettings, Depends(get_billing_settings)],
+) -> CreditService:
+    return CreditService(
+        tenant_repo,
+        qa_log_repo,
+        audit,
+        credits_per_seat=settings.credits_per_seat,
+        tokens_per_credit=settings.tokens_per_credit,
+        zone=settings.zone,
+        warn_at_percent=settings.warn_at_percent,
     )
 
 
 def get_faq_service(
-    chunk_repo: Annotated[
-        ChunkRepository,
-        Depends(get_chunk_repository),
-    ],
-    embedding_gateway: Annotated[
-        EmbeddingGateway,
-        Depends(get_embedding_gateway),
-    ],
-    llm_gateway: Annotated[
-        LLMGateway,
-        Depends(get_llm_gateway),
-    ],
-    settings: Annotated[
-        RagSettings,
-        Depends(get_rag_settings),
-    ],
+    chunk_repo: Annotated[ChunkRepository, Depends(get_chunk_repository)],
+    qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
+    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
+    glossary_repo: Annotated[GlossaryRepository, Depends(get_glossary_repository)],
+    credits: Annotated[CreditService, Depends(get_credit_service)],
+    embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
+    llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[RagSettings, Depends(get_rag_settings)],
 ) -> FaqService:
     return FaqService(
         chunk_repo=chunk_repo,
+        qa_log_repo=qa_log_repo,
+        tenant_repo=tenant_repo,
+        glossary_repo=glossary_repo,
+        credits=credits,
         embedding_gateway=embedding_gateway,
         llm_gateway=llm_gateway,
+        session=session,
         limit=settings.faq_limit,
         max_distance=settings.faq_max_distance,
+        context_max_tokens=settings.context_max_tokens,
+        temperature=settings.faq_temperature,
+        retriever=Retriever(settings.retriever),
+        fulltext_weight=settings.fulltext_weight,
+    )
+
+
+@lru_cache
+def get_adapter_registry() -> AdapterRegistry:
+    return default_registry(get_connector_settings())
+
+
+@lru_cache
+def get_secret_box() -> SecretBox:
+    return SecretBox(get_connector_settings().keys)
+
+
+def get_outbound_client(
+    client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
+) -> OutboundClient:
+    return OutboundClient(client, via_proxy=get_connector_settings().outbound_via_proxy)
+
+
+def get_connector_service(
+    request: Request,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
+    secrets: Annotated[SecretBox, Depends(get_secret_box)],
+    settings: Annotated[ConnectorSettings, Depends(get_connector_settings)],
+    http: Annotated[OutboundClient, Depends(get_outbound_client)],
+) -> ConnectorService:
+    # Лимитер приложения (Redis или память) — для одноразовости state OAuth.
+    limiter: RateLimiter | None = getattr(request.app.state, "rate_limiter", None)
+    return ConnectorService(
+        ConnectorRepository(session),
+        GrantRepository(session),
+        SyncRunRepository(session),
+        ConnectorSyncJobRepository(session),
+        MaterialRepository(session),
+        audit,
+        secrets,
+        registry,
+        settings,
+        session,
+        http,
+        limiter=limiter,
     )

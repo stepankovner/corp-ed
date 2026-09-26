@@ -1,0 +1,14 @@
+{
+  "method": "note.collection.list",
+  "params": {
+    "pagination": {
+      "limit": 50
+    }
+  },
+  "response": {
+    "error": {
+      "code": "BITRIX_REST_V3_EXCEPTION_INSUFFICIENTSCOPEEXCEPTION",
+      "message": "Недостаточно прав доступа: отсутствует необходимый scope."
+    }
+  }
+}

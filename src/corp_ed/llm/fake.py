@@ -1,3 +1,5 @@
+from typing import Any
+
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
 
@@ -11,6 +13,7 @@ class FakeAdapter(LLMGateway):
         self.content = content
         self.calls: list[list[Message]] = []
         self.call_kwargs: list[dict[str, float | int]] = []
+        self.response_formats: list[dict[str, Any] | None] = []
         self.finish_reason = finish_reason
 
     async def generate(
@@ -19,9 +22,11 @@ class FakeAdapter(LLMGateway):
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
         self.calls.append(messages)
         self.call_kwargs.append({"temperature": temperature, "max_tokens": max_tokens})
+        self.response_formats.append(response_format)
 
         return Completion(
             content=self.content,

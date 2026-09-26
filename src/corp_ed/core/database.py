@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from functools import lru_cache
 
-from sqlalchemy import event
+from sqlalchemy import Connection, event, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -17,6 +17,7 @@ from sqlalchemy.orm import (
 from sqlalchemy.orm.attributes import get_history
 
 from corp_ed.core.config import get_settings
+from corp_ed.core.db_policies import TENANT_SETTING
 from corp_ed.core.exceptions import TenantContextMissingError, TenantMismatchError
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.mixins import TenantMixin
@@ -48,8 +49,43 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
         yield session
 
 
+_RLS_TENANT_KEY = "rls_tenant"
+_SET_TENANT = text(f"SELECT set_config('{TENANT_SETTING}', :tenant, true)")
+
+
+def _sync_rls_tenant(session: Session, connection: Connection) -> None:
+    """Передать тенанта из контекста в параметр сессии PostgreSQL для RLS.
+
+    set_config(..., true) действует до конца транзакции, поэтому значение
+    ставится в начале каждой транзакции (after_begin) и заново, если
+    контекст сменился посреди неё (tenant_scope при входе, в CLI).
+    Последнее выставленное значение кешируется в session.info, чтобы не
+    ходить в базу на каждый запрос. Вызов идёт через Connection, а не
+    Session: иначе он сам бы запустил do_orm_execute.
+    """
+    tenant_id = current_tenant.get()
+    value = str(tenant_id) if tenant_id is not None else ""
+    if session.info.get(_RLS_TENANT_KEY) == value:
+        return
+    connection.execute(_SET_TENANT, {"tenant": value})
+    session.info[_RLS_TENANT_KEY] = value
+
+
+@event.listens_for(Session, "after_begin")
+def _bind_rls_tenant_on_begin(
+    session: Session, transaction: object, connection: Connection
+) -> None:
+    # Новая транзакция — параметр в базе сброшен, кеш тоже.
+    session.info.pop(_RLS_TENANT_KEY, None)
+    _sync_rls_tenant(session, connection)
+
+
 @event.listens_for(Session, "do_orm_execute")
 def _apply_tenant_filter(execute_state: ORMExecuteState) -> None:
+    # Любой запрос через Session, включая text() и bulk DELETE/UPDATE:
+    # сначала база должна знать актуального тенанта.
+    _sync_rls_tenant(execute_state.session, execute_state.session.connection())
+
     if not execute_state.is_select:
         return
 
@@ -78,6 +114,8 @@ def _apply_tenant_filter(execute_state: ORMExecuteState) -> None:
 def _check_tenant_on_write(
     session: Session, flush_context: object, instances: object
 ) -> None:
+    # INSERT/UPDATE при flush идут мимо do_orm_execute — синхронизируем тут.
+    _sync_rls_tenant(session, session.connection())
     tenant_id = current_tenant.get()
 
     for obj in session.new:

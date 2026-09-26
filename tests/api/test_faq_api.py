@@ -1,12 +1,16 @@
+from typing import Any
+
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import get_llm_gateway
+from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import Chunk, Material
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion, Message
 from corp_ed.main import app
+from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX
 
 
 class FailingLLM(LLMGateway):
@@ -16,15 +20,16 @@ class FailingLLM(LLMGateway):
         *,
         temperature: float = 0.3,
         max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
     ) -> Completion:
         raise LLMError("провайдер недоступен", retryable=True)
 
 
-async def test_faq_empty_database_returns_no_answer(
-    intern_client: httpx.AsyncClient,
+async def test_faq_empty_database_returns_marked_general_answer(
+    employee_client: httpx.AsyncClient,
     fake_llm,
 ) -> None:
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": "Что написано в материалах?"},
     )
@@ -33,13 +38,16 @@ async def test_faq_empty_database_returns_no_answer(
 
     body = response.json()
 
+    # Пометка двойная: поле для фронта и первая строка текста.
+    assert body["origin"] == "general_knowledge"
+    assert body["content"].startswith(GENERAL_ANSWER_PREFIX)
     assert body["answer_given"] is False
     assert body["sources"] == []
-    assert fake_llm.calls == []
+    assert len(fake_llm.calls) == 1
 
 
 async def test_faq_returns_answer_with_source(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     material: Material,
     chunk_repo,
     session: AsyncSession,
@@ -49,7 +57,7 @@ async def test_faq_returns_answer_with_source(
         material_id=material.id,
         position=0,
         content="Первый чанк.",
-        embedding=[0.1] * 256,
+        embedding=[0.1] * EMBEDDING_DIM,
         model="fake",
         model_version="fake",
     )
@@ -57,7 +65,7 @@ async def test_faq_returns_answer_with_source(
     await chunk_repo.bulk_create(chunks=[chunk])
     await session.commit()
 
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": "Что написано?"},
     )
@@ -67,17 +75,20 @@ async def test_faq_returns_answer_with_source(
     body = response.json()
 
     assert body["answer_given"] is True
+    assert body["origin"] == "documents"
     assert body["content"] == fake_llm.content
     assert len(body["sources"]) == 1
     assert body["sources"][0]["material_id"] == str(material.id)
+    assert body["sources"][0]["title"] == material.title
+    assert body["sources"][0]["heading_path"] == []
     assert "distance" not in body["sources"][0]
 
 
 async def test_faq_empty_question_returns_422(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     fake_embeddings,
 ) -> None:
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": ""},
     )
@@ -87,7 +98,7 @@ async def test_faq_empty_question_returns_422(
 
 
 async def test_faq_llm_error_returns_502(
-    intern_client: httpx.AsyncClient,
+    employee_client: httpx.AsyncClient,
     material: Material,
     chunk_repo,
     session: AsyncSession,
@@ -96,7 +107,7 @@ async def test_faq_llm_error_returns_502(
         material_id=material.id,
         position=0,
         content="Первый чанк.",
-        embedding=[0.1] * 256,
+        embedding=[0.1] * EMBEDDING_DIM,
         model="fake",
         model_version="fake",
     )
@@ -106,7 +117,7 @@ async def test_faq_llm_error_returns_502(
 
     app.dependency_overrides[get_llm_gateway] = lambda: FailingLLM()
 
-    response = await intern_client.post(
+    response = await employee_client.post(
         "/api/v1/faq/ask",
         json={"question": "Что написано?"},
     )

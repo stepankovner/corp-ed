@@ -1,0 +1,26 @@
+{
+  "method": "landing.site.getlist",
+  "params": {"scope": "KNOWLEDGE", "params": {"select": ["ID", "TITLE", "CODE", "ACTIVE", "DATE_MODIFY"], "filter": {"TYPE": "KNOWLEDGE", "ACTIVE": "Y", "DELETED": "N"}}},
+  "response": {
+    "result": [
+      {
+        "ID": "157",
+        "TITLE": "База знаний компании",
+        "CODE": "/company/",
+        "ACTIVE": "Y",
+        "DATE_MODIFY": "03/12/2026 01:57:18 am",
+        "TYPE": "KNOWLEDGE"
+      }
+    ],
+    "time": {
+      "start": 1773269838,
+      "finish": 1773269838.647153,
+      "duration": 0.6471529006958008,
+      "processing": 0,
+      "date_start": "2026-03-12T01:57:18+03:00",
+      "date_finish": "2026-03-12T01:57:18+03:00",
+      "operating_reset_at": 1773270438,
+      "operating": 0
+    }
+  }
+}

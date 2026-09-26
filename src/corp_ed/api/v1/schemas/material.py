@@ -3,33 +3,52 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from corp_ed.domain.models import Track
+from corp_ed.api.v1.schemas.base import RequestModel
+from corp_ed.domain.models import MaterialStatus
 
-# Ингест синхронный: ~0.7 с на чанк. 20 000 символов при chunk_size=1000
-# дают ~20 чанков ≈ 15 с, при chunk_size=500 — ≈ 30 с. Поднимать только
-# вместе с переездом ингеста в фоновые задачи.
-MAX_MATERIAL_LENGTH = 20_000
+# Текст, вставленный в форму. Файлы — через /materials/upload со своим
+# лимитом. Ингест фоновый, поэтому лимит — про размер тела запроса и
+# стоимость эмбеддингов, а не про время HTTP-запроса.
+MAX_MATERIAL_LENGTH = 200_000
+MAX_TITLE_LENGTH = 200
 
 
-class MaterialCreateRequest(BaseModel):
-    """Материал отдела в виде текста (загрузка файлов — позже)."""
+class MaterialCreateRequest(RequestModel):
+    """Документ компании в виде текста (Markdown или простой текст).
 
-    track: Track
-    title: str = Field(min_length=1, max_length=200)
+    title — человеческое название («Положение об отпусках»), а не имя
+    файла: оно уходит в крошки эмбеддинга и в подписи источников.
+    """
+
+    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
     content: str = Field(min_length=1, max_length=MAX_MATERIAL_LENGTH)
 
 
+class MaterialUpdateRequest(RequestModel):
+    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+
+
 class MaterialResponse(BaseModel):
-    """Материал без содержимого: клиент его только что прислал."""
+    """Материал без содержимого: клиенту нужен статус, а не текст."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    track: Track
     title: str
+    source_filename: str | None
+    source_format: str | None
+    source_size: int | None
+    status: MaterialStatus
+    status_error: str | None
+    indexed_at: datetime | None
+    # Документ из источника: подключение, ссылка, когда синхронизирован.
+    connector_id: UUID | None = None
+    source_url: str | None = None
+    synced_at: datetime | None = None
+    visibility: str = "tenant"
     created_at: datetime
 
 
 class IngestResponse(BaseModel):
     material_id: UUID
-    chunks: int
+    status: MaterialStatus

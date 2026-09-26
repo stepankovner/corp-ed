@@ -11,6 +11,9 @@ class Role(StrEnum):
 class FinishReason(StrEnum):
     COMPLETED = "completed"
     TRUNCATED = "truncated"
+    # Модель ответила, но провайдер пометил ответ фильтром содержимого
+    # (content_filter). Это не сбой: повтор даст то же самое (BH-25).
+    FILTERED = "filtered"
 
 
 @dataclass(frozen=True)

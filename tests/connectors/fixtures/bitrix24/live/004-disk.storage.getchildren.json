@@ -1,0 +1,21 @@
+{
+  "method": "disk.storage.getchildren",
+  "params": {
+    "id": "3",
+    "start": 0
+  },
+  "response": {
+    "result": [],
+    "total": 0,
+    "time": {
+      "start": 1790370916,
+      "finish": 1790370916.516962,
+      "duration": 0.5169620513916016,
+      "processing": 0,
+      "date_start": "2026-09-26T00:15:16+03:00",
+      "date_finish": "2026-09-26T00:15:16+03:00",
+      "operating_reset_at": 1790371516,
+      "operating": 0
+    }
+  }
+}

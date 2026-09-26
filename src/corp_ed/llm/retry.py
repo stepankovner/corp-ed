@@ -35,7 +35,8 @@ async def call_with_retry(
             raise last_error
 
         if attempt < max_attempts - 1:
-            delay = base_delay * (2**attempt) + random.uniform(0, 1)
+            # Джиттер паузы между повторами, не криптография.
+            delay = base_delay * (2**attempt) + random.uniform(0, 1)  # noqa: S311
             logger.warning(
                 "llm_retry",
                 attempt=attempt + 1,

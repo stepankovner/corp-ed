@@ -1,0 +1,9 @@
+# Зависимости eval-скриптов сверх основных (httpx, razdel уже в проекте;
+# snowballstemmer — в dev-группе pyproject: без него тесты BM25 не идут в CI).
+# Ставить в то же окружение: uv pip install -r eval/requirements.txt
+numpy>=2.0            # офлайн-стенд: косинусная близость (eval/bench.py)
+mammoth>=1.8          # docx -> HTML (извлечение, как предложено бэкенду)
+markdownify>=0.13     # HTML -> Markdown
+pymupdf4llm>=0.0.17   # pdf -> Markdown постранично
+# Только для замера реранкера (M3), ставить отдельно — тянет torch:
+# sentence-transformers>=3.0
