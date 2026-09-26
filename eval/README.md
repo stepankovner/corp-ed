@@ -180,6 +180,24 @@ python -m eval.compare eval/results/A.csv eval/results/B.csv --metric rr
 перестановочного теста. «B лучше» — только если интервал не содержит ноль
 **и** p < 0.05. Иначе — «в пределах шума».
 
+## Сравнение с Алисой AI для бизнеса (задача 4)
+
+```bash
+python -m eval.alice_compare template --dataset eval/private/golden.csv --out eval/private/alice_answers.csv
+python -m eval.alice_compare blind --ours <наши _e2e.csv …> --alice eval/private/alice_answers.csv --out-dir eval/private/results/alice
+python -m eval.judge --results eval/private/results/alice/<дата>_ours-blind_e2e.csv --model aliceai-llm
+python -m eval.judge --results eval/private/results/alice/<дата>_alice-blind_e2e.csv --model aliceai-llm
+python -m eval.alice_compare report --ours <…ours-blind_e2e_judged.csv> --alice <…alice-blind_e2e_judged.csv> [--exclude g21,g28] [--md отчёт.md]
+```
+
+Ответы Алисы собирает человек — API нет (протокол:
+`docs/ml-alice-protocol.md`). `blind` берёт вопросы, на которые ответили
+обе системы, нормализует ответы и оставляет судье пустые выдержки — он
+не знает, чей ответ. `report` считает верные ответы по корпусу, ложные
+ответы вне корпуса, F1 отказа (`is_refusal` — одинаково для обеих
+систем), ссылки на нужный документ и время; разница «мы − Алиса» с 95 %
+CI и p, как в `eval.compare`.
+
 ## Порог отказа (A8)
 
 ```bash
