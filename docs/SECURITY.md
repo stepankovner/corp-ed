@@ -120,7 +120,7 @@ HTTP API (`/api/v1/*`), загружаемые файлы, содержимое 
 | 422 без эха входных данных (пароль не попадает в ответ и логи прокси) | `validation_error_handler` | `security/test_http_hardening.py` |
 | Полнотекстовый запрос: только слова через `or`, bind-параметр, конфигурация — константа | `domain/fulltext.py`, `repositories/chunk_repository.py` | `test_hybrid_search.py::test_hostile_questions_do_not_break_fulltext` |
 | Файлы: формат по сигнатуре, не по расширению и не по `Content-Type`; zip-бомба (объём, число файлов, степень сжатия); шифрованный PDF; число страниц; имя без пути | `ingest/extract.py` | `ingest/test_extract.py`, `api/test_upload_api.py` |
-| Разбор файла — в дочернем `python -I` с пустым окружением (без ключей) и rlimits: 1,5 ГБ памяти, 60 с CPU, без записи файлов, без core; таймаут 90 с; наружу — Markdown или код из закрытого списка | `ingest/sandbox.py`, `ingest/extract_worker.py` | `ingest/test_extract.py` (песочница, таймаут, окружение), `api/test_upload_api.py::test_rejection_does_not_leak_parser_details` |
+| Разбор файла — в дочернем `python -I` с пустым окружением (без ключей) и rlimits: 1,5 ГБ памяти, бюджет CPU = таймаут по стене × число ядер (разбор PDF многопоточный; убийство по лимиту сообщается как «слишком долго», а не «повреждён»), без записи файлов, без core; таймаут 90 с; наружу — Markdown или код из закрытого списка | `ingest/sandbox.py`, `ingest/extract_worker.py` | `ingest/test_extract.py` (песочница, таймаут, окружение), `api/test_upload_api.py::test_rejection_does_not_leak_parser_details` |
 | Оригинал файла не хранится (только sha256 для дубликатов, проверка в пределах компании) | `services/material_service.py` | `api/test_upload_api.py` |
 | Текст модели и админа в отчёте — одна строка, без управляющих символов, в пределах поля | `services/gap_report_service.py`, `api/v1/schemas/glossary.py` | `test_gap_report.py`, `api/test_glossary_api.py` |
 
@@ -204,10 +204,14 @@ Redis (Lua `INCR`+`EXPIRE`, атомарно) или память процесс
 | Отвергнутые учётные данные останавливают коннектор (или грант сотрудника) без повторов; событие аудита `connector.stopped` | `services/connector_sync_service.py` | `test_connector_sync.py::test_rejected_credentials_stop_the_connector` |
 | Новые таблицы под RLS с FORCE; задачи очереди — без данных; синхронизация — в `tenant_scope` компании | `core/db_policies.py::TENANT_TABLES` | `security/test_rls.py` (каталог), `test_connector_sync.py::test_sync_never_touches_another_tenant` |
 | Лимиты частоты: настройка 120/ч, «синхронизировать сейчас» 12/ч, проверка 30/ч на компанию; гранты 20/ч на сотрудника | `api/v1/rate_limits.py` | `api/test_connectors_api.py::test_sync_now_is_rate_limited_per_tenant` |
+| OAuth сотрудника (Битрикс24, Яндекс): `state` — подписанный JWT с отдельным `typ=connector_oauth` (access-токен в роли state не пройдёт), срок 10 мин, **одноразовый** — `jti` гасится лимитером (Redis в бою; без хранилища — отказ, не пропуск); обратный вызов публичный, без bearer: кто и куда — только из `state`; лимит 300 за 15 мин по IP, fail closed; отказ в согласии — аудит `connector.oauth_failed`, грант не создаётся; `client_secret` уходит только на сервер авторизации, никогда на портал | `core/security.py`, `services/connector_service.py`, `api/v1/rate_limits.py`, `connectors/bitrix24/oauth.py` | `security/test_oauth_state.py`, `api/test_connectors_oauth_api.py` |
+| При редиректе на другой хост снимаются `Authorization`, `Cookie`, `Proxy-Authorization`; скачивание потоковое с обрывом по лимиту, `Content-Length` не доверяется; ссылки на скачивание принимаются только на хосте системы (портал Битрикс24, Confluence) или доменах Яндекса | `core/outbound.py`, `connectors/*/client.py`, `connectors/yandex/disk.py` | `security/test_outbound.py` (кросс-хостовый редирект, обрыв чтения), `connectors/test_*_adapter.py` (`download_url_foreign`, `link_foreign`) |
+| Режим `CONNECTOR_OUTBOUND_VIA_PROXY` для процесса за egress-прокси: запрос уходит по имени, проверка адреса остаётся, закрепление против DNS rebinding — на политике прокси; по умолчанию выключен (RISKS №39) | `core/outbound.py`, `core/config.py` | `security/test_outbound.py::test_via_proxy_sends_the_name_and_still_checks_the_address`, `security/test_connector_settings.py` |
+| Инварианты вида проверяются при сохранении формы и учётных данных (например, `{username}` в шаблоне почты Confluence), а не при первой синхронизации → 422 с кодом | `connectors/registry.py::KindSpec`, `services/connector_service.py` | `api/test_connectors_api.py` |
 
-Что ещё не сделано: egress-политика воркера в проде (`DEPLOY.md`) —
-вторая линия после проверки адресов; OAuth-обмен кодов для Битрикс24 —
-этап 2.
+Что ещё не сделано: egress-политика воркера в проде (`DEPLOY.md` §9a) —
+вторая линия после проверки адресов; предохранитель для
+`CONNECTOR_OUTBOUND_VIA_PROXY` без прокси в окружении (RISKS №39).
 
 ### 3.10. Аудит
 
