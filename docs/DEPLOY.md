@@ -69,6 +69,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5 |
 | Кредиты | `BILLING_*` | дефолты — предложение досье, пересмотреть с тарифами |
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
+| Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется |
 | OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — страница фронта «Мои источники» |
 
@@ -188,6 +189,11 @@ Cron на хосте (или systemd timer), под пользователем �
 `CONNECTOR_SYNC_RUN_RETENTION_DAYS` (90), и заявки на созвон старше
 `LEADS_RETENTION_DAYS` (180).
 
+Сокращение мест: `cli set-seats` сначала считает расход месяца и, если
+новый пул не больше потраченного, объясняет, что вопросы остановятся до
+1-го, и ждёт `--yes`. Активных учёток не может быть больше мест — после
+сокращения новых сотрудников не завести, пока лишние не заблокированы.
+
 Заявки на созвон команда смотрит каждый рабочий день:
 `docker compose -f compose.yaml run --rm api python -m corp_ed.cli leads list`
 (новые), после звонка — `leads set-status --id <id> --status contacted`
@@ -265,7 +271,9 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-
 соединений к `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`,
 `169.254.0.0/16`, `127.0.0.0/8` и к внутренним сервисам, кроме базы и
 Redis (например, правила `iptables`/`nftables` на docker-сети или
-egress-политика оркестратора). API наружу ходит только в Yandex Cloud
+egress-политика оркестратора). Если заданы `TEAM_NOTIFY_TELEGRAM_*`,
+API и воркеру нужен выход к `api.telegram.org` (уведомления команде).
+API наружу ходит только в Yandex Cloud
 и, для проверки учётных данных (`POST /connectors/{id}/test`) и
 OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам систем
 клиентов. Одноразовость `state` OAuth держится на том же Redis, что и
