@@ -180,6 +180,24 @@ python -m eval.compare eval/results/A.csv eval/results/B.csv --metric rr
 перестановочного теста. «B лучше» — только если интервал не содержит ноль
 **и** p < 0.05. Иначе — «в пределах шума».
 
+## Сравнение с Алисой AI для бизнеса (задача 4)
+
+```bash
+python -m eval.alice_compare template --dataset eval/private/golden.csv --out eval/private/alice_answers.csv
+python -m eval.alice_compare blind --ours <наши _e2e.csv …> --alice eval/private/alice_answers.csv --out-dir eval/private/results/alice
+python -m eval.judge --results eval/private/results/alice/<дата>_ours-blind_e2e.csv --model aliceai-llm
+python -m eval.judge --results eval/private/results/alice/<дата>_alice-blind_e2e.csv --model aliceai-llm
+python -m eval.alice_compare report --ours <…ours-blind_e2e_judged.csv> --alice <…alice-blind_e2e_judged.csv> [--exclude g21,g28] [--md отчёт.md]
+```
+
+Ответы Алисы собирает человек — API нет (протокол:
+`docs/ml-alice-protocol.md`). `blind` берёт вопросы, на которые ответили
+обе системы, нормализует ответы и оставляет судье пустые выдержки — он
+не знает, чей ответ. `report` считает верные ответы по корпусу, ложные
+ответы вне корпуса, F1 отказа (`is_refusal` — одинаково для обеих
+систем), ссылки на нужный документ и время; разница «мы − Алиса» с 95 %
+CI и p, как в `eval.compare`.
+
 ## Порог отказа (A8)
 
 ```bash
@@ -196,7 +214,7 @@ F1 отказа по порогам и 2–3 кандидата. **Финаль�
 | Скрипт | Задача |
 |---|---|
 | `python -m eval.probe_embedding_limit` | A1: лимит входа `text-search-doc`, молчаливая обрезка, символов на токен |
-| `python -m eval.judge --results …_e2e.csv` | M4: LLM-судья (по умолчанию Flash через OpenAI-совместимый API; `--model`, `--api native`); `--calibrate` — совпадение с ручной разметкой (цель ≥ 85%) |
+| `python -m eval.judge --results …_e2e.csv` | M4: LLM-судья (по умолчанию Flash через OpenAI-совместимый API; `--model`, `--api native`); `--calibrate` — совпадение с ручной разметкой `correct` (цель ≥ 85 %, каппа ≥ 0,6), можно несколько `*_judged.csv` сразу. Калибровка 26.09: 34/38, каппа 0,77 |
 | `python -m eval.bench_reranker` | M3: задержка bge-reranker-v2-m3 на CPU (нужен `sentence-transformers`) |
 
 ## Результаты

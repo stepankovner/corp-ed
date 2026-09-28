@@ -1,7 +1,7 @@
 """LLM-судья правильности ответа (M4).
 
     python -m eval.judge --results <результаты>_e2e.csv [--model yandexgpt]
-    python -m eval.judge --results …_e2e_judged.csv --calibrate
+    python -m eval.judge --results a_e2e_judged.csv [b_e2e_judged.csv …] --calibrate
 
 Судья получает вопрос, эталон, ответ ассистента и выдержки, которые
 ассистент видел (колонка sources в результатах e2e). Возвращает JSON:
@@ -173,7 +173,13 @@ def cohen_kappa(pairs: Sequence[tuple[int, int]]) -> float:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m eval.judge")
-    parser.add_argument("--results", type=Path, required=True)
+    parser.add_argument(
+        "--results",
+        type=Path,
+        nargs="+",
+        required=True,
+        help="файл результатов e2e; при --calibrate можно несколько *_judged.csv",
+    )
     # По умолчанию — модель и API из решения по задаче 1 (Flash через
     # OpenAI-совместимый API); калибровка судьи — задача 2.7, до неё
     # оценки судьи предварительные при любой модели.
@@ -185,9 +191,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="сравнить judge_correct с ручной разметкой correct",
     )
     args = parser.parse_args(argv)
-    rows = read_csv(args.results)
 
     if args.calibrate:
+        # Несколько файлов — одна калибровка: 40 оценок могут лежать в
+        # разных прогонах (26.09: 31 из базового и 9 из k = 8).
+        rows = [row for path in args.results for row in read_csv(path)]
         labeled = [
             r for r in rows if r.get("correct", "") != "" and r.get("judge_correct", "")
         ]
@@ -195,7 +203,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             [int(r["correct"]) for r in labeled],
             [int(r["judge_correct"]) for r in labeled],
         )
-        print(f"Размеченных ответов: {result.n}")
+        print(f"Размеченных ответов: {result.n} (файлов: {len(args.results)})")
         print(f"Точное совпадение: {result.exact:.1%} (цель ≥ {AGREEMENT_TARGET:.0%})")
         print(f"Расхождение не больше чем на 1 балл: {result.within_one:.1%}")
         print(f"Каппа Коэна: {result.kappa:.2f} (цель ≥ {KAPPA_TARGET})")
@@ -210,6 +218,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             conclusion = "в отчёт — ручные оценки; промпт судьи править"
         print(f"Вывод: {conclusion}.")
         return 0
+
+    if len(args.results) != 1:
+        parser.error("--results: один файл, если не --calibrate")
+    results_path = args.results[0]
+    rows = read_csv(results_path)
 
     from eval.yandex import YandexClient
 
@@ -233,7 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(f"[{number}/{len(rows)}] {row['id']}: {row['judge_correct'] or '?'}")
 
-    out = args.results.with_name(args.results.stem + "_judged.csv")
+    out = results_path.with_name(results_path.stem + "_judged.csv")
     write_csv(out, rows)
     print(f"Готово ({JUDGE_PROMPT_VERSION}): {out}")
     return 0
