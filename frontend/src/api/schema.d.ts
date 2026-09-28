@@ -626,6 +626,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Lead
+         * @description Заявка на созвон со страницы тарифов (досье 10.1). Без входа:
+         *     лимит по IP и общий суточный, ловушка для ботов, согласие с версией
+         *     политики. Команда видит заявки в `cli leads list`.
+         */
+        post: operations["submit_lead_api_v1_leads_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/leads/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Lead Form
+         * @description Настройки формы записи на созвон — без входа.
+         */
+        get: operations["lead_form_api_v1_leads_form_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/materials": {
         parameters: {
             query?: never;
@@ -1324,6 +1366,79 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * LeadFormResponse
+         * @description Что нужно форме записи: открыта ли она, политика, даты и окна.
+         */
+        LeadFormResponse: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * First Date
+             * Format: date
+             */
+            first_date: string;
+            /**
+             * Last Date
+             * Format: date
+             */
+            last_date: string;
+            /** Policy Url */
+            policy_url: string | null;
+            /** Policy Version */
+            policy_version: string | null;
+            /** Slots */
+            slots: string[];
+            /** Timezone */
+            timezone: string;
+        };
+        /** LeadReceivedResponse */
+        LeadReceivedResponse: {
+            /**
+             * Status
+             * @default received
+             * @constant
+             */
+            status: "received";
+        };
+        /** LeadRequest */
+        LeadRequest: {
+            /** Comment */
+            comment?: string | null;
+            /** Company Name */
+            company_name: string;
+            /** Consent */
+            consent: boolean;
+            /** Contact Name */
+            contact_name: string;
+            /** Email */
+            email?: string | null;
+            /** Phone */
+            phone: string;
+            /** Policy Version */
+            policy_version: string;
+            /**
+             * Preferred Date
+             * Format: date
+             */
+            preferred_date: string;
+            /** Preferred Slot */
+            preferred_slot: string;
+            /** Seats */
+            seats: number;
+            /** @default base */
+            tariff: components["schemas"]["LeadTariff"];
+            /**
+             * Website
+             * @default
+             */
+            website: string;
+        };
+        /**
+         * LeadTariff
+         * @enum {string}
+         */
+        LeadTariff: "base" | "custom";
         /** LoginRequest */
         LoginRequest: {
             /** Company Code */
@@ -2770,6 +2885,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_lead_api_v1_leads_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadReceivedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    lead_form_api_v1_leads_form_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadFormResponse"];
                 };
             };
         };

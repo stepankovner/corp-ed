@@ -30,6 +30,13 @@ const GlossaryPage = lazy(() =>
 );
 const UsagePage = lazy(() => import("./admin/UsagePage").then((m) => ({ default: m.UsagePage })));
 const AuditPage = lazy(() => import("./admin/AuditPage").then((m) => ({ default: m.AuditPage })));
+// Публичные страницы тарифов и записи — отдельным чанком.
+const PricingPage = lazy(() =>
+  import("./pages/PricingPage").then((m) => ({ default: m.PricingPage })),
+);
+const CallRequestPage = lazy(() =>
+  import("./pages/CallRequestPage").then((m) => ({ default: m.CallRequestPage })),
+);
 const MySourcesPage = lazy(() =>
   import("./pages/MySourcesPage").then((m) => ({ default: m.MySourcesPage })),
 );
@@ -41,6 +48,9 @@ function lazyPage(node: ReactNode) {
 export const routes: RouteObject[] = [
   // Ссылка-приглашение открывается и без входа, и под чужой учёткой.
   { path: "/join/:companyCode", element: <JoinPage /> },
+  // Тарифы и запись на созвон — для всех, со входом и без.
+  { path: "/pricing", element: lazyPage(<PricingPage />) },
+  { path: "/pricing/request", element: lazyPage(<CallRequestPage />) },
   {
     element: <PublicOnly />,
     children: [{ path: "/login", element: <LoginPage /> }],

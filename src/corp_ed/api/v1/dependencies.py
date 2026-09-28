@@ -18,6 +18,7 @@ from corp_ed.core.config import (
     RagSettings,
     get_billing_settings,
     get_connector_settings,
+    get_lead_settings,
 )
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import (
@@ -50,6 +51,7 @@ from corp_ed.repositories.gap_repository import GapRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.invite_repository import InviteRepository
+from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
@@ -63,6 +65,7 @@ from corp_ed.services.gap_service import GapService
 from corp_ed.services.general_answer import ModelKnowledgeSource
 from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.invite_service import InviteService
+from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.user_service import UserService
 
@@ -117,6 +120,12 @@ def get_invite_service(
     return InviteService(
         InviteRepository(session), tenant_repo, user_repo, audit, session
     )
+
+
+def get_lead_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> LeadService:
+    return LeadService(LeadRepository(session), session, get_lead_settings())
 
 
 def get_user_service(

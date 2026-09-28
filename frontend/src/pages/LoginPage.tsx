@@ -1,4 +1,5 @@
 import { useState, type SubmitEvent } from "react";
+import { Link } from "react-router";
 
 import { errorMessage } from "../api/errors";
 import { rememberedCompany, useAuth } from "../auth/context";
@@ -70,6 +71,9 @@ export function LoginPage() {
         <Button type="submit" block busy={busy}>
           Войти
         </Button>
+        <p className="muted" style={{ fontSize: "var(--fs-small)" }}>
+          Компания ещё не подключена? <Link to="/pricing">Тарифы и запись на созвон</Link>
+        </p>
       </form>
     </AuthLayout>
   );

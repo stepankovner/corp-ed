@@ -9,6 +9,8 @@
     python -m corp_ed.cli resume-tenant --code acme
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
     python -m corp_ed.cli purge        # удалить данные старше срока хранения
+    python -m corp_ed.cli leads list [--status new]     # заявки на созвон
+    python -m corp_ed.cli leads set-status --id <uuid> --status contacted
     python -m corp_ed.cli gaps (--code acme | --all)   # отчёт о пробелах
     python -m corp_ed.cli rotate-connector-secrets     # после смены ключа
     python -m corp_ed.cli connector-check --kind bitrix24 \\
@@ -35,6 +37,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import httpx
 
@@ -46,6 +49,7 @@ from corp_ed.core.config import (
     LLMSettings,
     RagSettings,
     get_connector_settings,
+    get_lead_settings,
     get_settings,
 )
 from corp_ed.core.database import get_session_maker
@@ -57,14 +61,17 @@ from corp_ed.core.outbound import (
     validate_outbound_url,
 )
 from corp_ed.core.secrets import SecretBox
+from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.audit_repository import AuditRepository
+from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
 from corp_ed.services.gap_report_service import GapReportService
+from corp_ed.services.lead_service import LeadService
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
 from corp_ed.services.tenant_service import TenantService
@@ -122,6 +129,21 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     commands.add_parser("purge", help="удалить данные старше срока хранения")
+
+    leads = commands.add_parser("leads", help="заявки на созвон со страницы тарифов")
+    leads_commands = leads.add_subparsers(dest="leads_command", required=True)
+    leads_list = leads_commands.add_parser("list", help="последние заявки")
+    leads_list.add_argument(
+        "--status",
+        choices=["all", *(status.value for status in LeadStatus)],
+        default=LeadStatus.NEW.value,
+    )
+    leads_list.add_argument("--limit", type=int, default=50)
+    leads_status = leads_commands.add_parser("set-status", help="отметить заявку")
+    leads_status.add_argument("--id", required=True, type=UUID)
+    leads_status.add_argument(
+        "--status", required=True, choices=[status.value for status in LeadStatus]
+    )
 
     gaps = commands.add_parser(
         "gaps", help="пересобрать отчёт о пробелах (раз в сутки, после purge)"
@@ -191,12 +213,16 @@ async def _run(args: argparse.Namespace) -> int:
             get_session_maker(),
             get_settings().qa_log_retention_days,
             get_connector_settings().sync_run_retention_days,
+            get_lead_settings().retention_days,
         ).purge()
         print(
             f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}, "
-            f"sync_runs: {purged.sync_runs}"
+            f"sync_runs: {purged.sync_runs}, leads: {purged.leads}"
         )
         return 0
+
+    if args.command == "leads":
+        return await _leads(args)
 
     if args.command == "gaps":
         return await _gaps(None if args.all else args.code)
@@ -267,6 +293,37 @@ async def _run(args: argparse.Namespace) -> int:
             args.code, active=args.command == "resume-tenant"
         )
         print(f"{tenant.company_code}: is_active={tenant.is_active}")
+        return 0
+
+
+async def _leads(args: argparse.Namespace) -> int:
+    """Заявки на созвон для команды: кому перезвонить (досье 10.1).
+
+    Вывод — оператору в терминал: имя и телефон нужны, чтобы перезвонить.
+    В журналы приложения они не пишутся.
+    """
+    async with get_session_maker()() as session:
+        service = LeadService(LeadRepository(session), session, get_lead_settings())
+        if args.leads_command == "set-status":
+            lead = await service.set_status(args.id, LeadStatus(args.status))
+            print(f"{lead.id}: status={lead.status}")
+            return 0
+        status = None if args.status == "all" else LeadStatus(args.status)
+        found = await service.list_recent(status=status, limit=args.limit)
+        for lead in found:
+            created = lead.created_at.astimezone(CALL_TIMEZONE)
+            print(
+                f"{lead.id}  {created:%d.%m %H:%M}  [{lead.status}]  "
+                f"{lead.company_name}, {lead.seats} мест, тариф {lead.tariff}"
+            )
+            contact = ", ".join(
+                part for part in (lead.contact_name, lead.phone, lead.email) if part
+            )
+            print(f"    {contact}")
+            print(f"    созвон: {lead.preferred_date:%d.%m} {lead.preferred_slot} МСК")
+            if lead.comment:
+                print(f"    {lead.comment[:300]}")
+        print(f"Заявок: {len(found)}")
         return 0
 
 

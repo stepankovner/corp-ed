@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -149,6 +149,47 @@ class Invite(TenantMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Lead(Base):
+    """Заявка на созвон со страницы тарифов (досье 10.1, решение 28.09).
+
+    Не тенантская: клиента ещё нет. Персональные данные (имя, телефон,
+    почта) — только то, что нужно, чтобы перезвонить; IP не хранится.
+    Согласие записывается с версией политики. Срок хранения —
+    LEADS_RETENTION_DAYS, удаляет `cli purge`.
+    """
+
+    __tablename__ = "leads"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('new', 'contacted', 'scheduled', 'rejected')",
+            name="ck_leads_status",
+        ),
+        CheckConstraint("tariff IN ('base', 'custom')", name="ck_leads_tariff"),
+        CheckConstraint("seats > 0", name="ck_leads_seats_positive"),
+        Index("ix_leads_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    company_name: Mapped[str] = mapped_column(String(200))
+    contact_name: Mapped[str] = mapped_column(String(200))
+    phone: Mapped[str] = mapped_column(String(32))
+    email: Mapped[str | None] = mapped_column(String(254))
+    seats: Mapped[int]
+    tariff: Mapped[str] = mapped_column(String(16))
+    preferred_date: Mapped[date]
+    preferred_slot: Mapped[str] = mapped_column(String(16))
+    comment: Mapped[str | None] = mapped_column(Text)
+    policy_version: Mapped[str] = mapped_column(String(64))
+    consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 

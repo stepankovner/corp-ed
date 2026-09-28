@@ -187,3 +187,7 @@ class InviteEmailTakenError(ConflictError):
         super().__init__(
             "Сотрудник с этой почтой уже есть в компании — войдите со своим паролем"
         )
+
+
+class InvalidLeadError(DomainError):
+    """Заявка на созвон не прошла проверку (дата, окно, согласие). HTTP 422."""

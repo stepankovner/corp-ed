@@ -1313,6 +1313,185 @@
         "title": "InviteTokenRequest",
         "type": "object"
       },
+      "LeadFormResponse": {
+        "description": "Что нужно форме записи: открыта ли она, политика, даты и окна.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "first_date": {
+            "format": "date",
+            "title": "First Date",
+            "type": "string"
+          },
+          "last_date": {
+            "format": "date",
+            "title": "Last Date",
+            "type": "string"
+          },
+          "policy_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Url"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "slots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "policy_url",
+          "policy_version",
+          "slots",
+          "first_date",
+          "last_date",
+          "timezone"
+        ],
+        "title": "LeadFormResponse",
+        "type": "object"
+      },
+      "LeadReceivedResponse": {
+        "properties": {
+          "status": {
+            "const": "received",
+            "default": "received",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "LeadReceivedResponse",
+        "type": "object"
+      },
+      "LeadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "company_name": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Company Name",
+            "type": "string"
+          },
+          "consent": {
+            "title": "Consent",
+            "type": "boolean"
+          },
+          "contact_name": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Contact Name",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "maxLength": 24,
+            "minLength": 10,
+            "title": "Phone",
+            "type": "string"
+          },
+          "policy_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Policy Version",
+            "type": "string"
+          },
+          "preferred_date": {
+            "format": "date",
+            "title": "Preferred Date",
+            "type": "string"
+          },
+          "preferred_slot": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Preferred Slot",
+            "type": "string"
+          },
+          "seats": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Seats",
+            "type": "integer"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/LeadTariff",
+            "default": "base"
+          },
+          "website": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Website",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company_name",
+          "contact_name",
+          "phone",
+          "seats",
+          "preferred_date",
+          "preferred_slot",
+          "policy_version",
+          "consent"
+        ],
+        "title": "LeadRequest",
+        "type": "object"
+      },
+      "LeadTariff": {
+        "enum": [
+          "base",
+          "custom"
+        ],
+        "title": "LeadTariff",
+        "type": "string"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3822,6 +4001,70 @@
         "summary": "Revoke Invite",
         "tags": [
           "invites"
+        ]
+      }
+    },
+    "/api/v1/leads": {
+      "post": {
+        "description": "Заявка на созвон со страницы тарифов (досье 10.1). Без входа:\nлимит по IP и общий суточный, ловушка для ботов, согласие с версией\nполитики. Команда видит заявки в `cli leads list`.",
+        "operationId": "submit_lead_api_v1_leads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadReceivedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submit Lead",
+        "tags": [
+          "leads"
+        ]
+      }
+    },
+    "/api/v1/leads/form": {
+      "get": {
+        "description": "Настройки формы записи на созвон — без входа.",
+        "operationId": "lead_form_api_v1_leads_form_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeadFormResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Lead Form",
+        "tags": [
+          "leads"
         ]
       }
     },

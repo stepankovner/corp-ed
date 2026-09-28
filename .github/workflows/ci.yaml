@@ -182,6 +182,10 @@ jobs:
       RAG_FAQ_TEMPERATURE: "0"
       RAG_RETRIEVER: vector
       RAG_FULLTEXT_WEIGHT: "0.5"
+      # Запись на созвон открыта тестовой политикой (в бою — LEADS_* стенда).
+      LEADS_ENABLED: "true"
+      LEADS_POLICY_URL: https://kronto.example/privacy
+      LEADS_POLICY_VERSION: e2e
       E2E_BASE_URL: http://localhost:4173
       E2E_COMPANY: e2e
       E2E_ADMIN_EMAIL: admin@kronto-e2e.ru
@@ -232,6 +236,10 @@ jobs:
       - name: Playwright
         working-directory: frontend
         run: npx playwright test
+
+      # Заявка с формы дошла до команды: CLI видит её среди новых.
+      - name: Lead reaches the team CLI
+        run: uv run python -m corp_ed.cli leads list | grep -q "E2E Лид"
 
       - name: Upload report and logs
         if: failure()

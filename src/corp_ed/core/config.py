@@ -272,6 +272,56 @@ def get_billing_settings() -> BillingSettings:
     return BillingSettings()
 
 
+class LeadSettings(BaseSettings):
+    """Заявки на созвон со страницы тарифов (досье 3.3 и 10.1, решение 28.09).
+
+    Форма собирает имя и телефон — это персональные данные, а мы их
+    оператор: до политики обработки и согласия в форме (досье 17.1) приём
+    выключен. Включение — LEADS_ENABLED=true вместе с адресом политики и
+    её версией: согласие в заявке записывается с версией, на которую
+    человек согласился.
+    """
+
+    enabled: bool = False
+    policy_url: str = ""
+    policy_version: str = Field(default="", max_length=64)
+    # Сколько хранить заявку: созвон состоялся или нет — через полгода
+    # данные не нужны. Удаляет `cli purge`.
+    retention_days: int = Field(default=180, gt=0, le=730)
+    # Выбор даты созвона: с завтрашнего дня на столько дней вперёд.
+    days_ahead: int = Field(default=30, gt=0, le=90)
+
+    model_config = SettingsConfigDict(
+        env_prefix="LEADS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("policy_url")
+    @classmethod
+    def validate_policy_url(cls, value: str) -> str:
+        value = value.strip()
+        if value and not (value.startswith("https://") or value.startswith("/")):
+            raise ValueError("LEADS_POLICY_URL: https://… или путь на этом сайте")
+        return value
+
+    @model_validator(mode="after")
+    def validate_policy_for_enabled(self) -> Self:
+        # Форма без политики и согласия — нарушение 152-ФЗ, а не мелочь:
+        # такой конфиг не должен стартовать.
+        if self.enabled and not (self.policy_url and self.policy_version):
+            raise ValueError(
+                "LEADS_ENABLED requires LEADS_POLICY_URL and LEADS_POLICY_VERSION"
+            )
+        return self
+
+
+@lru_cache
+def get_lead_settings() -> LeadSettings:
+    return LeadSettings()
+
+
 class HttpSettings(BaseSettings):
     """Настройки HTTP-периметра: CORS, хосты, лимиты тела, документация.
 

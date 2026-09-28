@@ -53,6 +53,11 @@ REFRESH_PER_IP = RatePolicy("refresh-ip", limit=60, window=60, fail_open=False)
 # офис за одним NAT, где вся команда присоединяется в один час; перебор
 # токена бессмыслен (256 бит), лимит — против засорения учётками.
 INVITE_PER_IP = RatePolicy("invite-ip", limit=60, window=900, fail_open=False)
+# Заявка на созвон со страницы тарифов: человек отправляет одну-две. Общий
+# суточный потолок — против засорения базы персональными данными с многих
+# адресов.
+LEAD_PER_IP = RatePolicy("lead-ip", limit=5, window=3600, fail_open=False)
+LEADS_PER_DAY = RatePolicy("lead-all", limit=300, window=86400, fail_open=False)
 PASSWORD_CHANGE_PER_USER = RatePolicy(
     "password-user", limit=5, window=900, fail_open=False
 )

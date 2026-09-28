@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Путь MVP целиком: администратор входит по временному паролю, загружает
  * документ, получает ответ со ссылкой на источник, заводит сотрудника;
  * сотрудник входит и спрашивает сам; новый сотрудник присоединяется по
- * ссылке-приглашению.
+ * ссылке-приглашению; посетитель записывается на созвон со страницы тарифов.
  */
 
 function env(name: string): string {
@@ -36,6 +36,18 @@ const DOCUMENT = `# Положение о командировках
 let employeeTemporary = "";
 let inviteUrl = "";
 const invitedEmail = `invited-${Date.now()}@kronto-e2e.ru`;
+const leadCompany = `E2E Лид ${Date.now()}`;
+
+/** Ближайший будний день после сегодняшнего по Москве, YYYY-MM-DD. */
+function nextWorkday(): string {
+  const moscow = new Date(Date.now() + 3 * 3600_000);
+  const day = new Date(
+    Date.UTC(moscow.getUTCFullYear(), moscow.getUTCMonth(), moscow.getUTCDate()),
+  );
+  do day.setUTCDate(day.getUTCDate() + 1);
+  while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
+  return day.toISOString().slice(0, 10);
+}
 
 async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
@@ -173,5 +185,19 @@ test.describe.serial("MVP", () => {
     await expect(page.getByRole("button", { name: /^Источник 1: / }).first()).toBeVisible({
       timeout: 30_000,
     });
+  });
+
+  test("посетитель выбирает тариф и записывается на созвон", async ({ page }) => {
+    await page.goto("/pricing");
+    await page.getByRole("link", { name: "Записаться на созвон" }).click();
+    await page.getByLabel("Компания").fill(leadCompany);
+    await page.getByLabel("Сколько сотрудников работают за компьютером").fill("60");
+    await page.getByLabel("Как к вам обращаться").fill("Анна");
+    await page.getByLabel("Телефон").fill("+7 999 123-45-67");
+    await page.getByLabel("Удобная дата").fill(nextWorkday());
+    await page.getByLabel("Удобное время (по Москве)").selectOption({ index: 1 });
+    await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
+    await page.getByRole("button", { name: "Отправить заявку" }).click();
+    await expect(page.getByText("Заявка отправлена")).toBeVisible();
   });
 });

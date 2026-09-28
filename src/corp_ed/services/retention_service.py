@@ -9,6 +9,7 @@ from corp_ed.core.db_policies import AUDIT_RETENTION_DAYS
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import AuditEvent
 from corp_ed.repositories.connector_repository import SyncRunRepository
+from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 
@@ -20,6 +21,7 @@ class PurgeReport:
     qa_log: int
     audit_events: int
     sync_runs: int = 0
+    leads: int = 0
 
 
 class RetentionService:
@@ -35,16 +37,19 @@ class RetentionService:
         session_maker: async_sessionmaker[AsyncSession],
         qa_log_days: int,
         sync_run_days: int = 90,
+        lead_days: int = 180,
     ) -> None:
         self.session_maker = session_maker
         self.qa_log_days = qa_log_days
         self.sync_run_days = sync_run_days
+        self.lead_days = lead_days
 
     async def purge(self, now: datetime | None = None) -> PurgeReport:
         now = now or datetime.now(UTC)
         qa_cutoff = now - timedelta(days=self.qa_log_days)
         audit_cutoff = now - timedelta(days=AUDIT_RETENTION_DAYS)
         runs_cutoff = now - timedelta(days=self.sync_run_days)
+        leads_cutoff = now - timedelta(days=self.lead_days)
 
         async with self.session_maker() as session:
             tenants = await TenantRepository(session).list_all()
@@ -69,12 +74,23 @@ class RetentionService:
             await session.commit()
             audit_deleted = int(result.rowcount or 0)  # type: ignore[attr-defined]
 
+        # Заявки на созвон — персональные данные тех, кто ещё не клиент.
+        async with self.session_maker() as session:
+            leads_deleted = await LeadRepository(session).delete_older_than(
+                leads_cutoff
+            )
+            await session.commit()
+
         logger.info(
             "retention_purged",
             qa_log=qa_deleted,
             audit_events=audit_deleted,
             sync_runs=runs_deleted,
+            leads=leads_deleted,
         )
         return PurgeReport(
-            qa_log=qa_deleted, audit_events=audit_deleted, sync_runs=runs_deleted
+            qa_log=qa_deleted,
+            audit_events=audit_deleted,
+            sync_runs=runs_deleted,
+            leads=leads_deleted,
         )

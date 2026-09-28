@@ -21,6 +21,7 @@ from corp_ed.api.v1.endpoints import (
     gaps,
     glossary,
     invites,
+    leads,
     materials,
     usage,
     users,
@@ -58,6 +59,7 @@ from corp_ed.core.exceptions import (
     DuplicateMaterialError,
     InvalidConnectorConfigError,
     InvalidCredentialsError,
+    InvalidLeadError,
     InviteEmailDomainError,
     NotAuthenticatedError,
     NotFoundError,
@@ -193,6 +195,7 @@ app = FastAPI(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(invites.router, prefix="/api/v1")
+app.include_router(leads.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
@@ -227,6 +230,7 @@ app.add_exception_handler(NotAuthenticatedError, not_authenticated_handler)
 app.add_exception_handler(LLMError, llm_error_handler)
 app.add_exception_handler(WeakPasswordError, weak_password_handler)
 app.add_exception_handler(InviteEmailDomainError, weak_password_handler)
+app.add_exception_handler(InvalidLeadError, weak_password_handler)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(TenantContextMissingError, internal_error_handler)
 app.add_exception_handler(TenantMismatchError, internal_error_handler)
