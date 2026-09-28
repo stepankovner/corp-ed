@@ -17,6 +17,7 @@ from corp_ed.domain.models import User, UserRole
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.seats import ensure_free_seat
 
 logger = structlog.get_logger()
 
@@ -69,6 +70,7 @@ class UserService:
         email = email.casefold()
         if await self.repository.get_by_email(email) is not None:
             raise EmailAlreadyExistsError(email)
+        await ensure_free_seat(self.session, actor.tenant_id)
 
         temporary = None
         if password is None:
@@ -127,6 +129,9 @@ class UserService:
         )
         if loses_admin and await self.repository.count_active_admins() <= 1:
             raise LastAdminError()
+        if is_active is True and not user.is_active:
+            # Разблокировка занимает место так же, как новая учётка.
+            await ensure_free_seat(self.session, actor.tenant_id)
 
         if role is not None:
             user.role = role

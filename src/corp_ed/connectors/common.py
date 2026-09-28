@@ -2,15 +2,67 @@
 разборы значений. Адаптеры не импортируют друг друга."""
 
 import re
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import PurePath
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
 OAUTH_CALLBACK_PATH = "/api/v1/connectors/oauth/callback"
+
+
+@dataclass
+class SkipTally:
+    """Что адаптеры отсеяли при обходе, не скачивая (решение 28.09, П-3).
+
+    Админ должен видеть, что в источнике лежат файлы, которых ассистент не
+    читает: «пропущено: .doc — 14». Ключ — идентификатор в источнике: в
+    режиме per_user один файл встречается в листингах нескольких
+    сотрудников и считается один раз.
+    """
+
+    unsupported: dict[str, set[str]] = field(default_factory=dict)
+    too_large: set[str] = field(default_factory=set)
+
+    def formats(self) -> dict[str, int]:
+        counts = Counter({ext: len(keys) for ext, keys in self.unsupported.items()})
+        return dict(counts.most_common())
+
+
+_skips: ContextVar[SkipTally | None] = ContextVar("connector_skips", default=None)
+
+
+@contextmanager
+def counting_skips() -> Iterator[SkipTally]:
+    """Считать пропуски адаптеров в этом контексте (один запуск)."""
+    tally = SkipTally()
+    token = _skips.set(tally)
+    try:
+        yield tally
+    finally:
+        _skips.reset(token)
+
+
+def note_unsupported(filename: str, key: str) -> None:
+    """Файл формата, который ассистент не читает, — пропущен."""
+    tally = _skips.get()
+    if tally is not None:
+        ext = PurePath(filename).suffix.lower() or "без расширения"
+        tally.unsupported.setdefault(ext, set()).add(key)
+
+
+def note_too_large(key: str) -> None:
+    """Файл больше лимита размера — пропущен без скачивания."""
+    tally = _skips.get()
+    if tally is not None:
+        tally.too_large.add(key)
+
 
 Recorder = Callable[[str, Mapping[str, Any], Any], None]
 """(метод или путь, параметры без секретов, ответ без секретов) — для

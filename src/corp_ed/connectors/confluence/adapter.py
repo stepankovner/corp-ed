@@ -32,7 +32,12 @@ from corp_ed.connectors.base import (
     FetchedPage,
     RemoteDocument,
 )
-from corp_ed.connectors.common import Recorder, to_int
+from corp_ed.connectors.common import (
+    Recorder,
+    note_too_large,
+    note_unsupported,
+    to_int,
+)
 from corp_ed.connectors.confluence.client import (
     GROUP_LIMIT,
     BasicAuth,
@@ -261,12 +266,14 @@ class ConfluenceAdapter:
         emails: frozenset[str],
     ) -> RemoteDocument | None:
         title = str(attachment.get("title") or "")
+        attachment_id = str(attachment.get("id") or "")
         if PurePath(title).suffix.lower() not in SUPPORTED_EXTENSIONS:
+            note_unsupported(title, attachment_id)
             return None
         size = to_int(attachment.get("extensions", {}).get("fileSize"))
         if size is not None and size > self._max_bytes:
+            note_too_large(attachment_id)
             return None
-        attachment_id = str(attachment.get("id") or "")
         if not attachment_id:
             return None
         return RemoteDocument(

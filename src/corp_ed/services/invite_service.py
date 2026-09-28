@@ -41,6 +41,7 @@ from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.invite_repository import InviteRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.seats import JOIN_SEATS_MESSAGE, ensure_free_seat
 
 logger = structlog.get_logger()
 
@@ -195,6 +196,7 @@ class InviteService:
             validate_password(password, email=email)
             if await self.users.get_by_email(email) is not None:
                 raise InviteEmailTakenError()
+            await ensure_free_seat(self.session, tenant.id, message=JOIN_SEATS_MESSAGE)
 
             user = await self.users.create(
                 User(

@@ -30,6 +30,12 @@ export function UsersPage() {
   const me = useMe();
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: () => unwrap(api.GET("/api/v1/users")) });
+  // Места — из того же ответа, что лимит вопросов: активных учёток не
+  // больше мест (решение 28.09), заблокированные место не занимают.
+  const usage = useQuery({ queryKey: ["usage"], queryFn: () => unwrap(api.GET("/api/v1/usage")) });
+  const active = (users.data ?? []).filter((u) => u.is_active).length;
+  const seats = usage.data?.seats;
+  const full = seats !== undefined && active >= seats;
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
@@ -71,6 +77,18 @@ export function UsersPage() {
       />
       {toggleActive.isError ? (
         <Notice kind="error">{errorMessage(toggleActive.error)}</Notice>
+      ) : null}
+      {seats !== undefined && users.data ? (
+        full ? (
+          <Notice kind="warn" title={`Все места заняты: ${active} из ${seats}`}>
+            Новых сотрудников добавить нельзя — ни вручную, ни по ссылке. Заблокируйте тех, кто
+            больше не работает, или напишите нам, чтобы добавить места.
+          </Notice>
+        ) : (
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Активных сотрудников: {active} из {seats} мест. Заблокированные место не занимают.
+          </p>
+        )
       ) : null}
       {users.isPending ? (
         <PageSpinner />

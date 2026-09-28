@@ -10,7 +10,7 @@ from corp_ed.core.exceptions import (
     UnacceptableFileError,
 )
 from corp_ed.domain.models import Material, MaterialStatus, User
-from corp_ed.ingest.extract import ERROR_MESSAGES, ExtractionError, detect_format
+from corp_ed.ingest.extract import ExtractionError, detect_format, error_message
 from corp_ed.ingest.sandbox import extract_isolated
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
@@ -105,7 +105,9 @@ class MaterialService:
             markdown = await extract_isolated(detected.format, data)
         except ExtractionError as exc:
             logger.info("upload_rejected", code=exc.code, size=len(data))
-            raise UnacceptableFileError(exc.code, ERROR_MESSAGES[exc.code]) from exc
+            raise UnacceptableFileError(
+                exc.code, error_message(exc.code, filename)
+            ) from exc
 
         sha256 = hashlib.sha256(data).hexdigest()
         existing = await self.material_repo.get_by_sha256(sha256)

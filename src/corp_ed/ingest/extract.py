@@ -56,6 +56,31 @@ ERROR_MESSAGES = {
     "timeout": "Файл обрабатывается слишком долго",
 }
 
+# Частые форматы, которых ассистент не читает, — с советом, как быть
+# (решение 28.09, П-3). Код ошибки прежний: unsupported_format.
+_UNSUPPORTED_HINTS = {
+    (".doc", ".rtf", ".odt"): (
+        "Этот формат Word не поддерживается — сохраните файл как .docx или PDF"
+    ),
+    (".ppt", ".pptx", ".odp", ".key"): (
+        "Презентации пока не читаются — сохраните файл как PDF"
+    ),
+    (".xls", ".xlsx", ".ods", ".csv"): (
+        "Таблицы пока не читаются — сохраните нужные листы как PDF"
+    ),
+}
+
+
+def error_message(code: str, filename: str | None = None) -> str:
+    """Сообщение админу; для неподдерживаемого формата — с советом."""
+    if code == "unsupported_format" and filename:
+        ext = PurePath(filename).suffix.lower()
+        for extensions, hint in _UNSUPPORTED_HINTS.items():
+            if ext in extensions:
+                return f"{hint}. {ERROR_MESSAGES[code]}"
+    return ERROR_MESSAGES[code]
+
+
 MAX_PDF_PAGES = 1000
 # docx — zip. Лимиты на распакованный объём и число файлов закрывают
 # zip-бомбу: 40 КБ архива, которые распаковываются в гигабайты.

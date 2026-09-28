@@ -30,7 +30,12 @@ from corp_ed.connectors.base import (
     RemoteDocument,
 )
 from corp_ed.connectors.bitrix24.client import Bitrix24Client
-from corp_ed.connectors.common import parse_datetime, to_int
+from corp_ed.connectors.common import (
+    note_too_large,
+    note_unsupported,
+    parse_datetime,
+    to_int,
+)
 from corp_ed.domain.types import RemoteDocumentKind
 from corp_ed.ingest.extract import SUPPORTED_EXTENSIONS
 
@@ -147,12 +152,14 @@ class DiskModule:
         self, entry: Mapping[str, Any], *, path: str, module: str
     ) -> RemoteDocument | None:
         name = str(entry.get("NAME") or "")
+        file_id = str(entry.get("ID"))
         if PurePath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
+            note_unsupported(name, file_id)
             return None
         size = to_int(entry.get("SIZE"))
         if size is not None and size > self._max_bytes:
+            note_too_large(file_id)
             return None
-        file_id = str(entry.get("ID"))
         updated = str(entry.get("UPDATE_TIME") or "")
         version = f"{entry.get('GLOBAL_CONTENT_VERSION') or ''}:{updated}:{size or ''}"
         url = entry.get("DETAIL_URL")

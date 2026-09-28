@@ -3,7 +3,7 @@
     python -m corp_ed.cli create-tenant --code acme --name "ACME" --seats 50 \\
         --admin-email admin@acme.ru [--admin-name "Иван Петров"] \\
         [--admin-password-stdin]   # иначе пароль спросят в терминале
-    python -m corp_ed.cli set-seats --code acme --seats 80
+    python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
     python -m corp_ed.cli set-not-found-mode --code acme --mode general
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
@@ -24,9 +24,10 @@
 была бы самой ценной целью для атаки на весь сервис, а CLI доступен
 только тому, у кого уже есть доступ к серверу и к DATABASE_URL.
 
-Временный пароль администратора печатается один раз в stdout и нигде
-не сохраняется. Передавать его клиенту — отдельным каналом от кода
-компании; при первом входе система потребует сменить пароль.
+Временный пароль администратора задаёт оператор (скрытый ввод или
+--admin-password-stdin); CLI его не генерирует и не печатает (RISKS
+№42). Передавать его клиенту — отдельным каналом от кода компании; при
+первом входе система потребует сменить пароль.
 """
 
 import argparse
@@ -74,6 +75,7 @@ from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
+from corp_ed.services.seats import seats_check
 from corp_ed.services.tenant_service import TenantService
 
 
@@ -105,6 +107,11 @@ def _parser() -> argparse.ArgumentParser:
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")
     seats.add_argument("--code", required=True)
     seats.add_argument("--seats", required=True, type=int)
+    seats.add_argument(
+        "--yes",
+        action="store_true",
+        help="подтвердить, если новый пул меньше уже потраченного за месяц",
+    )
 
     not_found = commands.add_parser(
         "set-not-found-mode", help="ответ, когда в документах ответа нет"
@@ -278,8 +285,18 @@ async def _run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "set-seats":
+            check = await seats_check(session, args.code, args.seats)
+            if check.stops_pool and not args.yes:
+                print(
+                    f"Внимание: {check.message}\n"
+                    "Если так и нужно — повторите команду с --yes.",
+                    file=sys.stderr,
+                )
+                return 1
             tenant = await service.set_seats(args.code, args.seats)
             print(f"{tenant.company_code}: seats={tenant.seats}")
+            if check.message:
+                print(f"Внимание: {check.message}")
             return 0
 
         if args.command == "set-not-found-mode":

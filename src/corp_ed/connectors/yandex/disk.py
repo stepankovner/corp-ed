@@ -40,6 +40,8 @@ from corp_ed.connectors.base import (
 from corp_ed.connectors.common import (
     Recorder,
     json_object,
+    note_too_large,
+    note_unsupported,
     parse_datetime,
     redact,
     to_int,
@@ -336,12 +338,14 @@ class YandexDiskModule:
         vd_hash: str,
     ) -> RemoteDocument | None:
         name = str(entry.get("name") or "")
+        resource_id = str(entry.get("resource_id") or path)
         if PurePath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
+            note_unsupported(name, resource_id)
             return None
         size = to_int(entry.get("size"))
         if size is not None and size > self._max_bytes:
+            note_too_large(resource_id)
             return None
-        resource_id = str(entry.get("resource_id") or path)
         modified = str(entry.get("modified") or "")
         url = entry.get("public_url")
         if not isinstance(url, str) or not url:

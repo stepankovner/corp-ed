@@ -86,6 +86,11 @@ class SelfModificationError(ConflictError):
         super().__init__("Нельзя изменить собственную роль или заблокировать себя")
 
 
+class SeatsLimitError(ConflictError):
+    """Активных учёток уже столько, сколько оплаченных мест (решение 28.09).
+    HTTP 409; текст — для того, кто упёрся: админа или присоединяющегося."""
+
+
 class ServiceUnavailableError(DomainError):
     """Зависимость, без которой операцию нельзя выполнить безопасно, лежит.
 

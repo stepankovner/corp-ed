@@ -11,6 +11,7 @@ from corp_ed.ingest.extract import (
     ExtractionError,
     SourceFormat,
     detect_format,
+    error_message,
     extract,
 )
 from corp_ed.ingest.preprocess import PAGE_BREAK
@@ -49,6 +50,27 @@ def test_detects_supported_formats(filename: str, fmt: SourceFormat) -> None:
 @pytest.mark.parametrize("filename", ["old.doc", "slides.pptx", "run.exe", "noext"])
 def test_rejects_unsupported_extension(filename: str) -> None:
     assert _code(lambda: detect_format(filename, b"data")) == "unsupported_format"
+
+
+@pytest.mark.parametrize(
+    ("filename", "advice"),
+    [
+        ("old.doc", ".docx или PDF"),
+        ("slides.pptx", "как PDF"),
+        ("budget.xlsx", "листы как PDF"),
+    ],
+)
+def test_unsupported_format_message_gives_advice(filename: str, advice: str) -> None:
+    """Решение 28.09 (П-3): совет, как загрузить файл, а не только отказ."""
+    message = error_message("unsupported_format", filename)
+    assert advice in message
+    assert message.endswith("Поддерживаются файлы docx, pdf, txt и md")
+
+
+def test_unknown_format_keeps_plain_message() -> None:
+    assert error_message("unsupported_format", "run.exe") == (
+        "Поддерживаются файлы docx, pdf, txt и md"
+    )
 
 
 def test_rejects_pdf_renamed_to_docx() -> None:

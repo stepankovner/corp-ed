@@ -90,7 +90,20 @@ async def test_unsupported_format_is_415_with_code(
 
     assert response.status_code == 415
     assert response.json()["code"] == "unsupported_format"
-    assert "docx" in response.json()["detail"]
+    assert response.json()["detail"].startswith(
+        "Этот формат Word не поддерживается — сохраните файл как .docx или PDF"
+    )
+
+
+async def test_presentation_gets_pdf_advice(
+    api: httpx.AsyncClient, admin_account: User
+) -> None:
+    response = await _upload(
+        api, admin_account, filename="deck.PPTX", data=b"PK\x03\x04"
+    )
+
+    assert response.status_code == 415
+    assert "сохраните файл как PDF" in response.json()["detail"]
 
 
 async def test_disguised_file_is_rejected(

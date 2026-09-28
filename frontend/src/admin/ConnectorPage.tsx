@@ -59,6 +59,25 @@ function runStats(stats: Run["stats"]): string {
     .join(" · ");
 }
 
+/**
+ * Что адаптер отсеял, не скачивая (решение 28.09, П-3): форматы, которых
+ * ассистент не читает, и слишком большие файлы. Иначе админ не узнает, что
+ * часть регламентов лежит в .doc и в ответы не попадает.
+ */
+function runSkips(stats: Run["stats"]): string {
+  const parts: string[] = [];
+  const formats = stats["skipped_formats"];
+  if (formats && typeof formats === "object") {
+    const list = Object.entries(formats as Record<string, unknown>)
+      .filter(([, count]) => typeof count === "number" && count > 0)
+      .map(([ext, count]) => `${ext} — ${String(count)}`);
+    if (list.length > 0) parts.push(`не читаются: ${list.join(", ")}`);
+  }
+  const large = stats["too_large"];
+  if (typeof large === "number" && large > 0) parts.push(`слишком большие: ${large}`);
+  return parts.join(" · ");
+}
+
 function duration(run: Run): string {
   if (!run.finished_at) return "";
   const seconds = Math.round(
@@ -236,44 +255,57 @@ function ConnectorView({
         ) : runs.data.length === 0 ? (
           <p className="muted">Запусков ещё не было.</p>
         ) : (
-          <Table label="История синхронизаций">
-            <thead>
-              <tr>
-                <th>Начало</th>
-                <th>Итог</th>
-                <th>Документы</th>
-                <th>Запуск</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.data.slice(0, 20).map((run) => {
-                const runStatus = RUN_STATUS[run.status] ?? {
-                  label: run.status,
-                  tone: "muted" as Tone,
-                };
-                return (
-                  <tr key={run.id}>
-                    <td className={tableStyles.nowrap} title={formatDateTime(run.started_at)}>
-                      {formatRelative(run.started_at)}
-                      {duration(run) ? (
-                        <span className={tableStyles.sub}>{duration(run)}</span>
-                      ) : null}
-                    </td>
-                    <td>
-                      <Badge tone={runStatus.tone}>{runStatus.label}</Badge>
-                      {run.error_code ? (
-                        <span className={tableStyles.sub} style={{ color: "var(--error)" }}>
-                          {describeCode(run.error_code)}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>{runStats(run.stats) || "без изменений"}</td>
-                    <td>{run.trigger === "manual" ? "вручную" : "по расписанию"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </Table>
+          <>
+            {runs.data[0] && runSkips(runs.data[0].stats).includes("не читаются") ? (
+              <Notice kind="info" title="Часть файлов в источнике ассистент не читает">
+                {runSkips(runs.data[0].stats)}. Чтобы они попали в ответы, сохраните их как .docx
+                или PDF.
+              </Notice>
+            ) : null}
+            <Table label="История синхронизаций">
+              <thead>
+                <tr>
+                  <th>Начало</th>
+                  <th>Итог</th>
+                  <th>Документы</th>
+                  <th>Запуск</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.data.slice(0, 20).map((run) => {
+                  const runStatus = RUN_STATUS[run.status] ?? {
+                    label: run.status,
+                    tone: "muted" as Tone,
+                  };
+                  return (
+                    <tr key={run.id}>
+                      <td className={tableStyles.nowrap} title={formatDateTime(run.started_at)}>
+                        {formatRelative(run.started_at)}
+                        {duration(run) ? (
+                          <span className={tableStyles.sub}>{duration(run)}</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <Badge tone={runStatus.tone}>{runStatus.label}</Badge>
+                        {run.error_code ? (
+                          <span className={tableStyles.sub} style={{ color: "var(--error)" }}>
+                            {describeCode(run.error_code)}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td>
+                        {runStats(run.stats) || "без изменений"}
+                        {runSkips(run.stats) ? (
+                          <span className={tableStyles.sub}>{runSkips(run.stats)}</span>
+                        ) : null}
+                      </td>
+                      <td>{run.trigger === "manual" ? "вручную" : "по расписанию"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </>
         )}
       </section>
 

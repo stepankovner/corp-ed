@@ -48,6 +48,7 @@ from corp_ed.connectors.base import (
     SourceAdapter,
     refreshed_credentials,
 )
+from corp_ed.connectors.common import counting_skips
 from corp_ed.connectors.html import html_to_markdown
 from corp_ed.connectors.registry import AdapterRegistry, UnknownKindError
 from corp_ed.core.config import ConnectorSettings
@@ -112,6 +113,10 @@ class SyncStats:
     # Сколько сотрудников (гранты) обошли в режиме per_user.
     grants: int = 0
     grants_expired: int = 0
+    # Отсеяно адаптерами без скачивания (П-3): форматы, которых ассистент
+    # не читает ({".doc": 14}), и файлы больше лимита размера.
+    skipped_formats: dict[str, int] = field(default_factory=dict)
+    too_large: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -210,10 +215,15 @@ class ConnectorSyncService:
         status: SyncRunStatus
         retryable = False
         try:
-            if connector.mode == ConnectorMode.ORGANIZATION.value:
-                await self._sync_organization(session, run)
-            else:
-                await self._sync_per_user(session, run)
+            with counting_skips() as skips:
+                try:
+                    if connector.mode == ConnectorMode.ORGANIZATION.value:
+                        await self._sync_organization(session, run)
+                    else:
+                        await self._sync_per_user(session, run)
+                finally:
+                    run.stats.skipped_formats = skips.formats()
+                    run.stats.too_large = len(skips.too_large)
             if run.error_code is not None:
                 status = SyncRunStatus.FAILED
             elif not run.complete or run.stats.failed:

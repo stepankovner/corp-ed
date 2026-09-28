@@ -175,6 +175,10 @@ async def test_employee_listing_becomes_restricted_materials_with_links(
     assert outcome.stats.grants == 1
     assert outcome.stats.added == 4
     assert outcome.stats.failed == 1
+    # П-3: админ видит, что в источнике есть файлы, которых ассистент не
+    # читает, и что большой PDF не скачан.
+    assert outcome.stats.skipped_formats == {".png": 1}
+    assert outcome.stats.too_large == 1
     with tenant_scope(tenant_ctx.id):
         materials = await materials_of(session, connector)
         assert set(materials) == {
