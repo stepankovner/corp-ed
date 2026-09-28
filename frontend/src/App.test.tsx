@@ -51,7 +51,7 @@ describe("вход", () => {
     await user.click(screen.getByRole("button", { name: "Сохранить пароль" }));
 
     expect(await screen.findByRole("log", { name: "Переписка" })).toBeInTheDocument();
-    expect(getSession()?.refreshToken).toBe("refresh-2");
+    expect(getSession()?.accessToken).toBe("access-2");
   });
 
   it("показывает ошибку неверного пароля", async () => {
@@ -67,6 +67,34 @@ describe("вход", () => {
     await user.type(screen.getByLabelText("Пароль"), "не тот");
     await user.click(screen.getByRole("button", { name: "Войти" }));
     expect(await screen.findByText("Неверный логин или пароль")).toBeInTheDocument();
+  });
+
+  it("после перезагрузки восстанавливает сессию по cookie", async () => {
+    // В памяти вкладки токена нет, но здесь уже входили: refresh-cookie
+    // приложит браузер, фронт получает новый access-токен.
+    localStorage.setItem("kronto.signedIn", "1");
+    signedInAs();
+    server.use(http.post("/api/v1/auth/refresh", () => HttpResponse.json(tokens(3))));
+    renderApp("/", { signedIn: false });
+    expect(await screen.findByRole("log", { name: "Переписка" })).toBeInTheDocument();
+    expect(getSession()?.accessToken).toBe("access-3");
+  });
+
+  it("без признака входа не дёргает refresh и показывает форму", async () => {
+    // Обработчика /auth/refresh нет: запрос уронил бы тест (onUnhandledRequest).
+    renderApp("/", { signedIn: false });
+    expect(await screen.findByLabelText("Код компании")).toBeInTheDocument();
+  });
+
+  it("выходит, когда соседняя вкладка сообщила о выходе", async () => {
+    signedInAs();
+    renderApp("/");
+    await screen.findByRole("log", { name: "Переписка" });
+    const otherTab = new BroadcastChannel("kronto.session");
+    otherTab.postMessage("signed-out");
+    otherTab.close();
+    expect(await screen.findByLabelText("Код компании")).toBeInTheDocument();
+    expect(getSession()).toBeNull();
   });
 
   it("не пускает сотрудника в управление", async () => {

@@ -7,14 +7,10 @@ import { AuthProvider } from "../auth/AuthProvider";
 import { makeQueryClient } from "../queryClient";
 import { routes } from "../routes";
 
-/** Всё приложение на заданном адресе; signedIn — с парой токенов в хранилище. */
+/** Всё приложение на заданном адресе; signedIn — с access-токеном в памяти вкладки. */
 export function renderApp(path: string, { signedIn = true } = {}) {
   if (signedIn) {
-    setSession({
-      accessToken: "access-1",
-      refreshToken: "refresh-1",
-      expiresAt: Date.now() + 600_000,
-    });
+    setSession({ accessToken: "access-1", expiresAt: Date.now() + 600_000 });
   }
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   const client = makeQueryClient();

@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
-from tests.api.conftest import PASSWORD, bearer, login
+from tests.api.conftest import (
+    PASSWORD,
+    bearer,
+    login,
+    refresh_token_of,
+    refresh_with,
+)
 
 
 async def test_employee_cannot_manage_users(
@@ -163,7 +169,8 @@ async def test_admin_cannot_touch_other_company_user(
 async def test_deactivation_kills_existing_sessions(
     api: httpx.AsyncClient, admin_account: User, account: User
 ) -> None:
-    tokens = (await login(api, account.email)).json()
+    signed_in = await login(api, account.email)
+    tokens = signed_in.json()
 
     response = await api.patch(
         f"/api/v1/users/{account.id}",
@@ -176,9 +183,7 @@ async def test_deactivation_kills_existing_sessions(
         "/api/v1/auth/me", headers={"Authorization": f"Bearer {tokens['access_token']}"}
     )
     assert me.status_code == 401
-    refreshed = await api.post(
-        "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
-    )
+    refreshed = await refresh_with(api, refresh_token_of(signed_in))
     assert refreshed.status_code == 401
 
 

@@ -84,6 +84,26 @@ test.describe.serial("MVP", () => {
     await expect(page.getByRole("link", { name: "Управление" })).toBeVisible();
   });
 
+  test("сессия переживает перезагрузку, токены — не в localStorage", async ({ page, context }) => {
+    await login(page, adminEmail, adminPassword);
+    // Refresh-токен — httpOnly-cookie только для ручек входа (RISKS №44).
+    const cookies = await context.cookies();
+    const refresh = cookies.find((cookie) => cookie.name === "kronto_refresh");
+    expect(refresh).toMatchObject({ httpOnly: true, sameSite: "Strict", path: "/api/v1/auth" });
+    const stored = await page.evaluate(() => JSON.stringify(Object.entries(localStorage)));
+    expect(stored).not.toContain(refresh?.value ?? "no-cookie");
+    expect(stored).not.toMatch(/eyJ[\w-]+\./); // ни одного JWT
+
+    await page.reload();
+    await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Профиль" }).click();
+    await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await expect(page).toHaveURL(/\/login/);
+    await page.reload();
+    await expect(page.getByLabel("Код компании")).toBeVisible();
+  });
+
   test("загруженный документ индексируется", async ({ page }) => {
     await login(page, adminEmail, adminPassword);
     await page.getByRole("link", { name: "Управление" }).click();

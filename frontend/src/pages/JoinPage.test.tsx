@@ -67,7 +67,7 @@ describe("присоединение по ссылке-приглашению", 
       full_name: "Анна Смирнова",
       password: "длинная фраза для входа",
     });
-    expect(getSession()?.refreshToken).toBe("refresh-7");
+    expect(getSession()?.accessToken).toBe("access-7");
   });
 
   it("несовпадающие пароли не уходят на сервер", async () => {

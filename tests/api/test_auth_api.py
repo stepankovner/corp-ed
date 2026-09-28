@@ -14,11 +14,18 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.api.v1.session_cookie import REFRESH_COOKIE
 from corp_ed.core import security
 from corp_ed.core.config import get_settings
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import RefreshToken, Tenant, User
-from tests.api.conftest import PASSWORD, bearer, login
+from tests.api.conftest import (
+    PASSWORD,
+    bearer,
+    login,
+    refresh_token_of,
+    refresh_with,
+)
 
 GENERIC_LOGIN_ERROR = "Неверный логин или пароль"
 
@@ -33,7 +40,10 @@ async def test_login_returns_token_pair(api: httpx.AsyncClient, account: User) -
     body = response.json()
     assert body["token_type"] == "bearer"
     assert body["expires_in"] == get_settings().access_token_ttl_minutes * 60
-    assert body["access_token"] and body["refresh_token"]
+    assert body["access_token"]
+    # Refresh — только в httpOnly-cookie: скрипт страницы его не прочтёт.
+    assert "refresh_token" not in body
+    assert refresh_token_of(response)
 
     me = await api.get(
         "/api/v1/auth/me",
@@ -282,17 +292,69 @@ async def test_role_claim_is_not_trusted(api: httpx.AsyncClient, account: User) 
 # --- refresh-токены ----------------------------------------------------------
 
 
-async def test_refresh_rotates_tokens(api: httpx.AsyncClient, account: User) -> None:
-    first = (await login(api, account.email)).json()
+def _set_cookie(response: httpx.Response) -> str:
+    [header] = [
+        value
+        for value in response.headers.get_list("set-cookie")
+        if value.startswith(f"{REFRESH_COOKIE}=")
+    ]
+    return header
 
-    response = await api.post(
-        "/api/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}
-    )
+
+async def test_refresh_cookie_attributes(api: httpx.AsyncClient, account: User) -> None:
+    header = _set_cookie(await login(api, account.email))
+    attributes = {part.strip().split("=")[0].lower() for part in header.split(";")}
+
+    assert {"httponly", "path", "max-age", "samesite"} <= attributes
+    assert "Path=/api/v1/auth" in header
+    assert "SameSite=strict" in header or "SameSite=Strict" in header
+    assert f"Max-Age={get_settings().refresh_token_ttl_days * 86400}" in header
+    # В разработке фронт на http://localhost: Secure — только в production.
+    assert "secure" not in attributes
+
+
+async def test_refresh_cookie_is_secure_in_production(
+    api: httpx.AsyncClient, account: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from corp_ed.api.v1 import session_cookie
+
+    class Production:
+        is_production = True
+        cors_origins: list[str] = []
+
+    monkeypatch.setattr(session_cookie, "get_http_settings", lambda: Production())
+    header = _set_cookie(await login(api, account.email))
+    assert "Secure" in header
+
+
+async def test_refresh_rotates_tokens(api: httpx.AsyncClient, account: User) -> None:
+    first = await login(api, account.email)
+
+    response = await refresh_with(api, refresh_token_of(first))
 
     assert response.status_code == 200
-    second = response.json()
-    assert second["refresh_token"] != first["refresh_token"]
-    assert second["access_token"] != first["access_token"]
+    assert "refresh_token" not in response.json()
+    assert refresh_token_of(response) != refresh_token_of(first)
+    assert response.json()["access_token"] != first.json()["access_token"]
+
+
+async def test_refresh_without_cookie_is_401(api: httpx.AsyncClient) -> None:
+    response = await api.post("/api/v1/auth/refresh")
+    assert response.status_code == 401
+
+
+async def test_refresh_from_foreign_origin_is_403(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """CSRF: SameSite=Strict не пустит cookie с чужого сайта, Origin —
+    второй рубеж для браузера, который SameSite не знает."""
+    raw = refresh_token_of(await login(api, account.email))
+
+    foreign = await refresh_with(api, raw, headers={"Origin": "https://evil.example"})
+    assert foreign.status_code == 403
+
+    own = await refresh_with(api, raw, headers={"Origin": "http://test"})
+    assert own.status_code == 200
 
 
 async def test_refresh_token_reuse_revokes_whole_family(
@@ -303,29 +365,30 @@ async def test_refresh_token_reuse_revokes_whole_family(
     Сервер не знает, кто из двоих легитимный, поэтому отзывает всю
     цепочку: новый токен, полученный честной ротацией, тоже умирает.
     """
-    stolen = (await login(api, account.email)).json()["refresh_token"]
-    rotated = (
-        await api.post("/api/v1/auth/refresh", json={"refresh_token": stolen})
-    ).json()["refresh_token"]
+    stolen = refresh_token_of(await login(api, account.email))
+    rotated = refresh_token_of(await refresh_with(api, stolen))
 
-    replay = await api.post("/api/v1/auth/refresh", json={"refresh_token": stolen})
+    replay = await refresh_with(api, stolen)
     assert replay.status_code == 401
 
-    after = await api.post("/api/v1/auth/refresh", json={"refresh_token": rotated})
+    after = await refresh_with(api, rotated)
     assert after.status_code == 401
 
 
 async def test_unknown_refresh_token_is_401(api: httpx.AsyncClient) -> None:
-    response = await api.post(
-        "/api/v1/auth/refresh", json={"refresh_token": "made-up-token"}
-    )
+    response = await refresh_with(api, "made-up-token")
+    assert response.status_code == 401
+
+
+async def test_oversized_refresh_cookie_is_401(api: httpx.AsyncClient) -> None:
+    response = await refresh_with(api, "x" * 10_000)
     assert response.status_code == 401
 
 
 async def test_expired_refresh_token_is_401(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:
-    raw = (await login(api, account.email)).json()["refresh_token"]
+    raw = refresh_token_of(await login(api, account.email))
     record = (
         await session.execute(
             select(RefreshToken).where(
@@ -336,14 +399,14 @@ async def test_expired_refresh_token_is_401(
     record.expires_at = datetime.now(UTC) - timedelta(seconds=1)
     await session.commit()
 
-    response = await api.post("/api/v1/auth/refresh", json={"refresh_token": raw})
+    response = await refresh_with(api, raw)
     assert response.status_code == 401
 
 
 async def test_refresh_token_is_stored_only_as_hash(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:
-    raw = (await login(api, account.email)).json()["refresh_token"]
+    raw = refresh_token_of(await login(api, account.email))
     hashes = (await session.execute(select(RefreshToken.token_hash))).scalars().all()
 
     assert raw not in hashes
@@ -353,76 +416,94 @@ async def test_refresh_token_is_stored_only_as_hash(
 async def test_refresh_for_deactivated_user_is_401(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:
-    raw = (await login(api, account.email)).json()["refresh_token"]
+    raw = refresh_token_of(await login(api, account.email))
     account.is_active = False
     await session.commit()
 
-    response = await api.post("/api/v1/auth/refresh", json={"refresh_token": raw})
+    response = await refresh_with(api, raw)
     assert response.status_code == 401
 
 
 # --- выход -------------------------------------------------------------------
 
 
-async def test_logout_revokes_refresh_token(
+async def test_logout_revokes_refresh_token_and_clears_cookie(
     api: httpx.AsyncClient, account: User
 ) -> None:
-    tokens = (await login(api, account.email)).json()
-    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+    signed_in = await login(api, account.email)
+    raw = refresh_token_of(signed_in)
 
     response = await api.post(
         "/api/v1/auth/logout",
-        json={"refresh_token": tokens["refresh_token"]},
-        headers=headers,
+        headers={
+            "Authorization": f"Bearer {signed_in.json()['access_token']}",
+            "Cookie": f"{REFRESH_COOKIE}={raw}",
+        },
     )
     assert response.status_code == 204
+    cleared = _set_cookie(response)
+    assert "Max-Age=0" in cleared or "expires=" in cleared.lower()
 
-    again = await api.post(
-        "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
-    )
+    again = await refresh_with(api, raw)
     assert again.status_code == 401
+
+
+async def test_logout_without_cookie_still_succeeds(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    api.cookies.clear()
+    response = await api.post("/api/v1/auth/logout", headers=bearer(account))
+    assert response.status_code == 204
+
+
+async def test_logout_from_foreign_origin_is_403(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    response = await api.post(
+        "/api/v1/auth/logout",
+        headers={**bearer(account), "Origin": "https://evil.example"},
+    )
+    assert response.status_code == 403
 
 
 async def test_logout_cannot_revoke_someone_elses_token(
     api: httpx.AsyncClient, account: User, admin_account: User
 ) -> None:
-    victim = (await login(api, admin_account.email)).json()
+    victim = refresh_token_of(await login(api, admin_account.email))
     attacker = (await login(api, account.email)).json()
 
     response = await api.post(
         "/api/v1/auth/logout",
-        json={"refresh_token": victim["refresh_token"]},
-        headers={"Authorization": f"Bearer {attacker['access_token']}"},
+        headers={
+            "Authorization": f"Bearer {attacker['access_token']}",
+            "Cookie": f"{REFRESH_COOKIE}={victim}",
+        },
     )
     assert response.status_code == 204  # ответ не выдаёт, чей это токен
 
-    still_valid = await api.post(
-        "/api/v1/auth/refresh", json={"refresh_token": victim["refresh_token"]}
-    )
+    still_valid = await refresh_with(api, victim)
     assert still_valid.status_code == 200
 
 
 async def test_logout_everywhere_kills_access_and_refresh(
     api: httpx.AsyncClient, account: User
 ) -> None:
-    laptop = (await login(api, account.email)).json()
-    phone = (await login(api, account.email)).json()
+    laptop = await login(api, account.email)
+    phone = await login(api, account.email)
 
     response = await api.post(
         "/api/v1/auth/logout-all",
-        headers={"Authorization": f"Bearer {laptop['access_token']}"},
+        headers={"Authorization": f"Bearer {laptop.json()['access_token']}"},
     )
     assert response.status_code == 204
 
-    for tokens in (laptop, phone):
+    for device in (laptop, phone):
         me = await api.get(
             "/api/v1/auth/me",
-            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            headers={"Authorization": f"Bearer {device.json()['access_token']}"},
         )
         assert me.status_code == 401
-        refreshed = await api.post(
-            "/api/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}
-        )
+        refreshed = await refresh_with(api, refresh_token_of(device))
         assert refreshed.status_code == 401
 
 
@@ -432,7 +513,8 @@ async def test_logout_everywhere_kills_access_and_refresh(
 async def test_change_password_closes_other_sessions(
     api: httpx.AsyncClient, account: User
 ) -> None:
-    other_device = (await login(api, account.email)).json()
+    other_signin = await login(api, account.email)
+    other_device = other_signin.json()
     current = (await login(api, account.email)).json()
 
     response = await api.post(
@@ -441,6 +523,10 @@ async def test_change_password_closes_other_sessions(
         headers={"Authorization": f"Bearer {current['access_token']}"},
     )
     assert response.status_code == 200
+    # Текущее устройство получает новую cookie, у другого refresh отозван.
+    assert (await refresh_with(api, refresh_token_of(response))).status_code == 200
+    stale_refresh = await refresh_with(api, refresh_token_of(other_signin))
+    assert stale_refresh.status_code == 401
 
     new_access = response.json()["access_token"]
     ok = await api.get(

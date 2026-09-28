@@ -2,13 +2,7 @@ import createClient from "openapi-fetch";
 
 import { ApiError, networkError, toApiError } from "./errors";
 import type { components, paths } from "./schema";
-import {
-  getSession,
-  reloadSession,
-  sessionFromTokens,
-  setSession,
-  withRefreshLock,
-} from "./session";
+import { getSession, sessionFromTokens, setSession, withRefreshLock } from "./session";
 
 export type Schemas = components["schemas"];
 
@@ -17,20 +11,27 @@ const BASE = "/api/v1";
 const EXPIRY_MARGIN_MS = 30_000;
 const PUBLIC_PATHS = new Set([`${BASE}/auth/login`, `${BASE}/auth/refresh`]);
 
+/**
+ * Новый access-токен по refresh-cookie. failedToken — токен, с которым
+ * запрос получил 401 (null — восстановление сессии после перезагрузки).
+ */
 async function refreshAccess(failedToken: string | null): Promise<string | null> {
   return withRefreshLock(async () => {
-    const stored = reloadSession();
-    if (!stored) return null;
-    // Другая вкладка уже обновила пару, пока мы ждали блокировку.
-    if (stored.accessToken !== failedToken && stored.expiresAt - EXPIRY_MARGIN_MS > Date.now()) {
+    const stored = getSession();
+    // Пока ждали блокировку, параллельный запрос этой вкладки уже обновил токен.
+    if (
+      stored &&
+      stored.accessToken !== failedToken &&
+      stored.expiresAt - EXPIRY_MARGIN_MS > Date.now()
+    ) {
       return stored.accessToken;
     }
     let response: Response;
     try {
+      // Тела нет: refresh-токен браузер приложит сам из httpOnly-cookie.
       response = await fetch(`${BASE}/auth/refresh`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: stored.refreshToken }),
+        credentials: "same-origin",
       });
     } catch {
       // Сеть — не повод выкидывать из сессии.
@@ -45,6 +46,11 @@ async function refreshAccess(failedToken: string | null): Promise<string | null>
     setSession(session);
     return session.accessToken;
   });
+}
+
+/** Восстановить сессию после перезагрузки страницы: true — вход есть. */
+export async function restoreSession(): Promise<boolean> {
+  return (await refreshAccess(null)) !== null;
 }
 
 async function currentAccess(): Promise<string | null> {

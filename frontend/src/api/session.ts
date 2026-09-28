@@ -1,49 +1,30 @@
 /**
- * Токены сессии. Бэкенд выдаёт пару access (15 мин) + refresh (14 дней)
- * и при обновлении ротирует refresh: повторное использование старого —
- * сигнал кражи, бэкенд отзывает всю цепочку. Поэтому:
- * - пара хранится в localStorage одним ключом — все вкладки видят
- *   свежую пару, которую получила любая из них;
- * - обновление идёт под межвкладочной блокировкой (Web Locks), и внутри
- *   неё вкладка сначала перечитывает хранилище: если другая вкладка уже
- *   обновила пару, второй раз refresh не отправляется.
- * Перенос refresh в httpOnly-cookie — RISKS №44.
+ * Сессия вкладки. Refresh-токен лежит в httpOnly-cookie (RISKS №44):
+ * скрипт страницы его не видит, и XSS не унесёт сессию на 14 дней.
+ * Access-токен (15 мин) живёт только в памяти вкладки; после перезагрузки
+ * вкладка получает новый через /auth/refresh — браузер сам приложит cookie.
+ *
+ * Бэкенд ротирует refresh при каждом обновлении, а повторное предъявление
+ * старого — сигнал кражи: отзывается вся цепочка. Cookie общая для вкладок,
+ * поэтому обновления идут под межвкладочной блокировкой (Web Locks): вторая
+ * вкладка отправит refresh уже с новой cookie, полученной первой.
+ *
+ * В localStorage — только признак «здесь входили» (без токенов): без него
+ * анонимный посетитель при каждом открытии слал бы заведомо пустой refresh.
+ * Вход и выход в одной вкладке другие узнают через BroadcastChannel.
  */
 
 export interface Session {
   accessToken: string;
-  refreshToken: string;
   /** Момент истечения access-токена, мс эпохи. */
   expiresAt: number;
 }
 
-const KEY = "kronto.session";
+const SIGNED_IN_KEY = "kronto.signedIn";
 type Listener = (session: Session | null) => void;
 const listeners = new Set<Listener>();
 
-function parse(raw: string | null): Session | null {
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as Partial<Session>;
-    if (
-      typeof value.accessToken === "string" &&
-      typeof value.refreshToken === "string" &&
-      typeof value.expiresAt === "number"
-    ) {
-      return value as Session;
-    }
-  } catch {
-    // Повреждённое значение — как отсутствие сессии.
-  }
-  return null;
-}
-
 let current: Session | null = null;
-try {
-  current = parse(localStorage.getItem(KEY));
-} catch {
-  current = null;
-}
 
 export function getSession(): Session | null {
   return current;
@@ -52,22 +33,30 @@ export function getSession(): Session | null {
 export function setSession(session: Session | null): void {
   current = session;
   try {
-    if (session) localStorage.setItem(KEY, JSON.stringify(session));
-    else localStorage.removeItem(KEY);
+    if (session) localStorage.setItem(SIGNED_IN_KEY, "1");
+    else localStorage.removeItem(SIGNED_IN_KEY);
   } catch {
-    // Хранилище недоступно (приватный режим) — сессия живёт до перезагрузки.
+    // Хранилище недоступно (приватный режим) — после перезагрузки войти заново.
   }
   for (const listener of listeners) listener(session);
 }
 
-/** Перечитать хранилище: другая вкладка могла обновить пару или выйти. */
-export function reloadSession(): Session | null {
+/**
+ * Забыть сессию только в этой вкладке, не трогая признак входа: другая
+ * вкладка сообщила о входе или выходе и уже сама обновила хранилище.
+ */
+export function dropSession(): void {
+  current = null;
+  for (const listener of listeners) listener(null);
+}
+
+/** Входили ли в этом браузере: стоит ли пробовать восстановить сессию. */
+export function hasSignedInBefore(): boolean {
   try {
-    current = parse(localStorage.getItem(KEY));
+    return localStorage.getItem(SIGNED_IN_KEY) === "1";
   } catch {
-    // Остаётся то, что есть в памяти.
+    return false;
   }
-  return current;
 }
 
 export function subscribeSession(listener: Listener): () => void {
@@ -75,24 +64,30 @@ export function subscribeSession(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", (event) => {
-    if (event.key !== KEY) return;
-    current = parse(event.newValue);
-    for (const listener of listeners) listener(current);
-  });
-}
-
-export function sessionFromTokens(tokens: {
-  access_token: string;
-  refresh_token: string;
-  expires_in: number;
-}): Session {
+export function sessionFromTokens(tokens: { access_token: string; expires_in: number }): Session {
   return {
     accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
     expiresAt: Date.now() + tokens.expires_in * 1000,
   };
+}
+
+/** Что одна вкладка сообщает остальным. */
+export type SessionEvent = "signed-in" | "signed-out";
+
+const channel =
+  typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("kronto.session");
+
+export function announce(event: SessionEvent): void {
+  channel?.postMessage(event);
+}
+
+export function onAnnouncement(handler: (event: SessionEvent) => void): () => void {
+  if (!channel) return () => undefined;
+  const listener = (message: MessageEvent<unknown>) => {
+    if (message.data === "signed-in" || message.data === "signed-out") handler(message.data);
+  };
+  channel.addEventListener("message", listener);
+  return () => channel.removeEventListener("message", listener);
 }
 
 /** Выполнить fn под межвкладочной блокировкой; без Web Locks — внутри вкладки. */

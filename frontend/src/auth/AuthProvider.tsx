@@ -1,8 +1,24 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 
-import { api, unwrap } from "../api/client";
-import { getSession, sessionFromTokens, setSession, subscribeSession } from "../api/session";
+import { api, restoreSession, unwrap } from "../api/client";
+import {
+  announce,
+  dropSession,
+  getSession,
+  hasSignedInBefore,
+  onAnnouncement,
+  sessionFromTokens,
+  setSession,
+  subscribeSession,
+} from "../api/session";
 import { clearChatHistory } from "../chat/store";
 import { AuthContext, rememberCompany, type AuthApi, type AuthState, type Me } from "./context";
 
@@ -13,13 +29,41 @@ async function fetchMe(): Promise<Me> {
 }
 
 /**
- * Состояние входа выводится из двух источников: пары токенов в хранилище
- * (общей для вкладок) и профиля /auth/me в кэше запросов. Своего
- * состояния у провайдера нет — нечему рассинхронизироваться.
+ * Состояние входа выводится из access-токена в памяти вкладки и профиля
+ * /auth/me в кэше запросов. Своё у провайдера только «восстанавливаю
+ * сессию»: после перезагрузки токена в памяти нет, и пока refresh по
+ * cookie не ответил, показывать форму входа рано.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const session = useSyncExternalStore(subscribeSession, getSession, () => null);
+  const [restoring, setRestoring] = useState(() => getSession() === null && hasSignedInBefore());
+
+  useEffect(() => {
+    if (!restoring) return;
+    let active = true;
+    // Сеть недоступна — показываем вход; признак входа остаётся, и
+    // следующая загрузка страницы попробует снова.
+    void restoreSession()
+      .catch(() => false)
+      .finally(() => {
+        if (active) setRestoring(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [restoring]);
+
+  useEffect(
+    () =>
+      onAnnouncement((event) => {
+        // Другая вкладка вошла (возможно, другим человеком) или вышла:
+        // здесь не должно остаться ни чужого токена, ни данных.
+        dropSession();
+        if (event === "signed-in") setRestoring(true);
+      }),
+    [],
+  );
   const me = useQuery({
     queryKey: ME,
     queryFn: fetchMe,
@@ -42,13 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const hasSession = session !== null;
   const state = useMemo<AuthState>(() => {
-    if (!hasSession) return { status: "anonymous" };
+    if (!hasSession) return restoring ? { status: "loading" } : { status: "anonymous" };
     if (me.data) return { status: "authenticated", user: me.data };
     // Сервер недоступен или профиль не отдан — показываем вход: новый вход
     // заменит пару токенов.
     if (me.isError) return { status: "anonymous" };
     return { status: "loading" };
-  }, [hasSession, me.data, me.isError]);
+  }, [hasSession, restoring, me.data, me.isError]);
 
   const reloadMe = useCallback(
     () => queryClient.query({ queryKey: ME, queryFn: fetchMe, staleTime: 0 }),
@@ -63,20 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       rememberCompany(company);
       queryClient.clear();
       setSession(sessionFromTokens(tokens));
+      announce("signed-in");
       return reloadMe();
     },
     [queryClient, reloadMe],
   );
 
   const logout = useCallback(async () => {
-    const current = getSession();
-    if (current) {
-      // Отзываем refresh на сервере; если сеть упала — всё равно выходим.
-      await api
-        .POST("/api/v1/auth/logout", { body: { refresh_token: current.refreshToken } })
-        .catch(() => undefined);
+    if (getSession()) {
+      // Сервер отзывает refresh и стирает cookie; если сеть упала — всё
+      // равно выходим.
+      await api.POST("/api/v1/auth/logout").catch(() => undefined);
     }
     setSession(null);
+    announce("signed-out");
   }, []);
 
   const changePassword = useCallback<AuthApi["changePassword"]>(
@@ -109,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       rememberCompany(company);
       queryClient.clear();
       setSession(sessionFromTokens(tokens));
+      announce("signed-in");
       return reloadMe();
     },
     [queryClient, reloadMe],

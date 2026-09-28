@@ -10,6 +10,7 @@ from corp_ed.api.v1.dependencies import (
     get_llm_gateway,
     get_rag_settings,
 )
+from corp_ed.api.v1.session_cookie import REFRESH_COOKIE
 from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
 from corp_ed.core.rate_limit import InMemoryRateLimiter
@@ -135,4 +136,24 @@ async def login(
     return await api.post(
         "/api/v1/auth/login",
         json={"company_code": "test", "email": email, "password": password},
+    )
+
+
+def refresh_token_of(response: httpx.Response) -> str:
+    """Refresh-токен из Set-Cookie ответа: в теле его нет (RISKS №44)."""
+    return response.cookies[REFRESH_COOKIE]
+
+
+async def refresh_with(
+    api: httpx.AsyncClient, raw: str, headers: dict[str, str] | None = None
+) -> httpx.Response:
+    """Обновить пару, предъявив refresh-токен так, как это делает браузер.
+
+    Явный заголовок Cookie, а не банка клиента: банка подставила бы
+    последний выданный токен, а тестам нужен конкретный (украденный,
+    чужой, истёкший).
+    """
+    return await api.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"{REFRESH_COOKIE}={raw}", **(headers or {})},
     )

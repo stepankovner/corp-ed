@@ -176,15 +176,17 @@ class AuthService:
 
         return pair
 
-    async def logout(self, user: User, raw_token: str) -> None:
+    async def logout(self, user: User, raw_token: str | None) -> None:
         """Отозвать цепочку refresh-токенов текущего входа.
 
         Чужой или несуществующий токен молча игнорируется: ответ не
         должен подтверждать, что такой токен есть у другого человека.
+        Без токена (cookie уже нет) выход только записывается в аудит.
         """
-        record = await self.refresh_repo.get_by_hash(hash_refresh_token(raw_token))
-        if record is not None and record.user_id == user.id:
-            await self.refresh_repo.revoke_family(record.family_id, _now())
+        if raw_token is not None:
+            record = await self.refresh_repo.get_by_hash(hash_refresh_token(raw_token))
+            if record is not None and record.user_id == user.id:
+                await self.refresh_repo.revoke_family(record.family_id, _now())
         self.audit.record(
             AuditAction.LOGOUT, tenant_id=user.tenant_id, actor_id=user.id
         )

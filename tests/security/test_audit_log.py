@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import AuditEvent, Tenant, User, UserRole
 from corp_ed.repositories.audit_repository import AuditAction
-from tests.api.conftest import PASSWORD, bearer, login
+from tests.api.conftest import (
+    PASSWORD,
+    bearer,
+    login,
+    refresh_token_of,
+    refresh_with,
+)
 
 
 async def _events(session: AsyncSession, action: AuditAction) -> list[AuditEvent]:
@@ -93,9 +99,9 @@ async def test_admin_actions_are_audited(
 async def test_refresh_reuse_is_audited(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:
-    stolen = (await login(api, account.email)).json()["refresh_token"]
-    await api.post("/api/v1/auth/refresh", json={"refresh_token": stolen})
-    await api.post("/api/v1/auth/refresh", json={"refresh_token": stolen})
+    stolen = refresh_token_of(await login(api, account.email))
+    await refresh_with(api, stolen)
+    await refresh_with(api, stolen)
 
     [event] = await _events(session, AuditAction.REFRESH_REUSE_DETECTED)
     assert event.actor_user_id == account.id

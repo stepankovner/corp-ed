@@ -101,7 +101,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Logout */
+        /**
+         * Logout
+         * @description Отозвать цепочку текущего входа и стереть cookie.
+         */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
         options?: never;
@@ -156,7 +159,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Refresh */
+        /**
+         * Refresh
+         * @description Новая пара по refresh-токену из cookie (ротация). Так же фронт
+         *     восстанавливает сессию после перезагрузки страницы: access-токен
+         *     живёт только в памяти вкладки.
+         */
         post: operations["refresh_api_v1_auth_refresh_post"];
         delete?: never;
         options?: never;
@@ -1604,11 +1612,6 @@ export interface components {
             /** Temporary Password */
             temporary_password: string;
         };
-        /** RefreshRequest */
-        RefreshRequest: {
-            /** Refresh Token */
-            refresh_token: string;
-        };
         /**
          * Retriever
          * @description Как искать выдержки (M1, BH-12).
@@ -1654,14 +1657,16 @@ export interface components {
             /** Trigger */
             trigger: string;
         };
-        /** TokenResponse */
+        /**
+         * TokenResponse
+         * @description Access-токен для заголовка Authorization. Refresh-токен в тело не
+         *     попадает: он уходит в httpOnly-cookie (api/v1/session_cookie.py).
+         */
         TokenResponse: {
             /** Access Token */
             access_token: string;
             /** Expires In */
             expires_in: number;
-            /** Refresh Token */
-            refresh_token: string;
             /**
              * Token Type
              * @default bearer
@@ -1921,11 +1926,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RefreshRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             204: {
@@ -1933,15 +1934,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
             };
         };
     };
@@ -1990,11 +1982,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RefreshRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -2003,15 +1991,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

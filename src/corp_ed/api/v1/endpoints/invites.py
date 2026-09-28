@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from corp_ed.api.v1.dependencies import (
     get_auth_service,
@@ -25,6 +25,7 @@ from corp_ed.api.v1.schemas.invite import (
     InviteResponse,
     InviteTokenRequest,
 )
+from corp_ed.api.v1.session_cookie import session_response
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.models import Invite, User, UserRole
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -117,6 +118,7 @@ async def preview_invite(
 )
 async def accept_invite(
     request: Request,
+    response: Response,
     data: InviteAcceptRequest,
     service: Service,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
@@ -132,8 +134,4 @@ async def accept_invite(
         password=data.password,
     )
     pair = await auth_service.open_session(user)
-    return TokenResponse(
-        access_token=pair.access_token,
-        refresh_token=pair.refresh_token,
-        expires_in=pair.expires_in,
-    )
+    return session_response(response, pair)

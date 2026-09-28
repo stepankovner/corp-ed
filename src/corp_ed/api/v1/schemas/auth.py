@@ -18,18 +18,16 @@ class LoginRequest(RequestModel):
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
 
 
-class RefreshRequest(RequestModel):
-    refresh_token: str = Field(min_length=1, max_length=MAX_TOKEN_LENGTH)
-
-
 class ChangePasswordRequest(RequestModel):
     current_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
     new_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
 
 
 class TokenResponse(BaseModel):
+    """Access-токен для заголовка Authorization. Refresh-токен в тело не
+    попадает: он уходит в httpOnly-cookie (api/v1/session_cookie.py)."""
+
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"  # noqa: S105 — схема токена (RFC 6750), не пароль
     expires_in: int
 

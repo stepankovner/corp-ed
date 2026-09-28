@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 
 from corp_ed.api.v1.dependencies import (
     get_auth_service,
@@ -24,24 +24,21 @@ from corp_ed.api.v1.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     MeResponse,
-    RefreshRequest,
     TokenResponse,
 )
-from corp_ed.core.exceptions import InvalidCredentialsError
+from corp_ed.api.v1.session_cookie import (
+    clear_refresh_cookie,
+    ensure_same_origin,
+    read_refresh_cookie,
+    session_response,
+)
+from corp_ed.core.exceptions import InvalidCredentialsError, NotAuthenticatedError
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.models import User
 from corp_ed.repositories.tenant_repository import TenantRepository
-from corp_ed.services.auth_service import AuthService, TokenPair
+from corp_ed.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _tokens(pair: TokenPair) -> TokenResponse:
-    return TokenResponse(
-        access_token=pair.access_token,
-        refresh_token=pair.refresh_token,
-        expires_in=pair.expires_in,
-    )
 
 
 @router.get("/me", response_model=MeResponse)
@@ -68,6 +65,7 @@ async def read_me(
 @router.post("/login", response_model=TokenResponse)
 async def login(
     request: Request,
+    response: Response,
     data: LoginRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
@@ -89,7 +87,7 @@ async def login(
         raise
 
     await forget(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
-    return _tokens(pair)
+    return session_response(response, pair)
 
 
 @router.post(
@@ -98,33 +96,47 @@ async def login(
 )
 async def refresh(
     request: Request,
-    data: RefreshRequest,
+    response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> TokenResponse:
+    """Новая пара по refresh-токену из cookie (ротация). Так же фронт
+    восстанавливает сессию после перезагрузки страницы: access-токен
+    живёт только в памяти вкладки."""
+    ensure_same_origin(request)
     await enforce(limiter, REFRESH_PER_IP, client_ip(request))
-    return _tokens(await auth_service.refresh(data.refresh_token))
+    raw = read_refresh_cookie(request)
+    if raw is None:
+        raise NotAuthenticatedError("Нет refresh-токена")
+    return session_response(response, await auth_service.refresh(raw))
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    data: RefreshRequest,
+    request: Request,
+    response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     current_user: Annotated[User, Depends(get_current_user_allow_password_change)],
 ) -> None:
-    await auth_service.logout(current_user, data.refresh_token)
+    """Отозвать цепочку текущего входа и стереть cookie."""
+    ensure_same_origin(request)
+    await auth_service.logout(current_user, read_refresh_cookie(request))
+    clear_refresh_cookie(response)
 
 
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_everywhere(
+    response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> None:
     await auth_service.logout_everywhere(current_user)
+    clear_refresh_cookie(response)
 
 
 @router.post("/change-password", response_model=TokenResponse)
 async def change_password(
+    response: Response,
     data: ChangePasswordRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     current_user: Annotated[User, Depends(get_current_user_allow_password_change)],
@@ -139,4 +151,4 @@ async def change_password(
     pair = await auth_service.change_password(
         current_user, data.current_password, data.new_password
     )
-    return _tokens(pair)
+    return session_response(response, pair)

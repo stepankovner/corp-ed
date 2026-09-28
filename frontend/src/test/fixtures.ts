@@ -18,7 +18,6 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
 export function tokens(n = 1): Schemas["TokenResponse"] {
   return {
     access_token: `access-${n}`,
-    refresh_token: `refresh-${n}`,
     token_type: "bearer",
     expires_in: 900,
   };

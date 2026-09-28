@@ -22,7 +22,7 @@ from corp_ed.core.rate_limit import (
 )
 from corp_ed.domain.models import User
 from corp_ed.main import app
-from tests.api.conftest import PASSWORD, bearer, login
+from tests.api.conftest import PASSWORD, bearer, login, refresh_with
 
 
 class DownLimiter(RateLimiter):
@@ -93,9 +93,9 @@ async def test_ip_limit_stops_spraying_many_accounts(
 
 async def test_refresh_is_limited_per_ip(api: httpx.AsyncClient) -> None:
     for _ in range(REFRESH_PER_IP.limit):
-        await api.post("/api/v1/auth/refresh", json={"refresh_token": "x"})
+        await refresh_with(api, "x")
 
-    response = await api.post("/api/v1/auth/refresh", json={"refresh_token": "x"})
+    response = await refresh_with(api, "x")
     assert response.status_code == 429
 
 
