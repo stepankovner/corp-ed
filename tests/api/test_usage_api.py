@@ -120,7 +120,29 @@ async def test_admin_sees_usage(
     assert body["used"] == 7
     assert body["remaining"] == 12_593
     assert body["exhausted"] is False
+    assert body["warn_at_percent"] == 80
+    assert body["warning"] is False
     assert body["period_start"] < body["period_end"]
+
+
+async def test_usage_warns_admin_from_threshold(
+    api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    """Плашка администратору (досье 10.2, решение 28.09): с 80 % пула."""
+    tenant_ctx.seats = 1
+    spend(session, account, 335)
+    await session.commit()
+    body = (await api.get("/api/v1/usage", headers=bearer(admin_account))).json()
+    assert (body["used"], body["warning"], body["exhausted"]) == (335, False, False)
+
+    spend(session, account, 1)
+    await session.commit()
+    body = (await api.get("/api/v1/usage", headers=bearer(admin_account))).json()
+    assert (body["used"], body["warning"], body["exhausted"]) == (336, True, False)
 
 
 async def test_usage_counts_answers(

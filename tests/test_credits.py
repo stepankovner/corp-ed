@@ -108,6 +108,19 @@ def test_usage_arithmetic() -> None:
     assert usage.pool == 12_600
     assert usage.remaining == 0
     assert usage.exhausted is True
+    assert usage.warning is True
+
+
+def test_warning_threshold_rounds_up() -> None:
+    """80 % от 420 — 336: предупреждение с 336-го кредита, не раньше."""
+    usage = CreditUsage(
+        period_start=datetime(2026, 9, 1, tzinfo=MOSCOW),
+        period_end=datetime(2026, 10, 1, tzinfo=MOSCOW),
+        seats=1,
+        credits_per_seat=420,
+        used=335,
+    )
+    assert (usage.warn_at, usage.warning) == (336, False)
 
 
 def test_unknown_timezone_fails_at_startup() -> None:

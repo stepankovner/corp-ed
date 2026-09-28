@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
+import type { Schemas } from "./api/client";
 import { getSession } from "./api/session";
 import { answer, me, tokens } from "./test/fixtures";
 import { renderApp } from "./test/render";
@@ -254,5 +255,70 @@ describe("мои источники", () => {
     server.use(http.get("/api/v1/connectors/mine", () => HttpResponse.json([])));
     renderApp("/sources?status=error&error_code=access_denied");
     expect(await screen.findByText("Вы отказались дать доступ")).toBeInTheDocument();
+  });
+});
+
+describe("плашка лимита вопросов", () => {
+  function usage(overrides: Partial<Schemas["UsageResponse"]> = {}): Schemas["UsageResponse"] {
+    return {
+      period_start: "2026-09-01T00:00:00+03:00",
+      period_end: "2026-10-01T00:00:00+03:00",
+      seats: 1,
+      credits_per_seat: 420,
+      pool: 420,
+      used: 100,
+      remaining: 320,
+      exhausted: false,
+      warn_at_percent: 80,
+      warning: false,
+      ...overrides,
+    };
+  }
+
+  it("администратор видит предупреждение с порога из API", async () => {
+    signedInAs({ role: "admin" });
+    server.use(
+      http.get("/api/v1/usage", () =>
+        HttpResponse.json(usage({ used: 340, remaining: 80, warning: true })),
+      ),
+    );
+    renderApp("/");
+
+    expect(await screen.findByText("Лимит вопросов скоро закончится")).toBeInTheDocument();
+    expect(screen.getByText(/Израсходовано 81 %/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute("href", "/admin/usage");
+  });
+
+  it("администратор видит исчерпанный лимит", async () => {
+    signedInAs({ role: "admin" });
+    server.use(
+      http.get("/api/v1/usage", () =>
+        HttpResponse.json(usage({ used: 420, remaining: 0, warning: true, exhausted: true })),
+      ),
+    );
+    renderApp("/");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Лимит вопросов исчерпан");
+  });
+
+  it("ниже порога плашки нет, у сотрудника лимит не запрашивается", async () => {
+    let requests = 0;
+    server.use(
+      http.get("/api/v1/usage", () => {
+        requests += 1;
+        return HttpResponse.json(usage());
+      }),
+    );
+    signedInAs({ role: "admin" });
+    const admin = renderApp("/");
+    await screen.findByRole("log", { name: "Переписка" });
+    await waitFor(() => expect(requests).toBe(1));
+    expect(screen.queryByText(/Лимит вопросов/)).not.toBeInTheDocument();
+    admin.unmount();
+
+    signedInAs({ role: "employee" });
+    renderApp("/");
+    await screen.findByRole("log", { name: "Переписка" });
+    expect(requests).toBe(1);
   });
 });

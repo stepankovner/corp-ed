@@ -32,7 +32,7 @@ export function UsagePage() {
 
 function UsageView({ usage }: { usage: Schemas["UsageResponse"] }) {
   const share = usage.pool > 0 ? Math.min(1, usage.used / usage.pool) : 1;
-  const tone = usage.exhausted ? styles.progressError : share >= 0.8 ? styles.progressWarn : "";
+  const tone = usage.exhausted ? styles.progressError : usage.warning ? styles.progressWarn : "";
   return (
     <div className={pageStyles.stack}>
       {usage.exhausted ? (
@@ -40,7 +40,7 @@ function UsageView({ usage }: { usage: Schemas["UsageResponse"] }) {
           Сотрудники не могут задавать вопросы до {formatDate(usage.period_end)}. Чтобы увеличить
           лимит, добавьте рабочие места — напишите нам.
         </Notice>
-      ) : share >= 0.8 ? (
+      ) : usage.warning ? (
         <Notice kind="warn" title="Лимит скоро закончится">
           Израсходовано {Math.round(share * 100)} % пула.
         </Notice>

@@ -44,10 +44,22 @@ class CreditUsage:
     seats: int
     credits_per_seat: int
     used: int
+    warn_at_percent: int = 80
+    """Порог предупреждения: событие аудита и плашка администратору."""
 
     @property
     def pool(self) -> int:
         return self.seats * self.credits_per_seat
+
+    @property
+    def warn_at(self) -> int:
+        """Сколько кредитов потрачено, когда пора предупредить."""
+        return math.ceil(self.pool * self.warn_at_percent / 100)
+
+    @property
+    def warning(self) -> bool:
+        """Порог предупреждения достигнут (и при исчерпанном пуле тоже)."""
+        return self.used >= self.warn_at
 
     @property
     def remaining(self) -> int:

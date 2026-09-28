@@ -5,6 +5,7 @@ import { useMe } from "../auth/context";
 import { ChatProvider } from "../chat/ChatProvider";
 import { Logo } from "../ui/Logo";
 import styles from "./AppShell.module.css";
+import { UsageBanner } from "./UsageBanner";
 import { UserMenu } from "./UserMenu";
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -44,6 +45,7 @@ export function AppShell() {
             <UserMenu />
           </div>
         </header>
+        {me.role === "admin" ? <UsageBanner /> : null}
         <main className={styles.main} id="main">
           <Outlet />
         </main>

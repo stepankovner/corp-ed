@@ -1672,6 +1672,14 @@
           "used": {
             "title": "Used",
             "type": "integer"
+          },
+          "warn_at_percent": {
+            "title": "Warn At Percent",
+            "type": "integer"
+          },
+          "warning": {
+            "title": "Warning",
+            "type": "boolean"
           }
         },
         "required": [
@@ -1682,7 +1690,9 @@
           "pool",
           "used",
           "remaining",
-          "exhausted"
+          "exhausted",
+          "warn_at_percent",
+          "warning"
         ],
         "title": "UsageResponse",
         "type": "object"

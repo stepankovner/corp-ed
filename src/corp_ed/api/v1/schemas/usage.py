@@ -16,3 +16,7 @@ class UsageResponse(BaseModel):
     used: int
     remaining: int
     exhausted: bool
+    warn_at_percent: int
+    warning: bool
+    """Потрачено не меньше warn_at_percent пула (или пул исчерпан): фронт
+    показывает администратору плашку на всех экранах."""

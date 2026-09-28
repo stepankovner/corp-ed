@@ -1,4 +1,3 @@
-import math
 from collections.abc import Callable
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
@@ -69,6 +68,7 @@ class CreditService:
             seats=tenant.seats,
             credits_per_seat=self.credits_per_seat,
             used=await self.qa_log_repo.credits_since(start),
+            warn_at_percent=self.warn_at_percent,
         )
 
     async def ensure_available(self) -> CreditUsage:
@@ -100,9 +100,8 @@ class CreditService:
         админ компании) и предупреждение в логе для команды.
         """
         used = before.used + spent
-        warn_at = math.ceil(before.pool * self.warn_at_percent / 100)
         thresholds = (
-            (AuditAction.CREDITS_WARNING, warn_at),
+            (AuditAction.CREDITS_WARNING, before.warn_at),
             (AuditAction.CREDITS_EXHAUSTED, before.pool),
         )
         tenant_id = require_tenant()

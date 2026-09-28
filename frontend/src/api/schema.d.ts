@@ -1413,6 +1413,10 @@ export interface components {
             seats: number;
             /** Used */
             used: number;
+            /** Warn At Percent */
+            warn_at_percent: number;
+            /** Warning */
+            warning: boolean;
         };
         /**
          * UserCreateRequest
