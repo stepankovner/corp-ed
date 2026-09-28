@@ -1,9 +1,10 @@
 """Команды для команды Kronto. Запускаются на сервере, не по сети.
 
     python -m corp_ed.cli create-tenant --code acme --name "ACME" --seats 50 \\
-        --admin-email admin@acme.ru [--admin-name "Иван Петров"]
+        --admin-email admin@acme.ru [--admin-name "Иван Петров"] \\
+        [--admin-password-stdin]   # иначе пароль спросят в терминале
     python -m corp_ed.cli set-seats --code acme --seats 80
-    python -m corp_ed.cli set-not-found-mode --code acme --mode strict
+    python -m corp_ed.cli set-not-found-mode --code acme --mode general
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
@@ -28,6 +29,7 @@
 
 import argparse
 import asyncio
+import getpass
 import json
 import sys
 from collections.abc import Mapping, Sequence
@@ -80,6 +82,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     create.add_argument("--admin-email", required=True)
     create.add_argument("--admin-name", default=None)
+    create.add_argument(
+        "--admin-password-stdin",
+        action="store_true",
+        help="временный пароль администратора — первой строкой stdin; "
+        "без флага — скрытый ввод в терминале",
+    )
     create.add_argument(
         "--not-found-mode",
         choices=[mode.value for mode in NotFoundMode],
@@ -225,6 +233,9 @@ async def _run(args: argparse.Namespace) -> int:
                 name=args.name,
                 admin_email=args.admin_email,
                 admin_full_name=args.admin_name,
+                admin_password=_read_admin_password(
+                    from_stdin=args.admin_password_stdin
+                ),
                 seats=args.seats,
                 not_found_mode=NotFoundMode(args.not_found_mode),
             )
@@ -233,8 +244,11 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"seats:              {result.tenant.seats}")
             print(f"not_found_mode:     {result.tenant.not_found_mode}")
             print(f"admin_email:        {result.admin.email}")
-            print(f"temporary_password: {result.temporary_password}")
-            print("Пароль показан один раз. Сменить при первом входе.")
+            print(
+                "Временный пароль задан. Передайте его клиенту отдельным от "
+                "кода компании каналом; при первом входе система потребует "
+                "сменить его."
+            )
             return 0
 
         if args.command == "set-seats":
@@ -254,6 +268,26 @@ async def _run(args: argparse.Namespace) -> int:
         )
         print(f"{tenant.company_code}: is_active={tenant.is_active}")
         return 0
+
+
+def _read_admin_password(*, from_stdin: bool) -> str:
+    """Временный пароль администратора — от оператора, не от программы.
+
+    CLI не генерирует, не печатает и не хранит пароль (RISKS №42): его
+    нельзя увидеть в выводе, истории терминала или журнале CI. Скрытый
+    ввод дважды в терминале или первая строка stdin (как `docker login
+    --password-stdin`). Политику проверяет TenantService.provision.
+    """
+    if from_stdin:
+        return sys.stdin.readline().rstrip("\r\n")
+    if not sys.stdin.isatty():
+        raise DomainError(
+            "Нет терминала для ввода пароля: передайте его через --admin-password-stdin"
+        )
+    password = getpass.getpass("Временный пароль администратора: ")
+    if getpass.getpass("Повторите пароль: ") != password:
+        raise DomainError("Пароли не совпадают")
+    return password
 
 
 async def _connector_check(

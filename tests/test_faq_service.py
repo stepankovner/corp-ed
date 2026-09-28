@@ -20,7 +20,7 @@ from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.faq_service import FaqService
-from corp_ed.services.general_answer import GENERAL_ANSWER_ADVICE
+from corp_ed.services.general_answer import CLARIFY_ADVICE, REFUSAL_ANSWER
 from tests.conftest import make_credit_service
 
 
@@ -121,7 +121,7 @@ async def test_general_answer_when_nothing_found(
     assert result.sources == []
     assert result.content.startswith(GENERAL_ANSWER_PREFIX)
     # Решение 28.09 (Q3): совет уточнить — последним абзацем, от кода.
-    assert result.content.endswith(f"\n\n{GENERAL_ANSWER_ADVICE}")
+    assert result.content.endswith(f"\n\n{CLARIFY_ADVICE}")
     assert len(fake_llm.calls) == 1
     # Общий промпт: ни одной выдержки, правило «не выдавай за правила компании».
     user_message = next(m for m in fake_llm.calls[0] if m.role is Role.USER)
@@ -165,7 +165,7 @@ async def test_general_answer_is_always_marked(
 
     assert result.content == (
         f"{GENERAL_ANSWER_PREFIX}\nПо Трудовому кодексу отпуск — 28 дней."
-        f"\n\n{GENERAL_ANSWER_ADVICE}"
+        f"\n\n{CLARIFY_ADVICE}"
     )
 
 
@@ -246,7 +246,7 @@ async def test_model_refusal_with_found_chunks_falls_back_to_general(
     assert result.answer_given is False
     assert result.sources == []
     assert result.content == (
-        f"{GENERAL_ANSWER_PREFIX}\nКак правило, так.\n\n{GENERAL_ANSWER_ADVICE}"
+        f"{GENERAL_ANSWER_PREFIX}\nКак правило, так.\n\n{CLARIFY_ADVICE}"
     )
 
 
@@ -351,7 +351,7 @@ async def test_strict_mode_refuses_without_calling_model(
 
     result = await faq_service.answer("Как настроить VPN?", employee)
 
-    assert result.content == NOT_FOUND_ANSWER
+    assert result.content == REFUSAL_ANSWER
     assert result.origin is AnswerOrigin.NONE
     assert result.answer_given is False
     assert result.sources == []
@@ -377,7 +377,7 @@ async def test_strict_mode_hides_model_refusal_without_second_call(
 
     assert len(llm.calls) == 1
     # Клиенту — ровно фиксированный отказ, без «но вообще» от модели.
-    assert result.content == NOT_FOUND_ANSWER
+    assert result.content == REFUSAL_ANSWER
     assert result.origin is AnswerOrigin.NONE
     assert result.sources == []
     assert result.diagnostics is not None
@@ -422,7 +422,7 @@ async def test_content_filter_over_excerpts_is_a_refusal_without_second_call(
     )
 
     assert len(llm.calls) == 1
-    assert result.content == NOT_FOUND_ANSWER
+    assert result.content == REFUSAL_ANSWER
     assert result.origin is AnswerOrigin.NONE
     assert result.answer_given is False
     assert result.sources == []
@@ -440,7 +440,7 @@ async def test_content_filter_on_general_answer_is_a_refusal(
     result = await _service(chunk_repo, fake_embeddings, llm).answer("Вопрос", employee)
 
     assert len(llm.calls) == 1
-    assert result.content == NOT_FOUND_ANSWER
+    assert result.content == REFUSAL_ANSWER
     assert result.origin is AnswerOrigin.NONE
 
 

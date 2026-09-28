@@ -1,3 +1,6 @@
+import getpass
+import inspect
+import io
 import os
 import subprocess
 import sys
@@ -8,8 +11,9 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.cli import _parser
-from corp_ed.core.exceptions import ConflictError
+from corp_ed import cli
+from corp_ed.cli import _parser, _read_admin_password
+from corp_ed.core.exceptions import ConflictError, DomainError, WeakPasswordError
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
 from corp_ed.domain.models import AuditEvent, Tenant, User, UserRole
@@ -24,6 +28,9 @@ from corp_ed.services.tenant_service import (
     InvalidSeatsError,
     TenantService,
 )
+
+ADMIN_PASSWORD = "Temp-first-login-2026"
+"""Временный пароль администратора от оператора (RISKS №42)."""
 
 
 def _service(session: AsyncSession) -> TenantService:
@@ -41,6 +48,7 @@ async def test_provision_creates_tenant_and_admin(session: AsyncSession) -> None
         name="ACME",
         admin_email="Admin@Acme.ru",
         admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
         seats=30,
     )
 
@@ -48,7 +56,7 @@ async def test_provision_creates_tenant_and_admin(session: AsyncSession) -> None
     assert result.admin.role is UserRole.ADMIN
     assert result.admin.email == "admin@acme.ru"
     assert result.admin.must_change_password is True
-    assert verify_password(result.temporary_password, result.admin.hashed_password)
+    assert verify_password(ADMIN_PASSWORD, result.admin.hashed_password)
     # Контекст тенанта не утёк из сервиса.
     assert current_tenant.get() is None
 
@@ -67,6 +75,7 @@ async def test_provision_rejects_bad_company_code(
             name="X",
             admin_email="a@b.ru",
             admin_full_name=None,
+            admin_password=ADMIN_PASSWORD,
             seats=30,
         )
 
@@ -85,6 +94,7 @@ async def test_provision_rejects_email_login_would_reject(
             name="X",
             admin_email=email,
             admin_full_name=None,
+            admin_password=ADMIN_PASSWORD,
             seats=30,
         )
 
@@ -96,6 +106,7 @@ async def test_provision_rejects_duplicate_code(session: AsyncSession) -> None:
         name="A",
         admin_email="a@b.ru",
         admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
         seats=30,
     )
     with pytest.raises(ConflictError):
@@ -104,6 +115,7 @@ async def test_provision_rejects_duplicate_code(session: AsyncSession) -> None:
             name="B",
             admin_email="b@b.ru",
             admin_full_name=None,
+            admin_password=ADMIN_PASSWORD,
             seats=30,
         )
 
@@ -115,6 +127,7 @@ async def test_suspend_and_resume(session: AsyncSession) -> None:
         name="A",
         admin_email="a@b.ru",
         admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
         seats=30,
     )
 
@@ -140,6 +153,7 @@ async def test_provision_rejects_bad_seats(session: AsyncSession, seats: int) ->
             name="A",
             admin_email="a@b.ru",
             admin_full_name=None,
+            admin_password=ADMIN_PASSWORD,
             seats=seats,
         )
     assert (await session.execute(select(Tenant))).scalars().all() == []
@@ -152,6 +166,7 @@ async def test_set_seats_is_audited(session: AsyncSession) -> None:
         name="A",
         admin_email="a@b.ru",
         admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
         seats=30,
     )
 
@@ -199,6 +214,7 @@ async def test_new_tenant_refuses_by_default(session: AsyncSession) -> None:
         name="A",
         admin_email="a@b.ru",
         admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
         seats=30,
     )
     assert result.tenant.not_found_mode == "strict"
@@ -229,6 +245,7 @@ async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
         name="A",
         admin_email="a@b.ru",
         admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
         seats=30,
     )
 
@@ -295,3 +312,73 @@ def test_cli_help_needs_no_settings() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "create-tenant" in result.stdout
+
+
+# --- временный пароль администратора от оператора (RISKS №42) ------------------
+
+
+@pytest.mark.parametrize(
+    "password", ["short-pass", "password1234", "admin@acme.ru-2026", "a" * 129]
+)
+async def test_provision_checks_admin_password_policy(
+    session: AsyncSession, password: str
+) -> None:
+    """Та же политика, что у пароля пользователя: короткий, словарный,
+    с почтой внутри, слишком длинный — отказ до создания компании."""
+    with pytest.raises(WeakPasswordError):
+        await _service(session).provision(
+            company_code="acme",
+            name="A",
+            admin_email="admin@acme.ru",
+            admin_full_name=None,
+            admin_password=password,
+            seats=30,
+        )
+    assert (await session.execute(select(Tenant))).scalars().all() == []
+
+
+def test_cli_reads_admin_password_from_stdin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{ADMIN_PASSWORD}\r\nlater\n"))
+    assert _read_admin_password(from_stdin=True) == ADMIN_PASSWORD
+
+
+def test_cli_asks_admin_password_twice_in_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter([ADMIN_PASSWORD, ADMIN_PASSWORD])
+    monkeypatch.setattr(sys, "stdin", _Tty())
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: next(answers))
+    assert _read_admin_password(from_stdin=False) == ADMIN_PASSWORD
+
+
+def test_cli_rejects_mismatched_admin_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter([ADMIN_PASSWORD, "Something-else-2026"])
+    monkeypatch.setattr(sys, "stdin", _Tty())
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: next(answers))
+    with pytest.raises(DomainError, match="не совпадают"):
+        _read_admin_password(from_stdin=False)
+
+
+def test_cli_without_terminal_needs_stdin_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Скрипт без терминала не зависает на вводе, а просит флаг."""
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+    with pytest.raises(DomainError, match="--admin-password-stdin"):
+        _read_admin_password(from_stdin=False)
+
+
+def test_cli_never_prints_the_admin_password() -> None:
+    """Вывод create-tenant собран из полей результата: пароля среди них нет."""
+    source = inspect.getsource(cli)
+    assert "temporary_password" not in source
+    assert "admin_password=" in source
+
+
+class _Tty(io.StringIO):
+    def isatty(self) -> bool:
+        return True

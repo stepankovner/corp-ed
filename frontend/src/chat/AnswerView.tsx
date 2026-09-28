@@ -53,7 +53,7 @@ export function AnswerView({ turn, openSource, onOpenSource, onVote }: AnswerPro
     return (
       <div className={`${styles.msg} ${styles.bot} ${styles.refusal}`}>
         <p className={styles.refusalTitle}>В документах компании нет ответа на этот вопрос.</p>
-        <p className="muted">Уточните у руководителя или в отделе, который отвечает за эту тему.</p>
+        <p className="muted">Уточните у руководителя или в профильном отделе.</p>
         <Badge tone="warn" wrap>
           Вопрос попадёт в отчёт о пробелах в документах
         </Badge>

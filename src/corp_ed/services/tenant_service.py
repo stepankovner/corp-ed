@@ -6,7 +6,8 @@ from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import ConflictError, DomainError
-from corp_ed.core.security import generate_temporary_password, hash_password
+from corp_ed.core.password_policy import validate_password
+from corp_ed.core.security import hash_password
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
@@ -54,7 +55,6 @@ class InvalidSeatsError(DomainError):
 class ProvisionedTenant:
     tenant: Tenant
     admin: User
-    temporary_password: str
 
 
 class TenantService:
@@ -84,11 +84,15 @@ class TenantService:
         name: str,
         admin_email: str,
         admin_full_name: str | None,
+        admin_password: str,
         seats: int,
         not_found_mode: NotFoundMode = DEFAULT_NOT_FOUND_MODE,
     ) -> ProvisionedTenant:
         """Создать компанию и её первого администратора одной транзакцией.
 
+        admin_password — временный пароль администратора от оператора
+        (RISKS №42: программа его не генерирует и не показывает); та же
+        политика, что у пароля пользователя, смена при первом входе.
         seats — оплаченные места: от них считается пул кредитов.
         not_found_mode — что отвечать, когда в документах ответа нет;
         по умолчанию отказ (DEFAULT_NOT_FOUND_MODE, решение 28.09).
@@ -100,6 +104,7 @@ class TenantService:
             email = _EMAIL.validate_python(admin_email.strip())
         except ValidationError as exc:
             raise InvalidAdminEmailError() from exc
+        validate_password(admin_password, email=email)
         _check_seats(seats)
         if await self.tenant_repo.get_by_company_code(code) is not None:
             raise ConflictError(f"Компания с кодом '{code}' уже существует")
@@ -112,15 +117,13 @@ class TenantService:
                 not_found_mode=not_found_mode.value,
             )
         )
-        temporary = generate_temporary_password()
-
         with tenant_scope(tenant.id):
             admin = await self.user_repo.create(
                 User(
                     email=email.casefold(),
                     full_name=admin_full_name,
                     role=UserRole.ADMIN,
-                    hashed_password=hash_password(temporary),
+                    hashed_password=hash_password(admin_password),
                     must_change_password=True,
                 )
             )
@@ -141,9 +144,7 @@ class TenantService:
             await self.session.commit()
 
         logger.info("tenant_provisioned", tenant_id=str(tenant.id), company_code=code)
-        return ProvisionedTenant(
-            tenant=tenant, admin=admin, temporary_password=temporary
-        )
+        return ProvisionedTenant(tenant=tenant, admin=admin)
 
     async def set_active(self, company_code: str, *, active: bool) -> Tenant:
         """Приостановить или вернуть компанию.

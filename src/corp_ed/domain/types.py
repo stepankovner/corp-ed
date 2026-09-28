@@ -39,7 +39,8 @@ class AnswerOrigin(StrEnum):
     (GENERAL_ANSWER_PREFIX) и этим полем — фронт показывает предупреждение
     по полю, не разбирая текст.
     NONE — в документах ответа нет, а компания выбрала строгий режим:
-    честный отказ NOT_FOUND_ANSWER без ответа из общих знаний.
+    честный отказ (REFUSAL_ANSWER: NOT_FOUND_ANSWER и совет уточнить) без
+    ответа из общих знаний.
     """
 
     DOCUMENTS = "documents"

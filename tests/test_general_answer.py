@@ -4,10 +4,11 @@ from corp_ed.domain.models import Tenant, User
 from corp_ed.domain.types import AnswerOrigin
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.types import Completion, FinishReason, Usage
-from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
+from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER, is_not_found
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.general_answer import (
-    GENERAL_ANSWER_ADVICE,
+    CLARIFY_ADVICE,
+    REFUSAL_ANSWER,
     ModelKnowledgeSource,
     finalize_general_answer,
 )
@@ -42,7 +43,7 @@ class StubSource:
 
 def test_advice_is_the_last_paragraph() -> None:
     assert finalize_general_answer("Канберра.") == (
-        f"{GENERAL_ANSWER_PREFIX}\nКанберра.\n\n{GENERAL_ANSWER_ADVICE}"
+        f"{GENERAL_ANSWER_PREFIX}\nКанберра.\n\n{CLARIFY_ADVICE}"
     )
 
 
@@ -53,7 +54,7 @@ def test_advice_is_not_repeated() -> None:
 
 def test_empty_model_text_still_gets_mark_and_advice() -> None:
     assert finalize_general_answer("  ") == (
-        f"{GENERAL_ANSWER_PREFIX}\n\n{GENERAL_ANSWER_ADVICE}"
+        f"{GENERAL_ANSWER_PREFIX}\n\n{CLARIFY_ADVICE}"
     )
 
 
@@ -79,7 +80,7 @@ async def test_service_uses_the_given_source(
     assert source.questions == ["Как настроить VPN?"]
     assert result.origin is AnswerOrigin.GENERAL_KNOWLEDGE
     assert result.content == (
-        f"{GENERAL_ANSWER_PREFIX}\nИз другого источника.\n\n{GENERAL_ANSWER_ADVICE}"
+        f"{GENERAL_ANSWER_PREFIX}\nИз другого источника.\n\n{CLARIFY_ADVICE}"
     )
     assert result.sources == []
 
@@ -93,5 +94,12 @@ async def test_filtered_source_answer_is_a_refusal(
 
     result = await faq_service.answer("Вопрос", employee)
 
-    assert result.content == NOT_FOUND_ANSWER
+    assert result.content == REFUSAL_ANSWER
     assert result.origin is AnswerOrigin.NONE
+
+
+def test_refusal_starts_with_the_ml_refusal_and_ends_with_advice() -> None:
+    """Фронт, eval ML и журнал узнают отказ по началу текста."""
+    assert REFUSAL_ANSWER.startswith(NOT_FOUND_ANSWER)
+    assert is_not_found(REFUSAL_ANSWER)
+    assert REFUSAL_ANSWER.endswith(CLARIFY_ADVICE)

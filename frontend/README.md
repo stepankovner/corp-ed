@@ -26,7 +26,7 @@ React 19, TypeScript (strict), Vite 8, React Router 7, TanStack Query 5,
 LLM_PROVIDER=fake RAG_FAQ_MAX_DISTANCE=0.8 uv run uvicorn corp_ed.main:app --reload
 LLM_PROVIDER=fake uv run python -m corp_ed.worker
 uv run python -m corp_ed.cli create-tenant --code acme --name "ACME" \
-    --seats 20 --admin-email admin@acme.ru     # печатает временный пароль
+    --seats 20 --admin-email admin@acme.ru     # спросит временный пароль
 # вопрос мимо документов — честный отказ; общий ответ с пометкой:
 # ... create-tenant ... --not-found-mode general
 

@@ -210,10 +210,12 @@ jobs:
       - name: Migrate and create a company
         run: |
           uv run alembic upgrade head
-          password=$(uv run python -m corp_ed.cli create-tenant --code "$E2E_COMPANY" --name "E2E" \
-            --seats 5 --admin-email "$E2E_ADMIN_EMAIL" | awk '/temporary_password/ {print $2}')
-          test -n "$password"
+          # Временный пароль задаёт оператор, CLI его не печатает (RISKS №42).
+          password="E2e-$(openssl rand -hex 16)"
           echo "::add-mask::$password"
+          printf '%s\n' "$password" | uv run python -m corp_ed.cli create-tenant \
+            --code "$E2E_COMPANY" --name "E2E" --seats 5 --admin-email "$E2E_ADMIN_EMAIL" \
+            --admin-password-stdin
           echo "E2E_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
 
       - name: Start API, worker and the built frontend

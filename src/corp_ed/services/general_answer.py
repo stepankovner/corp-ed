@@ -1,4 +1,4 @@
-"""Общий ответ — когда в документах компании ответа нет.
+"""Ответ, когда в документах компании ответа нет: отказ или общий ответ.
 
 Решения команды 28.09 (DECISIONS.md, «Ответ, когда в документах ответа
 нет»):
@@ -8,17 +8,28 @@
   отдельной реализацией GeneralAnswerSource без переделки FaqService;
 - у общего ответа пометка «не из документов компании» в начале и совет
   уточнить у руководителя или в профильном отделе в конце — от кода, а
-  не от модели: ни один источник не может их потерять.
+  не от модели: ни один источник не может их потерять. Тот же совет —
+  в тексте отказа (REFUSAL_ANSWER): бот или другой клиент API получит
+  его без своей логики.
 """
 
 from typing import Protocol
 
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion
-from corp_ed.prompts.faq import build_general_messages, ensure_general_prefix
+from corp_ed.prompts.faq import (
+    NOT_FOUND_ANSWER,
+    build_general_messages,
+    ensure_general_prefix,
+)
 
-GENERAL_ANSWER_ADVICE = "Уточните у руководителя или в профильном отделе."
-"""Последний абзац любого общего ответа (решение 28.09, Q3)."""
+CLARIFY_ADVICE = "Уточните у руководителя или в профильном отделе."
+"""Последний абзац любого ответа не из документов (решение 28.09, Q3);
+та же фраза — в интерфейсе у отказа (frontend/src/chat/AnswerView.tsx)."""
+
+REFUSAL_ANSWER = f"{NOT_FOUND_ANSWER}\n\n{CLARIFY_ADVICE}"
+"""Честный отказ. Начинается с NOT_FOUND_ANSWER: фронт, eval ML
+(is_not_found) и журнал распознают отказ по началу текста и полю origin."""
 
 
 class GeneralAnswerSource(Protocol):
@@ -61,6 +72,6 @@ def finalize_general_answer(text: str) -> str:
     Совет не дублируется, если текст уже им заканчивается.
     """
     marked = ensure_general_prefix(text)
-    if marked.endswith(GENERAL_ANSWER_ADVICE):
+    if marked.endswith(CLARIFY_ADVICE):
         return marked
-    return f"{marked}\n\n{GENERAL_ANSWER_ADVICE}"
+    return f"{marked}\n\n{CLARIFY_ADVICE}"

@@ -24,7 +24,6 @@ from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion, FinishReason
 from corp_ed.prompts.faq import (
-    NOT_FOUND_ANSWER,
     PROMPT_VERSION,
     build_faq_messages,
     is_not_found,
@@ -36,6 +35,7 @@ from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.general_answer import (
+    REFUSAL_ANSWER,
     GeneralAnswerSource,
     ModelKnowledgeSource,
     finalize_general_answer,
@@ -376,7 +376,7 @@ class FaqService:
         if mode is NotFoundMode.STRICT:
             logger.info("faq_not_found_strict", reason=reason)
             return _Outcome(
-                content=NOT_FOUND_ANSWER, origin=AnswerOrigin.NONE, sources=[]
+                content=REFUSAL_ANSWER, origin=AnswerOrigin.NONE, sources=[]
             )
         return await self._general_answer(question, reason=reason)
 
@@ -392,7 +392,7 @@ class FaqService:
         """
         logger.info("faq_content_filtered", stage=reason)
         return _Outcome(
-            content=NOT_FOUND_ANSWER,
+            content=REFUSAL_ANSWER,
             origin=AnswerOrigin.NONE,
             sources=[],
             completions=[completion],
