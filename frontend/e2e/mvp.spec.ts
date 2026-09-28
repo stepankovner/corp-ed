@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 /**
  * Путь MVP целиком: администратор входит по временному паролю, загружает
  * документ, получает ответ со ссылкой на источник, заводит сотрудника;
- * сотрудник входит и спрашивает сам.
+ * сотрудник входит и спрашивает сам; новый сотрудник присоединяется по
+ * ссылке-приглашению.
  */
 
 function env(name: string): string {
@@ -33,6 +34,8 @@ const DOCUMENT = `# Положение о командировках
 `;
 
 let employeeTemporary = "";
+let inviteUrl = "";
+const invitedEmail = `invited-${Date.now()}@kronto-e2e.ru`;
 
 async function login(page: Page, email: string, password: string) {
   await page.goto("/login");
@@ -141,5 +144,34 @@ test.describe.serial("MVP", () => {
     await page.getByRole("button", { name: "Профиль" }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
     await expect(page).toHaveURL(/\/login/);
+  });
+
+  test("администратор создаёт ссылку-приглашение", async ({ page }) => {
+    await login(page, adminEmail, adminPassword);
+    await page.goto("/admin/users");
+    await page.getByRole("button", { name: "Пригласить по ссылке" }).click();
+    await page.getByRole("button", { name: "Создать ссылку" }).click();
+    const link = page.getByRole("dialog", { name: "Ссылка-приглашение" }).locator("code");
+    inviteUrl = (await link.textContent())?.trim() ?? "";
+    expect(inviteUrl).toMatch(new RegExp(`/join/${company}#.{40,}$`));
+    await page.getByRole("button", { name: "Готово" }).click();
+    await expect(page.getByRole("table", { name: "Ссылки-приглашения" })).toContainText(
+      "действует",
+    );
+  });
+
+  test("по ссылке новый сотрудник присоединяется и сразу спрашивает", async ({ page }) => {
+    await page.goto(inviteUrl);
+    await page.getByRole("button", { name: "Присоединиться" }).click();
+    await page.getByLabel("Рабочая почта").fill(invitedEmail);
+    await page.getByLabel("Пароль", { exact: true }).fill(employeePassword);
+    await page.getByLabel("Повторите пароль").fill(employeePassword);
+    await page.getByRole("button", { name: "Присоединиться" }).click();
+    await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Управление" })).toHaveCount(0);
+    await ask(page, `Сколько суточных по России? ${codeWord}`);
+    await expect(page.getByRole("button", { name: /^Источник 1: / }).first()).toBeVisible({
+      timeout: 30_000,
+    });
   });
 });

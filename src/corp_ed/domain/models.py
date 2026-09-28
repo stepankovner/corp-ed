@@ -119,6 +119,39 @@ class User(TenantMixin, Base):
     )
 
 
+class Invite(TenantMixin, Base):
+    """Ссылка-приглашение в компанию (решение 28.09).
+
+    Админ отправляет ссылку куда угодно (мессенджер, почта); по ней человек
+    сам заводит учётку сотрудника в этой компании. Хранится только sha256
+    токена, как у refresh-токенов: утечка таблицы не даёт действующих
+    ссылок. Под RLS: ссылка ищется в контексте компании из адреса
+    (/join/<код>#<токен>).
+    """
+
+    __tablename__ = "invites"
+    __table_args__ = (
+        CheckConstraint("max_uses > 0", name="ck_invites_max_uses_positive"),
+        CheckConstraint("uses >= 0 AND uses <= max_uses", name="ck_invites_uses"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    max_uses: Mapped[int]
+    uses: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Почта присоединяющегося — только в этом домене (и его поддоменах);
+    # пусто — любая. Хранится в нижнем регистре, без «@».
+    email_domain: Mapped[str | None] = mapped_column(String(253))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class RefreshToken(Base):
     """Выданный refresh-токен (хранится только sha256).
 

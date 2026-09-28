@@ -43,5 +43,6 @@ class MeResponse(BaseModel):
     role: UserRole
     tenant_id: UUID
     company_name: str
+    company_code: str
     must_change_password: bool
     last_login_at: datetime | None

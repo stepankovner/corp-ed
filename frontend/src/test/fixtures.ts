@@ -8,6 +8,7 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
     role: "employee",
     tenant_id: "t-1",
     company_name: "ООО «Меридиан Строй»",
+    company_code: "meridian",
     must_change_password: false,
     last_login_at: null,
     ...overrides,

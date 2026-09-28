@@ -92,9 +92,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [reloadMe],
   );
 
+  // Присоединение по ссылке-приглашению: учётка создаётся и сразу входит.
+  const acceptInvite = useCallback<AuthApi["acceptInvite"]>(
+    async ({ company, token, email, fullName, password }) => {
+      const tokens = await unwrap(
+        api.POST("/api/v1/invites/accept", {
+          body: {
+            company_code: company,
+            token,
+            email,
+            full_name: fullName || null,
+            password,
+          },
+        }),
+      );
+      rememberCompany(company);
+      queryClient.clear();
+      setSession(sessionFromTokens(tokens));
+      return reloadMe();
+    },
+    [queryClient, reloadMe],
+  );
+
   const value = useMemo<AuthApi>(
-    () => ({ state, login, logout, changePassword }),
-    [state, login, logout, changePassword],
+    () => ({ state, login, logout, changePassword, acceptInvite }),
+    [state, login, logout, changePassword, acceptInvite],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

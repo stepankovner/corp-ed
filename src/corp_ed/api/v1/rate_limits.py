@@ -49,6 +49,10 @@ LOGIN_FAILURES_PER_ACCOUNT = RatePolicy(
     "login-account", limit=10, window=900, fail_open=False
 )
 REFRESH_PER_IP = RatePolicy("refresh-ip", limit=60, window=60, fail_open=False)
+# Ссылка-приглашение: предпросмотр и присоединение без входа. Запас — на
+# офис за одним NAT, где вся команда присоединяется в один час; перебор
+# токена бессмыслен (256 бит), лимит — против засорения учётками.
+INVITE_PER_IP = RatePolicy("invite-ip", limit=60, window=900, fail_open=False)
 PASSWORD_CHANGE_PER_USER = RatePolicy(
     "password-user", limit=5, window=900, fail_open=False
 )

@@ -19,6 +19,7 @@ import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
 import styles from "./Admin.module.css";
 import { ConfirmDialog, SecretValue } from "./common";
+import { InvitesSection } from "./InvitesSection";
 
 type User = Schemas["UserResponse"];
 type Role = Schemas["UserRole"];
@@ -61,7 +62,7 @@ export function UsersPage() {
       <PageHeader
         label="управление"
         title="Сотрудники"
-        description="Каждый сотрудник входит по коду компании, почте и паролю. Новому сотруднику выдаётся временный пароль — при первом входе он задаст свой."
+        description="Каждый сотрудник входит по коду компании, почте и паролю. Добавьте сотрудника с временным паролем или отправьте ссылку-приглашение — по ней он сам заведёт учётку."
         actions={
           <Button size="sm" onClick={() => setCreating(true)}>
             <UserPlus size={16} aria-hidden /> Добавить сотрудника
@@ -157,6 +158,7 @@ export function UsersPage() {
           </Table>
         </>
       )}
+      <InvitesSection />
 
       {creating ? (
         <CreateUserDialog

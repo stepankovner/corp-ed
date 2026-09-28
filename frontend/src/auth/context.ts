@@ -12,6 +12,15 @@ export interface AuthApi {
   login: (company: string, email: string, password: string) => Promise<Me>;
   logout: () => Promise<void>;
   changePassword: (current: string, next: string) => Promise<Me>;
+  acceptInvite: (invite: InviteAcceptance) => Promise<Me>;
+}
+
+export interface InviteAcceptance {
+  company: string;
+  token: string;
+  email: string;
+  fullName: string;
+  password: string;
 }
 
 export const AuthContext = createContext<AuthApi | null>(null);

@@ -1091,6 +1091,228 @@
         "title": "IngestResponse",
         "type": "object"
       },
+      "InviteAcceptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "company_code": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Company Code",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company_code",
+          "token",
+          "email",
+          "password"
+        ],
+        "title": "InviteAcceptRequest",
+        "type": "object"
+      },
+      "InviteCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email_domain": {
+            "anyOf": [
+              {
+                "maxLength": 253,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Domain"
+          },
+          "max_uses": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Uses"
+          },
+          "ttl_days": {
+            "default": 7,
+            "maximum": 30.0,
+            "minimum": 1.0,
+            "title": "Ttl Days",
+            "type": "integer"
+          }
+        },
+        "title": "InviteCreateRequest",
+        "type": "object"
+      },
+      "InviteCreatedResponse": {
+        "properties": {
+          "company_code": {
+            "title": "Company Code",
+            "type": "string"
+          },
+          "invite": {
+            "$ref": "#/components/schemas/InviteResponse"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "invite",
+          "token",
+          "company_code"
+        ],
+        "title": "InviteCreatedResponse",
+        "type": "object"
+      },
+      "InvitePreviewResponse": {
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "email_domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Domain"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company_name",
+          "expires_at",
+          "email_domain"
+        ],
+        "title": "InvitePreviewResponse",
+        "type": "object"
+      },
+      "InviteResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email_domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Domain"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "max_uses": {
+            "title": "Max Uses",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "expired",
+              "revoked",
+              "used_up"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "uses": {
+            "title": "Uses",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "expires_at",
+          "max_uses",
+          "uses",
+          "email_domain",
+          "status"
+        ],
+        "title": "InviteResponse",
+        "type": "object"
+      },
+      "InviteTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "company_code": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Company Code",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company_code",
+          "token"
+        ],
+        "title": "InviteTokenRequest",
+        "type": "object"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1304,6 +1526,10 @@
       },
       "MeResponse": {
         "properties": {
+          "company_code": {
+            "title": "Company Code",
+            "type": "string"
+          },
           "company_name": {
             "title": "Company Name",
             "type": "string"
@@ -1361,6 +1587,7 @@
           "role",
           "tenant_id",
           "company_name",
+          "company_code",
           "must_change_password",
           "last_login_at"
         ],
@@ -3394,6 +3621,207 @@
         "summary": "Update Term",
         "tags": [
           "glossary"
+        ]
+      }
+    },
+    "/api/v1/invites": {
+      "get": {
+        "description": "Последние ссылки компании с их состоянием; токенов в ответе нет.",
+        "operationId": "list_invites_api_v1_invites_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InviteResponse"
+                  },
+                  "title": "Response List Invites Api V1 Invites Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Invites",
+        "tags": [
+          "invites"
+        ]
+      },
+      "post": {
+        "description": "Ссылка-приглашение в свою компанию. Токен — в ответе один раз.",
+        "operationId": "create_invite_api_v1_invites_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Invite",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
+    "/api/v1/invites/accept": {
+      "post": {
+        "description": "Завести учётку сотрудника по ссылке и сразу войти.",
+        "operationId": "accept_invite_api_v1_invites_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invite",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
+    "/api/v1/invites/preview": {
+      "post": {
+        "description": "В какую компанию ведёт ссылка — для карточки «Присоединиться».",
+        "operationId": "preview_invite_api_v1_invites_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitePreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Invite",
+        "tags": [
+          "invites"
+        ]
+      }
+    },
+    "/api/v1/invites/{invite_id}": {
+      "delete": {
+        "operationId": "revoke_invite_api_v1_invites__invite_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invite_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invite Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Invite",
+        "tags": [
+          "invites"
         ]
       }
     },

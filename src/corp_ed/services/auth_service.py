@@ -225,6 +225,19 @@ class AuthService:
         logger.info("password_changed", user_id=str(user.id))
         return pair
 
+    async def open_session(self, user: User) -> TokenPair:
+        """Первый вход сразу после создания учётки (присоединение по
+        ссылке-приглашению): пара токенов и коммит всей транзакции —
+        учётка, приглашение и вход фиксируются вместе."""
+        with tenant_scope(user.tenant_id):
+            user.last_login_at = _now()
+            pair = await self._issue(user, family_id=uuid4())
+            self.audit.record(
+                AuditAction.LOGIN_SUCCEEDED, tenant_id=user.tenant_id, actor_id=user.id
+            )
+            await self.session.commit()
+        return pair
+
     async def _invalidate_sessions(self, user: User) -> None:
         user.token_version += 1
         await self.refresh_repo.revoke_user(user.id, _now())

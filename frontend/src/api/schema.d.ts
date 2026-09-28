@@ -545,6 +545,87 @@ export interface paths {
         patch: operations["update_term_api_v1_glossary__term_id__patch"];
         trace?: never;
     };
+    "/api/v1/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Invites
+         * @description Последние ссылки компании с их состоянием; токенов в ответе нет.
+         */
+        get: operations["list_invites_api_v1_invites_get"];
+        put?: never;
+        /**
+         * Create Invite
+         * @description Ссылка-приглашение в свою компанию. Токен — в ответе один раз.
+         */
+        post: operations["create_invite_api_v1_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invites/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Invite
+         * @description Завести учётку сотрудника по ссылке и сразу войти.
+         */
+        post: operations["accept_invite_api_v1_invites_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invites/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Invite
+         * @description В какую компанию ведёт ссылка — для карточки «Присоединиться».
+         */
+        post: operations["preview_invite_api_v1_invites_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Invite */
+        delete: operations["revoke_invite_api_v1_invites__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/materials": {
         parameters: {
             query?: never;
@@ -1159,6 +1240,90 @@ export interface components {
             material_id: string;
             status: components["schemas"]["MaterialStatus"];
         };
+        /** InviteAcceptRequest */
+        InviteAcceptRequest: {
+            /** Company Code */
+            company_code: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Full Name */
+            full_name?: string | null;
+            /** Password */
+            password: string;
+            /** Token */
+            token: string;
+        };
+        /** InviteCreateRequest */
+        InviteCreateRequest: {
+            /** Email Domain */
+            email_domain?: string | null;
+            /** Max Uses */
+            max_uses?: number | null;
+            /**
+             * Ttl Days
+             * @default 7
+             */
+            ttl_days: number;
+        };
+        /** InviteCreatedResponse */
+        InviteCreatedResponse: {
+            /** Company Code */
+            company_code: string;
+            invite: components["schemas"]["InviteResponse"];
+            /** Token */
+            token: string;
+        };
+        /** InvitePreviewResponse */
+        InvitePreviewResponse: {
+            /** Company Name */
+            company_name: string;
+            /** Email Domain */
+            email_domain: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** InviteResponse */
+        InviteResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email Domain */
+            email_domain: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Max Uses */
+            max_uses: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "revoked" | "used_up";
+            /** Uses */
+            uses: number;
+        };
+        /** InviteTokenRequest */
+        InviteTokenRequest: {
+            /** Company Code */
+            company_code: string;
+            /** Token */
+            token: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Company Code */
@@ -1241,6 +1406,8 @@ export interface components {
         };
         /** MeResponse */
         MeResponse: {
+            /** Company Code */
+            company_code: string;
             /** Company Name */
             company_name: string;
             /**
@@ -2447,6 +2614,154 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GlossaryTermResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invites_api_v1_invites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResponse"][];
+                };
+            };
+        };
+    };
+    create_invite_api_v1_invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invite_api_v1_invites_accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_invite_api_v1_invites_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invite_api_v1_invites__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

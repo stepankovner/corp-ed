@@ -23,6 +23,9 @@ class AuditAction(StrEnum):
     USER_CREATED = "user.created"
     USER_UPDATED = "user.updated"
     USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105 — имя события
+    USER_JOINED_BY_INVITE = "user.joined_by_invite"
+    INVITE_CREATED = "invite.created"
+    INVITE_REVOKED = "invite.revoked"
     TENANT_CREATED = "tenant.created"
     TENANT_SUSPENDED = "tenant.suspended"
     TENANT_RESUMED = "tenant.resumed"

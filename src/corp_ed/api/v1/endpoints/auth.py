@@ -59,6 +59,7 @@ async def read_me(
         role=current_user.role,
         tenant_id=current_user.tenant_id,
         company_name=tenant.name if tenant else "",
+        company_code=tenant.company_code if tenant else "",
         must_change_password=current_user.must_change_password,
         last_login_at=current_user.last_login_at,
     )

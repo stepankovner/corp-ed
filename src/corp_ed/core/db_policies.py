@@ -84,6 +84,7 @@ TENANT_TABLES = (
     "connector_user_grants",
     "connector_sync_runs",
     "material_access",
+    "invites",
 )
 """Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
 проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,

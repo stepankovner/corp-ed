@@ -5,6 +5,7 @@ import { PublicOnly, RequireAdmin, RequireAuth } from "./auth/guards";
 import { ChatPage } from "./chat/ChatPage";
 import { AppShell } from "./layout/AppShell";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
+import { JoinPage } from "./pages/JoinPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PageSpinner } from "./ui/Spinner";
@@ -38,6 +39,8 @@ function lazyPage(node: ReactNode) {
 }
 
 export const routes: RouteObject[] = [
+  // Ссылка-приглашение открывается и без входа, и под чужой учёткой.
+  { path: "/join/:companyCode", element: <JoinPage /> },
   {
     element: <PublicOnly />,
     children: [{ path: "/login", element: <LoginPage /> }],
