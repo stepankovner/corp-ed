@@ -30,6 +30,7 @@ from corp_ed.core.config import (
     LLMSettings,
     get_connector_settings,
     get_http_settings,
+    get_team_notify_settings,
 )
 from corp_ed.core.database import get_engine
 from corp_ed.core.exception_handlers import (
@@ -84,6 +85,8 @@ from corp_ed.core.rate_limit import (
 )
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle
+from corp_ed.services.team_notify import build_team_notifier
+from corp_ed.services.team_notify import drain as drain_team_notifier
 
 logger = structlog.get_logger()
 
@@ -128,9 +131,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     app.state.http_client = httpx.AsyncClient()
+    app.state.team_notifier = build_team_notifier(
+        app.state.http_client, get_team_notify_settings()
+    )
     try:
         yield
     finally:
+        await drain_team_notifier(app.state.team_notifier)
         await app.state.http_client.aclose()
         if redis is not None:
             await redis.aclose()

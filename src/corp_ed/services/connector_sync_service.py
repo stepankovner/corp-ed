@@ -84,7 +84,13 @@ from corp_ed.repositories.connector_repository import (
 )
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.team_notify import (
+    NULL_NOTIFIER,
+    TeamNotifier,
+    connector_stopped_message,
+)
 
 logger = structlog.get_logger()
 
@@ -168,6 +174,7 @@ class ConnectorSyncService:
         *,
         extractor: Extractor = extract_isolated,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        notifier: TeamNotifier = NULL_NOTIFIER,
     ) -> None:
         self.session_maker = session_maker
         self.http = http
@@ -176,6 +183,7 @@ class ConnectorSyncService:
         self.settings = settings
         self.extractor = extractor
         self.now = now
+        self.notifier = notifier
 
     async def run(
         self, tenant_id: UUID, connector_id: UUID, *, trigger: SyncTrigger
@@ -598,6 +606,16 @@ class ConnectorSyncService:
             details={"code": code},
         )
         await session.commit()
+        tenant = await TenantRepository(session).get_by_id(connector.tenant_id)
+        self.notifier.notify(
+            connector_stopped_message(
+                company_code=tenant.company_code
+                if tenant
+                else str(connector.tenant_id),
+                kind=connector.kind,
+                code=code,
+            )
+        )
 
     async def _grant_changed(
         self, session: AsyncSession, grant_id: UUID, token: str

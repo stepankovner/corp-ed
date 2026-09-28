@@ -10,6 +10,11 @@ from corp_ed.domain.credits import CreditUsage, billing_period, credits_for
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.services.team_notify import (
+    NULL_NOTIFIER,
+    TeamNotifier,
+    pool_exhausted_message,
+)
 
 logger = structlog.get_logger()
 
@@ -42,6 +47,7 @@ class CreditService:
         zone: ZoneInfo,
         warn_at_percent: int,
         now: Callable[[], datetime] = _utcnow,
+        notifier: TeamNotifier = NULL_NOTIFIER,
     ) -> None:
         self.tenant_repo = tenant_repo
         self.qa_log_repo = qa_log_repo
@@ -51,6 +57,7 @@ class CreditService:
         self.zone = zone
         self.warn_at_percent = warn_at_percent
         self.now = now
+        self.notifier = notifier
 
     def cost(self, tokens: int) -> int:
         return credits_for(tokens, self.tokens_per_credit)
@@ -128,3 +135,14 @@ class CreditService:
                 used=used,
                 pool=before.pool,
             )
+            if action is AuditAction.CREDITS_EXHAUSTED:
+                # Команде (П-5): компания упёрлась в пул — повод позвонить.
+                tenant = await self.tenant_repo.get_by_id(tenant_id)
+                self.notifier.notify(
+                    pool_exhausted_message(
+                        company_code=tenant.company_code if tenant else str(tenant_id),
+                        used=used,
+                        pool=before.pool,
+                        until=before.period_end,
+                    )
+                )

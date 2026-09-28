@@ -43,6 +43,7 @@ from tests.connectors.fake_portal import (
     sample_portal,
 )
 from tests.fake_connector import plain_extractor
+from tests.team_notify_helpers import RecordingNotifier
 from tests.test_connector_sync import access_of, materials_of, reload
 
 KEY = Fernet.generate_key().decode()
@@ -297,12 +298,19 @@ async def test_rejected_app_secret_stops_connector_and_keeps_grants(
         session, secrets, portal, client_secret="wrong", modules=["disk"]
     )
     grant = await make_grant(session, secrets, connector, employee)
+    sent: list[str] = []
+    service.notifier = RecordingNotifier(sent)
 
     outcome = await run(service, connector)
 
     assert outcome.status is SyncRunStatus.FAILED
     assert outcome.error_code == "invalid_client"
     assert not outcome.retryable
+    # П-5: команда узнаёт об остановке — без названия подключения клиента.
+    assert sent == [
+        "Компания test: подключение bitrix24 остановлено, ошибка invalid_client. "
+        "Нужны новые учётные данные от админа компании."
+    ]
     with tenant_scope(tenant_ctx.id):
         reloaded = await reload(session, connector)
         assert reloaded.status == ConnectorStatus.ERROR.value

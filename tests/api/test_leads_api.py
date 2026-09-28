@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.api.v1.dependencies import get_lead_service
+from corp_ed.api.v1.dependencies import get_lead_service, get_team_notifier
 from corp_ed.cli import _parser
 from corp_ed.core.config import LeadSettings
 from corp_ed.domain.leads import CALL_SLOTS, CALL_TIMEZONE, LeadStatus
@@ -18,6 +18,7 @@ from corp_ed.main import app
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.retention_service import RetentionService
+from tests.team_notify_helpers import RecordingNotifier
 
 POLICY = "2026-09-28"
 OPEN = LeadSettings(
@@ -108,6 +109,10 @@ def test_enabling_requires_policy() -> None:
 async def test_lead_is_stored_with_consent(
     api: httpx.AsyncClient, session: AsyncSession, leads_open: None
 ) -> None:
+    sent_to_team: list[str] = []
+    app.dependency_overrides[get_team_notifier] = lambda: RecordingNotifier(
+        sent_to_team
+    )
     form = (await api.get("/api/v1/leads/form")).json()
     assert (form["enabled"], form["policy_version"]) == (True, POLICY)
 
@@ -117,6 +122,10 @@ async def test_lead_is_stored_with_consent(
     assert response.json() == {"status": "received"}
     [lead] = await _leads(session)
     assert lead.phone == "+79991234567"
+    # П-5: команде — без имени, телефона, почты и названия компании.
+    assert len(sent_to_team) == 1
+    for private in ("Анна", "999", "anna@", "Меридиан"):
+        assert private not in sent_to_team[0]
     assert lead.email == "anna@meridian-stroy.ru"
     assert (lead.seats, lead.tariff, lead.status) == (60, "base", "new")
     assert lead.preferred_slot == CALL_SLOTS[1]

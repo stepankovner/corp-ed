@@ -32,6 +32,7 @@ from corp_ed.core.config import (
     RagSettings,
     get_connector_settings,
     get_http_settings,
+    get_team_notify_settings,
 )
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import NotFoundError
@@ -59,6 +60,8 @@ from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.connector_sync_service import ConnectorSyncService
 from corp_ed.services.ingest_service import IngestService
+from corp_ed.services.team_notify import build_team_notifier
+from corp_ed.services.team_notify import drain as drain_team_notifier
 
 logger = structlog.get_logger()
 
@@ -322,12 +325,14 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             llm,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
+        notifier = build_team_notifier(client, get_team_notify_settings())
         sync_service = ConnectorSyncService(
             get_session_maker(),
             OutboundClient(client, via_proxy=connector_settings.outbound_via_proxy),
             default_registry(connector_settings),
             SecretBox(connector_settings.keys),
             connector_settings,
+            notifier=notifier,
         )
         ingest_worker = IngestWorker(get_session_maker(), gateway, rag)
         sync_worker = SyncWorker(get_session_maker(), sync_service)
@@ -336,6 +341,7 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
                 ingest_worker.run_forever(stop), sync_worker.run_forever(stop)
             )
         finally:
+            await drain_team_notifier(notifier)
             if redis is not None:
                 await redis.aclose()
 

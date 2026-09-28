@@ -4,7 +4,7 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Depends, Request, status
 
-from corp_ed.api.v1.dependencies import get_lead_service
+from corp_ed.api.v1.dependencies import get_lead_service, get_team_notifier
 from corp_ed.api.v1.rate_limits import (
     LEAD_PER_IP,
     LEADS_PER_DAY,
@@ -20,6 +20,7 @@ from corp_ed.api.v1.schemas.lead import (
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.leads import CALL_SLOTS, CALL_TIMEZONE, call_dates
 from corp_ed.services.lead_service import LeadDraft, LeadService
+from corp_ed.services.team_notify import TeamNotifier, lead_message
 
 logger = structlog.get_logger()
 
@@ -56,6 +57,7 @@ async def submit_lead(
     data: LeadRequest,
     service: Service,
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
 ) -> LeadReceivedResponse:
     """Заявка на созвон со страницы тарифов (досье 10.1). Без входа:
     лимит по IP и общий суточный, ловушка для ботов, согласие с версией
@@ -68,7 +70,7 @@ async def submit_lead(
         # подбирал обход, но не сохраняем.
         logger.info("lead_honeypot")
         return LeadReceivedResponse()
-    await service.submit(
+    lead = await service.submit(
         LeadDraft(
             company_name=data.company_name,
             contact_name=data.contact_name,
@@ -83,5 +85,13 @@ async def submit_lead(
             consent=data.consent,
         ),
         today=_today().date(),
+    )
+    notifier.notify(
+        lead_message(
+            tariff=lead.tariff,
+            seats=lead.seats,
+            preferred_date=lead.preferred_date,
+            preferred_slot=lead.preferred_slot,
+        )
     )
     return LeadReceivedResponse()

@@ -322,6 +322,40 @@ def get_lead_settings() -> LeadSettings:
     return LeadSettings()
 
 
+class TeamNotifySettings(BaseSettings):
+    """Бот в Telegram для нашей команды (решение 28.09, П-5).
+
+    Без токена и чата уведомлений нет. Сообщения — без персональных
+    данных (services/team_notify.py). Токен — секрет: в логи не пишется.
+    """
+
+    telegram_bot_token: SecretStr | None = None
+    telegram_chat_id: str | None = Field(default=None, max_length=64)
+
+    model_config = SettingsConfigDict(
+        env_prefix="TEAM_NOTIFY_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @model_validator(mode="after")
+    def validate_pair(self) -> Self:
+        # Половина пары — почти наверняка забытая переменная: молча
+        # остаться без уведомлений хуже, чем не стартовать.
+        if (self.telegram_bot_token is None) != (self.telegram_chat_id is None):
+            raise ValueError(
+                "set both TEAM_NOTIFY_TELEGRAM_BOT_TOKEN "
+                "and TEAM_NOTIFY_TELEGRAM_CHAT_ID"
+            )
+        return self
+
+
+@lru_cache
+def get_team_notify_settings() -> TeamNotifySettings:
+    return TeamNotifySettings()
+
+
 class HttpSettings(BaseSettings):
     """Настройки HTTP-периметра: CORS, хосты, лимиты тела, документация.
 

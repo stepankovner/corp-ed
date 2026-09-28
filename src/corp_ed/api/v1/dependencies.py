@@ -67,6 +67,7 @@ from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.invite_service import InviteService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
+from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 from corp_ed.services.user_service import UserService
 
 # auto_error=False: без заголовка FastAPI отдал бы свой 403. Отсутствие
@@ -330,11 +331,19 @@ def get_gap_service(
     return GapService(GapRepository(session), audit, session)
 
 
+def get_team_notifier(request: Request) -> TeamNotifier:
+    """Уведомления команде (П-5). В тестах lifespan не запускается —
+    уведомлений нет."""
+    notifier: TeamNotifier = getattr(request.app.state, "team_notifier", NULL_NOTIFIER)
+    return notifier
+
+
 def get_credit_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
     audit: Annotated[AuditRepository, Depends(get_audit_repository)],
     settings: Annotated[BillingSettings, Depends(get_billing_settings)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
 ) -> CreditService:
     return CreditService(
         tenant_repo,
@@ -344,6 +353,7 @@ def get_credit_service(
         tokens_per_credit=settings.tokens_per_credit,
         zone=settings.zone,
         warn_at_percent=settings.warn_at_percent,
+        notifier=notifier,
     )
 
 
