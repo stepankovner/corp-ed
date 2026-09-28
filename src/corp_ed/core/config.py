@@ -78,14 +78,18 @@ class LLMSettings(BaseSettings):
     переменных согласованы с docs/backend-handoff.md.
     """
 
-    yc_folder_id: str
+    # Пустые значения допустимы только в режиме fake (проверка ниже).
+    yc_folder_id: str = ""
     # SecretStr: ключ не попадёт в repr настроек и в лог.
-    yc_api_key: SecretStr
+    yc_api_key: SecretStr = SecretStr("")
+    environment: str = "development"
 
     # yandex-openai — /v1/chat/completions (все модели каталога, в том числе
     # Flash); yandex-native — /foundationModels/v1/completion (только
-    # YandexGPT, запасной вариант по досье 9.2).
-    llm_provider: Literal["yandex-openai", "yandex-native"] = "yandex-openai"
+    # YandexGPT, запасной вариант по досье 9.2); fake — разработка фронта
+    # и сквозные тесты без ключей: ответ собирается из первой выдержки,
+    # эмбеддинги — «мешок слов». В production запрещён.
+    llm_provider: Literal["yandex-openai", "yandex-native", "fake"] = "yandex-openai"
     llm_model: str = "aliceai-llm-flash"
     # Квота генерации — 10 одновременных запросов на каталог. Лимит — на
     # процесс: при N воркерах uvicorn ставить не больше 10 / N.
@@ -114,6 +118,16 @@ class LLMSettings(BaseSettings):
             )
         if self.embedding_model == "text-search" and self.embedding_dim != 256:
             raise ValueError("text-search produces 256-dimensional vectors only")
+        return self
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> Self:
+        if self.llm_provider == "fake":
+            if self.environment == "production":
+                raise ValueError("LLM_PROVIDER=fake is for development only")
+            return self
+        if not self.yc_folder_id or not self.yc_api_key.get_secret_value():
+            raise ValueError("YC_FOLDER_ID and YC_API_KEY are required")
         return self
 
     @model_validator(mode="after")

@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from corp_ed.llm.gateway import LLMGateway
@@ -37,5 +38,47 @@ class FakeAdapter(LLMGateway):
             ),
             model_version="fake",
             model="fake",
+            latency_ms=0,
+        )
+
+
+_FIRST_EXCERPT = re.compile(
+    r"^\[1\][^\n]*\n(.+?)(?:\n\n\[2\]|\n\nВопрос сотрудника:)", re.S | re.M
+)
+
+
+class DevAdapter(LLMGateway):
+    """Модель для разработки (LLM_PROVIDER=fake): без сети и ключей.
+
+    Ответ по документам — начало первой найденной выдержки со ссылкой [1],
+    чтобы фронт показывал настоящие источники; общий ответ — короткая
+    заглушка. Токены считаются по длине текста — кредиты списываются как
+    в бою. В production запрещена настройками.
+    """
+
+    async def generate(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float = 0.3,
+        max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
+    ) -> Completion:
+        prompt = messages[-1].content if messages else ""
+        match = _FIRST_EXCERPT.search(prompt)
+        if match:
+            fragment = " ".join(match.group(1).split())[:280]
+            content = (
+                f"Режим разработки, ответ без модели. По документам: {fragment} [1]"
+            )
+        else:
+            content = "Режим разработки: общий ответ без модели."
+        tokens_in = sum(len(m.content) for m in messages) // 3
+        return Completion(
+            content=content,
+            finish_reason=FinishReason.COMPLETED,
+            usage=Usage(input_tokens=tokens_in, output_tokens=len(content) // 3),
+            model_version="dev",
+            model="dev",
             latency_ms=0,
         )

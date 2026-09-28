@@ -33,10 +33,9 @@ from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
 from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
-from corp_ed.llm.factory import build_llm_gateway
+from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.throttle import Throttle
-from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.connector_repository import (
@@ -205,7 +204,7 @@ def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
 
 @lru_cache
 def get_llm_settings() -> LLMSettings:
-    return LLMSettings()  # type: ignore[call-arg]
+    return LLMSettings()
 
 
 @lru_cache
@@ -238,14 +237,7 @@ def get_embedding_gateway(
     query_throttle: Annotated[Throttle | None, Depends(get_query_throttle)],
 ) -> EmbeddingGateway:
     """В API эмбеддинги нужны только для вопросов; документы считает воркер."""
-    return YandexEmbeddingAdapter(
-        client=client,
-        folder_id=settings.yc_folder_id,
-        api_key=settings.yc_api_key.get_secret_value(),
-        family=settings.embedding_model,
-        dim=settings.embedding_dim,
-        query_throttle=query_throttle,
-    )
+    return build_embedding_gateway(client, settings, query_throttle=query_throttle)
 
 
 def get_llm_gateway(

@@ -43,8 +43,8 @@ from corp_ed.domain.models import MaterialStatus
 from corp_ed.domain.types import SyncRunStatus, SyncTrigger
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
+from corp_ed.llm.factory import build_embedding_gateway
 from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle, Throttle
-from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.connector_repository import ConnectorRepository
 from corp_ed.repositories.connector_sync_job_repository import (
@@ -305,7 +305,7 @@ def _ingest_throttle(redis: Redis | None, rate: float) -> Throttle:
 
 async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -> None:
     configure_logging()
-    llm = LLMSettings()  # type: ignore[call-arg]
+    llm = LLMSettings()
     rag = RagSettings()  # type: ignore[call-arg]
     http = get_http_settings()
 
@@ -317,12 +317,9 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
 
     connector_settings = get_connector_settings()
     async with httpx.AsyncClient() as client:
-        gateway = YandexEmbeddingAdapter(
-            client=client,
-            folder_id=llm.yc_folder_id,
-            api_key=llm.yc_api_key.get_secret_value(),
-            family=llm.embedding_model,
-            dim=llm.embedding_dim,
+        gateway = build_embedding_gateway(
+            client,
+            llm,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
         sync_service = ConnectorSyncService(

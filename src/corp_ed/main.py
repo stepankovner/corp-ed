@@ -137,7 +137,7 @@ QUERY_MAX_WAIT = 5.0
 
 def _llm_limits() -> tuple[int, float]:
     try:
-        settings = LLMSettings()  # type: ignore[call-arg]
+        settings = LLMSettings()
     except ValidationError:
         # Нет ключей провайдера — ответы всё равно не заработают, а
         # запуск ради остальных ручек (вход, пользователи) нужен.

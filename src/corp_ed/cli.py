@@ -370,7 +370,7 @@ class _FixtureRecorder:
 
 
 async def _gaps(company_code: str | None) -> int:
-    llm_settings = LLMSettings()  # type: ignore[call-arg]
+    llm_settings = LLMSettings()
     rag = RagSettings()  # type: ignore[call-arg]
     async with httpx.AsyncClient() as client:
         service = GapReportService(

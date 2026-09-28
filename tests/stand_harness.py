@@ -7,9 +7,6 @@
 воркер уже поменял в другой сессии.
 """
 
-import math
-import re
-import zlib
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from uuid import uuid4
@@ -22,14 +19,14 @@ from corp_ed.api.v1.dependencies import (
     get_llm_gateway,
     get_rag_settings,
 )
-from corp_ed.core.config import EMBEDDING_DIM, RagSettings
+from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
 from corp_ed.core.rate_limit import InMemoryRateLimiter
 from corp_ed.core.security import hash_password
 from corp_ed.domain.models import Tenant, User, UserRole
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
+from corp_ed.llm.fake_embedding import WordEmbeddingAdapter
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.types import EmbeddingResult
 from corp_ed.main import app
 from corp_ed.worker import IngestWorker
 
@@ -50,29 +47,7 @@ def production_rag() -> RagSettings:
     )
 
 
-class WordEmbeddings(EmbeddingGateway):
-    """«Мешок слов» вместо модели: общие слова сближают тексты, без общих
-    слов расстояние близко к 1. Достаточно, чтобы вопрос по документу
-    находил его, а вопрос вне документов — нет."""
-
-    async def embed_document(self, text: str) -> EmbeddingResult:
-        return self._result(text)
-
-    async def embed_query(self, text: str) -> EmbeddingResult:
-        return self._result(text)
-
-    def _result(self, text: str) -> EmbeddingResult:
-        vector = [0.0] * EMBEDDING_DIM
-        for word in re.findall(r"\w+", text.lower()):
-            vector[zlib.crc32(word.encode()) % EMBEDDING_DIM] += 1.0
-        norm = math.sqrt(sum(x * x for x in vector)) or 1.0
-        return EmbeddingResult(
-            embedding=[x / norm for x in vector],
-            input_tokens=len(text) // 3,
-            model_version="words",
-            model=f"words@{EMBEDDING_DIM}",
-            latency_ms=0,
-        )
+WordEmbeddings = WordEmbeddingAdapter
 
 
 async def make_admin(session: AsyncSession, tenant: Tenant) -> User:
