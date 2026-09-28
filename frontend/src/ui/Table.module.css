@@ -1,4 +1,7 @@
 .wrap {
+  /* Скрытые подписи колонок (.visually-hidden, position: absolute) иначе
+     отсчитываются от страницы и расширяют её на телефоне мимо прокрутки. */
+  position: relative;
   width: 100%;
   overflow-x: auto;
   border: 1px solid var(--line);
