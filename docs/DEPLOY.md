@@ -103,6 +103,11 @@ docker compose -f compose.yaml run --rm api python -m corp_ed.cli create-tenant 
 клиенту отдельным каналом от кода компании; при первом входе система
 потребует сменить пароль.
 
+Новая компания получает честный отказ, когда в документах ответа нет
+(`not_found_mode=strict`). Общий ответ с пометкой включается
+`set-not-found-mode --code acme --mode general` или флагом
+`--not-found-mode general` при создании.
+
 Остальные команды: `set-seats`, `set-not-found-mode`, `suspend-tenant`,
 `resume-tenant`, `reindex`, `purge`, `gaps` — `python -m corp_ed.cli --help`.
 

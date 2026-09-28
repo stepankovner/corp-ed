@@ -1,9 +1,10 @@
 import os
 import subprocess
 import sys
+from uuid import uuid4
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,7 @@ from corp_ed.core.exceptions import ConflictError
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
 from corp_ed.domain.models import AuditEvent, Tenant, User, UserRole
-from corp_ed.domain.types import NotFoundMode
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -190,9 +191,9 @@ def test_cli_set_seats() -> None:
     assert (args.command, args.code, args.seats) == ("set-seats", "acme", 80)
 
 
-async def test_new_tenant_gets_general_answers_by_default(
-    session: AsyncSession,
-) -> None:
+async def test_new_tenant_refuses_by_default(session: AsyncSession) -> None:
+    """Решение 28.09 (Q1): новая компания — честный отказ, пока продукт
+    не решил иначе; общий ответ включает команда."""
     result = await _service(session).provision(
         company_code="acme",
         name="A",
@@ -200,7 +201,25 @@ async def test_new_tenant_gets_general_answers_by_default(
         admin_full_name=None,
         seats=30,
     )
-    assert result.tenant.not_found_mode == "general"
+    assert result.tenant.not_found_mode == "strict"
+
+
+async def test_tenant_row_without_mode_refuses(session: AsyncSession) -> None:
+    """И вставка мимо сервиса: значение по умолчанию в ORM и в базе."""
+    code = f"raw{uuid4().hex[:8]}"
+    await session.execute(
+        text("INSERT INTO tenants (id, company_code, name) VALUES (:id, :code, 'R')"),
+        {"id": uuid4(), "code": code},
+    )
+    mode = (
+        await session.execute(
+            text("SELECT not_found_mode FROM tenants WHERE company_code = :code"),
+            {"code": code},
+        )
+    ).scalar_one()
+    assert mode == DEFAULT_NOT_FOUND_MODE.value == "strict"
+    assert Tenant.__table__.c.not_found_mode.default.arg == "strict"
+    await session.rollback()
 
 
 async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
@@ -213,9 +232,9 @@ async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
         seats=30,
     )
 
-    tenant = await service.set_not_found_mode("acme", NotFoundMode.STRICT)
+    tenant = await service.set_not_found_mode("acme", NotFoundMode.GENERAL)
 
-    assert tenant.not_found_mode == "strict"
+    assert tenant.not_found_mode == "general"
     event = (
         await session.execute(
             select(AuditEvent).where(
@@ -223,7 +242,7 @@ async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
             )
         )
     ).scalar_one()
-    assert event.details == {"from": "general", "to": "strict"}
+    assert event.details == {"from": "strict", "to": "general"}
 
 
 async def test_database_rejects_unknown_not_found_mode(
@@ -252,9 +271,14 @@ async def test_database_rejects_non_positive_seats(
 
 def test_cli_not_found_mode() -> None:
     args = _parser().parse_args(
-        ["set-not-found-mode", "--code", "acme", "--mode", "strict"]
+        ["set-not-found-mode", "--code", "acme", "--mode", "general"]
     )
-    assert args.mode == "strict"
+    assert args.mode == "general"
+    create = _parser().parse_args(
+        ["create-tenant", "--code", "acme", "--name", "A", "--seats", "5"]
+        + ["--admin-email", "a@b.ru"]
+    )
+    assert create.not_found_mode == "strict"
     with pytest.raises(SystemExit):
         _parser().parse_args(["set-not-found-mode", "--code", "acme", "--mode", "x"])
 

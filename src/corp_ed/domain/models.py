@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, deferred, mapped_column
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
 from corp_ed.domain.mixins import TenantMixin
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE
 
 
 class UserRole(enum.Enum):
@@ -83,10 +84,13 @@ class Tenant(Base):
     # Оплаченные места. Пул кредитов на месяц = места × кредитов на место
     # (досье 10.2). Задаёт команда при подключении (CLI).
     seats: Mapped[int] = mapped_column(default=30, server_default="30")
-    # Ответ, когда в документах ничего нет: general или strict
-    # (NotFoundMode). Выбирается с клиентом при подключении (CLI).
+    # Ответ, когда в документах ничего нет: strict или general
+    # (NotFoundMode). По умолчанию strict (DEFAULT_NOT_FOUND_MODE);
+    # меняет команда через CLI.
     not_found_mode: Mapped[str] = mapped_column(
-        String(16), default="general", server_default="general"
+        String(16),
+        default=DEFAULT_NOT_FOUND_MODE.value,
+        server_default=DEFAULT_NOT_FOUND_MODE.value,
     )
 
 

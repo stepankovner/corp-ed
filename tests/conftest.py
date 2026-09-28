@@ -18,7 +18,7 @@ from corp_ed.core.database import Base
 from corp_ed.core.db_policies import apply_all
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import Material, Tenant, User, UserRole
-from corp_ed.domain.types import Retriever
+from corp_ed.domain.types import NotFoundMode, Retriever
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.repositories.audit_repository import AuditRepository
@@ -115,7 +115,15 @@ async def session(engine: AsyncEngine) -> AsyncGenerator[AsyncSession]:
 
 @pytest.fixture
 async def tenant_ctx(session: AsyncSession) -> AsyncGenerator[Tenant]:
-    tenant = Tenant(id=uuid4(), company_code="test", name="Test Co")
+    # Режим общего ответа явно: на этой компании тесты проверяют и общий
+    # ответ, и отказ (переключая режим). Значение по умолчанию у новой
+    # компании — отказ; его проверяют test_tenant_service.py.
+    tenant = Tenant(
+        id=uuid4(),
+        company_code="test",
+        name="Test Co",
+        not_found_mode=NotFoundMode.GENERAL.value,
+    )
     session.add(tenant)
     await session.commit()
 

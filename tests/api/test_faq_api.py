@@ -11,6 +11,7 @@ from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion, Message
 from corp_ed.main import app
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX
+from corp_ed.services.general_answer import GENERAL_ANSWER_ADVICE
 
 
 class FailingLLM(LLMGateway):
@@ -41,6 +42,7 @@ async def test_faq_empty_database_returns_marked_general_answer(
     # Пометка двойная: поле для фронта и первая строка текста.
     assert body["origin"] == "general_knowledge"
     assert body["content"].startswith(GENERAL_ANSWER_PREFIX)
+    assert body["content"].endswith(GENERAL_ANSWER_ADVICE)
     assert body["answer_given"] is False
     assert body["sources"] == []
     assert len(fake_llm.calls) == 1

@@ -59,6 +59,7 @@ from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.gap_service import GapService
+from corp_ed.services.general_answer import ModelKnowledgeSource
 from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.user_service import UserService
@@ -350,6 +351,10 @@ def get_faq_service(
         temperature=settings.faq_temperature,
         retriever=Retriever(settings.retriever),
         fulltext_weight=settings.fulltext_weight,
+        # Поиск в интернете после MVP — другой GeneralAnswerSource здесь.
+        general_source=ModelKnowledgeSource(
+            llm_gateway, temperature=settings.faq_temperature
+        ),
     )
 
 

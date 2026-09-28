@@ -101,10 +101,12 @@ test.describe.serial("MVP", () => {
     await expect(page.getByText("Спасибо за оценку")).toBeVisible();
   });
 
-  test("вопрос мимо документов помечен как общий ответ", async ({ page }) => {
+  // Новая компания — в строгом режиме (решение 28.09): честный отказ.
+  // Вид общего ответа проверяют юнит-тесты (App.test.tsx).
+  test("вопрос мимо документов — честный отказ", async ({ page }) => {
     await login(page, adminEmail, adminPassword);
     await ask(page, "Какая столица Австралии?");
-    await expect(page.getByText("Ниже — общая информация, не из документов компании")).toBeVisible({
+    await expect(page.getByText("В документах компании нет ответа на этот вопрос.")).toBeVisible({
       timeout: 30_000,
     });
   });

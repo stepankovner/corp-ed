@@ -27,6 +27,8 @@ LLM_PROVIDER=fake RAG_FAQ_MAX_DISTANCE=0.8 uv run uvicorn corp_ed.main:app --rel
 LLM_PROVIDER=fake uv run python -m corp_ed.worker
 uv run python -m corp_ed.cli create-tenant --code acme --name "ACME" \
     --seats 20 --admin-email admin@acme.ru     # печатает временный пароль
+# вопрос мимо документов — честный отказ; общий ответ с пометкой:
+# ... create-tenant ... --not-found-mode general
 
 # фронт
 cd frontend

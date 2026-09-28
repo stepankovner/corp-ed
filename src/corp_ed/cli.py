@@ -55,7 +55,7 @@ from corp_ed.core.outbound import (
     validate_outbound_url,
 )
 from corp_ed.core.secrets import SecretBox
-from corp_ed.domain.types import NotFoundMode
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -83,8 +83,8 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--not-found-mode",
         choices=[mode.value for mode in NotFoundMode],
-        default=NotFoundMode.GENERAL.value,
-        help="нет ответа в документах: общий ответ с пометкой или отказ",
+        default=DEFAULT_NOT_FOUND_MODE.value,
+        help="нет ответа в документах: отказ (по умолчанию) или общий ответ с пометкой",
     )
 
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")

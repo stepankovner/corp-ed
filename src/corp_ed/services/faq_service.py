@@ -12,6 +12,7 @@ from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
 from corp_ed.domain.types import (
+    DEFAULT_NOT_FOUND_MODE,
     AnswerDiagnostics,
     AnswerOrigin,
     ChunkMatch,
@@ -26,8 +27,6 @@ from corp_ed.prompts.faq import (
     NOT_FOUND_ANSWER,
     PROMPT_VERSION,
     build_faq_messages,
-    build_general_messages,
-    ensure_general_prefix,
     is_not_found,
     normalize_citations,
 )
@@ -36,6 +35,11 @@ from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
+from corp_ed.services.general_answer import (
+    GeneralAnswerSource,
+    ModelKnowledgeSource,
+    finalize_general_answer,
+)
 
 logger = structlog.get_logger()
 
@@ -84,6 +88,7 @@ class FaqService:
         temperature: float,
         retriever: Retriever,
         fulltext_weight: float,
+        general_source: GeneralAnswerSource | None = None,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -99,15 +104,17 @@ class FaqService:
         self.temperature = temperature
         self.retriever = retriever
         self.fulltext_weight = fulltext_weight
+        self.general_source = general_source or ModelKnowledgeSource(
+            llm_gateway, temperature=temperature
+        )
 
     async def answer(self, question: str, user: User) -> FaqAnswer:
-        """Ответить по документам, а если в них ответа нет — из общих знаний.
+        """Ответить по документам; если в них ответа нет — по режиму компании.
 
-        Решение продукта (25.09, режим Р1 «общий ответ с пометкой»):
-        сотрудник не упирается в «не знаю», но ответ не из документов
-        всегда помечен — текстом в первой строке и полем origin.
-        Компания в строгом режиме (NotFoundMode.STRICT) вместо этого
-        получает честный отказ, как в досье v3.2 (BH-24).
+        Что отвечать, когда в документах ответа нет, решает режим
+        компании (NotFoundMode): по умолчанию честный отказ (решение
+        28.09), в режиме GENERAL — общий ответ, всегда помеченный текстом
+        в первой строке и полем origin (Р1, services/general_answer.py).
 
         Выдержки, не прошедшие порог max_distance, в модель не уходят:
         нерелевантный контекст дороже и толкает модель выдать чужой
@@ -122,7 +129,7 @@ class FaqService:
         """
         usage = await self.credits.ensure_available()
         tenant = await self.tenant_repo.get_by_id(user.tenant_id)
-        mode = NotFoundMode(tenant.not_found_mode) if tenant else NotFoundMode.GENERAL
+        mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
         search_text = await self._search_text(question)
         embedded = await self.embedding_gateway.embed_query(search_text)
 
@@ -392,22 +399,21 @@ class FaqService:
         )
 
     async def _general_answer(self, question: str, *, reason: str) -> _Outcome:
-        """Ответ из общих знаний со строгой пометкой.
+        """Общий ответ со строгой пометкой и советом уточнить.
 
-        В этот промпт не уходит ни одной выдержки: смешать общие сведения
-        с документами компании модель здесь не может. ensure_general_prefix
-        ставит пометку, даже если модель её потеряла или переписала, —
+        Источнику не уходит ни одной выдержки: смешать общие сведения с
+        документами компании он не может. finalize_general_answer ставит
+        пометку и совет, даже если модель их потеряла или переписала, —
         ответ без пометки клиенту уйти не может. Источников нет.
         """
-        completion = await self.llm_gateway.generate(
-            messages=build_general_messages(question),
-            temperature=self.temperature,
-        )
+        completion = await self.general_source.generate(question)
         if completion.finish_reason is FinishReason.FILTERED:
             return self._filtered(completion, reason="general")
-        logger.info("faq_general_answer", reason=reason)
+        logger.info(
+            "faq_general_answer", reason=reason, source=self.general_source.name
+        )
         return _Outcome(
-            content=ensure_general_prefix(completion.content),
+            content=finalize_general_answer(completion.content),
             origin=AnswerOrigin.GENERAL_KNOWLEDGE,
             sources=[],
             completions=[completion],

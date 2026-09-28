@@ -20,6 +20,7 @@ from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.faq_service import FaqService
+from corp_ed.services.general_answer import GENERAL_ANSWER_ADVICE
 from tests.conftest import make_credit_service
 
 
@@ -119,6 +120,8 @@ async def test_general_answer_when_nothing_found(
     assert result.answer_given is False
     assert result.sources == []
     assert result.content.startswith(GENERAL_ANSWER_PREFIX)
+    # Решение 28.09 (Q3): совет уточнить — последним абзацем, от кода.
+    assert result.content.endswith(f"\n\n{GENERAL_ANSWER_ADVICE}")
     assert len(fake_llm.calls) == 1
     # Общий промпт: ни одной выдержки, правило «не выдавай за правила компании».
     user_message = next(m for m in fake_llm.calls[0] if m.role is Role.USER)
@@ -162,6 +165,7 @@ async def test_general_answer_is_always_marked(
 
     assert result.content == (
         f"{GENERAL_ANSWER_PREFIX}\nПо Трудовому кодексу отпуск — 28 дней."
+        f"\n\n{GENERAL_ANSWER_ADVICE}"
     )
 
 
@@ -241,7 +245,9 @@ async def test_model_refusal_with_found_chunks_falls_back_to_general(
     assert result.origin is AnswerOrigin.GENERAL_KNOWLEDGE
     assert result.answer_given is False
     assert result.sources == []
-    assert result.content == f"{GENERAL_ANSWER_PREFIX}\nКак правило, так."
+    assert result.content == (
+        f"{GENERAL_ANSWER_PREFIX}\nКак правило, так.\n\n{GENERAL_ANSWER_ADVICE}"
+    )
 
 
 async def test_document_clause_citation_is_normalized(

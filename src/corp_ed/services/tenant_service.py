@@ -9,7 +9,7 @@ from corp_ed.core.exceptions import ConflictError, DomainError
 from corp_ed.core.security import generate_temporary_password, hash_password
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
-from corp_ed.domain.types import NotFoundMode
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -85,12 +85,13 @@ class TenantService:
         admin_email: str,
         admin_full_name: str | None,
         seats: int,
-        not_found_mode: NotFoundMode = NotFoundMode.GENERAL,
+        not_found_mode: NotFoundMode = DEFAULT_NOT_FOUND_MODE,
     ) -> ProvisionedTenant:
         """Создать компанию и её первого администратора одной транзакцией.
 
         seats — оплаченные места: от них считается пул кредитов.
-        not_found_mode — что отвечать, когда в документах ответа нет.
+        not_found_mode — что отвечать, когда в документах ответа нет;
+        по умолчанию отказ (DEFAULT_NOT_FOUND_MODE, решение 28.09).
         """
         code = company_code.strip().casefold()
         if not _COMPANY_CODE.fullmatch(code):
