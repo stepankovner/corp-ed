@@ -83,7 +83,8 @@ uv run pre-commit install   # один раз
 `CI` — линтер (включая правила bandit), типы, тесты с порогом покрытия
 85 %, миграции на пустой базе под владельцем без суперпользователя,
 сборка образа и запуск не под root. `Security` (по push и еженедельно) —
-pip-audit, gitleaks, CodeQL, Trivy по образу и конфигурации, SBOM.
+pip-audit, npm audit фронтенда, gitleaks, CodeQL (Python и
+JavaScript/TypeScript), Trivy по образам API и `web` и конфигурации, SBOM.
 
 ## Структура
 

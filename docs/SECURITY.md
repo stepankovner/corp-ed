@@ -259,8 +259,10 @@ RLS не видит строк.
   пустой базе под владельцем без суперпользователя, проверка роли
   приложения, сборка и запуск образа не под root; отдельно и
   еженедельно — `pip-audit` по закреплённым боевым зависимостям,
-  gitleaks, CodeQL (`security-extended`), Trivy по образу и
-  конфигурации, SBOM CycloneDX. Dependabot для Python, actions и Docker.
+  `npm audit --omit=dev` фронтенда, gitleaks, CodeQL
+  (`security-extended`, Python и JavaScript/TypeScript отдельными
+  заданиями), Trivy по образам API и `web` и по конфигурации, SBOM
+  CycloneDX. Dependabot для Python, actions и Docker.
 - Токен workflow — только чтение.
 
 ---

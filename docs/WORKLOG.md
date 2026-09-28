@@ -626,6 +626,35 @@ RISKS №23).
 №45), стенд с `ENVIRONMENT=production`. Компания в тесте — в режиме
 общего ответа (значение по умолчанию на момент прогона).
 
+## 28.09: Security для фронтенда
+
+**Зачем.** Фронтенд попал в `CI`, но не в `Security`: Trivy config на
+HEAD `289f8c7` падал на `frontend/Dockerfile` — DS-0002 (HIGH, «нет
+`USER`»), хотя `nginx-unprivileged` и так работает под uid 101; npm-
+зависимости, JS-код и образ `web` не проверялись. Фикс прошлой сессии
+не был запушен — повторён.
+
+**Сделано:**
+- `frontend/Dockerfile`: `USER 101` в стадии `runtime` после `COPY`;
+- `.github/workflows/security.yaml`:
+  - `frontend-dependencies` — `npm audit --omit=dev --audit-level=high`
+    в `frontend/` (setup-node по SHA `v6.5.0`, Node 22, как в `CI`);
+  - `codeql-frontend` — CodeQL `javascript-typescript`,
+    `security-extended`, категория `/language:javascript-typescript`;
+    отдельным заданием, а не матрицей, чтобы имя проверки и история
+    алертов Python-анализа не поменялись;
+  - в `image` — сборка `kronto-web:scan` и `trivy image` по ней с тем
+    же порогом (HIGH/CRITICAL с исправлением);
+- описание конвейера в `SECURITY.md` и `README.md`.
+
+**Проверено локально:** `trivy config --severity HIGH,CRITICAL` (Trivy
+0.74.0, бинарник релиза со сверкой SHA-256 — Docker-демона в среде нет)
+по снимку файлов из git: на HEAD — DS-0002, exit 1 (находка
+воспроизведена), с фиксом — 0 находок, exit 0; `npm audit --omit=dev
+--audit-level=high` — 0 уязвимостей; базовый образ `web` по digest
+(`--image-src remote`, alpine 3.24.2) — 0 HIGH/CRITICAL с исправлением.
+Сборка самого `kronto-web:scan` и CodeQL по JS — только в CI.
+
 ## Дальнейшие действия — MVP по досье
 
 Что осталось до MVP (3.3): **коннекторы** (10.5). Дизайн — `DECISIONS.md`,
