@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -30,6 +31,7 @@ from corp_ed.worker import (
     ERROR_NOT_FOUND,
     ERROR_PROVIDER,
     IngestWorker,
+    heartbeat,
     retry_delay,
 )
 
@@ -290,6 +292,29 @@ async def test_enqueue_is_deduplicated(
 
     assert again is False
     assert len(await _jobs(session)) == 1
+
+
+async def test_heartbeat_touches_file_until_stopped(tmp_path: Path) -> None:
+    alive = tmp_path / "alive"
+    stop = asyncio.Event()
+    task = asyncio.create_task(heartbeat(stop, alive, every=0.01))
+    await asyncio.sleep(0.05)
+    assert alive.exists()
+    first = alive.stat().st_mtime_ns
+    await asyncio.sleep(0.05)
+    assert alive.stat().st_mtime_ns >= first
+    stop.set()
+    await asyncio.wait_for(task, timeout=1)
+
+
+async def test_heartbeat_survives_unwritable_path(tmp_path: Path) -> None:
+    stop = asyncio.Event()
+    missing = tmp_path / "missing" / "alive"
+    task = asyncio.create_task(heartbeat(stop, missing, every=0.01))
+    await asyncio.sleep(0.03)
+    stop.set()
+    await asyncio.wait_for(task, timeout=1)
+    assert not (tmp_path / "missing").exists()
 
 
 def test_retry_delay_grows() -> None:

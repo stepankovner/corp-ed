@@ -10,6 +10,11 @@
 повторяются с растущей паузой. Останавливается по SIGTERM/SIGINT после
 текущей задачи — docker stop не рвёт её посередине.
 
+Пульс для healthcheck контейнера — файл HEARTBEAT_PATH, его обновляет
+отдельная задача раз в HEARTBEAT_EVERY секунд. Свежий файл значит, что
+процесс жив и цикл событий не заблокирован; застрявшую очередь он не
+покажет — её признак растущие PENDING в ingest_jobs (docs/DEPLOY.md §10).
+
 Правило изоляции: одна задача — одна свежая сессия и один tenant_scope.
 Identity map сессии, пережившей задачу другого тенанта, отдал бы его
 объекты мимо фильтра (DECISIONS.md, «session.get обходит фильтр»).
@@ -20,6 +25,7 @@ import contextlib
 import signal
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 import structlog
@@ -71,6 +77,9 @@ STALE_AFTER = timedelta(minutes=15)
 IDLE_SLEEP = 2.0
 INGEST_MAX_WAIT = 300.0
 """Сколько задача готова ждать слота квоты эмбеддингов."""
+HEARTBEAT_PATH = Path("/tmp/corp-ed-worker.alive")  # noqa: S108 — файл внутри контейнера воркера
+"""Файл-пульс; compose.yaml считает воркер живым, пока файлу меньше 120 с."""
+HEARTBEAT_EVERY = 30.0
 
 # Коды ошибок для материала: видны админу компании. Текст исключения и
 # ответ провайдера — только в логе.
@@ -300,6 +309,19 @@ class SyncWorker:
         logger.info("sync_worker_stopped")
 
 
+async def heartbeat(
+    stop: asyncio.Event, path: Path = HEARTBEAT_PATH, every: float = HEARTBEAT_EVERY
+) -> None:
+    """Обновлять файл-пульс, пока воркер не остановлен."""
+    while not stop.is_set():
+        try:
+            path.touch()
+        except OSError:
+            logger.warning("worker_heartbeat_failed", path=str(path))
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)
+
+
 def _ingest_throttle(redis: Redis | None, rate: float) -> Throttle:
     if redis is None:
         return InMemoryThrottle(rate, max_wait=INGEST_MAX_WAIT)
@@ -338,7 +360,9 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
         sync_worker = SyncWorker(get_session_maker(), sync_service)
         try:
             await asyncio.gather(
-                ingest_worker.run_forever(stop), sync_worker.run_forever(stop)
+                ingest_worker.run_forever(stop),
+                sync_worker.run_forever(stop),
+                heartbeat(stop),
             )
         finally:
             await drain_team_notifier(notifier)

@@ -18,6 +18,11 @@ x-app: &app
     # таблицы оно не создаёт и не удаляет (deploy/postgres/10-app-role.sh).
     - DATABASE_URL=postgresql+asyncpg://corp_ed_app:${APP_DB_PASSWORD}@db:5432/corp_ed
     - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+    # Прокси на хосте ходит в опубликованный порт api, и Docker передаёт
+    # соединение с адреса шлюза подсети (ниже, networks.default), а не с
+    # 127.0.0.1. Верим X-Forwarded-For только от него: иначе все
+    # пользователи для лимитов по IP и журнала аудита — один адрес.
+    - FORWARDED_ALLOW_IPS=172.30.61.1
   restart: unless-stopped
 
 services:
@@ -34,8 +39,11 @@ services:
 
   api:
     <<: *app
+    # Только для TLS-прокси на этом же хосте (deploy/nginx/kronto.conf):
+    # без 127.0.0.1 Docker откроет порт на всех интерфейсах в обход
+    # файрвола, и API будет доступен по HTTP мимо прокси.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -45,6 +53,14 @@ services:
   worker:
     <<: *app
     command: ["python", "-m", "corp_ed.worker"]
+    # HTTP-порта у воркера нет: проверка образа (GET /health) здесь всегда
+    # красная. Живость — по файлу-пульсу, его воркер обновляет раз в 30 с.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(0 if time.time() - os.path.getmtime('/tmp/corp-ed-worker.alive') < 120 else 1)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -58,7 +74,7 @@ services:
       context: frontend
     image: kronto-web:local
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
   db:
@@ -92,6 +108,16 @@ services:
     environment:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     restart: unless-stopped
+
+# Подсеть закреплена, чтобы адрес шлюза (FORWARDED_ALLOW_IPS в x-app) был
+# известен заранее. Если она занята на хосте — сменить обе строки и адрес
+# в FORWARDED_ALLOW_IPS.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.61.0/24
+          gateway: 172.30.61.1
 
 volumes:
   postgres_data:

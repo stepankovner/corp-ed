@@ -86,7 +86,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 cp .env.example .env            # заполнить, см. раздел 3
 docker compose -f compose.yaml up -d --build
 docker compose -f compose.yaml logs migrate   # alembic до head, контейнер завершился с 0
-docker compose -f compose.yaml ps             # api, worker healthy
+docker compose -f compose.yaml ps             # api, worker, web — healthy
 ```
 
 `docker compose -f compose.yaml` — именно так: без `-f` compose добавит
@@ -150,8 +150,15 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
 - **`X-Forwarded-For`** и `X-Forwarded-Proto` прокси ставит сам, а
   входящие от клиента — перезаписывает. uvicorn запущен с
   `--proxy-headers` и верит этим заголовкам только от адресов из
-  `FORWARDED_ALLOW_IPS` (адрес прокси). Без этого лимиты частоты и
-  журнал аудита видели бы адрес прокси или подделанный заголовок.
+  `FORWARDED_ALLOW_IPS`. Прокси на хосте ходит в опубликованный порт, и
+  до контейнера соединение доходит с адреса шлюза подсети compose, а не
+  с `127.0.0.1`, поэтому `compose.yaml` закрепляет подсеть
+  `172.30.61.0/24` и задаёт `FORWARDED_ALLOW_IPS=172.30.61.1` сам (значение
+  из `.env` он перекрывает). Без этого все пользователи всех компаний для
+  API — один адрес: лимит входа (30 попыток за 15 минут на IP) становится
+  общим на сервис, журнал аудита пишет адрес шлюза. Найдено на боевом
+  прогоне 28.09 (`WORKLOG.md`). Если подсеть на хосте занята — сменить
+  её и адрес шлюза в `compose.yaml` вместе.
 - **`ALLOWED_HOSTS`** — боевое имя плюс `127.0.0.1` (HEALTHCHECK
   контейнера идёт через ту же проверку Host).
 - **Лимит тела** на прокси не меньше `MAX_UPLOAD_BYTES` (25 МБ по
@@ -159,14 +166,16 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
   ошибкой. Приложение свои лимиты применяет само (1 МБ JSON, 25 МБ файл).
 - **Таймауты** чтения ответа — не меньше 60 с: ответ модели плюс
   эмбеддинг вопроса.
-- Порт 8000 наружу не публиковать; в `compose.yaml` он привязан к хосту
-  для прокси на том же хосте — при прокси в другой сети заменить на
-  внутреннюю сеть compose.
+- Порты 8000 (`api`) и 8080 (`web`) в `compose.yaml` опубликованы только
+  на `127.0.0.1` — для прокси на этом же хосте. Не менять на `8000:8000`:
+  Docker откроет порт на всех интерфейсах в обход правил ufw, и API будет
+  доступен по HTTP мимо TLS. Прокси в другой сети — отдельная схема, её
+  адрес тогда и есть `FORWARDED_ALLOW_IPS`.
 - **Фронтенд — на том же имени.** `/api/` и `/health` прокси ведёт в
   `api:8000`, всё остальное — в `web:8080`. Один origin: браузеру не
   нужен CORS (`CORS_ORIGINS` пуст), а контейнер `web` не стоит в цепочке
   `X-Forwarded-For` к API. Готовый пример для nginx на хосте —
-  `deploy/nginx/kronto.conf`. Порт 8080 наружу тоже не публиковать.
+  `deploy/nginx/kronto.conf`.
 - **OAuth коннекторов** (`per_user`): `CONNECTOR_OAUTH_CALLBACK_URL` =
   `https://<имя>/api/v1/connectors/oauth/callback`,
   `CONNECTOR_OAUTH_RETURN_URL` = `https://<имя>/sources` — страница
@@ -323,9 +332,19 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
 
 - [ ] `ENVIRONMENT=production`, приложение стартовало (иначе оно
       падает с внятной причиной: `*` в CORS, нет Redis, суперпользователь).
-- [ ] `/docs` и `/openapi.json` отвечают 404.
-- [ ] `curl -I https://…/health` показывает `Strict-Transport-Security`,
-      `X-Content-Type-Options`, `Content-Security-Policy`, нет `Server`.
+- [ ] `docker compose -f compose.yaml ps`: `api`, `worker`, `web` — healthy.
+- [ ] На хосте `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/docs`
+      и то же для `/openapi.json` — 404. Снаружи эти пути уходят во
+      фронтенд и отвечают его страницей — это нормально.
+- [ ] `curl -sS -D - -o /dev/null https://…/health` (GET: на `HEAD` API
+      отвечает 405) показывает `Strict-Transport-Security`,
+      `X-Content-Type-Options`, `Content-Security-Policy`; `Server` — только
+      `nginx` без версии (заголовок внешнего прокси, приложение своего не
+      отдаёт).
+- [ ] `ss -ltn` на хосте: 8000 и 8080 слушаются только на `127.0.0.1`;
+      снаружи `curl http://<ip>:8000/health` не соединяется.
+- [ ] После входа в браузере в `docker compose -f compose.yaml logs api` у
+      запросов адрес клиента настоящий, а не `172.30.61.1`.
 - [ ] Запрос с чужим `Host` получает 400.
 - [ ] `psql -U corp_ed_app -c 'CREATE TABLE t(i int)'` — отказ.
 - [ ] Бэкап снят и восстановлен в тестовой базе хотя бы раз.
