@@ -176,4 +176,6 @@ async def test_refreshed_yandex_tokens_are_saved(
         credentials = secrets.decrypt(saved.credentials)
     assert credentials["access_token"] != ACCESS_TOKEN
     assert credentials["access_token"] in server.access_tokens
-    assert credentials["refresh_token"] == REFRESH_TOKEN
+    # Яндекс выдаёт новый refresh при продлении; старый больше не действует.
+    assert credentials["refresh_token"] != REFRESH_TOKEN
+    assert credentials["refresh_token"] in server.refresh_tokens

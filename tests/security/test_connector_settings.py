@@ -29,6 +29,7 @@ def test_development_allows_plain_http_return_url() -> None:
         "bitrix24_oauth_server",
         "yandex_oauth_server",
         "yandex_disk_api",
+        "yandex_wiki_api",
     ],
 )
 def test_production_requires_https(field: str) -> None:

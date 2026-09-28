@@ -404,6 +404,7 @@ class ConnectorSettings(BaseSettings):
     # адрес клиента; настройки — чтобы тесты и стенд могли их подменить.
     yandex_oauth_server: str = "https://oauth.yandex.ru/"
     yandex_disk_api: str = "https://cloud-api.yandex.net/"
+    yandex_wiki_api: str = "https://api.wiki.yandex.net/"
 
     model_config = SettingsConfigDict(
         env_prefix="CONNECTOR_",
@@ -426,6 +427,7 @@ class ConnectorSettings(BaseSettings):
             "bitrix24_oauth_server",
             "yandex_oauth_server",
             "yandex_disk_api",
+            "yandex_wiki_api",
         ):
             value = getattr(self, name)
             # Браузер сотрудника и секрет приложения ходят по этим адресам:

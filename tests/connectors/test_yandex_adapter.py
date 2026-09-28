@@ -1,5 +1,7 @@
-"""Адаптер Яндекс 360 (Диск): OAuth Яндекс ID, обход папок сотрудника,
-продление токена, скачивание по подписанной ссылке."""
+"""Адаптер Яндекс 360 (Диск): OAuth Яндекс ID, обход папок сотрудника и
+общих дисков организации, продление токена, скачивание с токеном."""
+
+import time
 
 import pytest
 from cryptography.fernet import Fernet
@@ -23,9 +25,13 @@ from tests.connectors.fake_yandex import (
     CLIENT_ID,
     CLIENT_SECRET,
     DISK_API,
-    LOGIN,
+    DOWNLOAD_HOST,
     OAUTH_SERVER,
+    ORG_ID,
     REFRESH_TOKEN,
+    STORAGE_HOST,
+    UID,
+    WIKI_API,
     FakeYandex,
     sample_yandex,
 )
@@ -34,16 +40,20 @@ KEY = Fernet.generate_key().decode()
 MAX_BYTES = 1024 * 1024
 
 
-def settings() -> ConnectorSettings:
+def settings(**overrides: str) -> ConnectorSettings:
     return ConnectorSettings(
         secrets_keys=KEY,
         yandex_oauth_server=OAUTH_SERVER,
         yandex_disk_api=DISK_API,
+        yandex_wiki_api=WIKI_API,
         max_document_bytes=MAX_BYTES,
+        **overrides,
     )  # type: ignore[arg-type]
 
 
-def make_adapter(server: FakeYandex, **overrides: str) -> YandexAdapter:
+def make_adapter(
+    server: FakeYandex, *, config: dict[str, str] | None = None, **overrides: str
+) -> YandexAdapter:
     credentials = {
         "client_secret": CLIENT_SECRET,
         "access_token": ACCESS_TOKEN,
@@ -52,12 +62,17 @@ def make_adapter(server: FakeYandex, **overrides: str) -> YandexAdapter:
         **overrides,
     }
     return build_adapter(
-        {"client_id": CLIENT_ID}, credentials, server.client(), settings()
+        {"client_id": CLIENT_ID, **(config or {})},
+        credentials,
+        server.client(),
+        settings(),
     )
 
 
-async def listed(adapter: YandexAdapter) -> dict[str, RemoteDocument]:
-    return {d.external_id: d async for d in adapter.list(["disk"])}
+async def listed(
+    adapter: YandexAdapter, modules: tuple[str, ...] = ("disk",)
+) -> dict[str, RemoteDocument]:
+    return {d.external_id: d async for d in adapter.list(list(modules))}
 
 
 @pytest.fixture
@@ -68,11 +83,19 @@ def server() -> FakeYandex:
 def test_spec_is_per_user_oauth_without_portal() -> None:
     assert SPEC.kind == KIND == "yandex360"
     assert SPEC.mode is ConnectorMode.PER_USER and SPEC.user_auth is UserAuth.OAUTH
-    assert [m.name for m in SPEC.modules] == ["disk"]
-    assert [f.name for f in SPEC.config_fields] == ["client_id"]
+    assert [m.name for m in SPEC.modules] == ["disk", "shared_disks", "wiki"]
+    assert [f.name for f in SPEC.config_fields] == ["client_id", "org_id", "wiki_roots"]
+    assert [f.required for f in SPEC.config_fields] == [True, False, False]
     assert [f.name for f in SPEC.app_credential_fields] == ["client_secret"]
     assert SPEC.url_field is None
-    assert "cloud_api:disk.read" in SPEC.extra["app_scopes"]
+    assert SPEC.extra["app_scopes"].split(",") == [
+        "cloud_api:disk.read",
+        "cloud_api:disk.info",
+        "wiki:read",
+    ]
+    assert SPEC.config_check is not None
+    assert SPEC.config_check({"client_id": "x", "org_id": "8123456"}) is None
+    assert SPEC.config_check({"client_id": "x", "org_id": "acme"}) == "org_id_invalid"
 
 
 def test_registry_builds_yandex(server: FakeYandex) -> None:
@@ -102,10 +125,11 @@ def test_registry_builds_yandex(server: FakeYandex) -> None:
         registry.build("yandex360", {}, {"access_token": "a"}, server.client())
 
 
-async def test_check_reads_login(server: FakeYandex) -> None:
+async def test_check_reads_uid(server: FakeYandex) -> None:
     adapter = make_adapter(server)
     await adapter.check()
-    assert adapter.external_user_id == LOGIN
+    # uid — идентификатор сотрудника в API Яндекс 360; логин может смениться.
+    assert adapter.external_user_id == UID
 
 
 async def test_dead_token_is_auth_error_after_one_refresh_attempt(
@@ -117,23 +141,49 @@ async def test_dead_token_is_auth_error_after_one_refresh_attempt(
         await make_adapter(server).check()
 
 
-async def test_expired_token_is_refreshed_and_refresh_token_kept(
+async def test_expired_token_is_refreshed_with_a_new_refresh_token(
     server: FakeYandex,
 ) -> None:
+    """«Яндекс OAuth возвращает токен и новый refresh-токен»."""
     server.expired.add(ACCESS_TOKEN)
     adapter = make_adapter(server)
     await adapter.check()
     refreshed = adapter.refreshed_credentials
     assert refreshed is not None
     assert refreshed["access_token"] in server.access_tokens
-    # Яндекс не выдал новый refresh — сохранён прежний.
-    assert refreshed["refresh_token"] == REFRESH_TOKEN
-    server.rotate_refresh = True
-    server.expired.add(refreshed["access_token"])
-    adapter2 = make_adapter(server, access_token=refreshed["access_token"])
-    await adapter2.check()
-    rotated = adapter2.refreshed_credentials
-    assert rotated is not None and rotated["refresh_token"] != REFRESH_TOKEN
+    assert refreshed["refresh_token"] != REFRESH_TOKEN
+    assert refreshed["refresh_token"] in server.refresh_tokens
+
+
+async def test_refresh_without_new_refresh_token_keeps_the_old_one(
+    server: FakeYandex,
+) -> None:
+    server.rotate_refresh = False
+    server.expired.add(ACCESS_TOKEN)
+    adapter = make_adapter(server)
+    await adapter.check()
+    refreshed = adapter.refreshed_credentials
+    assert refreshed is not None and refreshed["refresh_token"] == REFRESH_TOKEN
+
+
+async def test_token_close_to_expiry_is_refreshed_before_the_first_call(
+    server: FakeYandex,
+) -> None:
+    """Refresh-токен живёт столько же, сколько access: после истечения
+    продлевать нечем, поэтому продление — заранее, без ожидания 401."""
+    soon = str(int(time.time()) + 3 * 24 * 3600)
+    adapter = make_adapter(server, expires_at=soon)
+    await adapter.check()
+    grants = [f["grant_type"] for m, f in server.calls if m == "oauth/token"]
+    assert grants == ["refresh_token"]
+    assert adapter.refreshed_credentials is not None
+
+    server.calls.clear()
+    later = str(int(time.time()) + 200 * 24 * 3600)
+    fresh = make_adapter(server, expires_at=later)
+    await fresh.check()
+    assert "oauth/token" not in [m for m, _ in server.calls]
+    assert fresh.refreshed_credentials is None
 
 
 async def test_missing_refresh_token_is_grant_problem_not_app_problem(
@@ -154,9 +204,17 @@ async def test_rate_limit_backs_off(server: FakeYandex) -> None:
         sleeps.append(seconds)
 
     adapter = make_adapter(server)
-    adapter._client._sleep = sleep  # noqa: SLF001 — подмена ожидания в тесте
+    adapter._disk._sleep = sleep  # noqa: SLF001 — подмена ожидания в тесте
     await adapter.check()
     assert sleeps == [1.0, 2.0]
+
+
+async def test_maintenance_is_retryable(server: FakeYandex) -> None:
+    """423 — «Технические работы»: повторить позже, а не бросить."""
+    server.maintenance = True
+    with pytest.raises(AdapterError, match="maintenance") as info:
+        await make_adapter(server).check()
+    assert info.value.retryable
 
 
 async def test_walk_recurses_and_filters(server: FakeYandex) -> None:
@@ -169,6 +227,7 @@ async def test_walk_recurses_and_filters(server: FakeYandex) -> None:
     }
     vacation = documents["ydisk:rid-disk:/Регламенты/Отпуск.txt"]
     assert vacation.kind is RemoteDocumentKind.FILE
+    assert vacation.module == "disk"
     assert vacation.path == "Диск/Регламенты"
     assert vacation.locator == "disk:/Регламенты/Отпуск.txt"
     assert vacation.version == "md5-Отпуск.txt:2026-05-11T09:30:00+00:00"
@@ -184,6 +243,18 @@ async def test_walk_recurses_and_filters(server: FakeYandex) -> None:
     assert root.url == "https://disk.yandex.ru/client/disk/"
     # Закрытая папка пропущена, а не уронила обход.
     assert "ydisk:rid-disk:/Закрытая/Тайна.txt" not in documents
+    # Общие диски — не часть личного Диска.
+    assert not any("vd:" in key for key in documents)
+
+
+async def test_forbidden_root_is_an_error_not_an_empty_disk(
+    server: FakeYandex,
+) -> None:
+    """403 на корне — права приложения или заблокированный Диск: пустой
+    листинг удалил бы все документы сотрудника."""
+    server.forbidden.add("disk:/")
+    with pytest.raises(AdapterError, match="forbidden"):
+        await listed(make_adapter(server))
 
 
 async def test_walk_pages_large_folders(server: FakeYandex) -> None:
@@ -198,7 +269,11 @@ async def test_walk_pages_large_folders(server: FakeYandex) -> None:
     assert offsets == ["0", "200", "400"]
 
 
-async def test_fetch_downloads_from_signed_link(server: FakeYandex) -> None:
+async def test_fetch_downloads_with_the_token_but_not_on_the_storage_host(
+    server: FakeYandex,
+) -> None:
+    """«Скачать файл по полученному адресу, указав тот же OAuth-токен»;
+    после 302 на хранилище токен не уходит."""
     adapter = make_adapter(server)
     documents = await listed(adapter)
     content = await adapter.fetch(
@@ -207,7 +282,10 @@ async def test_fetch_downloads_from_signed_link(server: FakeYandex) -> None:
     assert isinstance(content, FetchedFile)
     assert content.filename == "Отпуск.txt"
     assert content.data == "Отпуск — 28 дней.".encode()
-    assert server.downloads == ["/disk/rid-disk:/Регламенты/Отпуск.txt"]
+    assert server.downloads == [
+        (DOWNLOAD_HOST, f"OAuth {ACCESS_TOKEN}"),
+        (STORAGE_HOST, ""),
+    ]
     # Метаданные не перечитываются: один вызов за ссылкой и скачивание.
     api_calls = [
         p for p, q in server.calls if q.get("path") == "disk:/Регламенты/Отпуск.txt"
@@ -215,7 +293,9 @@ async def test_fetch_downloads_from_signed_link(server: FakeYandex) -> None:
     assert api_calls == ["/v1/disk/resources/download"]
 
 
-async def test_fetch_rejects_oversized_and_foreign_links(server: FakeYandex) -> None:
+async def test_fetch_rejects_oversized_foreign_and_templated_links(
+    server: FakeYandex,
+) -> None:
     adapter = make_adapter(server)
     big = RemoteDocument(
         external_id="ydisk:x",
@@ -229,8 +309,13 @@ async def test_fetch_rejects_oversized_and_foreign_links(server: FakeYandex) -> 
     )
     with pytest.raises(AdapterError, match="document_too_large"):
         await adapter.fetch(big, max_bytes=MAX_BYTES)
-    with pytest.raises(AdapterError, match="download_url_foreign"):
-        await adapter._client.download("https://evil.example.com/f", max_bytes=10)  # noqa: SLF001
+    for foreign in (
+        "https://evil.example.com/f",
+        "https://bucket.yandexcloud.net/f",
+        "http://downloader.dst.yandex.ru/f",
+    ):
+        with pytest.raises(AdapterError, match="download_url_foreign"):
+            await adapter._disk.download(foreign, max_bytes=10)  # noqa: SLF001
     no_locator = RemoteDocument(
         external_id="ydisk:y",
         title="",
@@ -241,6 +326,18 @@ async def test_fetch_rejects_oversized_and_foreign_links(server: FakeYandex) -> 
     )
     with pytest.raises(AdapterError, match="locator_missing"):
         await adapter.fetch(no_locator, max_bytes=MAX_BYTES)
+    server.templated_links = True
+    note = RemoteDocument(
+        external_id="ydisk:rid-disk:/Заметка.txt",
+        title="Заметка.txt",
+        url="",
+        version="",
+        kind=RemoteDocumentKind.FILE,
+        module="disk",
+        locator="disk:/Заметка.txt",
+    )
+    with pytest.raises(AdapterError, match="download_url_templated"):
+        await adapter.fetch(note, max_bytes=MAX_BYTES)
 
 
 async def test_fetch_missing_file_is_error(server: FakeYandex) -> None:
@@ -258,6 +355,55 @@ async def test_fetch_missing_file_is_error(server: FakeYandex) -> None:
         await adapter.fetch(gone, max_bytes=MAX_BYTES)
 
 
+# --- общие диски организации ---------------------------------------------------
+
+
+async def test_shared_disks_need_the_organization_id(server: FakeYandex) -> None:
+    with pytest.raises(AdapterConfigError, match="org_id_missing"):
+        await listed(make_adapter(server), ("disk", "shared_disks"))
+
+
+@pytest.mark.parametrize("relative", [False, True])
+async def test_shared_disks_are_walked_through_their_own_api(
+    server: FakeYandex, relative: bool
+) -> None:
+    server.relative_virtual_paths = relative
+    adapter = make_adapter(server, config={"org_id": ORG_ID})
+    documents = await listed(adapter, ("shared_disks",))
+
+    assert set(documents) == {
+        "ydisk:rid-vd:h4sh:disk:/Политики/Отпуска.md",
+        "ydisk:rid-vd:h4sh:disk:/Приказ.txt",
+    }
+    policy = documents["ydisk:rid-vd:h4sh:disk:/Политики/Отпуска.md"]
+    assert policy.module == "shared_disks"
+    assert policy.path == "Общие диски/Кадры/Политики"
+    # Путь для скачивания — составной, в какой бы форме его ни отдал листинг.
+    assert policy.locator == "vd:h4sh:disk:/Политики/Отпуска.md"
+    assert policy.url.startswith("https://disk.yandex.ru/client/vd/h4sh/")
+    # Диск без права чтения не обходится.
+    assert not any("n0read" in key for key in documents)
+    discovery = [q for p, q in server.calls if p == "/v1/disk/virtual-disks/discovery"]
+    assert discovery == [{"org_id": ORG_ID, "limit": "100", "offset": "0"}]
+
+    content = await adapter.fetch(policy, max_bytes=MAX_BYTES)
+    assert isinstance(content, FetchedFile)
+    assert content.data.startswith("# Отпуска".encode())
+    downloads = [p for p, q in server.calls if q.get("path") == policy.locator]
+    assert downloads[-1] == "/v1/disk/virtual-disks/resources/download"
+
+
+async def test_shared_disk_without_access_is_skipped(server: FakeYandex) -> None:
+    server.forbidden.add("vd:h4sh:disk:/")
+    documents = await listed(
+        make_adapter(server, config={"org_id": ORG_ID}), ("shared_disks",)
+    )
+    assert documents == {}
+
+
+# --- OAuth -------------------------------------------------------------------
+
+
 def test_authorize_url(server: FakeYandex) -> None:
     flow = YandexOAuth(
         server.client(),
@@ -272,7 +418,27 @@ def test_authorize_url(server: FakeYandex) -> None:
         and f"client_id={CLIENT_ID}" in url
         and "state=st" in url
     )
+    # Выбор аккаунта: сотрудник мог быть вошёл в личный Яндекс.
+    assert "force_confirm=yes" in url
+    assert "redirect_uri" not in url
     assert CLIENT_SECRET not in url
+
+
+def test_authorize_url_names_our_callback_when_configured(server: FakeYandex) -> None:
+    """Без redirect_uri Яндекс берёт первый адрес из настроек приложения."""
+    registry = default_registry(
+        settings(
+            oauth_callback_url="https://api.example.ru/api/v1/connectors/oauth/callback"
+        )
+    )
+    flow = registry.build_oauth(
+        "yandex360",
+        {"client_id": CLIENT_ID},
+        {"client_secret": CLIENT_SECRET},
+        server.client(),
+    )
+    url = flow.authorize_url("st")
+    assert "redirect_uri=https%3A%2F%2Fapi.example.ru%2Fapi%2Fv1%2Fconnectors" in url
 
 
 async def test_exchange_and_errors(server: FakeYandex) -> None:
@@ -287,11 +453,18 @@ async def test_exchange_and_errors(server: FakeYandex) -> None:
     assert exchanged.credentials["access_token"] in server.access_tokens
     method, form = server.calls[-1]
     assert method == "oauth/token" and form["grant_type"] == "authorization_code"
+    # Код просрочен или уже использован — вопрос к сотруднику.
     with pytest.raises(AdapterAuthError, match="invalid_grant"):
         await flow.exchange("stale")
-    server.oauth_error = "invalid_client"
-    with pytest.raises(AdapterConfigError, match="invalid_client"):
-        await flow.exchange(AUTH_CODE)
+    for code in (
+        "invalid_client",
+        "invalid_scope",
+        "unauthorized_client",
+        "unsupported_grant_type",
+    ):
+        server.oauth_error = code
+        with pytest.raises(AdapterConfigError, match=code):
+            await flow.exchange(AUTH_CODE)
     server.oauth_error = "weird"
     with pytest.raises(AdapterError, match="oauth_weird"):
         await flow.exchange(AUTH_CODE)
