@@ -450,6 +450,12 @@ class ConnectorSettings(BaseSettings):
     # учётных данных в URL) остаётся; закрепление против DNS rebinding —
     # на политике прокси (core/outbound.py, DEPLOY.md §9a).
     outbound_via_proxy: bool = False
+    # Модули, не проверенные на живой системе, скрыты из каталога и не
+    # принимаются при создании подключения, пока не перечислены здесь
+    # (через запятую). Для живой проверки `cli connector-check` — тот же
+    # флаг. Решение 28.09: «База знаний 2.0» Битрикс24 — до проверки на
+    # портале (RISKS №36).
+    preview_modules: str = ""
 
     # OAuth-приложения (режим per_user, этап 2). callback — публичный
     # адрес ручки GET /api/v1/connectors/oauth/callback: его админ
@@ -513,6 +519,10 @@ class ConnectorSettings(BaseSettings):
         if self.secrets_keys is None:
             return []
         return _split_csv(self.secrets_keys.get_secret_value())
+
+    @property
+    def enabled_preview_modules(self) -> frozenset[str]:
+        return frozenset(_split_csv(self.preview_modules))
 
 
 @lru_cache

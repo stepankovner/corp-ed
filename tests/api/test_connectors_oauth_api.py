@@ -189,11 +189,11 @@ async def test_kinds_describe_bitrix24_oauth(
     assert spec["app_credential_fields"][0]["secret"] is True
     assert [f["name"] for f in spec["config_fields"]] == ["portal", "client_id"]
     assert spec["extra"]["app_scopes"] == "disk,landing"
+    # «База знаний 2.0» не проверена живьём — скрыта (решение 28.09).
     assert [m["name"] for m in spec["modules"]] == [
         "disk",
         "disk_personal",
         "knowledge_base",
-        "knowledge_base_v2",
     ]
 
 

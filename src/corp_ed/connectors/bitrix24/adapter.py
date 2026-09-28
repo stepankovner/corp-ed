@@ -51,8 +51,12 @@ SPEC = KindSpec(
         ModuleSpec(disk_module.MODULE_DISK, "Общий диск и диски групп"),
         ModuleSpec(disk_module.MODULE_DISK_PERSONAL, "Мой диск сотрудника"),
         ModuleSpec(kb_module.MODULE_KNOWLEDGE_BASE, "База знаний"),
+        # Не проверена на живом портале (нет scope note у тестового
+        # вебхука, ссылка ведёт в раздел — RISKS №36): скрыта до проверки.
         ModuleSpec(
-            notes_module.MODULE_KNOWLEDGE_BASE_V2, "База знаний 2.0 (scope note)"
+            notes_module.MODULE_KNOWLEDGE_BASE_V2,
+            "База знаний 2.0 (scope note)",
+            preview=True,
         ),
     ),
     config_fields=(

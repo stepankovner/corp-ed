@@ -64,6 +64,9 @@ def no_pacing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def make_settings(**overrides: Any) -> ConnectorSettings:
+    # Модуль «База знаний 2.0» скрыт до живой проверки; здесь проверяется
+    # сама синхронизация, поэтому он включён.
+    overrides.setdefault("preview_modules", "knowledge_base_v2")
     return ConnectorSettings(
         secrets_keys=KEY, bitrix24_oauth_server=OAUTH_SERVER, **overrides
     )  # type: ignore[arg-type]

@@ -11,7 +11,7 @@ credentials до записи в базу (лишних и незнакомых 
 """
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from corp_ed.connectors.base import AdapterOptions, OAuthFlow, SourceAdapter
@@ -34,6 +34,9 @@ class FieldSpec:
 class ModuleSpec:
     name: str
     title: str
+    preview: bool = False
+    """Не проверен на живой системе: скрыт, пока не включён настройкой
+    CONNECTOR_PREVIEW_MODULES (реестр выбрасывает его из вида)."""
 
 
 class UserAuth(StrEnum):
@@ -109,7 +112,8 @@ class OAuthNotSupportedError(KeyError):
 
 
 class AdapterRegistry:
-    def __init__(self) -> None:
+    def __init__(self, enabled_preview: frozenset[str] = frozenset()) -> None:
+        self._enabled_preview = enabled_preview
         self._specs: dict[str, KindSpec] = {}
         self._factories: dict[str, AdapterFactory] = {}
         self._oauth: dict[str, OAuthFactory] = {}
@@ -124,6 +128,16 @@ class AdapterRegistry:
             raise ValueError(f"connector kind already registered: {spec.kind}")
         if spec.oauth and oauth is None:
             raise ValueError(f"connector kind {spec.kind} declares OAuth without flow")
+        # Непроверенный модуль, который не включили, исчезает из вида
+        # целиком: каталог его не покажет, проверка модулей не примет.
+        spec = replace(
+            spec,
+            modules=tuple(
+                module
+                for module in spec.modules
+                if not module.preview or module.name in self._enabled_preview
+            ),
+        )
         self._specs[spec.kind] = spec
         self._factories[spec.kind] = factory
         if oauth is not None:
@@ -176,7 +190,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.confluence import register as register_confluence
     from corp_ed.connectors.yandex import register as register_yandex
 
-    registry = AdapterRegistry()
+    registry = AdapterRegistry(settings.enabled_preview_modules)
     register_bitrix24(registry, settings)
     register_confluence(registry, settings)
     register_yandex(registry, settings)

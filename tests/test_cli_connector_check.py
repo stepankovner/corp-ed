@@ -19,6 +19,13 @@ def portal() -> FakePortal:
     return sample_portal(host=HOST)
 
 
+@pytest.fixture(autouse=True)
+def preview_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """connector-check — инструмент живой проверки: непроверенные модули
+    включаются тем же флагом, что и в продукте."""
+    monkeypatch.setenv("CONNECTOR_PREVIEW_MODULES", "knowledge_base_v2")
+
+
 def args(
     portal: FakePortal, record: Path | None = None, **overrides: object
 ) -> argparse.Namespace:
@@ -154,3 +161,16 @@ async def test_check_records_confluence_and_yandex_too(
     assert "[disk] ydisk:rid-disk:/Регламенты/Отпуск.txt" in out
     dumped = "\n".join(f.read_text(encoding="utf-8") for f in record_y.glob("*.json"))
     assert dumped and ACCESS_TOKEN not in dumped and CLIENT_SECRET not in dumped
+
+
+async def test_preview_module_needs_the_flag(
+    portal: FakePortal,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CONNECTOR_PREVIEW_MODULES")
+
+    code = await cli._connector_check(args(portal), http=portal.client())
+
+    assert code == 2
+    assert "неизвестные модули knowledge_base_v2" in capsys.readouterr().err
