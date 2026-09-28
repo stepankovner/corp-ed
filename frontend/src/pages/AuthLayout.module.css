@@ -1,0 +1,65 @@
+.screen {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--surface);
+  padding: 16px var(--gutter);
+}
+.top {
+  display: flex;
+  align-items: center;
+  height: 52px;
+  color: var(--ink);
+}
+.center {
+  display: grid;
+  place-items: center;
+  padding: var(--s-6) 0;
+}
+.glass {
+  width: min(460px, 100%);
+  padding: 10px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow-window);
+}
+.window {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+.body {
+  padding: clamp(20px, 4vw, 32px);
+  display: grid;
+  gap: var(--s-5);
+}
+.title {
+  font-size: 1.625rem;
+  letter-spacing: -0.025em;
+}
+.lead {
+  color: var(--muted);
+  margin-top: 8px;
+  font-size: var(--fs-small);
+}
+.form {
+  display: grid;
+  gap: var(--s-4);
+}
+.foot {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  padding: var(--s-3) 0;
+}

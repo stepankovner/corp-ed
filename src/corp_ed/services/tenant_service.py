@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 
 import structlog
+from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import ConflictError, DomainError
@@ -22,6 +23,19 @@ _COMPANY_CODE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # Верхняя граница ловит опечатку в CLI (лишний ноль — десятикратный
 # пул и счёт). Сегмент по досье — 30–300 сотрудников.
 MAX_SEATS = 10_000
+
+
+# Та же проверка, что у входа (LoginRequest.email): почту, которую
+# отвергнет вход, заводить нельзя — администратор не смог бы войти.
+_EMAIL = TypeAdapter(EmailStr)
+
+
+class InvalidAdminEmailError(DomainError):
+    def __init__(self) -> None:
+        super().__init__(
+            "Почта администратора не принимается входом: нужен настоящий "
+            "адрес (зоны .test, .local, .example зарезервированы)"
+        )
 
 
 class InvalidCompanyCodeError(DomainError):
@@ -81,6 +95,10 @@ class TenantService:
         code = company_code.strip().casefold()
         if not _COMPANY_CODE.fullmatch(code):
             raise InvalidCompanyCodeError()
+        try:
+            email = _EMAIL.validate_python(admin_email.strip())
+        except ValidationError as exc:
+            raise InvalidAdminEmailError() from exc
         _check_seats(seats)
         if await self.tenant_repo.get_by_company_code(code) is not None:
             raise ConflictError(f"Компания с кодом '{code}' уже существует")
@@ -98,7 +116,7 @@ class TenantService:
         with tenant_scope(tenant.id):
             admin = await self.user_repo.create(
                 User(
-                    email=admin_email.casefold(),
+                    email=email.casefold(),
                     full_name=admin_full_name,
                     role=UserRole.ADMIN,
                     hashed_password=hash_password(temporary),

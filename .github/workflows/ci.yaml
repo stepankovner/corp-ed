@@ -17,6 +17,7 @@ concurrency:
 
 env:
   UV_VERSION: "0.8.17"
+  NODE_VERSION: "22"
 
 jobs:
   checks:
@@ -86,6 +87,162 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           retention-days: 14
+
+  frontend:
+    name: Frontend lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          (cd .. && uv python install 3.12 && uv sync --frozen --dev)
+
+      # Типы клиента генерируются из схемы бэкенда: расхождение — это
+      # фронт, который собирается, но шлёт не те поля.
+      - name: API types match the backend schema
+        run: npm run check:api
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier
+        run: npm run format:check
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Vitest
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: End-to-end (browser against the API, fake LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: corp_ed
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: corp_ed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    # Режим разработки без ключей Yandex Cloud: ответ — из первой выдержки,
+    # эмбеддинги — «мешок слов» (llm/fake.py). Порог расстояния для них
+    # мягче боевого (.env.example).
+    env:
+      DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:5432/corp_ed
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-only-e2e-secret-key-0123456789abcdef
+      LLM_PROVIDER: fake
+      EMBEDDING_DIM: "768"
+      RAG_CHUNK_TOKENS: "400"
+      RAG_OVERLAP_TOKENS: "50"
+      RAG_FAQ_LIMIT: "5"
+      RAG_FAQ_MAX_DISTANCE: "0.8"
+      RAG_CONTEXT_MAX_TOKENS: "3000"
+      RAG_FAQ_TEMPERATURE: "0"
+      RAG_RETRIEVER: vector
+      RAG_FULLTEXT_WEIGHT: "0.5"
+      E2E_BASE_URL: http://localhost:4173
+      E2E_COMPANY: e2e
+      E2E_ADMIN_EMAIL: admin@kronto-e2e.ru
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          uv python install 3.12 && uv sync --frozen --dev
+          cd frontend && npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Migrate and create a company
+        run: |
+          uv run alembic upgrade head
+          password=$(uv run python -m corp_ed.cli create-tenant --code "$E2E_COMPANY" --name "E2E" \
+            --seats 5 --admin-email "$E2E_ADMIN_EMAIL" | awk '/temporary_password/ {print $2}')
+          test -n "$password"
+          echo "::add-mask::$password"
+          echo "E2E_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: Start API, worker and the built frontend
+        run: |
+          nohup uv run uvicorn corp_ed.main:app --port 8000 > api.log 2>&1 &
+          nohup uv run python -m corp_ed.worker > worker.log 2>&1 &
+          (cd frontend && npm run build && nohup npx vite preview --port 4173 --strictPort > ../web.log 2>&1 &)
+          for i in $(seq 1 60); do
+            curl -sf localhost:8000/health >/dev/null && curl -sf localhost:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::stand did not start"; tail -50 api.log worker.log web.log; exit 1
+
+      - name: Playwright
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Upload report and logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            api.log
+            worker.log
+            web.log
+          retention-days: 7
 
   migrations:
     name: Migrations on a fresh database
@@ -186,3 +343,19 @@ jobs:
           docker run --rm corp-ed:ci alembic --help >/dev/null
           # Песочница парсера: rlimits ставятся в дочернем процессе.
           docker run --rm corp-ed:ci python -c "import resource, corp_ed.ingest.extract_worker"
+
+      - name: Build web image
+        run: docker build -t kronto-web:ci frontend
+
+      - name: Web image smoke test
+        run: |
+          docker run -d --name web -p 8080:8080 kronto-web:ci
+          for i in $(seq 1 20); do curl -sf localhost:8080/healthz >/dev/null && break; sleep 1; done
+          # Не root.
+          test "$(docker exec web id -u)" != "0"
+          # Маршрут приложения отдаёт index.html, с CSP.
+          curl -sf localhost:8080/admin/users | grep -q '<div id="root">'
+          curl -sI localhost:8080/ | grep -qi "content-security-policy: default-src 'self'"
+          # Карты исходников наружу не отдаются.
+          map=$(docker exec web sh -c 'ls /usr/share/nginx/html/assets/*.map | head -1 | xargs basename')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:8080/assets/$map")" = "404"

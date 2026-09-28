@@ -15,6 +15,7 @@
 | `migrate` | `corp-ed` | одноразово при старте: `alembic upgrade head` |
 | `db` | `pgvector/pgvector:pg16` | PostgreSQL + pgvector, единственное хранилище данных |
 | `redis` | `redis:7-alpine` | лимиты частоты и квота эмбеддингов; без диска, без пароля не стартует |
+| `web` | `kronto-web` (`frontend/Dockerfile`) | статика фронтенда: nginx без root, порт 8080, CSP; API не проксирует |
 | cron на хосте | `corp-ed` | раз в сутки `cli purge` и `cli gaps --all` |
 
 Один образ на всё: API, воркер, миграции, CLI. Код и окружение внутри
@@ -149,6 +150,15 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
 - Порт 8000 наружу не публиковать; в `compose.yaml` он привязан к хосту
   для прокси на том же хосте — при прокси в другой сети заменить на
   внутреннюю сеть compose.
+- **Фронтенд — на том же имени.** `/api/` и `/health` прокси ведёт в
+  `api:8000`, всё остальное — в `web:8080`. Один origin: браузеру не
+  нужен CORS (`CORS_ORIGINS` пуст), а контейнер `web` не стоит в цепочке
+  `X-Forwarded-For` к API. Готовый пример для nginx на хосте —
+  `deploy/nginx/kronto.conf`. Порт 8080 наружу тоже не публиковать.
+- **OAuth коннекторов** (`per_user`): `CONNECTOR_OAUTH_CALLBACK_URL` =
+  `https://<имя>/api/v1/connectors/oauth/callback`,
+  `CONNECTOR_OAUTH_RETURN_URL` = `https://<имя>/sources` — страница
+  «Мои источники», она показывает итог подключения.
 
 ---
 
@@ -296,3 +306,7 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
 - [ ] Cron `purge` и `gaps` стоит и отработал вручную.
 - [ ] Прогон `security.yaml` на текущем коммите зелёный.
 - [ ] `python -m corp_ed.stand check` против стенда — все шаги прошли.
+- [ ] `https://<имя>/` открывает вход; `curl -I https://<имя>/` —
+      `Content-Security-Policy: default-src 'self'`; `/assets/*.map` — 404.
+- [ ] Вход администратора в браузере, загрузка документа, ответ со
+      ссылкой на него (то же, что `stand check`, глазами).

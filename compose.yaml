@@ -51,6 +51,16 @@ services:
       redis:
         condition: service_healthy
 
+  # Статика фронтенда (frontend/Dockerfile). Внешний TLS-прокси ведёт /api
+  # и /health на api:8000, остальное — сюда (deploy/nginx/kronto.conf).
+  web:
+    build:
+      context: frontend
+    image: kronto-web:local
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
   db:
     image: pgvector/pgvector:pg16
     environment:

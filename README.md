@@ -44,6 +44,12 @@ uv run uvicorn corp_ed.main:app --reload
 uv run python -m corp_ed.worker           # в отдельном терминале
 ```
 
+### Фронтенд
+
+React + TypeScript в `frontend/`; запуск, проверки и устройство —
+[`frontend/README.md`](frontend/README.md). Для разработки ключи Yandex
+Cloud не нужны: `LLM_PROVIDER=fake`.
+
 ### Первая компания
 
 Компании заводит команда из CLI — HTTP-ручки для этого нет:

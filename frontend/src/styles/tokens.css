@@ -1,0 +1,90 @@
+/* Дизайн-токены Kronto. Меняйте значения здесь — остальные стили ссылаются на них. */
+
+@font-face {
+  font-family: "Onest";
+  src: url("./fonts/onest-var.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/jetbrains-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Цвет */
+  --bg: #ffffff;
+  --surface: #f5f1e8; /* кремовая панель */
+  --surface-2: #faf8f3; /* светлее кремовой, для вложенных блоков */
+  --ink: #16161a; /* основной текст, 18:1 на белом */
+  --muted: #5e5e66; /* вторичный текст, 6.4:1 на белом, 5.7:1 на креме */
+  --accent: #3b34d6; /* ссылки, маркеры источников, фокус, 7.9:1 */
+  --accent-soft: #ecebfd;
+  --line: #e4e1da;
+  --line-strong: #cfcac0;
+  --highlight: #fff1c7; /* подсветка фрагмента в источнике */
+  --warn-bg: #fff6e0;
+  --warn-ink: #7a4f00;
+  --error: #b42318;
+  --grad: linear-gradient(90deg, #f9ddf3 0%, #e6e3fb 50%, #d8eefb 100%);
+
+  /* Шрифты */
+  --font-sans: "Onest", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Шкала 1.25, база 17px */
+  --fs-mono: 0.8125rem; /* 13px */
+  --fs-small: 0.9375rem; /* 15px */
+  --fs-body: 1.0625rem; /* 17px */
+  --fs-lead: clamp(1.1875rem, 1.05rem + 0.5vw, 1.3125rem); /* 19–21px */
+  --fs-h3: clamp(1.3125rem, 1.15rem + 0.6vw, 1.625rem); /* 21–26px */
+  --fs-h2: clamp(1.875rem, 1.3rem + 2.2vw, 3.25rem); /* 30–52px */
+  --fs-h1: clamp(2.125rem, 1.3rem + 4vw, 4.5rem); /* 34–72px */
+
+  --lh-tight: 1.06;
+  --lh-head: 1.12;
+  --lh-body: 1.6;
+
+  /* Отступы */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+  --s-9: 96px;
+  --section-y: clamp(64px, 5vw + 40px, 128px);
+
+  /* Сетка */
+  --container: 1200px;
+  --gutter: clamp(16px, 3vw, 24px);
+  --frame: 1344px; /* ширина «рамки» с вертикальными линиями */
+
+  /* Радиусы */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+
+  --shadow-window: 0 1px 2px rgba(22, 22, 26, 0.04), 0 12px 40px -12px rgba(22, 22, 26, 0.18);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --header-h: 68px;
+}
+
+/* Приложение: высота шапки и ширины рабочих областей. */
+:root {
+  --app-header-h: 60px;
+  --sidebar-w: 248px;
+  --content-max: 1120px;
+  --shadow-pop: 0 1px 2px rgba(22, 22, 26, 0.06), 0 16px 48px -16px rgba(22, 22, 26, 0.28);
+  --ok-bg: #e7f5ec;
+  --ok-ink: #1c6b45;
+  --error-bg: #fdecea;
+}

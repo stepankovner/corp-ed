@@ -1,0 +1,36 @@
+.notice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.notice svg {
+  margin-top: 2px;
+}
+.body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.title {
+  font-weight: 500;
+}
+.info {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+.error {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.ok {
+  background: var(--ok-bg);
+  color: var(--ok-ink);
+}

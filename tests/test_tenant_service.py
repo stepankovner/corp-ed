@@ -18,6 +18,7 @@ from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.tenant_service import (
     MAX_SEATS,
+    InvalidAdminEmailError,
     InvalidCompanyCodeError,
     InvalidSeatsError,
     TenantService,
@@ -64,6 +65,24 @@ async def test_provision_rejects_bad_company_code(
             company_code=code,
             name="X",
             admin_email="a@b.ru",
+            admin_full_name=None,
+            seats=30,
+        )
+
+
+@pytest.mark.parametrize(
+    "email", ["admin@meridian.test", "admin@localhost", "not-an-email", ""]
+)
+async def test_provision_rejects_email_login_would_reject(
+    session: AsyncSession, email: str
+) -> None:
+    """Вход проверяет почту через EmailStr; заведённый с такой почтой
+    администратор не смог бы войти (найдено при проверке фронта)."""
+    with pytest.raises(InvalidAdminEmailError):
+        await _service(session).provision(
+            company_code="acme",
+            name="X",
+            admin_email=email,
             admin_full_name=None,
             seats=30,
         )
