@@ -21,6 +21,7 @@ import sys
 
 import structlog
 
+from corp_ed.core.config import get_ingest_settings
 from corp_ed.ingest.extract import ERROR_MESSAGES, ExtractionError, SourceFormat
 
 logger = structlog.get_logger()
@@ -57,7 +58,10 @@ async def extract_isolated(
     *,
     timeout: float = TIMEOUT_SECONDS,
     cpu_seconds: int | None = None,
+    pdf_layout: bool | None = None,
 ) -> str:
+    if pdf_layout is None:
+        pdf_layout = get_ingest_settings().pdf_layout
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         # -I: без PYTHONPATH, пользовательского site и текущего каталога
@@ -67,6 +71,7 @@ async def extract_isolated(
         "corp_ed.ingest.extract_worker",
         fmt.value,
         str(cpu_seconds or cpu_budget(timeout)),
+        "layout" if pdf_layout else "plain",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

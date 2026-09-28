@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -328,6 +329,31 @@ def get_http_settings() -> HttpSettings:
     return HttpSettings()
 
 
+class IngestSettings(BaseSettings):
+    """Разбор файлов в песочнице (API — загрузка, воркер — коннекторы).
+
+    pdf_layout — модель разметки `pymupdf-layout`, которую `pymupdf4llm`
+    1.28 включает сама, если пакет установлен. С ней разбор PDF в ~5 раз
+    дороже по CPU при том же объёме текста (RISKS №40); качество таблиц и
+    заголовков без неё не сравнивалось. По умолчанию — как было (включена),
+    решение команды и ML — одной переменной INGEST_PDF_LAYOUT=false.
+    """
+
+    pdf_layout: bool = True
+
+    model_config = SettingsConfigDict(
+        env_prefix="INGEST_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_ingest_settings() -> IngestSettings:
+    return IngestSettings()
+
+
 class ConnectorSettings(BaseSettings):
     """Коннекторы к источникам документов (досье 10.5, DECISIONS «Коннекторы»).
 
@@ -406,6 +432,14 @@ class ConnectorSettings(BaseSettings):
             # http здесь — утечка кода авторизации или секрета в открытую.
             if value is not None and not value.startswith("https://"):
                 raise ValueError(f"CONNECTOR_{name.upper()} must be an https:// URL")
+        if self.outbound_via_proxy and not (
+            os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+        ):
+            # Без прокси флаг просто снимает закрепление адреса — защиту
+            # от DNS rebinding (RISKS №39).
+            raise ValueError(
+                "CONNECTOR_OUTBOUND_VIA_PROXY requires HTTPS_PROXY in production"
+            )
         return self
 
     @property

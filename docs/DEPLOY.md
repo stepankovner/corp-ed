@@ -105,6 +105,27 @@ docker compose -f compose.yaml run --rm api python -m corp_ed.cli create-tenant 
 Остальные команды: `set-seats`, `set-not-found-mode`, `suspend-tenant`,
 `resume-tenant`, `reindex`, `purge`, `gaps` — `python -m corp_ed.cli --help`.
 
+**Проверка стенда после развёртывания.** Сквозной сценарий через HTTP API,
+тем же путём, что и фронт: вход администратора, загрузка документа с
+случайным кодовым словом, ожидание индексации воркером, вопрос по
+документу (ответ по документам со ссылкой), вопрос вне документов
+(общий ответ с пометкой или отказ), оценка, расход кредитов, удаление
+документа. Запускается с любой машины с доступом к API; пароль — только
+переменной окружения:
+
+```bash
+CORP_ED_BASE_URL=https://api.acme.example CORP_ED_COMPANY=acme \
+CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
+    python -m corp_ed.stand check
+```
+
+Для первого входа с временным паролем — `CORP_ED_NEW_PASSWORD`, сценарий
+сменит пароль. Код выхода 1, если хоть один шаг не прошёл; шаг
+«индексация» с подсказкой «воркер запущен?» — первый признак, что
+`worker` не работает или не видит Yandex Cloud. Загрузить папку
+документов (демо-корпус для стенда ML):
+`python -m corp_ed.stand upload --dir ./corpus [--titles titles.json]`.
+
 ---
 
 ## 5. Reverse proxy
@@ -274,3 +295,4 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
 - [ ] Бэкап снят и восстановлен в тестовой базе хотя бы раз.
 - [ ] Cron `purge` и `gaps` стоит и отработал вручную.
 - [ ] Прогон `security.yaml` на текущем коммите зелёный.
+- [ ] `python -m corp_ed.stand check` против стенда — все шаги прошли.

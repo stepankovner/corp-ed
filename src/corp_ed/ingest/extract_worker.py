@@ -1,6 +1,6 @@
 """Дочерний процесс извлечения текста.
 
-Запуск: python -I -m corp_ed.ingest.extract_worker FMT [CPU_SECONDS]
+Запуск: python -I -m corp_ed.ingest.extract_worker FMT [CPU_SECONDS [layout|plain]]
 
 Читает файл из stdin, пишет JSON в stdout: {"ok": true, "markdown": …}
 или {"ok": false, "code": …}. Запускается только из ingest/sandbox.py.
@@ -39,13 +39,15 @@ def main() -> int:
     if len(sys.argv) > 2 and sys.argv[2].isdigit():
         cpu_seconds = max(1, int(sys.argv[2]))
     _limit_resources(cpu_seconds)
+    # Окружение песочницы пустое, поэтому настройку передаёт родитель.
+    pdf_layout = not (len(sys.argv) > 3 and sys.argv[3] == "plain")
 
     from corp_ed.ingest.extract import ExtractionError, SourceFormat, extract
 
     try:
         fmt = SourceFormat(sys.argv[1])
         data = sys.stdin.buffer.read()
-        result = {"ok": True, "markdown": extract(fmt, data)}
+        result = {"ok": True, "markdown": extract(fmt, data, pdf_layout=pdf_layout)}
     except ExtractionError as exc:
         result = {"ok": False, "code": exc.code}
     except MemoryError:

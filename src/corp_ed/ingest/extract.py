@@ -131,12 +131,15 @@ def _check_docx_container(data: bytes) -> None:
             raise ExtractionError("archive_too_large")
 
 
-def extract(fmt: SourceFormat, data: bytes) -> str:
-    """Файл → Markdown до preprocess. Вызывать в песочнице (sandbox.py)."""
+def extract(fmt: SourceFormat, data: bytes, *, pdf_layout: bool = True) -> str:
+    """Файл → Markdown до preprocess. Вызывать в песочнице (sandbox.py).
+
+    pdf_layout — модель разметки PDF (INGEST_PDF_LAYOUT, RISKS №40).
+    """
     if fmt is SourceFormat.DOCX:
         markdown = _extract_docx(data)
     elif fmt is SourceFormat.PDF:
-        markdown = _extract_pdf(data)
+        markdown = _extract_pdf(data, layout=pdf_layout)
     else:
         markdown = _decode_text(data)
 
@@ -175,9 +178,13 @@ def _extract_docx(data: bytes) -> str:
     return markdown
 
 
-def _extract_pdf(data: bytes) -> str:
+def _extract_pdf(data: bytes, *, layout: bool = True) -> str:
     import pymupdf
     import pymupdf4llm  # type: ignore[import-untyped]
+
+    # Глобальный переключатель библиотеки: песочница — отдельный процесс
+    # на каждый файл, так что состояние не утекает в другие разборы.
+    pymupdf4llm.use_layout(layout)
 
     try:
         document = pymupdf.open(stream=data, filetype="pdf")  # type: ignore[no-untyped-call]

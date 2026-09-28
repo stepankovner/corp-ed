@@ -5,6 +5,7 @@ import zipfile
 
 import pytest
 
+from corp_ed.core.config import IngestSettings
 from corp_ed.ingest import extract as extract_module
 from corp_ed.ingest.extract import (
     ExtractionError,
@@ -183,6 +184,30 @@ async def test_sandbox_times_out() -> None:
     with pytest.raises(ExtractionError) as info:
         await extract_isolated(SourceFormat.PDF, data, timeout=0.001)
     assert info.value.code == "timeout"
+
+
+def test_pdf_layout_model_can_be_switched_off() -> None:
+    """INGEST_PDF_LAYOUT=false (RISKS №40): тот же текст без модели разметки."""
+    data = samples.pdf([[("Vacation policy", 18), ("Vacation lasts 28 days.", 11)]])
+    with_layout = extract(SourceFormat.PDF, data, pdf_layout=True)
+    plain = extract(SourceFormat.PDF, data, pdf_layout=False)
+    assert "28 days" in with_layout
+    assert "28 days" in plain
+
+
+async def test_sandbox_passes_the_layout_setting_to_the_child() -> None:
+    data = samples.pdf([[("Vacation lasts 28 days.", 11)]])
+    assert "28 days" in await extract_isolated(SourceFormat.PDF, data, pdf_layout=False)
+    assert "28 days" in await extract_isolated(SourceFormat.PDF, data, pdf_layout=True)
+
+
+def test_ingest_settings_keep_the_layout_model_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("INGEST_PDF_LAYOUT", raising=False)
+    assert IngestSettings().pdf_layout is True
+    monkeypatch.setenv("INGEST_PDF_LAYOUT", "false")
+    assert IngestSettings().pdf_layout is False
 
 
 def test_kill_by_cpu_limit_is_reported_as_timeout() -> None:

@@ -33,7 +33,7 @@ api  →  services  →  repositories  →  domain
   ввод-вывод, без базы и без знания о компании.
 - **`prompts`** — промпты (ML).
 - Точки входа: `main.py` (API), `worker.py` (фоновый ингест и
-  синхронизация коннекторов), `cli.py` (команды команды Kronto).
+  синхронизация коннекторов), `cli.py` (команды команды Kronto), `stand.py` (проверка стенда через HTTP API: `python -m corp_ed.stand check`).
 
 Правило целостности: **импорт вверх по цепочке — протечка слоя.**
 `domain` не знает про `sqlalchemy`-сессии, `httpx` и FastAPI; `core` не
@@ -227,7 +227,7 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
   markdownify), pdf (pymupdf4llm, страницы через `\f`); `sandbox.py` —
   дочерний `python -I`, чистое окружение, таймаут, бюджет CPU = таймаут ×
   ядер (разбор многопоточный), убийство по лимиту → `timeout`;
-  `extract_worker.py` — rlimits; `preprocess.py` (ML) — чистка Markdown.
+  `extract_worker.py` — rlimits; модель разметки PDF — `INGEST_PDF_LAYOUT`; `preprocess.py` (ML) — чистка Markdown.
 - `connectors/base.py` — `SourceAdapter` (`check`, `list`, `fetch`),
   `RemoteDocument` (id, версия, ссылка, права словами источника),
   `FetchedFile | FetchedPage`, `AdapterError`/`AdapterAuthError`;

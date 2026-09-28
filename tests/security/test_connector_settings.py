@@ -43,3 +43,30 @@ def test_production_requires_https(field: str) -> None:
 def test_production_requires_secret_keys() -> None:
     with pytest.raises(ValueError, match="CONNECTOR_SECRETS_KEYS"):
         ConnectorSettings(environment="production")  # type: ignore[call-arg]
+
+
+def test_production_refuses_proxy_mode_without_a_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Флаг без прокси — просто снятое закрепление адреса (RISKS №39)."""
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    with pytest.raises(ValueError, match="HTTPS_PROXY"):
+        ConnectorSettings(
+            environment="production", secrets_keys=KEY, outbound_via_proxy=True
+        )  # type: ignore[arg-type]
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+    settings = ConnectorSettings(
+        environment="production", secrets_keys=KEY, outbound_via_proxy=True
+    )  # type: ignore[arg-type]
+    assert settings.outbound_via_proxy is True
+
+
+def test_development_allows_proxy_mode_without_a_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    settings = ConnectorSettings(environment="development", outbound_via_proxy=True)  # type: ignore[call-arg]
+    assert settings.outbound_via_proxy is True
