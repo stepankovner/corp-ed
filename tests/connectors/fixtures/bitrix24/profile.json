@@ -1,0 +1,23 @@
+{
+  "method": "profile",
+  "params": {},
+  "response": {
+    "result": {
+      "ID": "1",
+      "ADMIN": true,
+      "NAME": "Вадим",
+      "LAST_NAME": "Валеев",
+      "PERSONAL_GENDER": "",
+      "TIME_ZONE": ""
+    },
+    "time": {
+      "start": 1722848182.67776,
+      "finish": 1722848182.71787,
+      "duration": 0.0401120185852051,
+      "processing": 0.00115704536437988,
+      "date_start": "2024-08-05T08:56:22+00:00",
+      "date_finish": "2024-08-05T08:56:22+00:00",
+      "operating": 0
+    }
+  }
+}

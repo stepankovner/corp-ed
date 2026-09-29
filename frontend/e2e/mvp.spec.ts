@@ -1,0 +1,223 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * Путь MVP целиком: администратор входит по временному паролю, загружает
+ * документ, получает ответ со ссылкой на источник, заводит сотрудника;
+ * сотрудник входит и спрашивает сам; новый сотрудник присоединяется по
+ * ссылке-приглашению; посетитель записывается на созвон со страницы тарифов.
+ */
+
+function env(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is required (see playwright.config.ts)`);
+  return value;
+}
+
+const company = env("E2E_COMPANY");
+const adminEmail = env("E2E_ADMIN_EMAIL");
+const adminTemporary = env("E2E_ADMIN_PASSWORD");
+const adminPassword = "сквозная проверка админа 2026";
+const employeeEmail = `employee-${Date.now()}@kronto-e2e.ru`;
+const employeePassword = "сквозная проверка сотрудника 2026";
+const codeWord = `пароль-${Math.random().toString(36).slice(2, 8)}`;
+
+const DOCUMENT = `# Положение о командировках
+
+## Суточные
+
+Суточные при командировках по России составляют 700 рублей в сутки.
+Кодовое слово для проверки: ${codeWord}.
+
+## Отчёт
+
+Авансовый отчёт сдаётся в течение трёх рабочих дней после возвращения.
+`;
+
+let employeeTemporary = "";
+let inviteUrl = "";
+const invitedEmail = `invited-${Date.now()}@kronto-e2e.ru`;
+const leadCompany = `E2E Лид ${Date.now()}`;
+
+/** Ближайший будний день после сегодняшнего по Москве, YYYY-MM-DD. */
+function nextWorkday(): string {
+  const moscow = new Date(Date.now() + 3 * 3600_000);
+  const day = new Date(
+    Date.UTC(moscow.getUTCFullYear(), moscow.getUTCMonth(), moscow.getUTCDate()),
+  );
+  do day.setUTCDate(day.getUTCDate() + 1);
+  while (day.getUTCDay() === 0 || day.getUTCDay() === 6);
+  return day.toISOString().slice(0, 10);
+}
+
+async function login(page: Page, email: string, password: string) {
+  await page.goto("/login");
+  await page.getByLabel("Код компании").fill(company);
+  await page.getByLabel("Рабочая почта").fill(email);
+  await page.getByLabel("Пароль").fill(password);
+  await page.getByRole("button", { name: "Войти" }).click();
+  // Дождаться конца входа: переход по адресу раньше прервал бы запрос.
+  await expect(
+    page
+      .getByRole("log", { name: "Переписка" })
+      .or(page.getByRole("heading", { name: "Задайте свой пароль" })),
+  ).toBeVisible();
+}
+
+async function changePassword(page: Page, temporary: string, next: string) {
+  await expect(page.getByRole("heading", { name: "Задайте свой пароль" })).toBeVisible();
+  await page.getByLabel("Временный пароль").fill(temporary);
+  await page.getByLabel("Новый пароль", { exact: true }).fill(next);
+  await page.getByLabel("Повторите новый пароль").fill(next);
+  await page.getByRole("button", { name: "Сохранить пароль" }).click();
+  await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
+}
+
+async function ask(page: Page, question: string) {
+  await page.getByLabel("Ваш вопрос").fill(question);
+  await page.getByRole("button", { name: "Отправить вопрос" }).click();
+}
+
+test.describe.serial("MVP", () => {
+  test("администратор задаёт свой пароль при первом входе", async ({ page }) => {
+    await login(page, adminEmail, adminTemporary);
+    await changePassword(page, adminTemporary, adminPassword);
+    await expect(page.getByRole("link", { name: "Управление" })).toBeVisible();
+  });
+
+  test("сессия переживает перезагрузку, токены — не в localStorage", async ({ page, context }) => {
+    await login(page, adminEmail, adminPassword);
+    // Refresh-токен — httpOnly-cookie только для ручек входа (RISKS №44).
+    const cookies = await context.cookies();
+    const refresh = cookies.find((cookie) => cookie.name === "kronto_refresh");
+    expect(refresh).toMatchObject({ httpOnly: true, sameSite: "Strict", path: "/api/v1/auth" });
+    const stored = await page.evaluate(() => JSON.stringify(Object.entries(localStorage)));
+    expect(stored).not.toContain(refresh?.value ?? "no-cookie");
+    expect(stored).not.toMatch(/eyJ[\w-]+\./); // ни одного JWT
+
+    await page.reload();
+    await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Профиль" }).click();
+    await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await expect(page).toHaveURL(/\/login/);
+    await page.reload();
+    await expect(page.getByLabel("Код компании")).toBeVisible();
+  });
+
+  test("загруженный документ индексируется", async ({ page }) => {
+    await login(page, adminEmail, adminPassword);
+    await page.getByRole("link", { name: "Управление" }).click();
+    await expect(page.getByRole("heading", { name: "Документы" })).toBeVisible();
+    await page.locator("input[type=file]").setInputFiles({
+      name: "komandirovki.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from(DOCUMENT, "utf8"),
+    });
+    const row = page.getByRole("row").filter({ hasText: "komandirovki" });
+    await expect(row.getByText("готов", { exact: true })).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("ответ ссылается на документ и открывает фрагмент", async ({ page }) => {
+    await login(page, adminEmail, adminPassword);
+    await ask(page, `Какое кодовое слово в положении о командировках, суточные ${codeWord}?`);
+    const answer = page.getByRole("log").locator("div").filter({ hasText: codeWord }).last();
+    await expect(answer).toBeVisible({ timeout: 30_000 });
+    await page
+      .getByRole("button", { name: /^Источник 1: / })
+      .first()
+      .click();
+    const panel = page.getByRole("dialog");
+    await expect(panel.getByRole("heading", { name: "komandirovki" })).toBeVisible();
+    await expect(panel.getByText(codeWord)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+
+    await page.getByRole("button", { name: "Ответ помог" }).click();
+    await expect(page.getByText("Спасибо за оценку")).toBeVisible();
+  });
+
+  // Новая компания — в строгом режиме (решение 28.09): честный отказ.
+  // Вид общего ответа проверяют юнит-тесты (App.test.tsx).
+  test("вопрос мимо документов — честный отказ", async ({ page }) => {
+    await login(page, adminEmail, adminPassword);
+    await ask(page, "Какая столица Австралии?");
+    await expect(page.getByText("В документах компании нет ответа на этот вопрос.")).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("администратор заводит сотрудника", async ({ page }) => {
+    await login(page, adminEmail, adminPassword);
+    await page.goto("/admin/users");
+    await page.getByRole("button", { name: "Добавить сотрудника" }).click();
+    await page.getByLabel("Рабочая почта").fill(employeeEmail);
+    await page.getByRole("button", { name: "Добавить", exact: true }).click();
+    const secret = page.getByRole("dialog", { name: "Временный пароль" }).locator("code");
+    employeeTemporary = (await secret.textContent())?.trim() ?? "";
+    expect(employeeTemporary.length).toBeGreaterThan(8);
+    await page.getByRole("button", { name: "Готово" }).click();
+    await expect(page.getByRole("row").filter({ hasText: employeeEmail })).toContainText(
+      "временный пароль",
+    );
+  });
+
+  test("сотрудник входит, спрашивает и не видит управления", async ({ page }) => {
+    await login(page, employeeEmail, employeeTemporary);
+    await changePassword(page, employeeTemporary, employeePassword);
+    await expect(page.getByRole("link", { name: "Управление" })).toHaveCount(0);
+    await ask(page, `Сколько суточных по России? ${codeWord}`);
+    await expect(page.getByRole("button", { name: /^Источник 1: / }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.goto("/admin/users");
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.getByRole("button", { name: "Профиль" }).click();
+    await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await expect(page).toHaveURL(/\/login/);
+  });
+
+  test("администратор создаёт ссылку-приглашение", async ({ page }) => {
+    await login(page, adminEmail, adminPassword);
+    await page.goto("/admin/users");
+    await page.getByRole("button", { name: "Пригласить по ссылке" }).click();
+    await page.getByRole("button", { name: "Создать ссылку" }).click();
+    const link = page.getByRole("dialog", { name: "Ссылка-приглашение" }).locator("code");
+    inviteUrl = (await link.textContent())?.trim() ?? "";
+    expect(inviteUrl).toMatch(new RegExp(`/join/${company}#.{40,}$`));
+    await page.getByRole("button", { name: "Готово" }).click();
+    await expect(page.getByRole("table", { name: "Ссылки-приглашения" })).toContainText(
+      "действует",
+    );
+  });
+
+  test("по ссылке новый сотрудник присоединяется и сразу спрашивает", async ({ page }) => {
+    await page.goto(inviteUrl);
+    await page.getByRole("button", { name: "Присоединиться" }).click();
+    await page.getByLabel("Рабочая почта").fill(invitedEmail);
+    await page.getByLabel("Пароль", { exact: true }).fill(employeePassword);
+    await page.getByLabel("Повторите пароль").fill(employeePassword);
+    await page.getByRole("button", { name: "Присоединиться" }).click();
+    await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Управление" })).toHaveCount(0);
+    await ask(page, `Сколько суточных по России? ${codeWord}`);
+    await expect(page.getByRole("button", { name: /^Источник 1: / }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("посетитель выбирает тариф и записывается на созвон", async ({ page }) => {
+    await page.goto("/pricing");
+    await page.getByRole("link", { name: "Записаться на созвон" }).click();
+    await page.getByLabel("Компания").fill(leadCompany);
+    await page.getByLabel("Сколько сотрудников работают за компьютером").fill("60");
+    await page.getByLabel("Как к вам обращаться").fill("Анна");
+    await page.getByLabel("Телефон").fill("+7 999 123-45-67");
+    await page.getByLabel("Удобная дата").fill(nextWorkday());
+    await page.getByLabel("Удобное время (по Москве)").selectOption({ index: 1 });
+    await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
+    await page.getByRole("button", { name: "Отправить заявку" }).click();
+    await expect(page.getByText("Заявка отправлена")).toBeVisible();
+  });
+});

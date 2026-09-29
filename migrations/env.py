@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -15,7 +16,13 @@ from corp_ed.domain import models  # noqa: F401
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Миграции выполняет владелец схемы, а приложение — роль с одними правами
+# на данные (без DDL, без BYPASSRLS). Если задан MIGRATIONS_DATABASE_URL,
+# alembic подключается под ним; иначе — под DATABASE_URL (разработка).
+config.set_main_option(
+    "sqlalchemy.url",
+    os.environ.get("MIGRATIONS_DATABASE_URL") or get_settings().database_url,
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

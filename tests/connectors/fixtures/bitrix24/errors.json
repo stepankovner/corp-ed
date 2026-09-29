@@ -1,0 +1,22 @@
+{
+  "method": "errors",
+  "params": {},
+  "response": {
+    "expired_token": {"status": 401, "body": {"error": "expired_token", "error_description": "The access token provided has expired"}},
+    "invalid_token": {"status": 401, "body": {"error": "invalid_token", "error_description": "Invalid token"}},
+    "no_auth_found": {"status": 401, "body": {"error": "NO_AUTH_FOUND", "error_description": "Wrong authorization data"}},
+    "invalid_credentials": {"status": 401, "body": {"error": "INVALID_CREDENTIALS", "error_description": "Invalid request credentials"}},
+    "insufficient_scope": {"status": 401, "body": {"error": "insufficient_scope", "error_description": "The request requires higher privileges than provided by the access token"}},
+    "query_limit_exceeded": {"status": 503, "body": {"error": "QUERY_LIMIT_EXCEEDED", "error_description": "Too many requests"}},
+    "operation_time_limit": {"status": 429, "body": {"error": "OPERATION_TIME_LIMIT", "error_description": "Method is blocked due to operation time limit"}},
+    "portal_deleted": {"status": 403, "body": {"error": "PORTAL_DELETED", "error_description": "Portal was deleted"}},
+    "access_denied_401": {"status": 401, "body": {"error": "ACCESS_DENIED", "error_description": "REST is available only on commercial plans"}},
+    "access_denied_method": {"status": 400, "body": {"error": "ACCESS_DENIED", "error_description": "Access denied"}},
+    "method_not_found": {"status": 404, "body": {"error": "ERROR_METHOD_NOT_FOUND", "error_description": "Method not found!"}},
+    "error_not_found": {"status": 400, "body": {"error": "ERROR_NOT_FOUND", "error_description": "Could not find entity with id 1"}},
+    "internal": {"status": 500, "body": {"error": "INTERNAL_SERVER_ERROR", "error_description": "Internal server error"}},
+    "oauth_invalid_grant": {"status": 400, "body": {"error": "invalid_grant", "error_description": "Invalid grant"}},
+    "oauth_invalid_client": {"status": 400, "body": {"error": "invalid_client", "error_description": "Invalid client"}},
+    "oauth_payment_required": {"status": 400, "body": {"error": "PAYMENT_REQUIRED", "error_description": "Payment required"}}
+  }
+}

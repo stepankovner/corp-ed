@@ -1,0 +1,48 @@
+.wrap {
+  /* Скрытые подписи колонок (.visually-hidden, position: absolute) иначе
+     отсчитываются от страницы и расширяют её на телефоне мимо прокрутки. */
+  position: relative;
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+}
+.table {
+  width: 100%;
+  font-size: var(--fs-small);
+}
+.table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table tbody tr:hover td {
+  background: var(--surface-2);
+}
+.actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.nowrap {
+  white-space: nowrap;
+}
+.sub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  margin-top: 2px;
+}

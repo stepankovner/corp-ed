@@ -1,0 +1,163 @@
+.shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+/* Шапка лендинга: липкая, полупрозрачная, с размытием. */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: var(--app-header-h);
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding-inline: var(--gutter);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink);
+  text-decoration: none;
+  min-width: 0;
+}
+.company {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+}
+.nav {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--fs-small);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+  transition:
+    color 0.15s var(--ease),
+    background-color 0.15s var(--ease);
+}
+.navLink:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+.navLink[aria-current="page"],
+.navLink.active {
+  color: var(--ink);
+  background: var(--surface);
+}
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* меню пользователя */
+.menuWrap {
+  position: relative;
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.avatar:hover,
+.avatar[aria-expanded="true"] {
+  border-color: var(--ink);
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 280px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  padding: 8px;
+  z-index: 60;
+}
+.menuHead {
+  padding: 8px 10px 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 6px;
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+.menuName {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: var(--fs-small);
+  text-align: left;
+}
+.menuItem:hover {
+  background: var(--surface);
+  text-decoration: none;
+}
+
+@media (max-width: 860px) {
+  .company {
+    display: none;
+  }
+  .navLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .navLink {
+    padding: 8px 10px;
+  }
+  .inner {
+    gap: var(--s-3);
+  }
+}
+/* Плашка лимита для администратора — под шапкой, на всю ширину. */
+.banner {
+  padding: var(--s-3) var(--gutter) 0;
+}
