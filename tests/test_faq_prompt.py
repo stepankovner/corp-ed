@@ -210,3 +210,16 @@ def test_prompt_forbids_transferring_another_programs_terms() -> None:
     # программы на другую — правило 4 и пример запрещают это.
     assert "не переноси её условия" in system.content
     assert "по программе „Развитие“" in system.content
+
+
+def test_general_prompt_leaves_advice_to_the_backend() -> None:
+    # faq-v2.5 (ML-3): совет «Уточните у руководителя…» дописывает код
+    # бэкенда, модель его не повторяет.
+    from corp_ed.prompts.faq import PROMPT_VERSION, build_general_messages
+
+    system = build_general_messages("Сколько дней отпуска?")[0].content
+
+    assert PROMPT_VERSION == "faq-v2.5"
+    assert "посоветуй уточнить" not in system
+    assert "Не советуй, куда или к кому обратиться" in system
+    assert "определяется документами компании" in system
