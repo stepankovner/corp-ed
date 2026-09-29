@@ -175,7 +175,7 @@ src/corp_ed/
   main.py         API · worker.py фоновые задачи · cli.py команды · stand.py проверка стенда
 frontend/         интерфейс (React + TypeScript)
 migrations/       Alembic
-deploy/           роль базы, конфигурация прокси
+deploy/           роль базы, прокси, скрипты тестового стенда
 eval/             замеры качества поиска и ответов (ML)
 tests/            1 000+ тестов, в том числе tests/security/
 docs/             документация, см. ниже
