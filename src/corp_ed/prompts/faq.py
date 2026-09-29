@@ -57,6 +57,7 @@ from typing import Protocol
 
 from corp_ed.domain.split import format_breadcrumbs
 from corp_ed.llm.types import Message, Role
+from corp_ed.prompts.dialogue import Turn, format_history
 
 PROMPT_VERSION = "faq-v2.4"
 """Версия промпта. Бэкенду — писать в qa_log рядом с ответом, чтобы
@@ -171,15 +172,39 @@ _GENERAL_SYSTEM_PROMPT = f"""\
 5. Если не знаешь ответа, так и скажи."""
 
 
-def build_faq_messages(question: str, matches: Sequence[SourceChunk]) -> list[Message]:
+def build_faq_messages(
+    question: str,
+    matches: Sequence[SourceChunk],
+    *,
+    history: Sequence[Turn] = (),
+    standalone_question: str = "",
+) -> list[Message]:
     """Сообщения для ответа по найденным выдержкам.
 
     Порядок matches сохраняется: номер [n] в ответе модели — это позиция
     выдержки в matches, начиная с 1. Бэкенд должен отдавать источники
     в ответе API в том же порядке.
+
+    Память диалога (ML-2, dialogue-v1): history — прошлые пары реплик,
+    standalone_question — вопрос после parse_condensed. Без истории
+    сообщения байт в байт те же, что в faq-v2.4.
     """
     excerpts = _EXCERPT_SEPARATOR.join(
         _format_excerpt(number, match) for number, match in enumerate(matches, start=1)
+    )
+    dialogue = format_history(history) if history else ""
+    context = (
+        "Начало диалога — только чтобы понять вопрос; факты бери из "
+        f"выдержек, не из прошлых ответов:\n{dialogue}\n\n"
+        if dialogue
+        else ""
+    )
+    asked = question.strip()
+    standalone = standalone_question.strip()
+    clarified = (
+        f" (то есть: {standalone})"
+        if dialogue and standalone and standalone != asked
+        else ""
     )
     return [
         Message(role=Role.SYSTEM, content=_SYSTEM_PROMPT),
@@ -188,7 +213,8 @@ def build_faq_messages(question: str, matches: Sequence[SourceChunk]) -> list[Me
             content=(
                 "Выдержки из документов компании:\n\n"
                 f"{excerpts}\n\n"
-                f"Вопрос сотрудника: {question.strip()}\n\n"
+                f"{context}"
+                f"Вопрос сотрудника: {asked}{clarified}\n\n"
                 f"{_ANSWER_REMINDER}"
             ),
         ),
