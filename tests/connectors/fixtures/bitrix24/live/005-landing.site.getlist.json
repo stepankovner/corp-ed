@@ -1,0 +1,33 @@
+{
+  "method": "landing.site.getlist",
+  "params": {
+    "scope": "KNOWLEDGE",
+    "params": {
+      "select": [
+        "ID",
+        "TITLE",
+        "CODE",
+        "ACTIVE",
+        "DATE_MODIFY"
+      ],
+      "filter": {
+        "TYPE": "KNOWLEDGE",
+        "ACTIVE": "Y",
+        "DELETED": "N"
+      }
+    }
+  },
+  "response": {
+    "result": [],
+    "time": {
+      "start": 1790370916,
+      "finish": 1790370916.874292,
+      "duration": 0.8742918968200684,
+      "processing": 0,
+      "date_start": "2026-09-26T00:15:16+03:00",
+      "date_finish": "2026-09-26T00:15:16+03:00",
+      "operating_reset_at": 1790371516,
+      "operating": 0
+    }
+  }
+}

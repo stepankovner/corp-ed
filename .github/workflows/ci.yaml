@@ -5,9 +5,25 @@ on:
   pull_request:
     branches: [main]
 
+# Токен workflow — только чтение. Ни одному шагу здесь не нужно писать в
+# репозиторий; утёкший токен с правом записи — это подмена кода.
+permissions:
+  contents: read
+
+# Новый push в ту же ветку отменяет ещё бегущий прогон.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.8.17"
+  NODE_VERSION: "22"
+
 jobs:
   checks:
+    name: Lint, types, tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -23,15 +39,26 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Лимиты частоты и квота эмбеддингов: тесты Redis-реализаций
+      # пропускаются без TEST_REDIS_URL, а пропуск в CI — дыра.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
         with:
-          version: "latest"
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
 
       - name: Set up Python
         run: uv python install 3.12
@@ -39,7 +66,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --dev
 
-      - name: Run ruff (linter)
+      - name: Run ruff (linter, incl. bandit rules)
         run: uv run ruff check
 
       - name: Run ruff (formatter check)
@@ -48,7 +75,297 @@ jobs:
       - name: Run mypy (type checker)
         run: uv run mypy
 
-      - name: Run pytest
+      - name: Run pytest with coverage threshold
         env:
           TEST_DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:5432/corp_ed_test
-        run: uv run pytest -q
+          TEST_REDIS_URL: redis://localhost:6379/15
+        run: uv run pytest -q --cov --cov-report=term --cov-report=xml
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          retention-days: 14
+
+  frontend:
+    name: Frontend lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          (cd .. && uv python install 3.12 && uv sync --frozen --dev)
+
+      # Типы клиента генерируются из схемы бэкенда: расхождение — это
+      # фронт, который собирается, но шлёт не те поля.
+      - name: API types match the backend schema
+        run: npm run check:api
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier
+        run: npm run format:check
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Vitest
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  e2e:
+    name: End-to-end (browser against the API, fake LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: corp_ed
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: corp_ed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    # Режим разработки без ключей Yandex Cloud: ответ — из первой выдержки,
+    # эмбеддинги — «мешок слов» (llm/fake.py). Порог расстояния для них
+    # мягче боевого (.env.example).
+    env:
+      DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:5432/corp_ed
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-only-e2e-secret-key-0123456789abcdef
+      LLM_PROVIDER: fake
+      EMBEDDING_DIM: "768"
+      RAG_CHUNK_TOKENS: "400"
+      RAG_OVERLAP_TOKENS: "50"
+      RAG_FAQ_LIMIT: "5"
+      RAG_FAQ_MAX_DISTANCE: "0.8"
+      RAG_CONTEXT_MAX_TOKENS: "3000"
+      RAG_FAQ_TEMPERATURE: "0"
+      RAG_RETRIEVER: vector
+      RAG_FULLTEXT_WEIGHT: "0.5"
+      # Запись на созвон открыта тестовой политикой (в бою — LEADS_* стенда).
+      LEADS_ENABLED: "true"
+      LEADS_POLICY_URL: https://kronto.example/privacy
+      LEADS_POLICY_VERSION: e2e
+      E2E_BASE_URL: http://localhost:4173
+      E2E_COMPANY: e2e
+      E2E_ADMIN_EMAIL: admin@kronto-e2e.ru
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          uv python install 3.12 && uv sync --frozen --dev
+          cd frontend && npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Migrate and create a company
+        run: |
+          uv run alembic upgrade head
+          # Временный пароль задаёт оператор, CLI его не печатает (RISKS №42).
+          password="E2e-$(openssl rand -hex 16)"
+          echo "::add-mask::$password"
+          printf '%s\n' "$password" | uv run python -m corp_ed.cli create-tenant \
+            --code "$E2E_COMPANY" --name "E2E" --seats 5 --admin-email "$E2E_ADMIN_EMAIL" \
+            --admin-password-stdin
+          echo "E2E_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: Start API, worker and the built frontend
+        run: |
+          nohup uv run uvicorn corp_ed.main:app --port 8000 > api.log 2>&1 &
+          nohup uv run python -m corp_ed.worker > worker.log 2>&1 &
+          (cd frontend && npm run build && nohup npx vite preview --port 4173 --strictPort > ../web.log 2>&1 &)
+          for i in $(seq 1 60); do
+            curl -sf localhost:8000/health >/dev/null && curl -sf localhost:4173/ >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::stand did not start"; tail -50 api.log worker.log web.log; exit 1
+
+      - name: Playwright
+        working-directory: frontend
+        run: npx playwright test
+
+      # Заявка с формы дошла до команды: CLI видит её среди новых.
+      - name: Lead reaches the team CLI
+        run: uv run python -m corp_ed.cli leads list | grep -q "E2E Лид"
+
+      - name: Upload report and logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            api.log
+            worker.log
+            web.log
+          retention-days: 7
+
+  migrations:
+    name: Migrations on a fresh database
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: corp_ed
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: corp_ed
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PGHOST: localhost
+      PGUSER: corp_ed
+      PGPASSWORD: postgres
+      # Миграции идут под владельцем схемы БЕЗ суперпользователя — как в
+      # бою. Под суперпользователем FORCE RLS не действует, и миграция,
+      # которая под ним проходит, может молча не увидеть ни одной строки
+      # у настоящего владельца (docs/DECISIONS.md, ловушка RLS).
+      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://corp_ed_owner:owner@localhost:5432/corp_ed_migrations
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv python install 3.12 && uv sync --frozen --dev
+
+      - name: Create a non-superuser schema owner
+        run: |
+          psql -v ON_ERROR_STOP=1 -d corp_ed <<'SQL'
+          CREATE ROLE corp_ed_owner LOGIN PASSWORD 'owner'
+              NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+          CREATE DATABASE corp_ed_migrations OWNER corp_ed_owner;
+          SQL
+          # Расширение ставит администратор базы, не миграция (нужен superuser).
+          psql -v ON_ERROR_STOP=1 -d corp_ed_migrations -c "CREATE EXTENSION IF NOT EXISTS vector"
+
+      - name: Upgrade, check drift, downgrade, upgrade
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Application role has data access only
+        # Скрипт запускает администратор базы (в Docker — POSTGRES_USER при
+        # первой инициализации тома): создать роль владелец схемы не вправе.
+        env:
+          POSTGRES_USER: corp_ed
+          POSTGRES_DB: corp_ed_migrations
+          APP_DB_PASSWORD: app
+        run: |
+          sh deploy/postgres/10-app-role.sh
+          export PGUSER=corp_ed_app PGPASSWORD=app PGDATABASE=corp_ed_migrations
+          # Данные — можно.
+          psql -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM tenants"
+          # DDL — нельзя.
+          if psql -c "CREATE TABLE should_fail (id int)"; then
+            echo "::error::application role can create tables"; exit 1
+          fi
+          # Ни SUPERUSER, ни BYPASSRLS.
+          test "$(psql -tAc "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")" = "f"
+
+  image:
+    name: Docker image builds and runs unprivileged
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build image
+        run: docker build -t corp-ed:ci .
+
+      - name: Image smoke test
+        run: |
+          # Не root.
+          test "$(docker run --rm corp-ed:ci id -u)" != "0"
+          # Приложение импортируется, CLI и alembic на месте.
+          docker run --rm -e SECRET_KEY=ci-only-secret-key-0123456789abcdef -e DATABASE_URL=postgresql+asyncpg://x:x@db/x \
+            corp-ed:ci python -c "import corp_ed.main, corp_ed.worker, corp_ed.cli"
+          docker run --rm corp-ed:ci python -m corp_ed.cli --help >/dev/null
+          docker run --rm corp-ed:ci alembic --help >/dev/null
+          # Песочница парсера: rlimits ставятся в дочернем процессе.
+          docker run --rm corp-ed:ci python -c "import resource, corp_ed.ingest.extract_worker"
+
+      - name: Build web image
+        run: docker build -t kronto-web:ci frontend
+
+      - name: Web image smoke test
+        run: |
+          docker run -d --name web -p 8080:8080 kronto-web:ci
+          for i in $(seq 1 20); do curl -sf localhost:8080/healthz >/dev/null && break; sleep 1; done
+          # Не root.
+          test "$(docker exec web id -u)" != "0"
+          # Маршрут приложения отдаёт index.html, с CSP.
+          curl -sf localhost:8080/admin/users | grep -q '<div id="root">'
+          curl -sI localhost:8080/ | grep -qi "content-security-policy: default-src 'self'"
+          # Карты исходников наружу не отдаются.
+          map=$(docker exec web sh -c 'ls /usr/share/nginx/html/assets/*.map | head -1 | xargs basename')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:8080/assets/$map")" = "404"

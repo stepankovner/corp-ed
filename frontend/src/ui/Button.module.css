@@ -1,0 +1,82 @@
+/* Кнопки лендинга (.btn, .btn--dark, .btn--ghost, .btn--sm). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 0.2s var(--ease),
+    color 0.2s var(--ease),
+    border-color 0.2s var(--ease),
+    transform 0.2s var(--ease);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn:hover {
+  text-decoration: none;
+}
+
+.dark {
+  background: var(--ink);
+  color: #fff;
+}
+.dark:hover:not(:disabled) {
+  background: #2c2c33;
+}
+
+.ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.ghost:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.danger {
+  background: transparent;
+  color: var(--error);
+  border-color: #efc6c1;
+}
+.danger:hover:not(:disabled) {
+  border-color: var(--error);
+}
+
+.link {
+  padding: 0 4px;
+  min-height: 40px;
+  color: var(--accent);
+  background: none;
+}
+.link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.sm {
+  min-height: 40px;
+  padding: 0 18px;
+  font-size: var(--fs-small);
+}
+.xs {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+  gap: 6px;
+}
+.block {
+  width: 100%;
+}

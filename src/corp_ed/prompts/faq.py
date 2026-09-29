@@ -40,6 +40,16 @@ v2.4 (25.09): решение Р1 (Артём) — когда в документ
 двусмысленно (общая информация — из документов?), теперь источник назван
 прямо: GENERAL_ANSWER_PREFIX. Промпт ответа по выдержкам не менялся.
 
+v2.5 (29.09, вопрос бэкенда ML-3): с 28.09 совет «Уточните у
+руководителя или в профильном отделе» дописывает код бэкенда
+(`finalize_general_answer`), а правило 4 общего ответа просило модель
+советовать то же самое — совет выходил дважды. Замер на 37 вопросах вне
+документов (Flash, T = 0): просто убрать совет из правила 4 — не
+помогает, модель советует сама (дубль по смыслу 5 из 37, как у v2.4);
+явное правило 6 «не советуй, куда обратиться, совет добавится отдельно»
+— 1 из 37. Пометка в первой строке — 37/37, «правила компании» — 0/37 во
+всех вариантах. Промпт ответа по выдержкам не менялся.
+
 Режим «не найдено» (Р1, решено 25.09 — общий ответ с пометкой):
 - ни одна выдержка не прошла порог → build_general_messages;
 - выдержки были, но модель ответила NOT_FOUND_ANSWER (is_not_found) →
@@ -57,8 +67,9 @@ from typing import Protocol
 
 from corp_ed.domain.split import format_breadcrumbs
 from corp_ed.llm.types import Message, Role
+from corp_ed.prompts.dialogue import Turn, format_history
 
-PROMPT_VERSION = "faq-v2.4"
+PROMPT_VERSION = "faq-v2.5"
 """Версия промпта. Бэкенду — писать в qa_log рядом с ответом, чтобы
 результаты eval и отзывы 👍/👎 можно было привязать к версии промпта."""
 
@@ -166,20 +177,45 @@ _GENERAL_SYSTEM_PROMPT = f"""\
 3. Не выдавай общие сведения за правила этой компании: не пиши «в компании \
 принято», «по регламенту», «вам положено».
 4. Если вопрос о внутренних правилах, сроках, суммах или доступах именно \
-этой компании, скажи, что это определяется документами компании, и \
-посоветуй уточнить у ответственных сотрудников.
-5. Если не знаешь ответа, так и скажи."""
+этой компании, скажи, что это определяется документами компании.
+5. Если не знаешь ответа, так и скажи.
+6. Не советуй, куда или к кому обратиться: такой совет будет добавлен \
+к ответу отдельно."""
 
 
-def build_faq_messages(question: str, matches: Sequence[SourceChunk]) -> list[Message]:
+def build_faq_messages(
+    question: str,
+    matches: Sequence[SourceChunk],
+    *,
+    history: Sequence[Turn] = (),
+    standalone_question: str = "",
+) -> list[Message]:
     """Сообщения для ответа по найденным выдержкам.
 
     Порядок matches сохраняется: номер [n] в ответе модели — это позиция
     выдержки в matches, начиная с 1. Бэкенд должен отдавать источники
     в ответе API в том же порядке.
+
+    Память диалога (ML-2, dialogue-v1): history — прошлые пары реплик,
+    standalone_question — вопрос после parse_condensed. Без истории
+    сообщения байт в байт те же, что в faq-v2.4.
     """
     excerpts = _EXCERPT_SEPARATOR.join(
         _format_excerpt(number, match) for number, match in enumerate(matches, start=1)
+    )
+    dialogue = format_history(history) if history else ""
+    context = (
+        "Начало диалога — только чтобы понять вопрос; факты бери из "
+        f"выдержек, не из прошлых ответов:\n{dialogue}\n\n"
+        if dialogue
+        else ""
+    )
+    asked = question.strip()
+    standalone = standalone_question.strip()
+    clarified = (
+        f" (то есть: {standalone})"
+        if dialogue and standalone and standalone != asked
+        else ""
     )
     return [
         Message(role=Role.SYSTEM, content=_SYSTEM_PROMPT),
@@ -188,7 +224,8 @@ def build_faq_messages(question: str, matches: Sequence[SourceChunk]) -> list[Me
             content=(
                 "Выдержки из документов компании:\n\n"
                 f"{excerpts}\n\n"
-                f"Вопрос сотрудника: {question.strip()}\n\n"
+                f"{context}"
+                f"Вопрос сотрудника: {asked}{clarified}\n\n"
                 f"{_ANSWER_REMINDER}"
             ),
         ),

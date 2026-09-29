@@ -1,0 +1,18 @@
+# Разработка. Compose подхватывает этот файл автоматически:
+# `docker compose up` = compose.yaml + этот файл. В бою — не копировать.
+services:
+  api:
+    volumes:
+      - ./src:/app/src:ro
+    command: >
+      uvicorn corp_ed.main:app --host 0.0.0.0 --port 8000 --reload
+      --proxy-headers --no-server-header
+
+  worker:
+    volumes:
+      - ./src:/app/src:ro
+
+  db:
+    # Наружу — только в разработке (alembic и psql с хоста).
+    ports:
+      - "5432:5432"

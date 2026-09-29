@@ -1,3 +1,5 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 from uuid import UUID
 
@@ -16,3 +18,20 @@ def require_tenant() -> UUID:
     if tenant_id is None:
         raise TenantContextMissingError("В контексте отсутствует tenant_id")
     return tenant_id
+
+
+@contextmanager
+def tenant_scope(tenant_id: UUID) -> Iterator[UUID]:
+    """Выставить тенанта на время блока и вернуть прежнее значение после.
+
+    Для кода, где тенант становится известен не из подписанного токена:
+    логин (тенант по company_code), обновление токена (тенант из записи
+    refresh-токена), CLI, фоновые задачи. Без сброса значение утекало бы
+    дальше по коду той же корутины — так было в AuthService.login
+    (RISKS.md, пункт 5).
+    """
+    token = current_tenant.set(tenant_id)
+    try:
+        yield tenant_id
+    finally:
+        current_tenant.reset(token)

@@ -1,0 +1,36 @@
+{
+  "method": "disk.file.get",
+  "params": {"id": "9043"},
+  "response": {
+    "result": {
+      "ID": "9043",
+      "NAME": "Тест.docx",
+      "CODE": null,
+      "STORAGE_ID": "1357",
+      "TYPE": "file",
+      "PARENT_ID": "8996",
+      "DELETED_TYPE": "0",
+      "GLOBAL_CONTENT_VERSION": "2",
+      "FILE_ID": "32969",
+      "SIZE": "21668",
+      "CREATE_TIME": "2026-02-16T12:52:05+03:00",
+      "UPDATE_TIME": "2026-02-16T12:56:20+03:00",
+      "DELETE_TIME": null,
+      "CREATED_BY": "1269",
+      "UPDATED_BY": "1269",
+      "DELETED_BY": "0",
+      "DOWNLOAD_URL": "https://test.bitrix24.ru/rest/download.json?auth=%3Credacted%3E&token=%3Credacted%3E",
+      "DETAIL_URL": "https://test.bitrix24.ru/company/personal/user/1269/disk/file/Папка/Папка/Тест.docx"
+    },
+    "time": {
+      "start": 1771259148,
+      "finish": 1771259149.01976,
+      "duration": 1.0197598934173584,
+      "processing": 0,
+      "date_start": "2026-02-16T13:25:48+03:00",
+      "date_finish": "2026-02-16T13:25:49+03:00",
+      "operating_reset_at": 1771259749,
+      "operating": 0
+    }
+  }
+}

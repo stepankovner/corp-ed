@@ -1,0 +1,83 @@
+/* Поля формы лендинга (.field). */
+.field {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.label {
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+.optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+.control {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 1rem;
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+textarea.control {
+  padding: 12px 14px;
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.5;
+}
+select.control {
+  appearance: none;
+  padding-right: 40px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235e5e66' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+.control::placeholder {
+  color: #6b6b73;
+}
+.control:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.control[aria-invalid="true"] {
+  border-color: var(--error);
+}
+.control[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px #fde4e1;
+}
+.control:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.error {
+  color: var(--error);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+  flex: none;
+}

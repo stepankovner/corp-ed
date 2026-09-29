@@ -48,5 +48,7 @@ scripts/
 # на них. Репозиторий публичный — такие файлы только здесь.
 eval/private/
 
+# Снимок локального Redis (redis-server, запущенный из корня репозитория)
+dump.rdb
 # кэш стенда: эмбеддинги и переформулировки (eval.bench, eval.multi_query)
 eval/.cache/

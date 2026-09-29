@@ -10,10 +10,13 @@ from corp_ed.api.v1.dependencies import (
     get_llm_gateway,
     get_rag_settings,
 )
+from corp_ed.api.v1.session_cookie import REFRESH_COOKIE
 from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
+from corp_ed.core.rate_limit import InMemoryRateLimiter
+from corp_ed.core.security import create_access_token, hash_password
 from corp_ed.core.tenant_context import current_tenant
-from corp_ed.domain.models import User
+from corp_ed.domain.models import Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.main import app
@@ -37,16 +40,24 @@ async def api(
         yield session
 
     settings = RagSettings(
-        chunk_size=20,
-        chunk_overlap=0,
+        chunk_tokens=5,
+        overlap_tokens=0,
         faq_limit=5,
         faq_max_distance=0.6,
+        context_max_tokens=3000,
+        faq_temperature=0.0,
+        retriever="vector",
+        fulltext_weight=0.5,
     )
 
     app.dependency_overrides[get_session] = test_session
     app.dependency_overrides[get_embedding_gateway] = lambda: fake_embeddings
     app.dependency_overrides[get_llm_gateway] = lambda: fake_llm
     app.dependency_overrides[get_rag_settings] = lambda: settings
+    # lifespan в тестах не запускается (ASGITransport его не вызывает),
+    # поэтому лимитер ставится здесь — свежий на каждый тест, чтобы
+    # счётчики одного теста не влияли на другой.
+    app.state.rate_limiter = InMemoryRateLimiter()
 
     transport = httpx.ASGITransport(app=app)
 
@@ -61,18 +72,88 @@ async def api(
 
 
 @pytest.fixture
-def manager_client(
+def admin_client(
     api: httpx.AsyncClient,
-    manager: User,
+    admin: User,
 ) -> httpx.AsyncClient:
-    app.dependency_overrides[get_current_user] = _as(manager)
+    app.dependency_overrides[get_current_user] = _as(admin)
     return api
 
 
 @pytest.fixture
-def intern_client(
+def employee_client(
     api: httpx.AsyncClient,
-    intern: User,
+    employee: User,
 ) -> httpx.AsyncClient:
-    app.dependency_overrides[get_current_user] = _as(intern)
+    app.dependency_overrides[get_current_user] = _as(employee)
     return api
+
+
+PASSWORD = "correct-horse-battery-staple"
+
+
+@pytest.fixture
+async def account(session: AsyncSession, tenant_ctx: Tenant) -> User:
+    """Сотрудник с настоящим паролем — для тестов входа без подмены."""
+    user = User(
+        tenant_id=tenant_ctx.id,
+        email="worker@test.com",
+        role=UserRole.EMPLOYEE,
+        hashed_password=hash_password(PASSWORD),
+    )
+    session.add(user)
+    await session.commit()
+    return user
+
+
+@pytest.fixture
+async def admin_account(session: AsyncSession, tenant_ctx: Tenant) -> User:
+    user = User(
+        tenant_id=tenant_ctx.id,
+        email="boss@test.com",
+        role=UserRole.ADMIN,
+        hashed_password=hash_password(PASSWORD),
+    )
+    session.add(user)
+    await session.commit()
+    return user
+
+
+def bearer(user: User) -> dict[str, str]:
+    """Заголовок с настоящим подписанным токеном пользователя."""
+    token = create_access_token(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        role=user.role.value,
+        token_version=user.token_version,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def login(
+    api: httpx.AsyncClient, email: str, password: str = PASSWORD
+) -> httpx.Response:
+    return await api.post(
+        "/api/v1/auth/login",
+        json={"company_code": "test", "email": email, "password": password},
+    )
+
+
+def refresh_token_of(response: httpx.Response) -> str:
+    """Refresh-токен из Set-Cookie ответа: в теле его нет (RISKS №44)."""
+    return response.cookies[REFRESH_COOKIE]
+
+
+async def refresh_with(
+    api: httpx.AsyncClient, raw: str, headers: dict[str, str] | None = None
+) -> httpx.Response:
+    """Обновить пару, предъявив refresh-токен так, как это делает браузер.
+
+    Явный заголовок Cookie, а не банка клиента: банка подставила бы
+    последний выданный токен, а тестам нужен конкретный (украденный,
+    чужой, истёкший).
+    """
+    return await api.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"{REFRESH_COOKIE}={raw}", **(headers or {})},
+    )

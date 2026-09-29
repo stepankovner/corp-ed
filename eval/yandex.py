@@ -203,12 +203,21 @@ class YandexClient:
         max_tokens: int = 1000,
         api: Api = "native",
         response_format: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> Completion:
         """response_format — как в OpenAI API: {"type": "json_object"} или
         {"type": "json_schema", "json_schema": {"name": …, "schema": …}}.
-        Для native переводится в jsonObject / jsonSchema."""
+        Для native переводится в jsonObject / jsonSchema.
+
+        extra — дополнительные поля запроса OpenAI-совместимого API
+        (ML-5: {"reasoning_effort": "none"} выключает размышления Qwen3.6,
+        "low" — короткие у gpt-oss)."""
         if api == "openai":
-            return self._chat(messages, model, temperature, max_tokens, response_format)
+            return self._chat(
+                messages, model, temperature, max_tokens, response_format, extra
+            )
+        if extra:
+            raise ValueError("extra — только для api=openai")
         payload: dict[str, Any] = {
             "modelUri": self.gpt_uri(model),
             "completionOptions": {
@@ -244,6 +253,7 @@ class YandexClient:
         temperature: float,
         max_tokens: int,
         response_format: dict[str, Any] | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> Completion:
         payload: dict[str, Any] = {
             "model": self.gpt_uri(model),
@@ -255,6 +265,8 @@ class YandexClient:
         }
         if response_format:
             payload["response_format"] = response_format
+        if extra:
+            payload.update(extra)
         with self._completion_slots:
             started = time.perf_counter()
             body = self._post(
