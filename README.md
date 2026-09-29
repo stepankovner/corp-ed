@@ -119,8 +119,11 @@ docs/             ARCHITECTURE, DECISIONS, RISKS, SECURITY, DEPLOY, INTEGRATION,
 | [`docs/RISKS.md`](docs/RISKS.md) | что известно и не закрыто |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | модель угроз, меры с тестами, соответствие OWASP, чек-лист пентеста |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | роли базы, переменные, прокси, cron, бэкапы, ротация |
+| [`docs/STAGE.md`](docs/STAGE.md) | тестовый стенд: сервер, первичная настройка, выкатка из GitHub Actions, правила |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | статус контракта с ML (BH-1…24) |
 | [`docs/CONNECTORS-RESEARCH.md`](docs/CONNECTORS-RESEARCH.md) | исследование перед коннекторами: статистика систем, как у других, что API отдают по правам |
+| [`docs/MONITORING-RESEARCH.md`](docs/MONITORING-RESEARCH.md) | исследование перед мониторингом: сценарии отказов, варианты по слоям, ограничения в РФ, сборки под нас |
+| [`docs/RESILIENCE-RESEARCH.md`](docs/RESILIENCE-RESEARCH.md) | отказоустойчивость ML-части, выбор хостинга (Timeweb и альтернативы), что ещё сделать |
 | [`docs/WORKLOG.md`](docs/WORKLOG.md) | журнал работ: статистика тестов, что сделано, ошибки и исправления, план MVP |
 | [`docs/backend-handoff.md`](docs/backend-handoff.md), `ml-*.md` | документы ML |
 
