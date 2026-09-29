@@ -10,6 +10,7 @@
 Одна установка обслуживает много компаний; данные изолированы тремя
 независимыми кольцами, последнее — Row-Level Security в PostgreSQL.
 
+- **Этап, план ML и бэкенда, что согласовать** — [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - **Что уже работает и что нет** — [`docs/STATUS.md`](docs/STATUS.md).
 - **Открытые вопросы** — [`docs/OPEN-QUESTIONS.md`](docs/OPEN-QUESTIONS.md).
 
@@ -185,6 +186,7 @@ docs/             документация, см. ниже
 
 | Файл | Что там |
 |---|---|
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | где мы и что дальше: этап, план ML и бэкенда, расхождения с досье, вопросы |
 | [`docs/STATUS.md`](docs/STATUS.md) | состояние проекта для владельца продукта |
 | [`docs/OPEN-QUESTIONS.md`](docs/OPEN-QUESTIONS.md) | вопросы, которые ждут решения, и правки досье |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | карта системы: слои, потоки, данные |
