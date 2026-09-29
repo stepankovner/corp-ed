@@ -92,6 +92,8 @@ EOF
 install -m 755 "$APP_DIR/deploy/stage/ssh-entry.sh" /usr/local/bin/corp-ed-deploy
 install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/log/corp-ed
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/backups/corp-ed
+# Пароль компании для сквозной проверки (check.sh) — только здесь.
+install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/corp-ed
 
 log ".env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
@@ -150,6 +152,6 @@ cat <<EOF
   - ключ хоста для GitHub (переменная STAGE_SSH_KNOWN_HOSTS, STAGE_HOST=$DOMAIN):
       $DOMAIN $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)
   - включите выкатку: переменная репозитория STAGE_ENABLED=true и Run
-    workflow «Deploy»; или вручную:
-      sudo -u $DEPLOY_USER SSH_ORIGINAL_COMMAND="deploy <sha>" /usr/local/bin/corp-ed-deploy
+    workflow «Deploy». Проверка стенда вручную:
+      sudo -u $DEPLOY_USER SSH_ORIGINAL_COMMAND=check /usr/local/bin/corp-ed-deploy
 EOF

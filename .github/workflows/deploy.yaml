@@ -2,8 +2,10 @@ name: Deploy
 
 # Тестовый стенд (docs/STAGE.md). После зелёного CI на main выкатывается
 # сам; любую ветку этого репозитория — кнопкой Run workflow (выбрать
-# ветку). Образы собираются здесь, по проверенному коммиту, и уходят в
-# GHCR; сервер их только скачивает — там нет ни сборки, ни npm, ни uv.
+# ветку), любой прошлый коммит (откат) — там же, полем sha. Образы
+# собираются здесь и уходят в GHCR; сервер их только скачивает — там нет
+# ни сборки, ни npm, ни uv. После выкатки сервер сам прогоняет сквозную
+# проверку (python -m corp_ed.stand check) с настоящей моделью.
 #
 # Включается переменной репозитория STAGE_ENABLED=true, когда сервер
 # настроен (deploy/stage/bootstrap.sh). До этого workflow пропускается.
@@ -13,6 +15,11 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      sha:
+        description: "Коммит для выкатки (откат); пусто — голова выбранной ветки"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -47,7 +54,8 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # workflow_run: коммит, который проверил CI, а не текущий main.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Сервер всё равно примет только коммит из ветки этого репозитория.
+          ref: ${{ inputs.sha || github.event.workflow_run.head_sha || github.sha }}
 
       - name: Commit
         id: sha
@@ -76,6 +84,11 @@ jobs:
     needs: images
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Токен job — скачать образы из GHCR на сервере: пакеты могут
+    # оставаться приватными. Живёт до конца job.
+    permissions:
+      contents: read
+      packages: read
     # Секрет STAGE_SSH_KEY — в окружении stage: правила защиты окружения
     # (например, обязательный ревьюер) действуют на каждую выкатку.
     environment:
@@ -99,13 +112,24 @@ jobs:
         env:
           SHA: ${{ needs.images.outputs.sha }}
           HOST: ${{ vars.STAGE_HOST }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Ключ на сервере привязан к corp-ed-deploy (deploy/stage/ssh-entry.sh):
-        # другой команды с ним не выполнить.
-        run: ssh -i ~/.ssh/stage -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "deploy $SHA"
+        # другой команды с ним не выполнить. Токен — через stdin, не в
+        # командной строке.
+        run: |
+          printf '%s\n' "$GH_TOKEN" |
+            ssh -i ~/.ssh/stage -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "deploy $SHA"
 
-      - name: Smoke check from outside
+      - name: Reachable from outside
         env:
           DOMAIN: ${{ vars.STAGE_DOMAIN }}
         run: |
           curl -fsS --max-time 10 "https://$DOMAIN/health"
           curl -fsS --max-time 10 -o /dev/null "https://$DOMAIN/"
+
+      # Вход, загрузка, индексация, ответ модели со ссылкой, кредиты. Пароль
+      # проверочной компании живёт только на сервере (deploy/stage/check.sh).
+      - name: Stand check
+        env:
+          HOST: ${{ vars.STAGE_HOST }}
+        run: ssh -i ~/.ssh/stage -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" check < /dev/null
