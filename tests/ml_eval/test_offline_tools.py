@@ -719,6 +719,24 @@ def test_response_format_is_passed_to_both_apis() -> None:
     assert seen[2]["jsonObject"] is True
 
 
+def test_extra_request_fields_go_to_openai_api_only() -> None:
+    # ML-5: {"reasoning_effort": "none"} выключает размышления Qwen3.6.
+    seen: list[dict[str, object]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return _chat_ok(request)
+
+    client = _yandex(httpx.MockTransport(handler))
+    client.complete(
+        [Message(Role.USER, "u")], api="openai", extra={"reasoning_effort": "none"}
+    )
+
+    assert seen[0]["reasoning_effort"] == "none"
+    with pytest.raises(ValueError):
+        client.complete([Message(Role.USER, "u")], api="native", extra={"x": 1})
+
+
 def test_embedding_dim_is_sent_and_kept_apart_in_cache() -> None:
     seen: list[dict[str, object]] = []
 
