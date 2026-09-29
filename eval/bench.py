@@ -171,6 +171,16 @@ def add_rerank_arguments(parser: argparse.ArgumentParser) -> None:
         help="M3: embed — крошки + текст, llm — только текст",
     )
     parser.add_argument(
+        "--rerank-quantize",
+        action="store_true",
+        help="M3: int8 для линейных слоёв — быстрее на CPU",
+    )
+    parser.add_argument(
+        "--rerank-trust-remote-code",
+        action="store_true",
+        help="M3: модель со своим кодом в репозитории (просмотреть код до запуска)",
+    )
+    parser.add_argument(
         "--rerank-max-distance",
         type=float,
         default=None,
@@ -271,7 +281,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
     rr_name = (
-        config_suffix(args.rerank_depth, args.rerank_max_length, args.rerank_text)
+        config_suffix(
+            args.rerank_depth,
+            args.rerank_max_length,
+            args.rerank_text,
+            quantize=args.rerank_quantize,
+        )
         + (f"-md{args.rerank_max_distance}" if args.rerank_max_distance else "")
         if args.rerank
         else ""
@@ -326,6 +341,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     reranker = (
         make_reranker(args.rerank, args.rerank_max_length) if args.rerank else None
     )
+    if reranker is not None:
+        reranker.trust_remote_code = args.rerank_trust_remote_code
+        reranker.quantize = args.rerank_quantize
     if reranker is not None:
         depth = max(depth, args.rerank_depth)
 

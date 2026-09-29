@@ -77,6 +77,11 @@ class CachedReranker:
     max_length: int = DEFAULT_MAX_LENGTH
     cache_path: Path | None = CACHE_PATH
     batch_size: int = 16
+    # Модели со своей архитектурой в репозитории (gte-multilingual-reranker):
+    # код с Hugging Face исполняется — включать только после его просмотра.
+    trust_remote_code: bool = False
+    # int8 для линейных слоёв: быстрее на CPU, баллы чуть другие — свой кэш.
+    quantize: bool = False
     scored_pairs: int = 0
     scoring_ms: float = 0.0
     _encoder: Any = None
@@ -86,6 +91,8 @@ class CachedReranker:
 
     def _key(self, query: str, passage: str) -> str:
         raw = f"{self.model}|{self.max_length}|{query}|{passage}"
+        if self.quantize:
+            raw += "|int8"
         return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def _load_cache(self) -> None:
@@ -106,8 +113,15 @@ class CachedReranker:
             from sentence_transformers import CrossEncoder
 
             self._encoder = CrossEncoder(
-                self.model, max_length=self.max_length, device="cpu"
+                self.model,
+                max_length=self.max_length,
+                device="cpu",
+                trust_remote_code=self.trust_remote_code,
             )
+            if self.trust_remote_code:
+                rebuild_runtime_buffers(self._encoder.model)
+            if self.quantize:
+                quantize_int8(self._encoder.model)
         return self._encoder
 
     def score(self, query: str, passages: Sequence[str]) -> list[float]:
@@ -131,14 +145,67 @@ class CachedReranker:
         return [self._cache[key] for key in keys]
 
 
+def quantize_int8(model: Any) -> None:
+    """Динамическая int8-квантизация линейных слоёв (CPU), на месте.
+
+    На месте, а не присваиванием: в sentence-transformers 6
+    `CrossEncoder.model` — свойство, и присваивание подменяет модуль.
+    """
+    import torch
+
+    torch.quantization.quantize_dynamic(
+        model, {torch.nn.Linear}, dtype=torch.qint8, inplace=True
+    )
+
+
+def rebuild_runtime_buffers(model: Any) -> None:
+    """Пересчитать буферы, которых нет в весах, у модели со своим кодом.
+
+    transformers 5 создаёт модель на meta-устройстве и не заполняет
+    непостоянные буферы из чужого кода: `position_ids` и таблицы RoPE
+    остаются мусором (gte-multilingual-reranker падал с IndexError).
+    """
+    import torch
+
+    def extended_attention_mask(
+        self: Any, attention_mask: Any, input_shape: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        # Метод PreTrainedModel из transformers 4, в 5 его нет.
+        dtype = torch.float32
+        mask = attention_mask[:, None, None, :].to(dtype)
+        return (1.0 - mask) * torch.finfo(dtype).min
+
+    for module in model.modules():
+        if type(module).__name__ == "NewModel" and not hasattr(
+            module, "get_extended_attention_mask"
+        ):
+            type(module).get_extended_attention_mask = extended_attention_mask
+        buffers = dict(module.named_buffers(recurse=False))
+        if "position_ids" in buffers:
+            module.position_ids = torch.arange(buffers["position_ids"].numel())
+        if hasattr(module, "_set_cos_sin_cache") and hasattr(module, "base"):
+            dim = module.dim
+            module.inv_freq = 1.0 / (
+                module.base ** (torch.arange(0, dim, 2).float() / dim)
+            )
+            module._set_cos_sin_cache(
+                seq_len=module.max_position_embeddings,
+                device=torch.device("cpu"),
+                dtype=torch.float32,
+            )
+
+
 def make_reranker(model: str, max_length: int) -> CachedReranker:
     """Точка подмены в тестах."""
     return CachedReranker(model=model, max_length=max_length)
 
 
-def config_suffix(depth: int, max_length: int, text: RerankText) -> str:
+def config_suffix(
+    depth: int, max_length: int, text: RerankText, *, quantize: bool = False
+) -> str:
     return (
         f"-rr{depth}"
         + (f"-L{max_length}" if max_length != DEFAULT_MAX_LENGTH else "")
         + ("-llmtext" if text == "llm" else "")
+        + ("-int8" if quantize else "")
     )

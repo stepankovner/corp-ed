@@ -58,6 +58,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=16,
         help="пар за один проход модели (50 разом — ~5 ГБ памяти в fp32)",
     )
+    parser.add_argument(
+        "--quantize", action="store_true", help="int8 для линейных слоёв"
+    )
+    parser.add_argument(
+        "--trust-remote-code",
+        action="store_true",
+        help="модель со своим кодом в репозитории (просмотреть код до запуска)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -69,7 +77,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(f"CPU-потоков torch: {torch.get_num_threads()}, ядер: {os.cpu_count()}")
     started = time.perf_counter()
-    model = CrossEncoder(args.model, max_length=args.max_length, device="cpu")
+    model = CrossEncoder(
+        args.model,
+        max_length=args.max_length,
+        device="cpu",
+        trust_remote_code=args.trust_remote_code,
+    )
+    if args.trust_remote_code:
+        from eval.rerank import rebuild_runtime_buffers
+
+        rebuild_runtime_buffers(model.model)
+    if args.quantize:
+        from eval.rerank import quantize_int8
+
+        quantize_int8(model.model)
     print(f"Модель загружена за {time.perf_counter() - started:.1f} с")
 
     passages = _candidates(args.corpus, args.candidates)
