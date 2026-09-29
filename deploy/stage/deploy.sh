@@ -44,9 +44,12 @@ for svc in api worker web; do
 done
 
 echo "==> проверка через nginx"
-# Тот же путь, что у пользователя: TLS, прокси, TrustedHost.
-curl -fsS --max-time 10 --resolve "$DOMAIN:443:127.0.0.1" "https://$DOMAIN/health" >/dev/null
-curl -fsS --max-time 10 --resolve "$DOMAIN:443:127.0.0.1" -o /dev/null "https://$DOMAIN/"
+# Тот же путь, что у пользователя: TLS, прокси, TrustedHost. Мимо
+# HTTPS_PROXY, если он есть в окружении (DEPLOY.md §9a): --resolve его
+# не обходит, и проверка ушла бы наружу.
+local_https=(curl -fsS --max-time 10 --noproxy '*' --resolve "$DOMAIN:443:127.0.0.1")
+"${local_https[@]}" "https://$DOMAIN/health" >/dev/null
+"${local_https[@]}" -o /dev/null "https://$DOMAIN/"
 
 printf '%s %s\n' "$(date -u +%FT%TZ)" "$sha" >> /var/log/corp-ed/deploys.log
 # Неиспользуемые образы старше недели: иначе каждая выкатка оставляет

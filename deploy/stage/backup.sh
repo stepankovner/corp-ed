@@ -6,6 +6,8 @@ set -euo pipefail
 # shellcheck source=/dev/null
 . /etc/corp-ed/stage.env
 
+# В дампе — документы и данные пользователей: файл только для владельца.
+umask 077
 dir=/var/backups/corp-ed
 file="$dir/corp_ed-$(date +%F).dump"
 cd "$APP_DIR"
