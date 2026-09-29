@@ -374,6 +374,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
     parser.add_argument(
+        "--llm-extra",
+        default="",
+        help="ML-5: JSON с полями запроса модели ответа, например "
+        '{"reasoning_effort": "none"}',
+    )
+    parser.add_argument(
         "--not-found",
         choices=("strict", "general"),
         default="general",
@@ -398,6 +404,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     from eval.yandex import YandexClient
+
+    llm_extra = json.loads(args.llm_extra) if args.llm_extra else None
 
     chunking = ChunkingConfig(
         chunk_tokens=args.chunk_tokens, overlap_tokens=args.overlap_tokens
@@ -476,6 +484,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             temperature=args.temperature,
             max_tokens=args.max_tokens,
             api=args.api,
+            **({"extra": llm_extra} if llm_extra else {}),
         )
 
     rows: list[dict[str, object]] = []
