@@ -86,7 +86,7 @@ class CachedReranker:
 
     def _key(self, query: str, passage: str) -> str:
         raw = f"{self.model}|{self.max_length}|{query}|{passage}"
-        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+        return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def _load_cache(self) -> None:
         if self._loaded:
