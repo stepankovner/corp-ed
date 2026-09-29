@@ -70,7 +70,13 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
 )
-from eval.bench import FUSION_CANDIDATES, bm25_rankings, vector_rankings
+from eval.bench import (
+    FUSION_CANDIDATES,
+    add_rerank_arguments,
+    bm25_rankings,
+    rerank_text,
+    vector_rankings,
+)
 from eval.corpus import (
     BenchChunk,
     ChunkingConfig,
@@ -82,6 +88,12 @@ from eval.datasets import EvalItem, load_dataset, select_split
 from eval.metrics import percentile
 from eval.multi_query import Paraphrased, paraphrase_questions
 from eval.relevance import EVIDENCE_MIN_COVERAGE, evidence_coverage
+from eval.rerank import (
+    CachedReranker,
+    config_suffix,
+    make_reranker,
+    rerank_candidates,
+)
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.run_eval import is_answered, looks_like_refusal, summarize_e2e
 from eval.yandex import (
@@ -195,6 +207,10 @@ def retrieve(
     embedding_dim: int | None = None,
     paraphrases: Sequence[Sequence[str]] | None = None,
     paraphrase_weight: float = 1.0,
+    reranker: CachedReranker | None = None,
+    rerank_depth: int = 30,
+    rerank_max_distance: float | None = None,
+    rerank_kind: str = "embed",
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
 
@@ -203,6 +219,10 @@ def retrieve(
     чанка — до ИСХОДНОГО вопроса; у найденного только переформулировкой
     его нет (None), поэтому с multi-query порог — по лучшему расстоянию
     исходного вопроса, как в гибриде.
+
+    reranker (M3) — первые rerank_depth векторных кандидатов, прошедших
+    rerank_max_distance, пересортировываются кросс-энкодером; в выдачу —
+    первые limit. Порог по вектору остаётся (relevant_matches).
     """
     groups = [list(group) for group in paraphrases] if paraphrases else []
     flat = [*questions, *(query for group in groups for query in group)]
@@ -211,6 +231,8 @@ def retrieve(
         if retriever == "vector" and not any(groups)
         else max(limit, FUSION_CANDIDATES)
     )
+    if reranker is not None:
+        depth = max(depth, rerank_depth)
     ranked = rank_queries(
         chunks,
         flat,
@@ -233,6 +255,17 @@ def retrieve(
         if extra:
             ranking = fuse_query_rankings(
                 ranking, extra, paraphrase_weight=paraphrase_weight, k=rrf_k
+            )
+        if reranker is not None:
+            question = questions[index]
+            ranking = rerank_candidates(
+                ranking,
+                distance_of,
+                lambda idx, q=question: reranker.score(
+                    q, [rerank_text(chunks[i], rerank_kind) for i in idx]
+                ),
+                depth=rerank_depth,
+                max_distance=rerank_max_distance,
             )
         results.append(
             (
@@ -373,6 +406,7 @@ def _parser() -> argparse.ArgumentParser:
         "--mq-weight", type=float, default=1.0, help="M6: вес переформулировки в RRF"
     )
     parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
+    add_rerank_arguments(parser)
     parser.add_argument(
         "--llm-extra",
         default="",
@@ -430,9 +464,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.multi_query
         else ""
     )
+    if args.rerank and (retriever != "vector" or args.multi_query):
+        print("--rerank: только с --retriever vector и без --multi-query")
+        return 2
+    rr_name = (
+        config_suffix(args.rerank_depth, args.rerank_max_length, args.rerank_text)
+        if args.rerank
+        else ""
+    )
     config = args.config or (
         f"offline-{args.model}-{chunking.name}-{retriever}{embedder}"
-        f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}{mq_name}"
+        f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}{mq_name}{rr_name}"
         + ("-dry" if args.dry_run else "")
     )
 
@@ -460,6 +502,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"на {len(items)} вопросов, из кэша {sum(p.cached for p in paraphrased)}"
         )
 
+    reranker = (
+        make_reranker(args.rerank, args.rerank_max_length) if args.rerank else None
+    )
     retrieved = retrieve(
         chunks,
         [item.question for item in items],
@@ -472,7 +517,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         embedding_dim=embedding_dim,
         paraphrases=[p.queries for p in paraphrased] if args.multi_query else None,
         paraphrase_weight=args.mq_weight,
+        reranker=reranker,
+        rerank_depth=args.rerank_depth,
+        # Реранкер выбирает лучших среди прошедших порог продукта.
+        rerank_max_distance=(
+            args.rerank_max_distance
+            if args.rerank_max_distance is not None
+            else args.max_distance
+        ),
+        rerank_kind=args.rerank_text,
     )
+    if reranker is not None:
+        reranker.save()
+        print(
+            f"Реранкер {args.rerank}: пар посчитано {reranker.scored_pairs}, "
+            f"{reranker.scoring_ms / 1000:.1f} с (остальное из кэша)"
+        )
     # --dry-run: LLM не вызывается — поиск и контекст замеряются бесплатно.
     client = None if args.dry_run else YandexClient.from_env()
 

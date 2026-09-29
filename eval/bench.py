@@ -22,6 +22,8 @@
     python -m eval.bench ... --glossary glossary.csv
     # M6 (эксперимент): переформулировки вопроса моделью + RRF (вызов LLM с кэшем)
     python -m eval.bench ... --multi-query 3 [--mq-weight 0.5]
+    # M3 (эксперимент): реранкер поверх вектора (нужен sentence-transformers)
+    python -m eval.bench ... --retriever vector --rerank [--rerank-depth 30]
 
 Сравнить два прогона статистически: python -m eval.compare A.csv B.csv
 """
@@ -40,6 +42,14 @@ from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
 from eval.datasets import EvalItem, load_dataset, select_split
 from eval.multi_query import paraphrase_questions
 from eval.relevance import RetrievedChunk
+from eval.rerank import (
+    DEFAULT_DEPTH,
+    DEFAULT_MAX_LENGTH,
+    DEFAULT_RERANKER,
+    config_suffix,
+    make_reranker,
+    rerank_candidates,
+)
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.retrieval_eval import evaluate_retrieval, format_report
 from eval.yandex import (
@@ -122,10 +132,50 @@ def vector_rankings(
     return rankings, distances
 
 
+def rerank_text(chunk: BenchChunk, kind: str) -> str:
+    """M3: что показываем реранкеру (см. eval.rerank.RerankText)."""
+    return chunk.embed_text if kind == "embed" else chunk.llm_text
+
+
 def load_glossary(path: Path) -> dict[str, str]:
     """CSV с колонками term,expansion — как будущая таблица glossary."""
     with path.open(encoding="utf-8-sig", newline="") as file:
         return {row["term"]: row["expansion"] for row in csv.DictReader(file)}
+
+
+def add_rerank_arguments(parser: argparse.ArgumentParser) -> None:
+    """M3: флаги реранкера — общие для bench и offline_e2e."""
+    parser.add_argument(
+        "--rerank",
+        nargs="?",
+        const=DEFAULT_RERANKER,
+        default="",
+        help=f"M3: реранкер поверх вектора (по умолчанию {DEFAULT_RERANKER})",
+    )
+    parser.add_argument(
+        "--rerank-depth",
+        type=int,
+        default=DEFAULT_DEPTH,
+        help="M3: сколько векторных кандидатов пересортировать",
+    )
+    parser.add_argument(
+        "--rerank-max-length",
+        type=int,
+        default=DEFAULT_MAX_LENGTH,
+        help="M3: длина пары вопрос–фрагмент в токенах модели",
+    )
+    parser.add_argument(
+        "--rerank-text",
+        choices=("embed", "llm"),
+        default="embed",
+        help="M3: embed — крошки + текст, llm — только текст",
+    )
+    parser.add_argument(
+        "--rerank-max-distance",
+        type=float,
+        default=None,
+        help="M3: пересортировать только кандидатов не дальше порога",
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -182,6 +232,7 @@ def _parser() -> argparse.ArgumentParser:
         "--mq-weight", type=float, default=1.0, help="M6: вес переформулировки в RRF"
     )
     parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
+    add_rerank_arguments(parser)
     parser.add_argument("--api", choices=("native", "openai"), default=DEFAULT_API)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
@@ -216,11 +267,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.multi_query
         else ""
     )
+    if args.rerank and (args.retriever != "vector" or args.multi_query):
+        print("--rerank: только с --retriever vector и без --multi-query")
+        return 2
+    rr_name = (
+        config_suffix(args.rerank_depth, args.rerank_max_length, args.rerank_text)
+        + (f"-md{args.rerank_max_distance}" if args.rerank_max_distance else "")
+        if args.rerank
+        else ""
+    )
     config = (
         args.config
         or f"{chunking.name}-{args.retriever}"
         + ("-glossary" if args.glossary else "")
         + mq_name
+        + rr_name
         + embedder
     )
 
@@ -262,6 +323,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.retriever != "hybrid" and not args.multi_query
         else max(args.k, FUSION_CANDIDATES)
     )
+    reranker = (
+        make_reranker(args.rerank, args.rerank_max_length) if args.rerank else None
+    )
+    if reranker is not None:
+        depth = max(depth, args.rerank_depth)
 
     # Ранжирование каждого запроса: индексы чанков и расстояния векторной
     # ветки (у BM25 расстояний нет, у гибрида — только у найденных вектором).
@@ -297,6 +363,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     retrieved: dict[str, list[RetrievedChunk]] = {}
     best_vector: dict[str, float | None] = {}
+    rerank_ms: dict[str, float] = {}
     offset = len(items)
     for index, item in enumerate(items):
         ranking, distance_of = ranked[index]
@@ -306,6 +373,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             ranking = fuse_query_rankings(
                 ranking, extra, paraphrase_weight=args.mq_weight, k=args.rrf_k
             )
+        if reranker is not None:
+            before = reranker.scoring_ms
+            query = queries[index]
+            ranking = rerank_candidates(
+                ranking,
+                distance_of,
+                lambda idx, q=query: reranker.score(
+                    q, [rerank_text(chunks[i], args.rerank_text) for i in idx]
+                ),
+                depth=args.rerank_depth,
+                max_distance=args.rerank_max_distance,
+            )
+            rerank_ms[item.id] = reranker.scoring_ms - before
         retrieved[item.id] = [
             _retrieved(chunks[i], distance_of.get(i)) for i in ranking[: args.k]
         ]
@@ -318,6 +398,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     for row in report.rows:
         if row["id"] in best_vector:
             row["best_vector_distance"] = best_vector[str(row["id"])]
+        if row["id"] in rerank_ms:
+            row["rerank_ms"] = round(rerank_ms[str(row["id"])])
+    if reranker is not None:
+        reranker.save()
+        print(
+            f"Реранкер {args.rerank}: пар посчитано {reranker.scored_pairs}, "
+            f"{reranker.scoring_ms / 1000:.1f} с (остальное из кэша)"
+        )
 
     path = results_path(args.out, config, "bench", date.today())
     write_csv(path, report.rows)

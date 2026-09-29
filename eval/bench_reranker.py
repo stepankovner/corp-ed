@@ -52,6 +52,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=16,
+        help="пар за один проход модели (50 разом — ~5 ГБ памяти в fp32)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -74,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     scores: Sequence[float] = []
     for _ in range(args.runs):
         started = time.perf_counter()
-        scores = model.predict(pairs, batch_size=len(pairs))
+        scores = model.predict(pairs, batch_size=args.batch_size)
         timings.append((time.perf_counter() - started) * 1000)
 
     timings.sort()
