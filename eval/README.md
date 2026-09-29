@@ -40,7 +40,7 @@ python -m eval.bench --corpus путь/к/документам --dataset eval/pr
 | поиск | только вектор | `--retriever hybrid --weights 1.0,0.5` (в `bench` ещё `bm25`) |
 | порог отказа | 0,51 (косинусное расстояние) | `--max-distance` (`offline_e2e`) |
 | фрагментов в ответ | 5, до 3 000 токенов | `--limit`, `--context-tokens` (`offline_e2e`) |
-| промпт | `faq-v2.4` | — (версия в `src/corp_ed/prompts/faq.py`) |
+| промпт | `faq-v2.5` | — (версия в `src/corp_ed/prompts/faq.py`) |
 | ответа в документах нет | общий ответ с пометкой | `--not-found strict` — только отказ |
 
 Про последнюю строку: в продукте с 28.09 новая компания по умолчанию
