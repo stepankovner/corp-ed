@@ -9,9 +9,11 @@
 
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import httpx
+from dotenv import dotenv_values
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.api.v1.dependencies import (
@@ -33,18 +35,23 @@ from corp_ed.worker import IngestWorker
 PASSWORD = "stand-check-password-42"
 
 
+ENV_EXAMPLE = Path(__file__).resolve().parents[1] / ".env.example"
+
+
 def production_rag() -> RagSettings:
-    """Значения ML из .env.example (backend-handoff v2, раздел 1)."""
-    return RagSettings(
-        chunk_tokens=400,
-        overlap_tokens=50,
-        faq_limit=5,
-        faq_max_distance=0.51,
-        context_max_tokens=3000,
-        faq_temperature=0.0,
-        retriever="vector",
-        fulltext_weight=0.5,
-    )
+    """Значения ML из .env.example (backend-handoff, раздел 1).
+
+    Читаются из файла, а не переписываются сюда: ML меняет число в
+    .env.example (порог 0,59 — BH-31), и проверка стенда сразу идёт с тем
+    же значением, что продукт.
+    """
+    values = dotenv_values(ENV_EXAMPLE)
+    fields = {
+        name: values[key]
+        for name in RagSettings.model_fields
+        if (key := f"RAG_{name.upper()}") in values
+    }
+    return RagSettings.model_validate(fields)
 
 
 WordEmbeddings = WordEmbeddingAdapter

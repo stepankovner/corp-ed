@@ -63,11 +63,11 @@ class Retriever(StrEnum):
 class NotFoundMode(StrEnum):
     """Что делать, когда в документах ответа нет (Р1, BH-24).
 
-    STRICT — честный отказ, как в досье 3.1; у новой компании по
-    умолчанию (решение 28.09, DEFAULT_NOT_FOUND_MODE). GENERAL — ответ со
-    строгой пометкой «не из документов компании» и советом уточнить
-    (services/general_answer.py); включает команда через
-    `cli set-not-found-mode`. Новый режим — новое значение здесь, в
+    GENERAL — ответ со строгой пометкой «В документах компании ответа
+    нет» и советом уточнить (services/general_answer.py); у новой
+    компании по умолчанию (решение Артёма 29.09, BH-29,
+    DEFAULT_NOT_FOUND_MODE). STRICT — честный отказ; включает команда
+    через `cli set-not-found-mode`. Новый режим — новое значение здесь, в
     CHECK-ограничении таблицы tenants (миграцией) и ветка в
     FaqService._not_found.
     """
@@ -76,9 +76,10 @@ class NotFoundMode(StrEnum):
     STRICT = "strict"
 
 
-DEFAULT_NOT_FOUND_MODE = NotFoundMode.STRICT
-"""Режим новой компании (решение команды 28.09, Q1): отказ, пока продукт
-не решил иначе. Одно место для модели, CLI и сервисов."""
+DEFAULT_NOT_FOUND_MODE = NotFoundMode.GENERAL
+"""Режим новой компании: общий ответ с пометкой (решение Артёма 29.09,
+BH-29; отменяет отказ по умолчанию от 28.09). Одно место для модели, CLI
+и сервисов."""
 
 
 @dataclass(frozen=True)

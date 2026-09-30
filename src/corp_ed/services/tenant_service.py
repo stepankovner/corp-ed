@@ -95,7 +95,8 @@ class TenantService:
         политика, что у пароля пользователя, смена при первом входе.
         seats — оплаченные места: от них считается пул кредитов.
         not_found_mode — что отвечать, когда в документах ответа нет;
-        по умолчанию отказ (DEFAULT_NOT_FOUND_MODE, решение 28.09).
+        по умолчанию общий ответ с пометкой (DEFAULT_NOT_FOUND_MODE,
+        решение 29.09, BH-29).
         """
         code = company_code.strip().casefold()
         if not _COMPANY_CODE.fullmatch(code):

@@ -68,7 +68,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Поиск и ответ | `RAG_*` | значения задаёт ML; дефолтов нет намеренно |
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5 |
-| Кредиты | `BILLING_*` | дефолты — предложение досье, пересмотреть с тарифами |
+| Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09) |
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется |
@@ -111,10 +111,11 @@ docker compose -f compose.yaml run --rm api python -m corp_ed.cli create-tenant 
 пароль в менеджере паролей команды и передать клиенту отдельным каналом
 от кода компании; при первом входе система потребует сменить пароль.
 
-Новая компания получает честный отказ, когда в документах ответа нет
-(`not_found_mode=strict`). Общий ответ с пометкой включается
-`set-not-found-mode --code acme --mode general` или флагом
-`--not-found-mode general` при создании.
+Когда в документах ответа нет, новая компания получает общий ответ с
+пометкой «В документах компании ответа нет» (`not_found_mode=general`,
+решение 29.09, BH-29). Строгий отказ включается
+`set-not-found-mode --code acme --mode strict` или флагом
+`--not-found-mode strict` при создании.
 
 Остальные команды: `set-seats`, `set-not-found-mode`, `suspend-tenant`,
 `resume-tenant`, `reindex`, `purge`, `gaps` — `python -m corp_ed.cli --help`.

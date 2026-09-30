@@ -85,7 +85,7 @@ class Tenant(Base):
     # (досье 10.2). Задаёт команда при подключении (CLI).
     seats: Mapped[int] = mapped_column(default=30, server_default="30")
     # Ответ, когда в документах ничего нет: strict или general
-    # (NotFoundMode). По умолчанию strict (DEFAULT_NOT_FOUND_MODE);
+    # (NotFoundMode). По умолчанию general (DEFAULT_NOT_FOUND_MODE);
     # меняет команда через CLI.
     not_found_mode: Mapped[str] = mapped_column(
         String(16),

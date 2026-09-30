@@ -101,7 +101,7 @@ def _parser() -> argparse.ArgumentParser:
         "--not-found-mode",
         choices=[mode.value for mode in NotFoundMode],
         default=DEFAULT_NOT_FOUND_MODE.value,
-        help="нет ответа в документах: отказ (по умолчанию) или общий ответ с пометкой",
+        help="нет ответа в документах: общий ответ с пометкой (по умолчанию) или отказ",
     )
 
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")

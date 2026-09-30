@@ -70,6 +70,18 @@ def test_credits_for(tokens: int, credits: int) -> None:
     assert credits_for(tokens, 2000) == credits
 
 
+@pytest.mark.parametrize(
+    ("tokens", "credits"),
+    # Максимум золотого dev (2 428) и уточняющий вопрос (~3 500) — один
+    # кредит; дороже 4 000 — два (BH-30).
+    [(1844, 1), (2428, 1), (3500, 1), (4000, 1), (4001, 2)],
+)
+def test_default_credit_is_one_question(tokens: int, credits: int) -> None:
+    default = BillingSettings.model_fields["tokens_per_credit"].default
+    assert default == 4000
+    assert credits_for(tokens, default) == credits
+
+
 def test_period_is_moscow_calendar_month() -> None:
     # 1 октября 00:30 по Москве — это ещё 30 сентября по UTC.
     now = datetime(2026, 9, 30, 21, 30, tzinfo=UTC)
