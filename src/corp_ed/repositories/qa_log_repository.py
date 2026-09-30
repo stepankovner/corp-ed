@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Row, delete, func, select, update
+from sqlalchemy import ColumnElement, Row, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
@@ -12,6 +12,12 @@ from corp_ed.domain.models import QaLog
 SignalRow = Row[tuple[UUID, float | None, float | None, bool, int | None, str | None]]
 # id, user_id, question, question_embedding, created_at
 CandidateRow = Row[tuple[UUID, UUID | None, str, list[float], datetime]]
+
+
+def question_text() -> ColumnElement[str]:
+    """Вопрос для отчёта о пробелах: переписанный с учётом диалога или
+    исходный (оба — после mask_pii)."""
+    return func.coalesce(QaLog.standalone_question, QaLog.question).label("question")
 
 
 class QaLogRepository:
@@ -101,12 +107,17 @@ class QaLogRepository:
         limit: int,
     ) -> Sequence[CandidateRow]:
         """Вопросы для кластеризации: новые первыми, одной модели
-        эмбеддингов — векторы разных моделей несравнимы (BH-20)."""
+        эмбеддингов — векторы разных моделей несравнимы (BH-20).
+
+        Текст — переписанный вопрос, если он есть (BH-28): «А для
+        УМНИК?» ничего не скажет в подписи пробела, а вектор и так
+        посчитан по переписанному.
+        """
         result = await self.session.execute(
             select(
                 QaLog.id,
                 QaLog.user_id,
-                QaLog.question,
+                question_text(),
                 QaLog.question_embedding,
                 QaLog.created_at,
             )

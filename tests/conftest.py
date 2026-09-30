@@ -215,7 +215,7 @@ def fake_llm() -> FakeAdapter:
 
 
 def make_credit_service(session: AsyncSession) -> CreditService:
-    """Пул с дефолтами досье: 420 кредитов на место, 2 000 токенов."""
+    """Пул с дефолтами: 420 кредитов на место, 4 000 токенов (BH-30)."""
     settings = BillingSettings()
     return CreditService(
         TenantRepository(session),

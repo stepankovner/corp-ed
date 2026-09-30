@@ -21,6 +21,7 @@ from corp_ed.core.config import (
     get_lead_settings,
 )
 from corp_ed.core.database import get_session
+from corp_ed.core.dialogue_store import DialogueStore
 from corp_ed.core.exceptions import (
     NotAuthenticatedError,
     PasswordChangeRequiredError,
@@ -338,6 +339,14 @@ def get_team_notifier(request: Request) -> TeamNotifier:
     return notifier
 
 
+def get_dialogue_store(request: Request) -> DialogueStore | None:
+    """Реплики диалогов (BH-28): Redis в бою, память процесса без Redis.
+    В тестах lifespan не запускается — памяти диалога нет, пока тест сам
+    не положит хранилище в app.state."""
+    store: DialogueStore | None = getattr(request.app.state, "dialogue_store", None)
+    return store
+
+
 def get_credit_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
@@ -367,6 +376,7 @@ def get_faq_service(
     llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[RagSettings, Depends(get_rag_settings)],
+    dialogue_store: Annotated[DialogueStore | None, Depends(get_dialogue_store)],
 ) -> FaqService:
     return FaqService(
         chunk_repo=chunk_repo,
@@ -387,6 +397,10 @@ def get_faq_service(
         general_source=ModelKnowledgeSource(
             llm_gateway, temperature=settings.faq_temperature
         ),
+        dialogue_store=dialogue_store,
+        history_turns=settings.history_turns,
+        history_ttl_minutes=settings.history_ttl_minutes,
+        condense_timeout=settings.condense_timeout_seconds,
     )
 
 

@@ -8,6 +8,11 @@
             "title": "Credits",
             "type": "integer"
           },
+          "history_turns": {
+            "default": 0,
+            "title": "History Turns",
+            "type": "integer"
+          },
           "input_tokens": {
             "title": "Input Tokens",
             "type": "integer"
@@ -52,6 +57,17 @@
           "prompt_version": {
             "title": "Prompt Version",
             "type": "string"
+          },
+          "standalone_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standalone Question"
           }
         },
         "required": [
@@ -580,7 +596,7 @@
         "type": "object"
       },
       "FaqAnswerResponse": {
-        "description": "Ответ ассистента.\n\norigin:\n- documents — ответ по документам компании, sources — выдержки;\n- general_knowledge — в документах ответа нет, ответ из общих\n  знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах\n  компании ответа нет. Ниже — общая информация, не из документов\n  компании:»), sources пуст. Фронт обязан показать это явно\n  (плашка), а не только текстом;\n- none — в документах ответа нет, компания в строгом режиме (по\n  умолчанию), или провайдер отфильтровал ответ: content начинается с\n  NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —\n  совет уточнить у руководителя или в профильном отделе; sources пуст.\n\nanswer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).",
+        "description": "Ответ ассистента.\n\norigin:\n- documents — ответ по документам компании, sources — выдержки;\n- general_knowledge — в документах ответа нет, ответ из общих\n  знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах\n  компании ответа нет. Ниже — общая информация, не из документов\n  компании:»), sources пуст. Фронт обязан показать это явно\n  (плашка), а не только текстом;\n- none — в документах ответа нет, компания в строгом режиме, или\n  провайдер отфильтровал ответ: content начинается с\n  NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —\n  совет уточнить у руководителя или в профильном отделе; sources пуст.\n\nanswer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).\nconversation_id — диалог (BH-28): прислать со следующим вопросом,\nчтобы уточняющий вопрос понимался в контексте; «Новый диалог» — не\nприсылать. Номера [n] относятся только к sources этого ответа.",
         "properties": {
           "answer_given": {
             "title": "Answer Given",
@@ -601,6 +617,18 @@
           "content": {
             "title": "Content",
             "type": "string"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           },
           "diagnostics": {
             "anyOf": [
@@ -636,6 +664,18 @@
       "FaqQuestionRequest": {
         "additionalProperties": false,
         "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
           "question": {
             "maxLength": 1000,
             "minLength": 1,

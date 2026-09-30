@@ -441,7 +441,8 @@ class QaLog(TenantMixin, Base):
     Вопрос хранится ПОСЛЕ mask_pii (почта, телефоны, паспорта, ФИО):
     для подписи кластеров пробелов текст нужен, но персональные данные в
     нём — нет. Срок хранения — QA_LOG_RETENTION_DAYS, удаляет команда
-    purge. Ответ модели не хранится.
+    purge. Ответ модели не хранится — и для памяти диалога тоже: реплики
+    живут в Redis несколько часов (core/dialogue_store.py).
     """
 
     __tablename__ = "qa_log"
@@ -482,6 +483,14 @@ class QaLog(TenantMixin, Base):
     feedback: Mapped[int | None] = mapped_column(SmallInteger)
     # Заполняет ночная задача отчёта о пробелах (classify_miss).
     miss_kind: Mapped[str | None] = mapped_column(String(32))
+    # Память диалога (BH-28). Сами реплики — в Redis, не здесь
+    # (core/dialogue_store.py); журнал знает только, к какому диалогу
+    # относится вопрос и как его поняли. standalone_question — после
+    # mask_pii, как question; NULL — истории не было, искали по question.
+    conversation_id: Mapped[UUID | None] = mapped_column(Uuid)
+    standalone_question: Mapped[str | None] = mapped_column(Text)
+    condense_prompt_version: Mapped[str | None] = mapped_column(String(32))
+    history_turns: Mapped[int] = mapped_column(default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

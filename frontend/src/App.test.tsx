@@ -149,6 +149,34 @@ describe("чат", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("продолжает диалог и начинает новый по кнопке", async () => {
+    signedInAs();
+    const asked: unknown[] = [];
+    server.use(
+      http.post("/api/v1/faq/ask", async ({ request }) => {
+        asked.push(await request.json());
+        return HttpResponse.json(answer({ conversation_id: "c-1" }));
+      }),
+    );
+    renderApp("/");
+    const user = await ask("Какие суточные?");
+    await screen.findAllByText(/Суточные по России — 700 рублей/);
+    await user.type(screen.getByLabelText("Ваш вопрос"), "А за рубежом?");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(asked).toHaveLength(2));
+
+    await user.click(await screen.findByRole("button", { name: "Новый диалог" }));
+    await user.type(screen.getByLabelText("Ваш вопрос"), "Сколько дней отпуска?");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(asked).toHaveLength(3));
+
+    expect(asked).toEqual([
+      { question: "Какие суточные?" },
+      { question: "А за рубежом?", conversation_id: "c-1" },
+      { question: "Сколько дней отпуска?" },
+    ]);
+  });
+
   it("отправляет оценку ответа", async () => {
     signedInAs();
     let vote: unknown;

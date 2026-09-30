@@ -98,6 +98,11 @@ class AnswerDiagnostics:
     output_tokens: int
     credits: int
     nearest_distance: float | None
+    standalone_question: str | None = None
+    """Вопрос после переписывания с учётом диалога (BH-28) — по нему шли
+    поиск и порог. None — истории не было, искали по самому вопросу."""
+    history_turns: int = 0
+    """Сколько прошлых пар реплик учтено."""
 
 
 @dataclass(frozen=True)
@@ -112,6 +117,8 @@ class FaqAnswer:
     log_id: UUID | None = None
     """Запись qa_log — к ней сотрудник ставит 👍/👎."""
     diagnostics: AnswerDiagnostics | None = None
+    conversation_id: UUID | None = None
+    """Диалог (BH-28): клиент присылает его со следующим вопросом."""
 
 
 class GapStatus(StrEnum):

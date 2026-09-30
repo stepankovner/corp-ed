@@ -36,7 +36,11 @@ export function useChat(): ChatApi {
   return value;
 }
 
-/** Переписка живёт до закрытия вкладки: у бэкенда нет истории диалогов. */
+/**
+ * Переписка живёт до закрытия вкладки. Бэкенд помнит последние реплики
+ * диалога (conversation_id) несколько часов — для уточняющих вопросов;
+ * показывает переписку только фронт.
+ */
 export function loadTurns(userId: string): Turn[] {
   try {
     const raw = sessionStorage.getItem(PREFIX + userId);
@@ -46,6 +50,27 @@ export function loadTurns(userId: string): Turn[] {
     return [];
   }
 }
+
+/** Ключ диалога на бэкенде (BH-28): с ним уточняющий вопрос понимается в контексте. */
+export function loadConversation(userId: string): string | null {
+  try {
+    return sessionStorage.getItem(PREFIX + userId + CONVERSATION);
+  } catch {
+    return null;
+  }
+}
+
+export function saveConversation(userId: string, conversation: string | null): void {
+  try {
+    const key = PREFIX + userId + CONVERSATION;
+    if (conversation) sessionStorage.setItem(key, conversation);
+    else sessionStorage.removeItem(key);
+  } catch {
+    // Без хранилища новый диалог начнётся после перезагрузки.
+  }
+}
+
+const CONVERSATION = ".conversation";
 
 export function clearChatHistory(): void {
   try {

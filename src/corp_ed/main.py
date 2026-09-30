@@ -33,6 +33,7 @@ from corp_ed.core.config import (
     get_team_notify_settings,
 )
 from corp_ed.core.database import get_engine
+from corp_ed.core.dialogue_store import InMemoryDialogueStore, RedisDialogueStore
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     connector_limit_handler,
@@ -117,6 +118,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("rate_limiter_in_memory")
         limiter = InMemoryRateLimiter()
     app.state.rate_limiter = limiter
+    # Реплики диалогов (BH-28) — там же, где лимиты: в бою Redis без
+    # записи на диск, в разработке — память процесса.
+    app.state.dialogue_store = (
+        RedisDialogueStore(redis) if redis is not None else InMemoryDialogueStore()
+    )
 
     # Семафор генерации — один на процесс: адаптер создаётся на запрос.
     # Размер читается лениво: без YC-ключей (тесты, alembic) он не нужен.
