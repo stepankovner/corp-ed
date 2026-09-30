@@ -1,7 +1,7 @@
 # Как устроен ML-код corp-ed — подробно и понятно
 
 **Для кого:** всем, кто будет работать с кодом, включая тех, кто не
-занимался машинным обучением. **На дату:** 25.09.2026.
+занимался машинным обучением. **На дату:** 30.09.2026.
 Что сделано и какие получились цифры — [`ml-summary.md`](ml-summary.md).
 Этот документ про то, *как это устроено внутри* и *почему именно так*.
 
@@ -54,16 +54,19 @@ split_document(md, title=…, chunk_tokens=400, overlap_tokens=50) ── domain
 
 ```
 вопрос
-  │  (M5, не в проде) expand_query — расшифровать сокращения ── domain/query.py
+  │  (BH-28, после встраивания) уточняющий вопрос + история диалога →
+  │     build_condense_messages → самостоятельный вопрос ── prompts/dialogue.py
+  │  (M5) expand_query — расшифровать сокращения из словаря компании ── domain/query.py
   │  (M6, только стенд) переформулировки моделью + RRF ── prompts/multi_query.py
   │  [бэкенд] эмбеддинг text-embeddings-v2-query → top-5 ближайших чанков
-  │  (M1, не в проде) + полнотекст → rrf_merge ─────── domain/fusion.py, fulltext.py
+  │  (M1, выключен флагом) + полнотекст → rrf_merge ── domain/fusion.py, fulltext.py
+  │  (M3, только стенд) реранкер пересортировывает top-30 ── eval/rerank.py
   ▼
-порог: расстояние ≤ 0.51
+порог: расстояние ≤ 0.51 (ML рекомендует 0.59 — вопросы по таблицам)
   ▼
 select_context(чанки, 3000 токенов) ───────────── domain/context.py
   ▼
-build_faq_messages(вопрос, чанки) ─────────────── prompts/faq.py
+build_faq_messages(вопрос, чанки, история) ────── prompts/faq.py
   │  [бэкенд] Alice AI LLM Flash, температура 0
   ▼
 normalize_citations(ответ, чанки) — [4.2], [38] → номер выдержки
@@ -340,6 +343,34 @@ ChunkDraft(
 схеме, которую AI Studio соблюдает при генерации. Вопросы маскируются
 внутри функции, забыть нельзя.
 
+### 3.9. `prompts/dialogue.py` — память диалога (`condense-v1`, `dialogue-v1`)
+
+Задача: понять уточняющий вопрос. «А для УМНИК?» сам по себе поиск не
+находит — нужен контекст прошлых реплик. Решение Артёма 29.09: в MVP.
+Хранение истории и вызовы — бэкенд (BH-28), здесь — только чистые
+функции и промпты.
+
+- `Turn(question, answer)` — одна пара реплик.
+- `recent_turns(turns, max_turns=3)` — последние пары.
+- `format_history(turns, max_turns, max_tokens=600)` — история для
+  промпта: от новых к старым, пока влезает в бюджет; ответы обрезаются до
+  400 символов, ссылки `[n]` из старых ответов убираются — номера в новом
+  ответе относятся к новым выдержкам.
+- `build_condense_messages(history, question)` — промпт «перепиши
+  уточняющий вопрос в самостоятельный». Правила: не отвечать, не
+  добавлять фактов, самостоятельный вопрос вернуть как есть.
+- `parse_condensed(text, question)` — страховка: пустой, слишком длинный
+  или похожий на ответ («В документах…», «Я не могу…») результат
+  заменяется исходным вопросом.
+- В `build_faq_messages(..., history=, standalone_question=)` история
+  идёт отдельным блоком «только чтобы понять вопрос; факты бери из
+  выдержек». **Без истории промпт байт в байт прежний** — это проверяет
+  тест.
+
+Проба на Flash 29.09: «А для УМНИК?» → «Какой максимальный размер гранта
+в конкурсе УМНИК?», 0,2–0,6 с на вызов. Замер на наборе диалогов — до
+установки `RAG_HISTORY_TURNS` больше 0.
+
 ---
 
 ## 4. Eval — как мы измеряем
@@ -391,8 +422,9 @@ ChunkDraft(
 | Команда | Что делает |
 |---|---|
 | `python -m eval.run_eval retrieval / e2e / score` | **официальные числа** через API бэкенда: поиск (`/faq/search`), ответы (`/faq/ask`), подсчёт после ручной разметки `correct` 0/1/2 |
-| `python -m eval.bench` | офлайн-стенд поиска: сам режет корпус (v1/v2, любые размеры, с крошками или без), ищет BM25, вектором или гибридом |
-| `python -m eval.offline_e2e` | весь `/faq/ask` в памяти: поиск → порог → бюджет → промпт → модель → нормализация ссылок → общий ответ |
+| `python -m eval.bench` | офлайн-стенд поиска: сам режет корпус (v1/v2, любые размеры, с крошками или без), ищет BM25, вектором или гибридом. `--rerank [модель]` — реранкер поверх вектора (`--rerank-depth`, `--rerank-quantize` — int8, `--rerank-trust-remote-code` — модели со своим кодом) |
+| `python -m eval.offline_e2e` | весь `/faq/ask` в памяти: поиск → порог → бюджет → промпт → модель → нормализация ссылок → общий ответ. `--not-found strict/general`, `--max-distance`, `--rerank…`, `--llm-extra '{"reasoning_effort": "none"}'` — лишние поля запроса к модели |
+| `python -m eval.bench_reranker` | задержка реранкера на CPU: N кандидатов, M прогонов, медиана и p95; `--quantize`, `--trust-remote-code` |
 | `python -m eval.compare A.csv B.csv` | «B лучше A или шум?»: CI + p-value, сколько вопросов стало лучше и хуже |
 | `python -m eval.threshold …_retrieval.csv` | два распределения расстояний (по корпусу / вне), гистограмма, кандидаты порога |
 | `python -m eval.judge --results …_e2e.csv [--calibrate]` | LLM-судья правильности; `--calibrate` — совпадение и каппа с ручной разметкой |
@@ -430,6 +462,14 @@ text-embeddings-v2 768, порог 0.51, режим «общий ответ». �
 - **Кэш эмбеддингов:** SQLite `eval/.cache/embeddings.sqlite`, ключ —
   модель (с размерностью) + хеш текста. Повторный прогон не платит за
   эмбеддинги.
+- **Лишние поля запроса:** `complete(..., extra={...})` добавляет поля в
+  запрос OpenAI-совместимого API — например, `reasoning_effort` у gpt-oss
+  и Qwen. Нативный API их не принимает — ошибка сразу.
+- **Реранкер** (`eval/rerank.py`, только стенд): кросс-энкодер
+  sentence-transformers в отдельном окружении, баллы в
+  `eval/.cache/rerank.json`, ключ — модель + длина пары + вопрос +
+  фрагмент (+ `int8`). Кэш сохраняется каждые 100 пар: долгий прогон на
+  CPU не теряет посчитанное при обрыве.
 
 ---
 
@@ -440,7 +480,7 @@ text-embeddings-v2 768, порог 0.51, режим «общий ответ». �
 | Python 3.12, **uv** | менеджер пакетов и окружения; `uv.lock` фиксирует версии |
 | **ruff** | линтер и форматтер, версия закреплена |
 | **mypy --strict** | типы проверяются строго |
-| **pytest** | 315 тестов ML-части; БД и ключи не нужны |
+| **pytest** | 385 тестов ML-части (30.09); БД и ключи не нужны |
 | **numpy** | кластеризация вопросов, косинусы в стенде |
 | **razdel** | деление русского текста на предложения |
 | **snowballstemmer** | основы слов для BM25 в стенде, как словарь `russian` в Postgres |
@@ -448,7 +488,8 @@ text-embeddings-v2 768, порог 0.51, режим «общий ответ». �
 | mammoth + markdownify, pymupdf4llm | docx и PDF → Markdown (выбраны сравнением на 6 реальных документах, вызывает бэкенд) |
 | PostgreSQL + pgvector | хранение чанков и векторный поиск (бэкенд) |
 | Yandex AI Studio | Alice AI LLM Flash, text-embeddings-v2; для судьи — YandexGPT Pro, Alice AI LLM |
-| GitHub Actions | CI: ruff → формат → mypy → pytest с Postgres |
+| sentence-transformers, torch (CPU) | только реранкер на стенде, отдельное окружение; в зависимости проекта не входят |
+| GitHub Actions | CI: ruff (с правилами bandit) → формат → mypy → pytest с Postgres |
 
 **Чего сознательно нет:** LangChain, LlamaIndex, векторной БД отдельно от
 Postgres, sklearn. Всё это заменяется десятками строк своего кода и не
@@ -461,8 +502,12 @@ Postgres, sklearn. Всё это заменяется десятками стр�
 ```bash
 uv sync --dev
 # все тесты ML-части (БД не нужна)
-uv run pytest tests/ml_eval tests/test_preprocess.py tests/test_split_document.py \
-  tests/test_faq_prompt.py tests/test_context.py tests/test_retrieval_utils.py tests/test_gaps.py
+uv run pytest tests/ml_eval tests/test_preprocess.py tests/test_split.py \
+  tests/test_split_document.py tests/test_faq_prompt.py tests/test_dialogue_prompt.py \
+  tests/test_context.py tests/test_retrieval_utils.py tests/test_gaps.py \
+  tests/test_multi_query_prompt.py tests/test_query_multi.py
+# на Windows: корневой tests/conftest.py импортирует Linux-only песочницу —
+# добавить --noconftest
 # проверки как в CI
 uv run ruff check && uv run ruff format --check && uv run mypy
 ```
@@ -490,10 +535,12 @@ uv run ruff check && uv run ruff format --check && uv run mypy
    чанков, бюджет — параметры функций. Значения живут в `RagSettings`
    бэкенда.
 6. **Нашли баг на реальном документе → тест-регрессия** с этим случаем.
-7. **Git:** ветки `ml/<тема>`, стек PR по порядку. Историю не
-   переписываем: бэкенд вливает ML-ветки к себе, и перезапись ломает ему
-   слияние. Изменение нижней ветки протягивается наверх слиянием. PR в
-   `main` — через «merge commit», не squash.
+7. **Git:** ветки `ml/<тема>` от `main`, одна задача — один PR в
+   `main`, способ — «merge commit», не squash. Историю не переписываем.
+   Две ветки правят одно место отчёта — после вливания первой
+   вливаем `main` во вторую и разрешаем конфликт. Перед PR ruff
+   гоняем с `pyproject.toml` из `main`, а не из ветки: там могут быть
+   новые правила.
 
 ---
 
@@ -513,6 +560,11 @@ uv run ruff check && uv run ruff format --check && uv run mypy
 | Устаревшие знания модели | в общем ответе — старый возраст для УМНИК | пометка «не из документов компании» всегда |
 | Порог по RRF | лучший результат RRF всегда ~1/61, даже если всё мусор | порог по лучшему векторному расстоянию |
 | Синтетика завышает лексический поиск | вопросы LLM похожи на текст чанка | решения по BM25 и гибриду — на золотом наборе |
+| Таблицы и порог | строка «ключ: значение» далека от вопроса по смыслу: нужная строка первая, но расстояние 0.55–0.58 → отказ | ML-4: порог 0.59 (ждёт решения); вопросы по таблицам — в наборе |
+| Правила ruff в `main` | в `main` включили bandit; `sha1` для ключа кэша прошёл локально (старый `pyproject` в ветке) и упал в CI (S324) | `usedforsecurity=False`; ruff — с конфигом из `main` |
+| Модели со своим кодом и transformers 5 | gte-multilingual: пустые `position_ids` и таблицы RoPE, нет `get_extended_attention_mask` — IndexError | `rebuild_runtime_buffers`; код модели просматривать до запуска |
+| `CrossEncoder.model` в sentence-transformers 6 | это свойство: присваивание квантизованной модели подменило модуль | квантизация на месте (`inplace=True`) |
+| Судья и общий ответ | судья поставил 2 общему ответу «мне неизвестно» (g33) | спорные вердикты смотреть глазами; в отчёте — с g33 и без |
 
 ---
 
@@ -529,15 +581,19 @@ src/corp_ed/
   domain/fulltext.py       запрос для полнотекстового поиска (M1)
   domain/fusion.py         RRF (M1)
   domain/gaps.py           отчёт о пробелах: классификация, кластеры, приоритет, ПДн
-  prompts/faq.py           промпт ответа faq-v2.5, ссылки, общий ответ
+  prompts/faq.py           промпт ответа faq-v2.5, ссылки, общий ответ, история диалога
+  prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
   prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)
-eval/                      наборы, метрики, стенды, судья, клиент Яндекса (раздел 4)
-tests/                     test_preprocess, test_split_document, test_faq_prompt,
-                           test_context, test_retrieval_utils, test_gaps, ml_eval/
+eval/                      наборы, метрики, стенды, судья, клиент Яндекса (раздел 4),
+                           реранкер стенда rerank.py, задержка bench_reranker.py
+tests/                     test_preprocess, test_split, test_split_document, test_faq_prompt,
+                           test_dialogue_prompt, test_context, test_retrieval_utils,
+                           test_gaps, test_multi_query_prompt, test_query_multi, ml_eval/
 docs/                      ml-summary, ml-code-guide (этот файл), ml-report, ml-plan,
-                           backend-handoff, ml-golden-guide, ml-alice-protocol
+                           backend-handoff, ml-golden-guide, ml-alice-protocol,
+                           ml-vs-alice; этап всего проекта — ROADMAP
 ```
 
 Остальное в `src/` (API, сервисы, репозитории, LLM-адаптеры, миграции) —
-бэкенд, см. его документацию и `docs/DECISIONS.md` в ветке бэкенда.
+бэкенд, см. его документацию и `docs/DECISIONS.md`.
