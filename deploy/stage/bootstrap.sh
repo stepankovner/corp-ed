@@ -2,11 +2,14 @@
 # Первичная настройка тестового стенда на чистой Ubuntu 24.04 (docs/STAGE.md).
 #
 # Один раз, под root, на новом сервере — после того как A-запись DOMAIN
-# указывает на его адрес:
+# указывает на его адрес. Репозиторий приватный: скрипт копируется руками
+# (GitHub → файл → Raw, STAGE.md §4.4), затем:
 #
-#   curl -fsSLO https://raw.githubusercontent.com/stepankovner/corp-ed/main/deploy/stage/bootstrap.sh
 #   DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=ops@krontoai.ru \
 #   DEPLOY_PUBKEY="ssh-ed25519 AAAA… corp-ed-stage-deploy" bash bootstrap.sh
+#
+# Первый запуск остановится на шаге «Код»: он напечатает ключ сервера для
+# GitHub (Deploy key, только чтение). Добавить ключ и запустить ещё раз.
 #
 # Повторный запуск безопасен: каждый шаг проверяет, сделан ли он, и
 # ничего не пересоздаёт (.env, сертификат, данные базы остаются).
@@ -15,7 +18,8 @@ set -euo pipefail
 : "${DOMAIN:?DOMAIN — имя стенда; A-запись уже указывает на этот сервер}"
 : "${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL — почта для уведомлений о сертификате}"
 : "${DEPLOY_PUBKEY:?DEPLOY_PUBKEY — открытый ключ, которым выкатывает GitHub Actions}"
-REPO_URL="${REPO_URL:-https://github.com/stepankovner/corp-ed.git}"
+# Приватный репозиторий — по SSH ключом сервера (deploy key, только чтение).
+REPO_URL="${REPO_URL:-git@github.com:stepankovner/corp-ed.git}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-ghcr.io/stepankovner}"
 APP_DIR="${APP_DIR:-/opt/corp-ed}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
@@ -37,7 +41,7 @@ apt-get update -q
 # Docker и compose — из архива Ubuntu: он доступен из РФ через зеркала,
 # в отличие от download.docker.com. Нужен compose v2 (docker compose).
 apt-get install -y -q --no-install-recommends \
-    ca-certificates curl git openssl cron ufw unattended-upgrades \
+    ca-certificates curl git openssh-client openssl cron ufw unattended-upgrades \
     nginx certbot docker.io docker-compose-v2
 
 log "Журнал: 14 дней, логи Docker — в journald"
@@ -93,9 +97,38 @@ printf 'command="/usr/local/bin/corp-ed-deploy",no-port-forwarding,no-X11-forwar
 chown "$DEPLOY_USER:$DEPLOY_USER" "$home/.ssh/authorized_keys"
 chmod 600 "$home/.ssh/authorized_keys"
 
+log "Ключ сервера для чтения репозитория"
+# Репозиторий приватный (с 30.09): код и каждую выкатку сервер забирает
+# своим ключом — deploy key в GitHub, только чтение. Ключ хоста GitHub
+# закреплён, а не принят на веру при первом подключении (docs.github.com,
+# «GitHub's SSH key fingerprints»: SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU).
+github_key="$home/.ssh/github_read"
+if [[ ! -f "$github_key" ]]; then
+    sudo -u "$DEPLOY_USER" ssh-keygen -q -t ed25519 -N "" \
+        -C "corp-ed-stage-read@$DOMAIN" -f "$github_key"
+fi
+printf 'Host github.com\n    IdentityFile %s\n    IdentitiesOnly yes\n' "$github_key" > "$home/.ssh/config"
+echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" \
+    > "$home/.ssh/known_hosts"
+chown "$DEPLOY_USER:$DEPLOY_USER" "$home/.ssh/config" "$home/.ssh/known_hosts"
+chmod 600 "$home/.ssh/config" "$home/.ssh/known_hosts"
+
 log "Код в $APP_DIR"
+install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$APP_DIR"
 if [[ ! -d "$APP_DIR/.git" ]]; then
-    git clone --quiet "$REPO_URL" "$APP_DIR"
+    if ! sudo -u "$DEPLOY_USER" git clone --quiet "$REPO_URL" "$APP_DIR"; then
+        cat >&2 <<EOF
+
+Код не скачался: репозиторий приватный, у сервера пока нет доступа.
+GitHub → репозиторий → Settings → Deploy keys → Add deploy key:
+  Title — corp-ed-stage, Key — строка ниже, «Allow write access» НЕ ставить.
+
+$(cat "$github_key.pub")
+
+Затем запустите bootstrap.sh ещё раз с теми же переменными.
+EOF
+        exit 2
+    fi
 fi
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_DIR"
 

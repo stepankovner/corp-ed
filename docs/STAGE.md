@@ -182,12 +182,30 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 
 ### 4.4. Настройка сервера (один раз, под root)
 
-```bash
-ssh root@<IP>
-curl -fsSLO https://raw.githubusercontent.com/stepankovner/corp-ed/main/deploy/stage/bootstrap.sh
-DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=<почта команды> \
-DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash bootstrap.sh
-```
+Репозиторий приватный (с 30.09), поэтому скрипт не скачать с сервера
+по ссылке — его копируют руками, а код сервер забирает своим ключом
+только на чтение.
+
+1. **Скопировать скрипт на сервер.** В GitHub открыть
+   `deploy/stage/bootstrap.sh` → кнопка **Raw** → выделить всё и
+   скопировать. На сервере:
+   ```bash
+   ssh root@<IP>
+   nano /root/bootstrap.sh
+   # вставить (правая кнопка мыши или Shift+Insert), сохранить: Ctrl+O, Enter; выйти: Ctrl+X
+   ```
+2. **Первый запуск:**
+   ```bash
+   DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=<почта команды> \
+   DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash /root/bootstrap.sh
+   ```
+   Он остановится на шаге «Код» и напечатает строку `ssh-ed25519 …
+   corp-ed-stage-read@stage.krontoai.ru` — ключ сервера для чтения
+   репозитория.
+3. **Добавить ключ в GitHub:** репозиторий → **Settings** → **Deploy
+   keys** → **Add deploy key**: Title — `corp-ed-stage`, Key — эта
+   строка, галочку **Allow write access не ставить**.
+4. **Запустить ещё раз** ту же команду из п. 2 — теперь до конца.
 
 Скрипт работает 3–5 минут. Что он делает:
 
