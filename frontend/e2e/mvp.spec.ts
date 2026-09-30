@@ -138,12 +138,15 @@ test.describe.serial("MVP", () => {
 
   // Новая компания — в строгом режиме (решение 28.09): честный отказ.
   // Вид общего ответа проверяют юнит-тесты (App.test.tsx).
-  test("вопрос мимо документов — честный отказ", async ({ page }) => {
+  test("вопрос мимо документов — общий ответ с пометкой", async ({ page }) => {
+    // Режим новой компании по умолчанию (решение 29.09, BH-29): первая
+    // строка и плашка говорят, что ответ не из документов.
     await login(page, adminEmail, adminPassword);
     await ask(page, "Какая столица Австралии?");
-    await expect(page.getByText("В документах компании нет ответа на этот вопрос.")).toBeVisible({
+    await expect(page.getByText("В документах компании ответа нет").first()).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByRole("button", { name: /^Источник 1: / })).toHaveCount(0);
   });
 
   test("администратор заводит сотрудника", async ({ page }) => {
@@ -209,7 +212,10 @@ test.describe.serial("MVP", () => {
 
   test("посетитель выбирает тариф и записывается на созвон", async ({ page }) => {
     await page.goto("/pricing");
-    await page.getByRole("link", { name: "Записаться на созвон" }).click();
+    await page
+      .getByRole("region", { name: "Базовый" })
+      .getByRole("link", { name: "Записаться на созвон" })
+      .click();
     await page.getByLabel("Компания").fill(leadCompany);
     await page.getByLabel("Сколько сотрудников работают за компьютером").fill("60");
     await page.getByLabel("Как к вам обращаться").fill("Анна");
