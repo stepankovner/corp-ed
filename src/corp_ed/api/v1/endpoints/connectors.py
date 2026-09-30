@@ -34,6 +34,7 @@ from corp_ed.api.v1.schemas.connector import (
     OAuthStartResponse,
     SyncRequestedResponse,
     SyncRunResponse,
+    TariffAllowanceResponse,
 )
 from corp_ed.connectors.registry import FieldSpec, KindSpec, UnknownKindError
 from corp_ed.domain.models import User, UserRole
@@ -56,7 +57,9 @@ def _fields(specs: tuple[FieldSpec, ...]) -> list[FieldSpecResponse]:
     ]
 
 
-def _kind(spec: KindSpec, callback_url: str | None) -> ConnectorKindResponse:
+def _kind(
+    spec: KindSpec, callback_url: str | None, *, available: bool = True
+) -> ConnectorKindResponse:
     return ConnectorKindResponse(
         kind=spec.kind,
         title=spec.title,
@@ -68,6 +71,8 @@ def _kind(spec: KindSpec, callback_url: str | None) -> ConnectorKindResponse:
         oauth=spec.oauth,
         oauth_callback_url=callback_url if spec.oauth else None,
         extra=dict(spec.extra),
+        base=spec.base,
+        available=available,
     )
 
 
@@ -85,9 +90,33 @@ def _is_oauth(service: ConnectorService, kind: str) -> bool:
 async def list_kinds(
     service: Service, current_user: AdminUser
 ) -> list[ConnectorKindResponse]:
-    """Какие системы можно подключить и какие поля у формы."""
+    """Какие системы можно подключить и какие поля у формы.
+
+    available — входит ли система в тариф компании: небазовые — только
+    в «Корпоративном» (решение 30.09).
+    """
     callback_url = service.settings.oauth_callback_url
-    return [_kind(spec, callback_url) for spec in service.kinds()]
+    _, plan, _, _ = await service.allowance()
+    return [
+        _kind(spec, callback_url, available=spec.base or plan.non_base_connectors)
+        for spec in service.kinds()
+    ]
+
+
+@router.get("/tariff", response_model=TariffAllowanceResponse)
+async def tariff_allowance(
+    service: Service, current_user: AdminUser
+) -> TariffAllowanceResponse:
+    """Тариф компании: сколько подключений можно и сколько заведено."""
+    _, plan, limit, used = await service.allowance()
+    return TariffAllowanceResponse(
+        tariff=plan.tariff,
+        title=plan.title,
+        connectors=used,
+        connector_limit=limit,
+        limited_by_tariff=plan.max_connectors is not None
+        and plan.max_connectors <= limit,
+    )
 
 
 @router.get("", response_model=list[ConnectorResponse])

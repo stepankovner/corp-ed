@@ -10,8 +10,10 @@ from corp_ed.core.password_policy import validate_password
 from corp_ed.core.security import hash_password
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
+from corp_ed.repositories.connector_repository import ConnectorRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 
@@ -29,6 +31,19 @@ MAX_SEATS = 10_000
 # Та же проверка, что у входа (LoginRequest.email): почту, которую
 # отвергнет вход, заводить нельзя — администратор не смог бы войти.
 _EMAIL = TypeAdapter(EmailStr)
+
+
+@dataclass(frozen=True)
+class TariffChange:
+    tenant: Tenant
+    connectors: int
+    """Сколько подключений у компании сейчас — для предупреждения, если
+    их больше, чем даёт новый тариф."""
+
+    @property
+    def over_tariff(self) -> bool:
+        limit = plan_for(self.tenant.tariff).max_connectors
+        return limit is not None and self.connectors > limit
 
 
 class InvalidAdminEmailError(DomainError):
@@ -87,6 +102,7 @@ class TenantService:
         admin_password: str,
         seats: int,
         not_found_mode: NotFoundMode = DEFAULT_NOT_FOUND_MODE,
+        tariff: Tariff = DEFAULT_TARIFF,
     ) -> ProvisionedTenant:
         """Создать компанию и её первого администратора одной транзакцией.
 
@@ -97,6 +113,7 @@ class TenantService:
         not_found_mode — что отвечать, когда в документах ответа нет;
         по умолчанию общий ответ с пометкой (DEFAULT_NOT_FOUND_MODE,
         решение 29.09, BH-29).
+        tariff — тариф компании (domain/tariffs.py, решение 30.09).
         """
         code = company_code.strip().casefold()
         if not _COMPANY_CODE.fullmatch(code):
@@ -116,6 +133,7 @@ class TenantService:
                 name=name,
                 seats=seats,
                 not_found_mode=not_found_mode.value,
+                tariff=tariff.value,
             )
         )
         with tenant_scope(tenant.id):
@@ -140,6 +158,7 @@ class TenantService:
                     "admin_user_id": str(admin.id),
                     "seats": seats,
                     "not_found_mode": not_found_mode.value,
+                    "tariff": tariff.value,
                 },
             )
             await self.session.commit()
@@ -198,6 +217,50 @@ class TenantService:
         )
         return tenant
 
+    async def set_tariff(
+        self,
+        company_code: str,
+        tariff: Tariff,
+        *,
+        connector_limit: int | None = None,
+        default_connector_limit: bool = False,
+    ) -> TariffChange:
+        """Сменить тариф и, если нужно, технический потолок подключений.
+
+        connector_limit — поднять (или опустить) потолок для этой компании;
+        default_connector_limit — вернуть общий CONNECTOR_MAX_PER_TENANT.
+        Уже заведённые подключения не удаляются, даже если их больше, чем
+        даёт новый тариф: новых просто нельзя добавить (CLI предупредит).
+        """
+        if connector_limit is not None and connector_limit <= 0:
+            raise ConflictError("Потолок подключений — положительное число")
+        tenant = await self.tenant_repo.get_by_company_code(company_code)
+        if tenant is None:
+            raise ConflictError(f"Компании с кодом '{company_code}' нет")
+        previous = _tariff_state(tenant)
+        tenant.tariff = tariff.value
+        if default_connector_limit:
+            tenant.connector_limit = None
+        elif connector_limit is not None:
+            tenant.connector_limit = connector_limit
+        self.audit.record(
+            AuditAction.TENANT_TARIFF_CHANGED,
+            tenant_id=tenant.id,
+            target_type="tenant",
+            target_id=tenant.id,
+            details={"from": previous, "to": _tariff_state(tenant)},
+        )
+        with tenant_scope(tenant.id):
+            connectors = await ConnectorRepository(self.session).count()
+        await self.session.commit()
+        logger.info(
+            "tenant_tariff_changed",
+            tenant_id=str(tenant.id),
+            tariff=tenant.tariff,
+            connector_limit=tenant.connector_limit,
+        )
+        return TariffChange(tenant=tenant, connectors=connectors)
+
     async def set_not_found_mode(self, company_code: str, mode: NotFoundMode) -> Tenant:
         """Переключить ответ «в документах ответа нет» для компании.
 
@@ -221,6 +284,10 @@ class TenantService:
             "tenant_not_found_mode_changed", tenant_id=str(tenant.id), mode=mode.value
         )
         return tenant
+
+
+def _tariff_state(tenant: Tenant) -> dict[str, str | int | None]:
+    return {"tariff": tenant.tariff, "connector_limit": tenant.connector_limit}
 
 
 def _check_seats(seats: int) -> None:

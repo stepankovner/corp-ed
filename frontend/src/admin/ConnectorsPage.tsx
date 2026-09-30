@@ -38,6 +38,13 @@ export function ConnectorsPage() {
     queryFn: () => unwrap(api.GET("/api/v1/connectors")),
   });
   const kinds = useKinds();
+  // Тариф (решение 30.09): сколько подключений можно и сколько заведено.
+  // Ключ под ["connectors"] — обновляется вместе со списком.
+  const tariff = useQuery({
+    queryKey: ["connectors", "tariff"],
+    queryFn: () => unwrap(api.GET("/api/v1/connectors/tariff")),
+  });
+  const full = tariff.data ? tariff.data.connectors >= tariff.data.connector_limit : false;
   const [creating, setCreating] = useState(false);
   const kindTitle = (kind: string) => kinds.data?.find((k) => k.kind === kind)?.title ?? kind;
 
@@ -48,11 +55,22 @@ export function ConnectorsPage() {
         title="Подключения"
         description="Источники, из которых Kronto сам забирает документы и обновляет их по расписанию: Битрикс24, Яндекс 360, Confluence."
         actions={
-          <Button size="sm" onClick={() => setCreating(true)} disabled={!kinds.data}>
+          <Button size="sm" onClick={() => setCreating(true)} disabled={!kinds.data || full}>
             <Plus size={16} aria-hidden /> Добавить подключение
           </Button>
         }
       />
+      {tariff.data ? (
+        <p className={styles.meta} style={{ marginBottom: "var(--s-4)" }}>
+          Тариф «{tariff.data.title}»: подключений {tariff.data.connectors} из{" "}
+          {tariff.data.connector_limit}.
+          {full
+            ? tariff.data.limited_by_tariff
+              ? " Больше подключений — в тарифе «Расширенный», напишите нам."
+              : " Это технический предел — напишите нам, если нужно больше."
+            : null}
+        </p>
+      ) : null}
       {connectors.isPending ? (
         <PageSpinner />
       ) : connectors.isError ? (
@@ -138,10 +156,11 @@ function CreateConnectorDialog({ kinds, onClose }: { kinds: Kind[]; onClose: () 
               type="button"
               className={styles.kind}
               onClick={() => setKind(item)}
+              disabled={!item.available}
             >
               <span style={{ fontWeight: 500 }}>{item.title}</span>
               <span className="muted" style={{ fontSize: "0.8125rem" }}>
-                {MODE_LABEL[item.mode]}
+                {item.available ? MODE_LABEL[item.mode] : "В тарифе «Корпоративный»"}
               </span>
             </button>
           ))}

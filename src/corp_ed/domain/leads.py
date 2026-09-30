@@ -8,6 +8,8 @@ from datetime import date, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
+from corp_ed.domain.tariffs import Tariff
+
 
 class LeadStatus(StrEnum):
     NEW = "new"
@@ -19,11 +21,9 @@ class LeadStatus(StrEnum):
     """Случайная заявка, спам или не наш клиент."""
 
 
-class LeadTariff(StrEnum):
-    BASE = "base"
-    """Базовый — 1 490 ₽ за место в месяц (досье 10.4)."""
-    CUSTOM = "custom"
-    """Тарифы выше — «по запросу», их цены не определены (досье 15)."""
+LeadTariff = Tariff
+"""Тариф, выбранный в заявке, — те же три, что у компании
+(domain/tariffs.py, решение 30.09)."""
 
 
 CALL_TIMEZONE = ZoneInfo("Europe/Moscow")

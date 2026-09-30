@@ -179,11 +179,11 @@ async def test_lead_fields_are_validated(
 async def test_email_and_comment_are_optional(
     api: httpx.AsyncClient, session: AsyncSession, leads_open: None
 ) -> None:
-    body = _body(email=None, comment=None, tariff="custom")
+    body = _body(email=None, comment=None, tariff="enterprise")
 
     assert (await api.post("/api/v1/leads", json=body)).status_code == 201
     [lead] = await _leads(session)
-    assert (lead.email, lead.comment, lead.tariff) == (None, None, "custom")
+    assert (lead.email, lead.comment, lead.tariff) == (None, None, "enterprise")
 
 
 async def test_honeypot_is_answered_but_not_stored(

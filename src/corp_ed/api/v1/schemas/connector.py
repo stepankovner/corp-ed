@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from corp_ed.api.v1.schemas.base import RequestModel
+from corp_ed.domain.tariffs import Tariff
 from corp_ed.domain.types import ConnectorMode, ConnectorStatus, GrantStatus
 
 MAX_NAME_LENGTH = 100
@@ -51,6 +52,23 @@ class ConnectorKindResponse(BaseModel):
     oauth: bool = False
     oauth_callback_url: str | None = None
     extra: dict[str, str] = Field(default_factory=dict)
+    # Базовая система — во всех тарифах; нет — только «Корпоративный».
+    base: bool = True
+    available: bool = True
+    """Можно ли подключить в тарифе компании."""
+
+
+class TariffAllowanceResponse(BaseModel):
+    """Тариф компании и подключения (решение 30.09, domain/tariffs.py)."""
+
+    tariff: Tariff
+    title: str
+    connectors: int
+    """Сколько подключений заведено."""
+    connector_limit: int
+    """Сколько можно завести: по тарифу, но не больше технического потолка."""
+    limited_by_tariff: bool
+    """Ограничение — тарифное (снимается сменой тарифа), а не техническое."""
 
 
 class ConnectorCreateRequest(RequestModel):

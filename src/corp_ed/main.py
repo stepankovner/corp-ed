@@ -56,6 +56,7 @@ from corp_ed.core.exception_handlers import (
 from corp_ed.core.exceptions import (
     ConflictError,
     ConnectorLimitError,
+    ConnectorNotInTariffError,
     CreditsExhaustedError,
     DomainError,
     DuplicateMaterialError,
@@ -67,6 +68,7 @@ from corp_ed.core.exceptions import (
     NotFoundError,
     PermissionError,
     ServiceUnavailableError,
+    TariffConnectorLimitError,
     TenantContextMissingError,
     TenantMismatchError,
     UnacceptableFileError,
@@ -253,6 +255,8 @@ app.add_exception_handler(UnacceptableFileError, unacceptable_file_handler)
 app.add_exception_handler(DuplicateMaterialError, duplicate_material_handler)
 app.add_exception_handler(CreditsExhaustedError, credits_exhausted_handler)
 app.add_exception_handler(ConnectorLimitError, connector_limit_handler)
+app.add_exception_handler(TariffConnectorLimitError, connector_limit_handler)
+app.add_exception_handler(ConnectorNotInTariffError, connector_limit_handler)
 app.add_exception_handler(InvalidConnectorConfigError, invalid_connector_config_handler)
 
 # Выполняются в порядке, обратном добавлению. Снаружи внутрь:

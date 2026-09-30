@@ -78,6 +78,10 @@ class KindSpec:
     credentials_check: Callable[[Mapping[str, str]], str | None] | None = None
     # Подсказки фронту: нужные scope приложения, путь обратного вызова.
     extra: Mapping[str, str] = field(default_factory=dict)
+    # Базовая система (решение 30.09): доступна во всех тарифах. Не
+    # базовые — только в «Корпоративном» (domain/tariffs.py). Список
+    # базовых определит команда; пока базовые все.
+    base: bool = True
 
     @property
     def module_names(self) -> frozenset[str]:

@@ -53,6 +53,7 @@ const ACTIONS: Record<string, string> = {
   "tenant.suspended": "Доступ компании приостановлен",
   "tenant.resumed": "Доступ компании возобновлён",
   "tenant.not_found_mode_changed": "Изменён режим ответов без документов",
+  "tenant.tariff_changed": "Изменён тариф",
 };
 
 function details(event: Event): string {

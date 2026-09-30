@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, deferred, mapped_column
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
 from corp_ed.domain.mixins import TenantMixin
+from corp_ed.domain.tariffs import DEFAULT_TARIFF
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE
 
 
@@ -73,6 +74,14 @@ class Tenant(Base):
             "not_found_mode IN ('general', 'strict')",
             name="ck_tenants_not_found_mode",
         ),
+        CheckConstraint(
+            "tariff IN ('base', 'extended', 'enterprise')",
+            name="ck_tenants_tariff",
+        ),
+        CheckConstraint(
+            "connector_limit IS NULL OR connector_limit > 0",
+            name="ck_tenants_connector_limit_positive",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -92,6 +101,14 @@ class Tenant(Base):
         default=DEFAULT_NOT_FOUND_MODE.value,
         server_default=DEFAULT_NOT_FOUND_MODE.value,
     )
+    # Тариф (domain/tariffs.py, решение 30.09): сколько подключений и
+    # какие системы. Задаёт команда через CLI.
+    tariff: Mapped[str] = mapped_column(
+        String(16), default=DEFAULT_TARIFF.value, server_default=DEFAULT_TARIFF.value
+    )
+    # Технический потолок подключений для этой компании; NULL — общий
+    # CONNECTOR_MAX_PER_TENANT. Поднимает команда (cli set-tariff).
+    connector_limit: Mapped[int | None]
 
 
 class User(TenantMixin, Base):
@@ -167,7 +184,9 @@ class Lead(Base):
             "status IN ('new', 'contacted', 'scheduled', 'rejected')",
             name="ck_leads_status",
         ),
-        CheckConstraint("tariff IN ('base', 'custom')", name="ck_leads_tariff"),
+        CheckConstraint(
+            "tariff IN ('base', 'extended', 'enterprise')", name="ck_leads_tariff"
+        ),
         CheckConstraint("seats > 0", name="ck_leads_seats_positive"),
         Index("ix_leads_created_at", "created_at"),
     )

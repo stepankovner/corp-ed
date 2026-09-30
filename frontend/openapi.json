@@ -292,6 +292,16 @@
             "title": "App Credential Fields",
             "type": "array"
           },
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "base": {
+            "default": true,
+            "title": "Base",
+            "type": "boolean"
+          },
           "config_fields": {
             "items": {
               "$ref": "#/components/schemas/FieldSpecResponse"
@@ -1501,7 +1511,7 @@
             "type": "integer"
           },
           "tariff": {
-            "$ref": "#/components/schemas/LeadTariff",
+            "$ref": "#/components/schemas/Tariff",
             "default": "base"
           },
           "website": {
@@ -1523,14 +1533,6 @@
         ],
         "title": "LeadRequest",
         "type": "object"
-      },
-      "LeadTariff": {
-        "enum": [
-          "base",
-          "custom"
-        ],
-        "title": "LeadTariff",
-        "type": "string"
       },
       "LoginRequest": {
         "additionalProperties": false,
@@ -2036,6 +2038,48 @@
           "error_code"
         ],
         "title": "SyncRunResponse",
+        "type": "object"
+      },
+      "Tariff": {
+        "enum": [
+          "base",
+          "extended",
+          "enterprise"
+        ],
+        "title": "Tariff",
+        "type": "string"
+      },
+      "TariffAllowanceResponse": {
+        "description": "Тариф компании и подключения (решение 30.09, domain/tariffs.py).",
+        "properties": {
+          "connector_limit": {
+            "title": "Connector Limit",
+            "type": "integer"
+          },
+          "connectors": {
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "limited_by_tariff": {
+            "title": "Limited By Tariff",
+            "type": "boolean"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/Tariff"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tariff",
+          "title",
+          "connectors",
+          "connector_limit",
+          "limited_by_tariff"
+        ],
+        "title": "TariffAllowanceResponse",
         "type": "object"
       },
       "TokenResponse": {
@@ -2709,7 +2753,7 @@
     },
     "/api/v1/connectors/kinds": {
       "get": {
-        "description": "Какие системы можно подключить и какие поля у формы.",
+        "description": "Какие системы можно подключить и какие поля у формы.\n\navailable — входит ли система в тариф компании: небазовые — только\nв «Корпоративном» (решение 30.09).",
         "operationId": "list_kinds_api_v1_connectors_kinds_get",
         "responses": {
           "200": {
@@ -2843,6 +2887,33 @@
           }
         },
         "summary": "Oauth Callback",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/v1/connectors/tariff": {
+      "get": {
+        "description": "Тариф компании: сколько подключений можно и сколько заведено.",
+        "operationId": "tariff_allowance_api_v1_connectors_tariff_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TariffAllowanceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Tariff Allowance",
         "tags": [
           "connectors"
         ]

@@ -38,6 +38,7 @@ class AuditAction(StrEnum):
     GAP_STATUS_CHANGED = "gap.status_changed"
     TENANT_SEATS_CHANGED = "tenant.seats_changed"
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
+    TENANT_TARIFF_CHANGED = "tenant.tariff_changed"
     CREDITS_WARNING = "credits.warning"
     CREDITS_EXHAUSTED = "credits.exhausted"
     CONNECTOR_CREATED = "connector.created"

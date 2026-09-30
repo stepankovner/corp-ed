@@ -5,6 +5,8 @@
         [--admin-password-stdin]   # иначе пароль спросят в терминале
     python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
     python -m corp_ed.cli set-not-found-mode --code acme --mode general
+    python -m corp_ed.cli set-tariff --code acme --tariff extended \
+        [--connector-limit 50 | --default-connector-limit]
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
@@ -63,6 +65,7 @@ from corp_ed.core.outbound import (
 )
 from corp_ed.core.secrets import SecretBox
 from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
+from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.audit_repository import AuditRepository
@@ -103,6 +106,13 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_NOT_FOUND_MODE.value,
         help="нет ответа в документах: общий ответ с пометкой (по умолчанию) или отказ",
     )
+    create.add_argument(
+        "--tariff",
+        choices=[tariff.value for tariff in Tariff],
+        default=DEFAULT_TARIFF.value,
+        help="тариф: base — «Базовый» (по умолчанию), extended — «Расширенный», "
+        "enterprise — «Корпоративный»",
+    )
 
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")
     seats.add_argument("--code", required=True)
@@ -111,6 +121,25 @@ def _parser() -> argparse.ArgumentParser:
         "--yes",
         action="store_true",
         help="подтвердить, если новый пул меньше уже потраченного за месяц",
+    )
+
+    tariff = commands.add_parser(
+        "set-tariff", help="тариф компании и потолок подключений"
+    )
+    tariff.add_argument("--code", required=True)
+    tariff.add_argument(
+        "--tariff", required=True, choices=[value.value for value in Tariff]
+    )
+    limit = tariff.add_mutually_exclusive_group()
+    limit.add_argument(
+        "--connector-limit",
+        type=int,
+        help="технический потолок подключений этой компании (защита от скрипта)",
+    )
+    limit.add_argument(
+        "--default-connector-limit",
+        action="store_true",
+        help="вернуть общий потолок CONNECTOR_MAX_PER_TENANT",
     )
 
     not_found = commands.add_parser(
@@ -271,11 +300,13 @@ async def _run(args: argparse.Namespace) -> int:
                 ),
                 seats=args.seats,
                 not_found_mode=NotFoundMode(args.not_found_mode),
+                tariff=Tariff(args.tariff),
             )
             print(f"company_code:       {result.tenant.company_code}")
             print(f"tenant_id:          {result.tenant.id}")
             print(f"seats:              {result.tenant.seats}")
             print(f"not_found_mode:     {result.tenant.not_found_mode}")
+            print(f"tariff:             {result.tenant.tariff}")
             print(f"admin_email:        {result.admin.email}")
             print(
                 "Временный пароль задан. Передайте его клиенту отдельным от "
@@ -297,6 +328,27 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"{tenant.company_code}: seats={tenant.seats}")
             if check.message:
                 print(f"Внимание: {check.message}")
+            return 0
+
+        if args.command == "set-tariff":
+            change = await service.set_tariff(
+                args.code,
+                Tariff(args.tariff),
+                connector_limit=args.connector_limit,
+                default_connector_limit=args.default_connector_limit,
+            )
+            plan = plan_for(change.tenant.tariff)
+            print(
+                f"{change.tenant.company_code}: tariff={change.tenant.tariff} "
+                f"«{plan.title}», connector_limit="
+                f"{change.tenant.connector_limit or 'общий'}"
+            )
+            if change.over_tariff:
+                print(
+                    f"Внимание: подключений {change.connectors}, а тариф даёт "
+                    f"{plan.max_connectors}. Заведённые продолжат работать, "
+                    "новые добавить нельзя."
+                )
             return 0
 
         if args.command == "set-not-found-mode":
