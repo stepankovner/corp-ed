@@ -33,10 +33,12 @@ from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
+from corp_ed.domain.rerank import RerankText
 from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.reranker import HttpReranker, Reranker
 from corp_ed.llm.throttle import Throttle
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -347,6 +349,20 @@ def get_dialogue_store(request: Request) -> DialogueStore | None:
     return store
 
 
+def get_reranker(
+    request: Request, settings: Annotated[RagSettings, Depends(get_rag_settings)]
+) -> Reranker | None:
+    """Реранкер (M3, Р-14): HTTP-сервис из compose.yaml или ничего."""
+    if settings.reranker == "off":
+        return None
+    return HttpReranker(
+        get_http_client(request),
+        settings.rerank_url,
+        model=settings.rerank_model,
+        timeout=settings.rerank_timeout_seconds,
+    )
+
+
 def get_credit_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
@@ -377,6 +393,7 @@ def get_faq_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[RagSettings, Depends(get_rag_settings)],
     dialogue_store: Annotated[DialogueStore | None, Depends(get_dialogue_store)],
+    reranker: Annotated[Reranker | None, Depends(get_reranker)],
 ) -> FaqService:
     return FaqService(
         chunk_repo=chunk_repo,
@@ -401,6 +418,10 @@ def get_faq_service(
         history_turns=settings.history_turns,
         history_ttl_minutes=settings.history_ttl_minutes,
         condense_timeout=settings.condense_timeout_seconds,
+        reranker=reranker,
+        rerank_depth=settings.rerank_depth,
+        rerank_timeout=settings.rerank_timeout_seconds,
+        rerank_text=RerankText(settings.rerank_text),
     )
 
 

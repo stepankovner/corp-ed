@@ -1,4 +1,5 @@
 import asyncio
+import time
 from dataclasses import dataclass, field, replace
 from uuid import UUID, uuid4
 
@@ -10,13 +11,18 @@ from corp_ed.core.dialogue_store import (
     DialogueStore,
     DialogueStoreUnavailableError,
 )
-from corp_ed.core.exceptions import NotFoundError
+from corp_ed.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from corp_ed.domain.context import select_context
 from corp_ed.domain.fulltext import to_fulltext_query
 from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
+from corp_ed.domain.rerank import RerankText, rerank_order, rerank_passage
 from corp_ed.domain.types import (
     DEFAULT_NOT_FOUND_MODE,
     AnswerDiagnostics,
@@ -29,6 +35,7 @@ from corp_ed.domain.types import (
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.reranker import Reranker, RerankerError
 from corp_ed.llm.types import Completion, FinishReason
 from corp_ed.prompts.dialogue import (
     CONDENSE_PROMPT_VERSION,
@@ -64,6 +71,14 @@ FUSION_CANDIDATES = 50
 
 CONDENSE_MAX_TOKENS = 100
 """Переписанный вопрос — одна строка (контракт BH-28)."""
+
+
+@dataclass(frozen=True)
+class _Reranked:
+    matches: list[ChunkMatch]
+    model: str | None
+    """Модель, если порядок дал реранкер; None — порядок вектора."""
+    ms: int | None
 
 
 @dataclass(frozen=True)
@@ -118,6 +133,10 @@ class FaqService:
         history_turns: int = 0,
         history_ttl_minutes: int = 720,
         condense_timeout: float = 5.0,
+        reranker: Reranker | None = None,
+        rerank_depth: int = 30,
+        rerank_timeout: float = 4.0,
+        rerank_text: RerankText = RerankText.EMBED,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -141,6 +160,10 @@ class FaqService:
         self.history_turns = history_turns if dialogue_store is not None else 0
         self.history_ttl_seconds = history_ttl_minutes * 60
         self.condense_timeout = condense_timeout
+        self.reranker = reranker
+        self.rerank_depth = rerank_depth
+        self.rerank_timeout = rerank_timeout
+        self.rerank_text = rerank_text
 
     async def answer(
         self, question: str, user: User, conversation_id: UUID | None = None
@@ -189,13 +212,16 @@ class FaqService:
         found = await self._retrieve(
             search_text,
             embedded.embedding,
-            limit=self.limit,
+            limit=self._fetch_limit(self.limit),
             retriever=self.retriever,
             viewer=user.id,
         )
+        # Реранкер (M3) выбирает лучшие limit из прошедших порог; порог —
+        # по-прежнему по вектору. Выключен — первые limit по вектору.
+        reranked = await self._rerank(standalone, found.relevant, self.limit)
         # Порядок сохраняется: номер [n] в ответе модели — позиция выдержки
         # в context, и в том же порядке источники уходят клиенту.
-        context = select_context(found.relevant, max_tokens=self.context_max_tokens)
+        context = select_context(reranked.matches, max_tokens=self.context_max_tokens)
         nearest = found.nearest
 
         outcome = await self._answer(
@@ -238,6 +264,7 @@ class FaqService:
                 standalone_question=mask_pii(standalone) if history else None,
                 condense_prompt_version=CONDENSE_PROMPT_VERSION if history else None,
                 history_turns=len(history),
+                rerank_model=reranked.model,
             )
         )
         await self.credits.note_spend(usage, credits)
@@ -260,6 +287,8 @@ class FaqService:
             latency_ms=sum(c.latency_ms for c in completions),
             history_turns=len(history),
             condensed=standalone != question,
+            reranked=reranked.model is not None,
+            rerank_ms=reranked.ms,
         )
         return FaqAnswer(
             content=outcome.content,
@@ -277,6 +306,8 @@ class FaqService:
                 nearest_distance=nearest,
                 standalone_question=standalone if history else None,
                 history_turns=len(history),
+                rerank_model=reranked.model,
+                rerank_ms=reranked.ms,
             ),
             conversation_id=dialogue.conversation_id,
         )
@@ -288,6 +319,7 @@ class FaqService:
         retriever: Retriever | None = None,
         *,
         viewer: User,
+        rerank: bool = False,
     ) -> list[ChunkMatch]:
         """Отладка поиска для eval (BH-5): top-K без порога и без LLM.
 
@@ -296,17 +328,68 @@ class FaqService:
         сравнить способы поиска на живой базе, не меняя настройку.
         Права источников действуют и здесь: админ видит то, что видит
         сам, а не всё подряд.
+
+        rerank — пересортировать реранкером (M3) top-rerank_depth и вернуть
+        первые limit с баллом rerank_score: замер ML на живой базе. Без
+        порога, как и весь /faq/search.
         """
+        if rerank and self.reranker is None:
+            raise ConflictError("Реранкер выключен (RAG_RERANKER=off)")
         search_text = await self._search_text(question)
         embedded = await self.embedding_gateway.embed_query(search_text)
         found = await self._retrieve(
             search_text,
             embedded.embedding,
-            limit=limit,
+            limit=self._fetch_limit(limit) if rerank else limit,
             retriever=retriever or self.retriever,
             viewer=viewer.id,
         )
-        return found.candidates
+        if not rerank:
+            return found.candidates
+        reranked = await self._rerank(question, found.candidates, limit)
+        if reranked.model is None and len(found.candidates) > 1:
+            raise ServiceUnavailableError()
+        return reranked.matches
+
+    def _fetch_limit(self, limit: int) -> int:
+        """Сколько кандидатов брать у поиска: с реранкером — глубину для
+        пересортировки, без него — ровно limit."""
+        return max(limit, self.rerank_depth) if self.reranker else limit
+
+    async def _rerank(
+        self, question: str, matches: list[ChunkMatch], limit: int
+    ) -> _Reranked:
+        """Лучшие limit по реранкеру; без него или при сбое — по вектору.
+
+        Сбой, таймаут или ответ не по контракту — не сбой ответа: порядок
+        вектора, как без реранкера. В журнале тогда rerank_model пуст.
+        """
+        if self.reranker is None or len(matches) <= 1:
+            return _Reranked(matches=matches[:limit], model=None, ms=None)
+        started = time.perf_counter()
+        try:
+            scores = await asyncio.wait_for(
+                self.reranker.score(
+                    question, [rerank_passage(m, self.rerank_text) for m in matches]
+                ),
+                timeout=self.rerank_timeout,
+            )
+        except (RerankerError, TimeoutError) as exc:
+            elapsed = int((time.perf_counter() - started) * 1000)
+            logger.warning(
+                "faq_rerank_failed", error=type(exc).__name__, rerank_ms=elapsed
+            )
+            return _Reranked(matches=matches[:limit], model=None, ms=elapsed)
+        elapsed = int((time.perf_counter() - started) * 1000)
+        scored = [
+            replace(match, rerank_score=score)
+            for match, score in zip(matches, scores, strict=True)
+        ]
+        return _Reranked(
+            matches=rerank_order(scored, scores)[:limit],
+            model=self.reranker.model,
+            ms=elapsed,
+        )
 
     async def _history(self, dialogue: DialogueKey) -> list[Turn]:
         """Последние history_turns реплик диалога; сбой — без истории."""

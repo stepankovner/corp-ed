@@ -73,7 +73,11 @@ async def search_faq(
     продуктовом ответе. Компания — из токена, как везде.
     """
     matches = await service.search(
-        data.question, data.limit, data.retriever, viewer=current_user
+        data.question,
+        data.limit,
+        data.retriever,
+        viewer=current_user,
+        rerank=data.rerank,
     )
     return FaqSearchResponse(
         matches=[
@@ -86,6 +90,7 @@ async def search_faq(
                 content=match.content,
                 distance=match.distance,
                 fulltext_rank=match.fulltext_rank,
+                rerank_score=match.rerank_score,
             )
             for match in matches
         ]

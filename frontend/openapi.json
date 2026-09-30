@@ -58,6 +58,28 @@
             "title": "Prompt Version",
             "type": "string"
           },
+          "rerank_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Model"
+          },
+          "rerank_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Ms"
+          },
           "standalone_question": {
             "anyOf": [
               {
@@ -745,6 +767,17 @@
           "position": {
             "title": "Position",
             "type": "integer"
+          },
+          "rerank_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Score"
           }
         },
         "required": [
@@ -775,6 +808,11 @@
             "minLength": 1,
             "title": "Question",
             "type": "string"
+          },
+          "rerank": {
+            "default": false,
+            "title": "Rerank",
+            "type": "boolean"
           },
           "retriever": {
             "anyOf": [

@@ -46,6 +46,9 @@ class AnswerDiagnosticsResponse(BaseModel):
     # сколько прошлых реплик учтено — для замера ML на стенде.
     standalone_question: str | None = None
     history_turns: int = 0
+    # Реранкер (M3): модель, если порядок выдержек дал он, и время.
+    rerank_model: str | None = None
+    rerank_ms: int | None = None
 
 
 class FaqAnswerResponse(BaseModel):
@@ -86,6 +89,9 @@ class FaqSearchRequest(RequestModel):
     # Сравнить способы поиска на живой базе, не меняя RAG_RETRIEVER.
     # Не задан — как в /faq/ask.
     retriever: Retriever | None = None
+    # Пересортировать реранкером (M3) и вернуть балл; 409, если он
+    # выключен (RAG_RERANKER=off), 503 — если не ответил.
+    rerank: bool = False
 
 
 class FaqSearchMatch(BaseModel):
@@ -99,6 +105,7 @@ class FaqSearchMatch(BaseModel):
     content: str
     distance: float
     fulltext_rank: float | None
+    rerank_score: float | None = None
 
 
 class FaqSearchResponse(BaseModel):

@@ -180,6 +180,23 @@ class RagSettings(BaseSettings):
     # сам ответ, нельзя. Не успел — ответ по исходному вопросу.
     condense_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
 
+    # Реранкер (M3, Р-14): off — порядок вектора, как в замерах задачи 1;
+    # http — сервис с контрактом text-embeddings-inference /rerank
+    # (compose.yaml, профиль reranker). Включает ML по замеру (holdout
+    # 11–12.10), поэтому по умолчанию выключен.
+    reranker: Literal["off", "http"] = "off"
+    rerank_url: str = "http://reranker:8080"
+    # Имя модели — только для журнала и диагностики: модель выбирает сам
+    # сервис (deploy/reranker/fetch-model.sh).
+    rerank_model: str = "mmarco-mMiniLMv2-L12-H384-v1"
+    # Сколько кандидатов вектора пересортировать (у ML — 30; 20 быстрее).
+    rerank_depth: int = Field(default=30, ge=1, le=100)
+    # Не успел — ответ по порядку вектора. На 4 vCPU 30 кандидатов —
+    # около 1,9 с (замер 30.09), запас на одновременные вопросы.
+    rerank_timeout_seconds: float = Field(default=4.0, gt=0, le=30)
+    # embed — крошки + текст (как мерил ML), llm — текст для промпта.
+    rerank_text: Literal["embed", "llm"] = "embed"
+
     model_config = SettingsConfigDict(
         env_prefix="RAG_",
         env_file=".env",

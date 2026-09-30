@@ -893,6 +893,10 @@ export interface components {
             output_tokens: number;
             /** Prompt Version */
             prompt_version: string;
+            /** Rerank Model */
+            rerank_model?: string | null;
+            /** Rerank Ms */
+            rerank_ms?: number | null;
             /** Standalone Question */
             standalone_question?: string | null;
         };
@@ -1172,6 +1176,8 @@ export interface components {
             material_title: string;
             /** Position */
             position: number;
+            /** Rerank Score */
+            rerank_score?: number | null;
         };
         /** FaqSearchRequest */
         FaqSearchRequest: {
@@ -1182,6 +1188,11 @@ export interface components {
             limit: number;
             /** Question */
             question: string;
+            /**
+             * Rerank
+             * @default false
+             */
+            rerank: boolean;
             retriever?: components["schemas"]["Retriever"] | null;
         };
         /** FaqSearchResponse */
