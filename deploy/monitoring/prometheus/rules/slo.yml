@@ -1,0 +1,54 @@
+# SLO стенда и пилота (решение 30.09): 99,0 % успешных запросов к API в
+# месяц — до ~7,3 ч простоя. Столько честно даёт один сервер и один
+# поставщик моделей (RESILIENCE-RESEARCH.md §4). Поменять — одно число в
+# corp_ed:slo_target ниже; тревоги по бюджету ошибок пересчитаются сами.
+#
+# Успешный запрос — ответ API не 5xx (502 на /faq/ask — сбой модели или
+# эмбеддингов, тоже провал для сотрудника).
+groups:
+  - name: slo
+    rules:
+      - record: corp_ed:slo_target
+        expr: vector(0.99)
+
+      - record: corp_ed:api_error_ratio:rate5m
+        expr: |
+          sum(rate(corp_ed_http_requests_total{route=~"/api/.*", status=~"5.."}[5m]))
+          / sum(rate(corp_ed_http_requests_total{route=~"/api/.*"}[5m]))
+      - record: corp_ed:api_error_ratio:rate30m
+        expr: |
+          sum(rate(corp_ed_http_requests_total{route=~"/api/.*", status=~"5.."}[30m]))
+          / sum(rate(corp_ed_http_requests_total{route=~"/api/.*"}[30m]))
+      - record: corp_ed:api_error_ratio:rate1h
+        expr: |
+          sum(rate(corp_ed_http_requests_total{route=~"/api/.*", status=~"5.."}[1h]))
+          / sum(rate(corp_ed_http_requests_total{route=~"/api/.*"}[1h]))
+      - record: corp_ed:api_error_ratio:rate6h
+        expr: |
+          sum(rate(corp_ed_http_requests_total{route=~"/api/.*", status=~"5.."}[6h]))
+          / sum(rate(corp_ed_http_requests_total{route=~"/api/.*"}[6h]))
+
+      # Бюджет ошибок сгорает быстро: за час ушло 2 % месячного бюджета
+      # (скорость ×14,4) — тревога сразу. Медленно (×6 за 6 ч) — днём.
+      # Схема — Google SRE Workbook, «Alerting on SLOs».
+      - alert: ErrorBudgetBurnFast
+        expr: |
+          corp_ed:api_error_ratio:rate1h > on() group_left() (14.4 * (1 - corp_ed:slo_target))
+          and corp_ed:api_error_ratio:rate5m > on() group_left() (14.4 * (1 - corp_ed:slo_target))
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API отвечает ошибками 5xx: бюджет SLO сгорает быстро"
+          description: "Доля 5xx за час {{ $value | humanizePercentage }}. Чаще всего — недоступен Яндекс (502 на /faq/ask) или база."
+
+      - alert: ErrorBudgetBurnSlow
+        expr: |
+          corp_ed:api_error_ratio:rate6h > on() group_left() (6 * (1 - corp_ed:slo_target))
+          and corp_ed:api_error_ratio:rate30m > on() group_left() (6 * (1 - corp_ed:slo_target))
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API часто отвечает ошибками: бюджет SLO сгорает"
+          description: "Доля 5xx за 6 часов {{ $value | humanizePercentage }}."

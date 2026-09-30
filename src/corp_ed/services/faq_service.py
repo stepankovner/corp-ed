@@ -16,6 +16,7 @@ from corp_ed.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
+from corp_ed.core.metrics import FAQ_ANSWERS, FAQ_DEGRADED
 from corp_ed.domain.context import select_context
 from corp_ed.domain.fulltext import to_fulltext_query
 from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
@@ -273,6 +274,7 @@ class FaqService:
         # Вопрос — как в журнале (после mask_pii), ответ — что видел
         # сотрудник; отказы — тоже реплики (контракт BH-28).
         await self._remember(dialogue, Turn(mask_pii(question), outcome.content))
+        FAQ_ANSWERS.labels(outcome.origin.value).inc()
 
         logger.info(
             "faq_answered",
@@ -379,6 +381,7 @@ class FaqService:
             logger.warning(
                 "faq_rerank_failed", error=type(exc).__name__, rerank_ms=elapsed
             )
+            FAQ_DEGRADED.labels("rerank").inc()
             return _Reranked(matches=matches[:limit], model=None, ms=elapsed)
         elapsed = int((time.perf_counter() - started) * 1000)
         scored = [
@@ -399,6 +402,7 @@ class FaqService:
             turns = await self.dialogue_store.load(dialogue)
         except DialogueStoreUnavailableError:
             logger.warning("faq_dialogue_store_unavailable", stage="load")
+            FAQ_DEGRADED.labels("dialogue_store").inc()
             return []
         return recent_turns(turns, self.history_turns)
 
@@ -414,6 +418,7 @@ class FaqService:
             )
         except DialogueStoreUnavailableError:
             logger.warning("faq_dialogue_store_unavailable", stage="append")
+            FAQ_DEGRADED.labels("dialogue_store").inc()
 
     async def _condense(self, history: list[Turn], question: str) -> _Condensed:
         """Уточняющий вопрос → самостоятельный (BH-28, prompts/dialogue.py).
@@ -437,6 +442,7 @@ class FaqService:
             )
         except (LLMError, TimeoutError) as exc:
             logger.warning("faq_condense_failed", error=type(exc).__name__)
+            FAQ_DEGRADED.labels("condense").inc()
             return _Condensed(question=question, completion=None)
         if completion.finish_reason is FinishReason.FILTERED:
             logger.info("faq_condense_filtered")

@@ -70,6 +70,18 @@ local_https=(curl -fsS --max-time 10 --noproxy '*' --resolve "$DOMAIN:443:127.0.
 "${local_https[@]}" "https://$DOMAIN/health" >/dev/null
 "${local_https[@]}" -o /dev/null "https://$DOMAIN/"
 
+# Мониторинг (deploy/monitoring, П-9) — из того же коммита, что приложение:
+# правила тревог и дашборд едут вместе с кодом. Его сбой выкатку не
+# останавливает — приложение уже работает, — но виден в логе workflow.
+if [[ -f /etc/corp-ed/monitoring.env ]]; then
+    echo "==> мониторинг"
+    if ! docker compose -f deploy/monitoring/compose.yaml \
+        --env-file .env --env-file /etc/corp-ed/monitoring.env \
+        up -d --remove-orphans --quiet-pull; then
+        echo "ВНИМАНИЕ: мониторинг не поднялся (приложение выкачено)" >&2
+    fi
+fi
+
 printf '%s %s\n' "$(date -u +%FT%TZ)" "$sha" >> /var/log/corp-ed/deploys.log
 # Неиспользуемые образы старше недели: иначе каждая выкатка оставляет
 # ~1 ГБ. Работающие контейнеры prune не трогает; для отката старый образ

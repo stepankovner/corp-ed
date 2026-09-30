@@ -1,0 +1,33 @@
+// Логи контейнеров и системы из journald хоста → Loki (14 дней).
+// Docker пишет логи в journald (bootstrap.sh, log-driver journald): имя
+// контейнера — поле CONTAINER_NAME. Сокет Docker сюда не нужен.
+
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "host" {
+  forward_to    = [loki.write.local.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {job = "journal"}
+  max_age       = "12h"
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

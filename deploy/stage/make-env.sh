@@ -37,8 +37,10 @@ set_var APP_DB_PASSWORD "$(hex 24)"
 set_var REDIS_PASSWORD "$(hex 24)"
 set_var SECRET_KEY "$(hex 32)"
 set_var CONNECTOR_SECRETS_KEYS "$(fernet)"
-# 127.0.0.1 — HEALTHCHECK контейнера идёт через ту же проверку Host.
-set_var ALLOWED_HOSTS "$DOMAIN,127.0.0.1"
+# 127.0.0.1 — HEALTHCHECK контейнера идёт через ту же проверку Host;
+# api — имя сервиса: по нему Prometheus и blackbox (deploy/monitoring)
+# ходят в /metrics и /health/ready внутри сети Docker.
+set_var ALLOWED_HOSTS "$DOMAIN,127.0.0.1,api"
 set_var CONNECTOR_OAUTH_CALLBACK_URL "https://$DOMAIN/api/v1/connectors/oauth/callback"
 set_var CONNECTOR_OAUTH_RETURN_URL "https://$DOMAIN/sources"
 # Память диалога (BH-28) на стенде включена: демо с уточняющими вопросами

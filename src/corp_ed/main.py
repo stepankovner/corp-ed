@@ -4,9 +4,10 @@ from contextlib import asynccontextmanager
 
 import httpx
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import text
@@ -75,6 +76,7 @@ from corp_ed.core.exceptions import (
     WeakPasswordError,
 )
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.metrics import MetricsMiddleware, metrics_endpoint
 from corp_ed.core.middleware import (
     BodySizeLimitMiddleware,
     RequestIDMiddleware,
@@ -86,6 +88,7 @@ from corp_ed.core.rate_limit import (
     RateLimiter,
     RedisRateLimiter,
 )
+from corp_ed.core.readiness import readiness_failures
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle
 from corp_ed.services.team_notify import build_team_notifier
@@ -122,6 +125,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.rate_limiter = limiter
     # Реплики диалогов (BH-28) — там же, где лимиты: в бою Redis без
     # записи на диск, в разработке — память процесса.
+    app.state.redis = redis
     app.state.dialogue_store = (
         RedisDialogueStore(redis) if redis is not None else InMemoryDialogueStore()
     )
@@ -236,6 +240,23 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/health/ready", include_in_schema=False)
+async def health_ready(request: Request) -> JSONResponse:
+    """Готов ли сервис отвечать: база, Redis, пульс воркера (П-9).
+
+    Её проверяет внешний чекер (Ping-Admin) и blackbox в мониторинге:
+    /health живёт, пока жив процесс, а сотруднику нужен весь путь.
+    Наружу — только имена упавших частей, без деталей ошибок.
+    """
+    failed = await readiness_failures(request.app.state)
+    if failed:
+        return JSONResponse({"status": "fail", "failed": failed}, status_code=503)
+    return JSONResponse({"status": "ok"})
+
+
+app.add_route("/metrics", metrics_endpoint, include_in_schema=False)
+
+
 app.add_exception_handler(DomainError, domain_fallback_handler)
 app.add_exception_handler(ConflictError, conflict_error_handler)
 app.add_exception_handler(NotFoundError, not_found_error_handler)
@@ -271,6 +292,7 @@ app.add_middleware(
     upload_paths=UPLOAD_PATH_SUFFIXES,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=http_settings.hosts)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SecurityHeadersMiddleware, hsts=http_settings.is_production)
 
