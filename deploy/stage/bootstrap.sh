@@ -20,7 +20,7 @@ IMAGE_PREFIX="${IMAGE_PREFIX:-ghcr.io/stepankovner}"
 APP_DIR="${APP_DIR:-/opt/corp-ed}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 # Зеркало Docker Hub на случай, если hub.docker.com с сервера недоступен
-# (у Timeweb — https://dockerhub.timeweb.cloud). Пусто — без зеркала.
+# (например, https://mirror.gcr.io). Пусто — без зеркала.
 REGISTRY_MIRROR="${REGISTRY_MIRROR:-}"
 SWAP_SIZE="${SWAP_SIZE:-4G}"
 

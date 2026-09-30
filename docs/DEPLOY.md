@@ -65,9 +65,11 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Режим | `ENVIRONMENT=production` | включает HSTS, выключает `/docs`, требует явных хостов, CORS и Redis |
 | Секреты | `SECRET_KEY` (≥ 32 символов), `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `REDIS_PASSWORD`, `YC_API_KEY` | генерировать: `openssl rand -hex 32` |
 | Yandex Cloud | `YC_FOLDER_ID`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_MAX_CONCURRENCY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `EMBEDDING_QUERY_RPS`, `EMBEDDING_INGEST_RPS` | квоты каталога делятся между API и воркером |
-| Поиск и ответ | `RAG_*` | значения задаёт ML; дефолтов нет намеренно |
+| Поиск и ответ | `RAG_*` | значения задаёт ML; у основных дефолтов нет намеренно. Порог — `RAG_FAQ_MAX_DISTANCE=0.59` (BH-31, 30.09) |
+| Память диалога | `RAG_HISTORY_TURNS`, `RAG_HISTORY_TTL_MINUTES`, `RAG_CONDENSE_TIMEOUT_SECONDS` | BH-28: 0 — выключена (по умолчанию, до замера ML); реплики — только в Redis, 720 мин от последнего вопроса (решение 30.09) |
+| Реранкер | `RAG_RERANKER`, `RAG_RERANK_URL`, `RAG_RERANK_MODEL`, `RAG_RERANK_DEPTH`, `RAG_RERANK_TIMEOUT_SECONDS`, `RAG_RERANK_TEXT`, `COMPOSE_PROFILES=reranker` | M3, Р-14: `off` по умолчанию; включать по замеру ML — сервис `reranker` в `compose.yaml`, модель — `deploy/reranker/fetch-model.sh` |
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
-| HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5 |
+| HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5; с мониторингом (раздел 10) — добавить `api`: Prometheus ходит на `api:8000` |
 | Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09) |
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
@@ -319,11 +321,23 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
   и пароли вырезаются процессором structlog. Собирать во внешнюю
   систему с хранением ≥ 90 дней — журнал аудита в базе хранится год, но
   логи с `request_id` нужны для разбора инцидента.
-- `GET /health` — живость `api` (без базы и Redis). Сбой базы виден по
-  500 на боевых ручках и по логу `internal_error`.
-- Воркер: HTTP-порта нет; признак остановки — растущее число задач
-  `ingest_jobs` в статусе `PENDING` и материалы, не переходящие в
-  `READY`. Застрявшие `RUNNING` воркер сам переоткрывает через 15 минут.
+- `GET /health` — живость `api` (без базы и Redis): для HEALTHCHECK
+  контейнера.
+- `GET /health/ready` — готовность целиком: база, Redis, пульс воркера
+  (ключ в Redis, обновляется каждые 30 с). `200 {"status":"ok"}` или
+  `503` с именами упавших частей; проксируется nginx — её проверяет
+  внешний чекер (Ping-Admin, звонок ночью).
+- `GET /metrics` — метрики Prometheus: запросы по маршруту и коду,
+  время ответа, ответы по источнику, деградации (без переписывания,
+  реранкера, истории). Только частным адресам; nginx его не проксирует.
+  Воркер — метрики очередей и пульса на порту 9101 внутри сети Docker
+  (`WORKER_METRICS_PORT`, 0 — выключить).
+- Стек мониторинга — `deploy/monitoring` (Prometheus, Alertmanager,
+  Grafana, Loki, Alloy, node-exporter, blackbox): тревоги, SLO (одно
+  число в `prometheus/rules/slo.yml`), «мёртвая рука» для ночных задач
+  (`deploy/stage/cron-run.sh`), логи 14 дней. На стенде его поднимает
+  `deploy.sh`, настройка — `STAGE.md`; для боевого сервера — тот же
+  стек на отдельной ВМ (П-9).
 - Аудит: `GET /api/v1/audit` для администратора компании; события
   `auth.login.failed`, `auth.refresh.reuse_detected`, `credits.*` —
   сигналы, на которые стоит смотреть команде.

@@ -137,6 +137,9 @@ HTTP API (`/api/v1/*`), загружаемые файлы, содержимое 
 | Необработанное исключение → JSON 500 с `request_id`, без трассировки; ошибки изоляции — 500 без текста про тенанта | `RequestIDMiddleware`, `internal_error_handler` | `security/test_http_hardening.py` |
 | Адрес клиента — `request.client` (uvicorn `--proxy-headers` только от `FORWARDED_ALLOW_IPS`), `X-Forwarded-For` в коде не читается | `api/v1/rate_limits.py::client_ip` | — (конфигурация, чек-лист `DEPLOY.md`) |
 | `--no-server-header` | `Dockerfile` | чек-лист `DEPLOY.md` |
+| `/metrics` — только частным адресам (сеть Docker), nginx его не проксирует; метки — шаблоны маршрутов, без текста вопросов, id компаний и адресов | `core/metrics.py` | `api/test_monitoring.py` |
+| `/health/ready` публична, но отдаёт только имена упавших частей (`database`, `redis`, `worker`), без текста ошибок | `core/readiness.py` | `api/test_monitoring.py` |
+| Grafana стенда — за nginx по TLS, свой вход, без регистрации и анонимного доступа, без обращений наружу; Prometheus, Alertmanager, Loki — только сеть Docker; логи — из journald, без сокета Docker | `deploy/monitoring/compose.yaml` | проверка стека 30.09 (`STAGE.md` §7) |
 
 ### 3.6. Лимиты частоты
 
@@ -171,9 +174,14 @@ Redis (Lua `INCR`+`EXPIRE`, атомарно) или память процесс
 | Общие знания модели выдаются за правила компании | `origin: general_knowledge`/`none` + обязательная первая строка пометки, `ensure_general_prefix`; строгий режим по компании | `test_faq_service.py` |
 | Ответ провайдера произвольной формы | разбор обёрнут: кривое тело → `LLMError`, а не 500; 502 клиенту без деталей | `llm/yandex*.py`, `llm/test_yandex_openai.py` |
 | Расход | семафор на процесс, слоты квоты эмбеддингов в Redis, пул кредитов компании с жёсткой остановкой (402) до платных вызовов | `llm/throttle.py`, `services/credit_service.py`, `test_credits.py` |
+| Провайдер модели сохраняет запросы | `x-data-logging-enabled: false` во всех запросах к Яндексу (RISKS №48) | `llm/yandex_headers.py`, `llm/test_yandex_no_logging.py` |
+| Чужой диалог в промпте (BH-28) | ключ реплик в Redis — компания + сотрудник + диалог: чужой `conversation_id` даёт пустую историю; в историю — только текст ответа, без выдержек | `core/dialogue_store.py`, `test_dialogue_memory.py::test_history_does_not_cross_users` |
 
 Ответ модели **не хранится** — только вопрос (маскированный), метрики
-и идентификаторы источников.
+и идентификаторы источников. Для памяти диалога последние реплики
+(вопрос после `mask_pii`, начало ответа) живут в памяти Redis до 12 часов
+от последнего вопроса диалога — на диск и в бэкапы не попадают (Redis
+без сохранения на диск, решение 30.09).
 
 ### 3.8. Секреты и конфигурация
 
@@ -238,6 +246,8 @@ Redis (Lua `INCR`+`EXPIRE`, атомарно) или память процесс
 | Текст документа и чанки | да | пока материал не удалён админом |
 | Вопрос сотрудника | после `mask_pii` | `QA_LOG_RETENTION_DAYS` (90), `cli purge` |
 | Ответ модели | нет | — |
+| Реплики диалога (вопрос после `mask_pii`, до 1 600 символов ответа) | только в памяти Redis | `RAG_HISTORY_TTL_MINUTES` (720) от последнего вопроса; перезапуск Redis стирает |
+| Переписанный вопрос диалога | после `mask_pii`, в `qa_log` | как вопрос |
 | Аудит | да | 365 дней |
 | Refresh-токены | sha256 | `REFRESH_TOKEN_TTL_DAYS` (14), отозванные — до purge семейства |
 
