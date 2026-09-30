@@ -52,12 +52,13 @@ DEFAULT_LLM = "aliceai-llm-flash"
 DEFAULT_API = "openai"
 DEFAULT_EMBEDDING_MODEL = "text-embeddings-v2"
 DEFAULT_EMBEDDING_DIMS = {"text-embeddings-v2": 768}
-DEFAULT_MAX_DISTANCE = 0.51
+DEFAULT_MAX_DISTANCE = 0.59
 """Решение по задаче 1 (Артём, 25.09): Alice AI LLM Flash через
-OpenAI-совместимый API и text-embeddings-v2 с размерностью 768; порог для
-v2-768 — 0.51 (предварительно, финал — A8). Это значения по умолчанию
-eval-скриптов, чтобы прогоны без флагов мерили то же, что будет у
-бэкенда (BH-15…BH-18)."""
+OpenAI-совместимый API и text-embeddings-v2 с размерностью 768. Порог для
+v2-768 — 0.59 (решение Артёма 30.09, ML-4: при 0.51 вопросы по таблицам
+отсекались на 0.545–0.575; было 0.51 по A8 25.09; финал — holdout). Это
+значения по умолчанию eval-скриптов, чтобы прогоны без флагов мерили то
+же, что будет у бэкенда (BH-15…BH-18, BH-31)."""
 
 EmbeddingKind = Literal["doc", "query"]
 Api = Literal["native", "openai"]

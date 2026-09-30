@@ -5,7 +5,7 @@
 
 По умолчанию — конфигурация, выбранная по задаче 1 (25.09): Alice AI LLM
 Flash через OpenAI-совместимый API, text-embeddings-v2 с размерностью 768,
-порог 0.51. Старая: --api native --model yandexgpt-lite
+порог 0.59 (30.09; до этого 0.51). Старая: --api native --model yandexgpt-lite
 --embedding-model text-search --max-distance 0.65.
 
 Официальные числа — через run_eval e2e (HTTP API бэкенда). Этот стенд
@@ -376,7 +376,7 @@ def _parser() -> argparse.ArgumentParser:
         "--max-distance",
         type=float,
         default=DEFAULT_MAX_DISTANCE,
-        help="0.51 — для v2-768 (предварительно); для text-search было 0.65",
+        help="0.59 — для v2-768 (30.09, ML-4; было 0.51); для text-search — 0.65",
     )
     parser.add_argument("--context-tokens", type=int, default=3000)
     parser.add_argument(

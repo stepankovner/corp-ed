@@ -57,12 +57,13 @@ def test_defaults_are_the_task1_decision() -> None:
 
     args = offline_e2e._parser().parse_args(["--corpus", "c", "--dataset", "d"])
 
-    # Решение 25.09: Flash через OpenAI-совместимый API, v2-768, порог 0.51.
+    # Решение 25.09: Flash через OpenAI-совместимый API, v2-768; порог 0.59 —
+    # решение 30.09 (ML-4, вопросы по таблицам).
     assert (args.model, args.api, args.embedding_model, args.max_distance) == (
         "aliceai-llm-flash",
         "openai",
         "text-embeddings-v2",
-        0.51,
+        0.59,
     )
     assert default_embedding_dim(args.embedding_model) == 768
     assert default_embedding_dim("text-search") is None
@@ -163,7 +164,7 @@ def test_strict_mode_refuses_without_llm(
         for row in _run(corpus, dataset, tmp_path / "out", "--not-found", "strict")
     }
 
-    # q2 дальше порога 0.51: LLM не вызывается, фиксированная фраза отказа.
+    # q2 дальше порога: LLM не вызывается, фиксированная фраза отказа.
     assert len(fake.prompts) == 2
     assert rows["q2"]["answer"] == NOT_FOUND_ANSWER
     assert rows["q2"]["answered"] == "False" and rows["q2"]["n_sources"] == "0"
