@@ -23,6 +23,7 @@ from corp_ed.api.v1.dependencies import (
 )
 from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
+from corp_ed.core.dialogue_store import InMemoryDialogueStore
 from corp_ed.core.rate_limit import InMemoryRateLimiter
 from corp_ed.core.security import hash_password
 from corp_ed.domain.models import Tenant, User, UserRole
@@ -90,7 +91,12 @@ async def stand_client(
     embeddings: EmbeddingGateway,
     llm: LLMGateway,
     rag: RagSettings,
+    *,
+    dialogue: bool = False,
 ) -> AsyncGenerator[httpx.AsyncClient]:
+    """dialogue — хранилище реплик (BH-28), как у lifespan в бою; память
+    работает, только если и в rag history_turns > 0."""
+
     async def per_request() -> AsyncGenerator[AsyncSession]:
         async with session_maker() as session:
             yield session
@@ -100,6 +106,8 @@ async def stand_client(
     app.dependency_overrides[get_llm_gateway] = lambda: llm
     app.dependency_overrides[get_rag_settings] = lambda: rag
     app.state.rate_limiter = InMemoryRateLimiter()
+    if dialogue:
+        app.state.dialogue_store = InMemoryDialogueStore()
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -107,3 +115,5 @@ async def stand_client(
             yield client
     finally:
         app.dependency_overrides.clear()
+        if dialogue:
+            del app.state.dialogue_store
