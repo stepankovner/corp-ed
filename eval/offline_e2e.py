@@ -468,7 +468,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
     rr_name = (
-        config_suffix(args.rerank_depth, args.rerank_max_length, args.rerank_text)
+        config_suffix(
+            args.rerank_depth,
+            args.rerank_max_length,
+            args.rerank_text,
+            quantize=args.rerank_quantize,
+        )
         if args.rerank
         else ""
     )
@@ -505,6 +510,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     reranker = (
         make_reranker(args.rerank, args.rerank_max_length) if args.rerank else None
     )
+    if reranker is not None:
+        reranker.trust_remote_code = args.rerank_trust_remote_code
+        reranker.quantize = args.rerank_quantize
     retrieved = retrieve(
         chunks,
         [item.question for item in items],

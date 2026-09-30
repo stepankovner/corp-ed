@@ -79,11 +79,20 @@ def test_cached_reranker_reuses_scores_from_disk(tmp_path: Path) -> None:
     other._encoder = _FakeEncoder()
     other.score("Вопрос?", ["Перенос отпуска"])
     assert other._encoder.calls == 1
+    # int8 даёт другие баллы — свой ключ, прежний кэш fp32 не трогается.
+    quantized = CachedReranker(model="m", quantize=True, cache_path=cache)
+    quantized._encoder = _FakeEncoder()
+    quantized.score("Вопрос?", ["Перенос отпуска"])
+    assert quantized._encoder.calls == 1
+    assert second._key("Вопрос?", "Перенос отпуска") == first._key(
+        "Вопрос?", "Перенос отпуска"
+    )
 
 
 def test_config_suffix() -> None:
     assert config_suffix(30, 512, "embed") == "-rr30"
     assert config_suffix(50, 1024, "llm") == "-rr50-L1024-llmtext"
+    assert config_suffix(20, 256, "embed", quantize=True) == "-rr20-L256-int8"
 
 
 def test_offline_e2e_rerank_puts_best_chunk_into_context(
