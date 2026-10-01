@@ -396,7 +396,8 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
   - cron: `/var/log/corp-ed/cron.log`.
 - **Реранкер** (когда ML скажет включить): на сервере
   `sudo /opt/corp-ed/deploy/reranker/fetch-model.sh`, затем в `.env` —
-  `COMPOSE_PROFILES=reranker` и `RAG_RERANKER=http`, и выкатка (или
+  `COMPOSE_PROFILES=reranker` и
+  `RAG_RERANK_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, и выкатка (или
   `docker compose -f compose.yaml up -d`).
 - **База:** `docker compose -f compose.yaml exec db psql -U corp_ed corp_ed`.
 - **Изменились `kronto.conf`, cron или `bootstrap.sh`** — перезапустить

@@ -510,9 +510,11 @@ class QaLog(TenantMixin, Base):
     standalone_question: Mapped[str | None] = mapped_column(Text)
     condense_prompt_version: Mapped[str | None] = mapped_column(String(32))
     history_turns: Mapped[int] = mapped_column(default=0, server_default="0")
-    # Реранкер (M3): модель, если порядок выдержек дал он; NULL — порядок
-    # вектора (выключен или не ответил вовремя).
+    # Реранкер (M3, BH-32): модель, если порядок выдержек дал он; NULL —
+    # порядок вектора (выключен, нечего переставлять или не ответил
+    # вовремя). rerank_ms — сколько ждали реранкер, и при сбое тоже.
     rerank_model: Mapped[str | None] = mapped_column(String(128))
+    rerank_ms: Mapped[int | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

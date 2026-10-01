@@ -37,7 +37,7 @@ from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.reranker import HttpReranker, Reranker, RerankText
+from corp_ed.llm.reranker import HttpReranker, Reranker
 from corp_ed.llm.throttle import Throttle
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -351,14 +351,15 @@ def get_dialogue_store(request: Request) -> DialogueStore | None:
 def get_reranker(
     request: Request, settings: Annotated[RagSettings, Depends(get_rag_settings)]
 ) -> Reranker | None:
-    """Реранкер (M3, Р-14): HTTP-сервис из compose.yaml или ничего."""
-    if settings.reranker == "off":
+    """Реранкер (M3, BH-32): HTTP-сервис из compose.yaml или ничего —
+    пустой RAG_RERANK_MODEL выключает его."""
+    if not settings.rerank_model:
         return None
     return HttpReranker(
         get_http_client(request),
         settings.rerank_url,
         model=settings.rerank_model,
-        timeout=settings.rerank_timeout_seconds,
+        timeout=settings.rerank_timeout_ms / 1000,
     )
 
 
@@ -419,8 +420,7 @@ def get_faq_service(
         condense_timeout=settings.condense_timeout_seconds,
         reranker=reranker,
         rerank_depth=settings.rerank_depth,
-        rerank_timeout=settings.rerank_timeout_seconds,
-        rerank_text=RerankText(settings.rerank_text),
+        rerank_timeout=settings.rerank_timeout_ms / 1000,
     )
 
 

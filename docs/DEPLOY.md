@@ -66,8 +66,8 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Секреты | `SECRET_KEY` (≥ 32 символов), `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `REDIS_PASSWORD`, `YC_API_KEY` | генерировать: `openssl rand -hex 32` |
 | Yandex Cloud | `YC_FOLDER_ID`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_MAX_CONCURRENCY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `EMBEDDING_QUERY_RPS`, `EMBEDDING_INGEST_RPS` | квоты каталога делятся между API и воркером |
 | Поиск и ответ | `RAG_*` | значения задаёт ML; у основных дефолтов нет намеренно. Порог — `RAG_FAQ_MAX_DISTANCE=0.59` (BH-31, 30.09) |
-| Память диалога | `RAG_HISTORY_TURNS`, `RAG_HISTORY_TTL_MINUTES`, `RAG_CONDENSE_TIMEOUT_SECONDS` | BH-28: 0 — выключена (по умолчанию, до замера ML); реплики — только в Redis, 720 мин от последнего вопроса (решение 30.09) |
-| Реранкер | `RAG_RERANKER`, `RAG_RERANK_URL`, `RAG_RERANK_MODEL`, `RAG_RERANK_DEPTH`, `RAG_RERANK_TIMEOUT_SECONDS`, `RAG_RERANK_TEXT`, `COMPOSE_PROFILES=reranker` | M3, Р-14: `off` по умолчанию; включать по замеру ML — сервис `reranker` в `compose.yaml`, модель — `deploy/reranker/fetch-model.sh` |
+| Память диалога | `RAG_HISTORY_TURNS`, `RAG_HISTORY_TTL_MINUTES`, `RAG_CONDENSE_TIMEOUT_SECONDS` | BH-28: 3 последние пары реплик (замер ML 01.10), 0 — выключена; реплики — только в Redis, 720 мин от последнего вопроса (решение 30.09) |
+| Реранкер | `RAG_RERANK_MODEL`, `RAG_RERANK_URL`, `RAG_RERANK_DEPTH`, `RAG_RERANK_MAX_LENGTH`, `RAG_RERANK_TIMEOUT_MS`, `COMPOSE_PROFILES=reranker` | M3, BH-32: пустая модель — выключен (по умолчанию); включать по итогам holdout ML — `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, файлы — `deploy/reranker/fetch-model.sh`; глубина ≤ 64 (размер пачки сервиса) |
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5; с мониторингом (раздел 10) — добавить `api`: Prometheus ходит на `api:8000` |
 | Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09) |

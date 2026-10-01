@@ -77,8 +77,8 @@ services:
       - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
-  # Реранкер (M3, Р-14) — только с профилем: COMPOSE_PROFILES=reranker
-  # в .env и RAG_RERANKER=http. Модель — deploy/reranker/fetch-model.sh
+  # Реранкер (M3, BH-32) — только с профилем: COMPOSE_PROFILES=reranker
+  # в .env и RAG_RERANK_MODEL=<модель>. Модель — deploy/reranker/fetch-model.sh
   # (сеть сервису не нужна: модель читается с диска). Без root, файловая
   # система только для чтения; процессор ограничен, чтобы пересортировка
   # не отнимала его у API и воркера целиком.

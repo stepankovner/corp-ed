@@ -43,9 +43,6 @@ set_var CONNECTOR_SECRETS_KEYS "$(fernet)"
 set_var ALLOWED_HOSTS "$DOMAIN,127.0.0.1,api"
 set_var CONNECTOR_OAUTH_CALLBACK_URL "https://$DOMAIN/api/v1/connectors/oauth/callback"
 set_var CONNECTOR_OAUTH_RETURN_URL "https://$DOMAIN/sources"
-# Память диалога (BH-28) на стенде включена: демо с уточняющими вопросами
-# и замер ML на живом API. В бою — значение от ML после замера.
-set_var RAG_HISTORY_TURNS 3
 # Заглушки шаблона не должны выглядеть как настоящие ключи.
 set_var YC_FOLDER_ID ""
 set_var YC_API_KEY ""

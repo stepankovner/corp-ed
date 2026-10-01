@@ -1,15 +1,18 @@
-"""Реранкер (M3, Р-14): пересортировка найденных фрагментов.
+"""Реранкер (M3, BH-32): балл пары «вопрос — фрагмент».
 
-Вектор находит кандидатов по смыслу, кросс-энкодер читает пару «вопрос —
-фрагмент» целиком и ставит балл — порядок точнее. Замер ML 30.09
-(ml-report.md, «M3 вариант б»): mmarco-mMiniLMv2-L12-H384 даёт Hit@5
-0,93 против 0,75 у одного вектора, +1,8 с к ответу на 4 vCPU.
+Вектор находит кандидатов по смыслу, кросс-энкодер читает пару целиком и
+ставит балл — порядок точнее. Замер ML (ml-report.md, «M3 вариант б»):
+cross-encoder/mmarco-mMiniLMv2-L12-H384-v1 — нужный фрагмент среди пяти
+у 93 % вопросов против 75 % у одного вектора, верных ответов 19 → 23 из
+27, +1,8 с к ответу на 4 vCPU. Кого и как переставлять — правило ML
+domain.rerank.rerank; здесь только баллы.
 
 Модель работает отдельным сервисом (compose.yaml, профиль reranker):
-HuggingFace text-embeddings-inference с ручкой POST /rerank. Так API не
-тянет torch в образ, память и процессор модели ограничены отдельно, а
-модель меняется без пересборки приложения. Любой сервис с тем же
-контрактом подходит.
+HuggingFace text-embeddings-inference с ручкой POST /rerank. Контракт
+BH-32 допускает и модель в процессе API, но тогда образ API тянет torch
+(+1 ГБ), а память и процессор модели делятся с ответами; сервис
+ограничен отдельно, и модель меняется без пересборки приложения. Любой
+сервис с тем же контрактом подходит.
 
 Сбой, таймаут или кривой ответ реранкера — не сбой ответа: FaqService
 остаётся с порядком вектора.
@@ -17,25 +20,17 @@ HuggingFace text-embeddings-inference с ручкой POST /rerank. Так API �
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from enum import StrEnum
 
 import httpx
 
 from corp_ed.domain.types import ChunkMatch
 
 
-class RerankText(StrEnum):
-    """Что показываем реранкеру: embed — крошки «Документ > Раздел» и
-    текст, как видит эмбеддер (так мерил ML); llm — текст для промпта."""
-
-    EMBED = "embed"
-    LLM = "llm"
-
-
-def rerank_passage(match: ChunkMatch, kind: RerankText) -> str:
-    if kind is RerankText.EMBED and match.embed_text:
-        return match.embed_text
-    return match.content
+def rerank_passage(match: ChunkMatch) -> str:
+    """Что видит модель: embed_text — крошки «Документ > Раздел» и текст,
+    как видит эмбеддер; на нём замерено качество (BH-32). У чанков до
+    крошек embed_text пуст — тогда текст для промпта."""
+    return match.embed_text or match.content
 
 
 class RerankerError(Exception):
@@ -56,7 +51,8 @@ class HttpReranker(Reranker):
 
     Запрос {"query", "texts", "truncate"}; ответ — список {"index",
     "score"} в порядке убывания балла. Длинные фрагменты сервис обрезает
-    сам (truncate): у модели окно 512 токенов.
+    сам (truncate) по окну модели — 512 токенов, как max_length=512 в
+    замере ML (RAG_RERANK_MAX_LENGTH).
     """
 
     def __init__(
