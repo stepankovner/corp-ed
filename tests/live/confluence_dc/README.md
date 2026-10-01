@@ -21,7 +21,9 @@ Confluence Server/DC: выдуманная компания (5 пользова�
   пересоздайте его (шаг 6 и заново).
 - Node и Playwright из `frontend/` (`npm ci` там) — мастер первого
   запуска Confluence проходится в браузере. В песочнице Claude браузер
-  указывается через `CHROMIUM_PATH=/opt/pw-browsers/chromium-*/chrome-linux/chrome`.
+  уже стоит, его путь — в `CHROMIUM_PATH`:
+  `export CHROMIUM_PATH="$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome | head -1)"`
+  (маска в самом присваивании не раскрывается).
 
 ## Как поднять (≈10 минут)
 
