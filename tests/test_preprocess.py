@@ -72,6 +72,38 @@ def test_header_only_table_keeps_its_text() -> None:
     assert preprocess(markdown) == "1.; Запрашиваемая сумма гранта, млн рублей"
 
 
+def test_empty_header_from_word_takes_first_row_as_keys() -> None:
+    # mammoth + markdownify: в Word строка не помечена «заголовком» → нет <th>
+    # → markdownify ставит пустую шапку, настоящая шапка — первая строка.
+    markdown = (
+        "|  |  |  |\n"
+        "| --- | --- | --- |\n"
+        "| Категория работника | Москва | За рубежом |\n"
+        "| Специалисты | 6500 ₽ | 11000 ₽ |\n"
+        "| Стажёры | 5000 ₽ | 9000 ₽ |"
+    )
+
+    assert preprocess(markdown).split("\n") == [
+        "Категория работника: Специалисты; Москва: 6500 ₽; За рубежом: 11000 ₽",
+        "Категория работника: Стажёры; Москва: 5000 ₽; За рубежом: 9000 ₽",
+    ]
+
+
+def test_empty_header_keeps_numeric_first_row_as_data() -> None:
+    markdown = "|  |  |\n|---|---|\n| 2025 | 1 500 |\n| 2026 | 1 800 |"
+
+    assert preprocess(markdown).split("\n") == ["2025; 1 500", "2026; 1 800"]
+
+
+def test_placeholder_header_with_long_first_row_stays_without_keys() -> None:
+    long_text = "Описание " * 30
+    markdown = f"| Col1 | Col2 |\n|---|---|\n| {long_text} | да |\n| Пункт | нет |"
+
+    lines = preprocess(markdown).split("\n")
+    assert lines[0] == f"{long_text.strip()}; да"
+    assert lines[1] == "Пункт; нет"
+
+
 def test_table_continued_on_next_page_gets_previous_header() -> None:
     # Регрессия с реального PDF: таблица переходит на новую страницу,
     # pymupdf4llm отдаёт продолжение без шапки и без |---|.
