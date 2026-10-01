@@ -275,7 +275,7 @@ def corpus(tmp_path: Path) -> Path:
     (folder / "Памятка.txt").write_text(
         "Больничный оплачивается по закону.", encoding="utf-8"
     )
-    (folder / "игнор.pptx").write_text("не документ", encoding="utf-8")
+    (folder / "игнор.odp").write_text("не документ", encoding="utf-8")
     return folder
 
 

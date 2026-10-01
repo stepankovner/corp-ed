@@ -139,6 +139,29 @@ def test_merged_cells_are_copied_and_two_row_header_is_joined() -> None:
     ]
 
 
+def test_years_under_merged_header_are_a_second_header_row() -> None:
+    data = xlsx(
+        [
+            SheetSpec(
+                "Лист1",
+                {
+                    "A1": "Отдел",
+                    "B1": "Численность",
+                    "B2": 2025,
+                    "C2": 2026,
+                    "A3": "Продажи",
+                    "B3": 34,
+                    "C3": 41,
+                },
+                merges=["A1:A2", "B1:C1"],
+            )
+        ]
+    )
+    assert _lines(xlsx_to_markdown(data)) == [
+        "Отдел: Продажи; Численность — 2025: 34; Численность — 2026: 41"
+    ]
+
+
 def test_single_value_row_inside_table_is_a_group_heading() -> None:
     data = xlsx(
         [
@@ -354,6 +377,16 @@ def test_container_checks() -> None:
     with pytest.raises(XlsxError) as error:
         check_container(b"PK\x03\x04 broken")
     assert error.value.code == "corrupted"
+
+
+def test_real_docx_renamed_to_xlsx_is_format_mismatch() -> None:
+    # Пакет с корневыми связями: главная часть находится (word/document.xml),
+    # но её тип — документ Word, а не книга.
+    from tests.ingest.samples import docx
+
+    with pytest.raises(XlsxError) as error:
+        check_container(docx([("Текст", None)]))
+    assert error.value.code == "format_mismatch"
 
 
 def test_zip_bomb_is_rejected() -> None:

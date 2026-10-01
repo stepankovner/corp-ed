@@ -34,9 +34,9 @@
 ### Дорога 1: документ загружают
 
 ```
-файл docx / pdf / txt / md (+ xlsx — BH-33)
+файл docx / pdf / txt / md (+ xlsx, pptx — BH-33, BH-34)
   │  [бэкенд] файл → Markdown (docx: mammoth + markdownify; pdf: pymupdf4llm,
-  │           страницы склеены символом \f; xlsx: ingest/xlsx.py — код ML)
+  │           страницы склеены символом \f; xlsx, pptx: ingest/xlsx.py, pptx.py — код ML)
   ▼
 preprocess(markdown) ─────────────────────────── ingest/preprocess.py
   │  символы, колонтитулы, HTML, таблицы → «ключ: значение», ссылки,
@@ -410,6 +410,28 @@ ChunkDraft(
 Ошибки — `XlsxError(code)` с кодами `ExtractionError`. Тесты собирают
 книги в коде (`tests/ingest/xlsx_samples.py`) — бинарников в git нет.
 
+### 3.12. `ingest/pptx.py` и `ingest/ooxml.py` — презентации (Р-5)
+
+`ooxml.py` — общее для .xlsx и .pptx: `check_package` (сигнатура, пароль,
+zip-бомба, тип главной части по `[Content_Types].xml`), связи частей,
+потоковый разбор XML с отказом на `<!DOCTYPE>`, `OfficeFileError` (он же
+`xlsx.XlsxError`).
+
+`pptx.py`:
+- `read_presentation(data) -> Presentation` — видимые слайды в порядке
+  показа (`sldIdLst`), счётчики таблиц, диаграмм, SmartArt, номера скрытых
+  слайдов;
+- слайд: заголовок — заполнитель `title`/`ctrTitle`, иначе первая короткая
+  строка, иначе «Слайд N»; фигуры по координатам (если они есть у всех),
+  группы — одной фигурой; колонтитулы, дата и номер отбрасываются;
+- таблица → `Sheet` с объединениями (`gridSpan`, `rowSpan`; `hMerge`,
+  `vMerge` — продолжения) → `xlsx.table_lines`: те же правила шапки и
+  групп, что у Excel;
+- диаграмма → таблица из кэша значений (`c:strCache` / `c:numCache`,
+  числа по `formatCode` через `xlsx.format_number`);
+- SmartArt → узлы (`dgm:pt` без типа или `node`) списком;
+- заметки — заполнитель `body` части `notesSlide`.
+
 ---
 
 ## 4. Eval — как мы измеряем
@@ -614,6 +636,8 @@ uv run ruff check && uv run ruff format --check && uv run mypy
 src/corp_ed/
   ingest/preprocess.py     очистка документа (10 шагов)
   ingest/xlsx.py           книга Excel → Markdown (Р-5, BH-33)
+  ingest/pptx.py           презентация → Markdown (Р-5, BH-34)
+  ingest/ooxml.py          общее для .xlsx и .pptx: пакет, связи, разбор XML
   domain/tokens.py         длина в токенах (len/3)
   domain/markdown.py       общие утилиты Markdown
   domain/split.py          нарезка v2, крошки, два текста, разделы

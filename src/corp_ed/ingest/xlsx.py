@@ -5,11 +5,8 @@
 только разбор файла. Приём формата в `extract.py`, песочница, сообщения
 админу и коннекторы — бэкенд (BH-33 в `docs/backend-handoff.md`).
 
-Без сторонних библиотек: .xlsx — zip с XML (ECMA-376), читаем его
-`zipfile` и `xml.etree.ElementTree.iterparse` — лист потоком, без дерева
-в памяти. ElementTree не ходит за внешними сущностями, expat ≥ 2.4.1
-защищён от «billion laughs» (проверяется тестом); DTD Excel не пишет —
-часть с `<!DOCTYPE` отклоняется как повреждённая.
+Без сторонних библиотек: пакет, связи и безопасный разбор XML — общие с
+.pptx (`ingest/ooxml.py`); лист читается потоком, без дерева в памяти.
 
 Как книга превращается в Markdown. Цель — чтобы после `preprocess`
 каждая строка таблицы стала самодостаточной строкой «ключ: значение; …»,
@@ -28,7 +25,7 @@
 5. Шапка — первая строка таблицы, если в ней в основном текст, а не
    числа. Объединение по горизонтали в шапке («Суточные» над «до 10
    дней» и «свыше 10 дней») — шапка в две строки, ключ «Суточные — до 10
-   дней».
+   дней»; во второй строке могут быть и числа («2025», «2026»).
 6. Строка-группа внутри таблицы («Европа», «Отдел продаж») —
    подзаголовок, после него таблица продолжается с той же шапкой. Группа —
    одно значение, объединённое на несколько столбцов, или одно значение в
@@ -42,22 +39,25 @@
    автофильтром, — это данные.
 """
 
-import io
 import re
 import zipfile
-import zlib
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from posixpath import basename, dirname, join, normpath
-from typing import Literal
-from xml.etree.ElementTree import Element, ParseError, iterparse
+from xml.etree.ElementTree import Element
 
-MAX_UNCOMPRESSED = 200 * 1024 * 1024
-MAX_ENTRIES = 5000
-MAX_COMPRESSION_RATIO = 200
-"""Как у docx в `extract.py`: zip-бомба — 40 КБ, которые распаковываются
-в гигабайты."""
+from corp_ed.ingest.ooxml import (
+    READ_ERRORS,
+    OfficeFileError,
+    Relation,
+    attr,
+    check_package,
+    first_target,
+    local,
+    main_part,
+    open_archive,
+    parse,
+    relations,
+)
 
 MAX_CELLS = 500_000
 """Непустых ячеек на книгу (вместе с размноженными объединениями). Выше —
@@ -67,17 +67,8 @@ MAX_CELLS = 500_000
 TITLE_MAX_CHARS = 150
 """Текст длиннее — абзац, а не заголовок таблицы или группы."""
 
-_XML_HEAD_BYTES = 4096
-
-_Event = Literal["start", "end"]
-
-
-class XlsxError(Exception):
-    """Книгу нельзя принять. code — те же коды, что у `ExtractionError`."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
+XlsxError = OfficeFileError
+"""Прежнее имя (BH-33): тот же класс, что у .pptx."""
 
 
 @dataclass
@@ -102,39 +93,9 @@ def xlsx_to_markdown(data: bytes) -> str:
     return workbook_to_markdown(read_workbook(data))
 
 
-# --- Контейнер ---------------------------------------------------------------
-
-
 def check_container(data: bytes) -> None:
-    """Дешёвые проверки до разбора: сигнатура, шифрование, zip-бомба."""
-    if data.startswith(b"\xd0\xcf\x11\xe0"):
-        # OLE2: либо книга с паролем (EncryptedPackage), либо старый .xls.
-        if "EncryptedPackage".encode("utf-16-le") in data:
-            raise XlsxError("encrypted")
-        raise XlsxError("format_mismatch")
-    if not data.startswith(b"PK\x03\x04"):
-        raise XlsxError("format_mismatch")
-    try:
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            entries = archive.infolist()
-            # Сначала размеры: связи читаем уже из проверенного архива.
-            if len(entries) > MAX_ENTRIES:
-                raise XlsxError("archive_too_large")
-            total = 0
-            for entry in entries:
-                total += entry.file_size
-                ratio = entry.file_size / max(entry.compress_size, 1)
-                if total > MAX_UNCOMPRESSED or ratio > MAX_COMPRESSION_RATIO:
-                    raise XlsxError("archive_too_large")
-
-            names = {entry.filename for entry in entries}
-            if "[Content_Types].xml" not in names:
-                raise XlsxError("format_mismatch")
-            if _workbook_part(archive, names) not in names:
-                # zip, но не книга Excel (docx, pptx, просто архив).
-                raise XlsxError("format_mismatch")
-    except (zipfile.BadZipFile, zlib.error, EOFError, ParseError, ValueError) as exc:
-        raise XlsxError("corrupted") from exc
+    """Дешёвые проверки до разбора: сигнатура, пароль, zip-бомба, тип."""
+    check_package(data, "spreadsheet")
 
 
 # --- Разбор книги --------------------------------------------------------------
@@ -151,31 +112,23 @@ def read_workbook(data: bytes) -> Workbook:
     """Книга → видимые листы с текстом ячеек."""
     check_container(data)
     try:
-        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        with open_archive(data) as archive:
             return _read_archive(archive)
-    except XlsxError:
+    except OfficeFileError:
         raise
-    except (
-        zipfile.BadZipFile,
-        zlib.error,
-        EOFError,
-        ParseError,
-        ValueError,
-        KeyError,
-        IndexError,
-    ) as exc:
-        raise XlsxError("corrupted") from exc
+    except READ_ERRORS as exc:
+        raise OfficeFileError("corrupted") from exc
 
 
 def _read_archive(archive: zipfile.ZipFile) -> Workbook:
     names = set(archive.namelist())
-    workbook_part = _workbook_part(archive, names)
-    relations = _relations(archive, workbook_part, names)
-    refs, date1904 = _sheet_refs(archive, workbook_part, relations)
+    workbook_part = main_part(archive, names, "spreadsheet")
+    found = relations(archive, workbook_part, names)
+    refs, date1904 = _sheet_refs(archive, workbook_part, found)
 
-    strings_part = _first_target(relations, "/sharedStrings")
+    strings_part = first_target(found, "/sharedStrings")
     strings = _shared_strings(archive, strings_part) if strings_part in names else []
-    styles_part = _first_target(relations, "/styles")
+    styles_part = first_target(found, "/styles")
     formats = _cell_formats(archive, styles_part) if styles_part in names else []
 
     workbook = Workbook(sheets=[])
@@ -195,91 +148,22 @@ def _read_archive(archive: zipfile.ZipFile) -> Workbook:
     return workbook
 
 
-def _local(tag: str) -> str:
-    """Имя без пространства имён: Strict OOXML и Transitional — одно и то же."""
-    return tag.rsplit("}", 1)[-1]
-
-
-def _attr(element: Element, local: str) -> str | None:
-    """Атрибут по локальному имени (r:id в любом пространстве имён)."""
-    for key, value in element.attrib.items():
-        if _local(key) == local:
-            return value
-    return None
-
-
-def _parse(
-    archive: zipfile.ZipFile, part: str, events: tuple[_Event, ...] = ("end",)
-) -> Iterator[tuple[str, Element]]:
-    with archive.open(part) as stream:
-        head = stream.read(_XML_HEAD_BYTES)
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
-        raise XlsxError("corrupted")
-    with archive.open(part) as stream:
-        # Безопасность разбора — в docstring модуля.
-        yield from iterparse(stream, events=events)  # noqa: S314
-
-
-@dataclass(frozen=True)
-class _Relation:
-    type: str
-    id: str
-    target: str
-    """Путь цели внутри архива."""
-
-
-def _workbook_part(archive: zipfile.ZipFile, names: set[str]) -> str:
-    for relation in _relations(archive, "", names):
-        if relation.type.endswith("/officeDocument"):
-            return relation.target
-    return "xl/workbook.xml"
-
-
-def _relations(archive: zipfile.ZipFile, part: str, names: set[str]) -> list[_Relation]:
-    """Связи части (`""` — корень пакета); внешние ссылки пропускаются."""
-    rels_part = join(dirname(part), "_rels", basename(part) + ".rels")
-    if rels_part not in names:
-        return []
-    relations: list[_Relation] = []
-    for _, element in _parse(archive, rels_part):
-        if _local(element.tag) != "Relationship":
-            continue
-        if element.get("TargetMode") == "External":
-            continue
-        target = element.get("Target", "")
-        if target.startswith("/"):
-            path = target.lstrip("/")
-        else:
-            path = normpath(join(dirname(part), target))
-        relations.append(
-            _Relation(element.get("Type", ""), element.get("Id", ""), path)
-        )
-    return relations
-
-
-def _first_target(relations: list[_Relation], type_suffix: str) -> str:
-    for relation in relations:
-        if relation.type.endswith(type_suffix):
-            return relation.target
-    return ""
-
-
 def _sheet_refs(
-    archive: zipfile.ZipFile, workbook_part: str, relations: list[_Relation]
+    archive: zipfile.ZipFile, workbook_part: str, found: list[Relation]
 ) -> tuple[list[_SheetRef], bool]:
     worksheets = {
         relation.id: relation.target
-        for relation in relations
+        for relation in found
         if relation.type.endswith("/worksheet")
     }
     refs: list[_SheetRef] = []
     date1904 = False
-    for _, element in _parse(archive, workbook_part):
-        name = _local(element.tag)
+    for _, element in parse(archive, workbook_part):
+        name = local(element.tag)
         if name == "workbookPr":
             date1904 = element.get("date1904", "").lower() in ("1", "true")
         elif name == "sheet":
-            rel_id = _attr(element, "id") or ""
+            rel_id = attr(element, "id") or ""
             refs.append(
                 _SheetRef(
                     name=(element.get("name") or "").strip(),
@@ -303,18 +187,18 @@ def _rich_text(element: Element) -> str:
     """Текст <si> или <is>: <t> и <r><t>, без фонетики <rPh>."""
     parts: list[str] = []
     for child in element:
-        name = _local(child.tag)
+        name = local(child.tag)
         if name == "t":
             parts.append(child.text or "")
         elif name == "r":
-            parts.extend(t.text or "" for t in child if _local(t.tag) == "t")
+            parts.extend(t.text or "" for t in child if local(t.tag) == "t")
     return _unescape("".join(parts))
 
 
 def _shared_strings(archive: zipfile.ZipFile, part: str) -> list[str]:
     strings: list[str] = []
-    for _, element in _parse(archive, part):
-        if _local(element.tag) == "si":
+    for _, element in parse(archive, part):
+        if local(element.tag) == "si":
             strings.append(_rich_text(element))
             element.clear()
     return strings
@@ -325,8 +209,8 @@ def _cell_formats(archive: zipfile.ZipFile, part: str) -> list[str]:
     custom: dict[int, str] = {}
     format_ids: list[int] = []
     in_cell_xfs = False
-    for event, element in _parse(archive, part, ("start", "end")):
-        name = _local(element.tag)
+    for event, element in parse(archive, part, ("start", "end")):
+        name = local(element.tag)
         if event == "start":
             in_cell_xfs = in_cell_xfs or name == "cellXfs"
             continue
@@ -365,8 +249,8 @@ def _read_sheet(
     sheet = Sheet(name=ref.name, cells={})
     empty_formulas = 0
     row = column = 0
-    for event, element in _parse(archive, ref.part, ("start", "end")):
-        name = _local(element.tag)
+    for event, element in parse(archive, ref.part, ("start", "end")):
+        name = local(element.tag)
         if event == "start":
             if name == "row":
                 number = element.get("r")
@@ -406,7 +290,7 @@ def _cell_text(
     value: str | None = None
     has_formula = False
     for child in element:
-        name = _local(child.tag)
+        name = local(child.tag)
         if name == "v":
             value = child.text
         elif name == "f":
@@ -665,6 +549,15 @@ def _blocks(rows: list[int]) -> list[list[int]]:
     return blocks
 
 
+def table_lines(sheet: Sheet, *, base_level: int) -> list[str]:
+    """Сетка ячеек с объединениями → строки Markdown по правилам 2–6.
+
+    Для таблиц .pptx: те же объединения, шапки в две строки и группы, что
+    у листа Excel.
+    """
+    return _sheet_lines(sheet, base_level=base_level)
+
+
 def _sheet_lines(sheet: Sheet, *, base_level: int) -> list[str]:
     grid = _grid(sheet)
     out: list[str] = []
@@ -726,7 +619,7 @@ def _table(out: list[str], grid: _Grid, rows: list[int], group_level: int) -> No
             second is not None
             and grid.has_horizontal_merge(header)
             and grid.units(second) >= 2
-            and _is_header(grid.rows[second], columns)
+            and _is_subheader(grid.rows[second], columns)
         ):
             header_rows.append(second)
             body = body[1:]
@@ -776,6 +669,17 @@ def _is_header(cells: dict[int, str], columns: list[int]) -> bool:
         return False
     textual = sum(1 for v in values if not _NUMERIC.match(v))
     return textual * 2 >= len(values)
+
+
+def _is_subheader(cells: dict[int, str], columns: list[int]) -> bool:
+    """Вторая строка шапки под объединением: короткие подписи, числа можно.
+
+    Под «Численность» над двумя столбцами стоят «2025» и «2026» — это
+    шапка, хотя значения числовые; правило текста против чисел здесь не
+    работает.
+    """
+    values = [cells[c] for c in columns if cells.get(c)]
+    return bool(values) and all(len(v) <= TITLE_MAX_CHARS for v in values)
 
 
 def _is_group(grid: _Grid, row: int, columns: list[int]) -> bool:
