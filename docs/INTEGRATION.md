@@ -1,6 +1,6 @@
 # Статус контракта ML ↔ бэкенд
 
-Сверка `docs/backend-handoff.md` (ML, v2.1) с кодом на 30 сентября 2026;
+Сверка `docs/backend-handoff.md` (ML, v2.4) с кодом на 1 октября 2026;
 BH-1…BH-26 — сверка 25.09.
 Кто что должен дальше — в конце. Правила разделения: ML пишет чистые
 функции и промпты (`domain/split.py`, `context.py`, `fusion.py`,
@@ -21,12 +21,12 @@ BH-1…BH-26 — сверка 25.09.
 | BH-10 тест промпта | ✅ | `tests/test_faq_service.py` | — |
 | BH-11 `qa_log` минимум | ✅ (заменён BH-20) | — | — |
 | BH-12 гибридный поиск (M1) | ✅ под флагом | `RAG_RETRIEVER=vector\|hybrid`, `chunk_repository.search_fulltext` | решение ML по золотому dev (25.09): остаётся `vector` |
-| BH-13 small-to-big (M2) | ⏸ после MVP | — | контракт чистовой 25.09 (таблица `sections`, `split_sections`, `select_sections`, `RAG_CONTEXT_MODE`); решение ML по золотому dev: +2/37 цитат за +50 % токенов — не встраивать до замера судьёй |
+| BH-13 small-to-big (M2) | ⏸ после MVP | — | контракт чистовой 25.09 (таблица `sections`, `split_sections`, `select_sections`, `RAG_CONTEXT_MODE`); решение ML по золотому dev: +2/37 цитат за +50 % токенов; судья — прирост в пределах шума при +58 % токенов → после MVP |
 | BH-14 словарь сокращений (M5) | ✅ | `services/glossary_service.py`, `/api/v1/glossary` | расшифровки только в поиск, не в промпт |
 | BH-15 адаптер OpenAI-совместимого API | ✅ | `llm/yandex_openai.py`, `llm/factory.py` | + `response_format` для строгого JSON |
 | BH-16 модель и размерность в конфиге | ✅ | `LLMSettings` | `EMBEDDING_DIM` — константа схемы, проверяется на старте |
 | BH-17 `vector(768)` + переингест | ✅ | миграция `97d70ebf2e07` | переингест ставится самой миграцией |
-| BH-18 порог 0.51 | ✅ подтверждён на золотом dev (25.09) | `.env.example` | финал — holdout к 12.10 |
+| BH-18 порог 0.51 | ✅ подтверждён на золотом dev (25.09); заменён BH-31 — 0,59 с 30.09 | `.env.example` | финал — holdout к 12.10 |
 | BH-19 температура и версия промпта | ✅ | `qa_log.prompt_version` | — |
 | BH-20 `qa_log` | ✅ | `domain/models.py::QaLog` | вопрос после `mask_pii`; `user_id` nullable (`SET NULL`); `best_fulltext_score` вместо `best_fulltext_rank`; + `origin`, токены, кредиты |
 | BH-21 ночная задача | ✅ | `services/gap_report_service.py`, `cli gaps` | пороги полнотекста не заданы до подбора (полнотекст в классификации не участвует) |
@@ -49,17 +49,50 @@ BH-1…BH-26 — сверка 25.09.
 | Что | Зачем | Срок по плану ML |
 |---|---|---|
 | Реранкер: включать ли, fp32 или int8, глубина (`RAG_RERANK_DEPTH`) | BH-32; в коде за флагом, выключен | holdout 11–12.10 |
-| Финальный `RAG_FAQ_MAX_DISTANCE` (A8 на holdout) | порог отказа; на dev остаётся 0.51 | 12.10 |
+| Финальный `RAG_FAQ_MAX_DISTANCE` (A8 на holdout) | порог отказа; сейчас 0,59 (BH-31), holdout — при 0,51 и 0,59 | 12.10 |
 | Решение по `RAG_RETRIEVER=hybrid` | на dev остаётся `vector`; пересмотр на holdout | 12.10 |
 | Пороги `GAPS_STRONG_FULLTEXT` / `GAPS_EMPTY_FULLTEXT` на `ts_rank_cd` | различать gap и retrieval_miss | по живым логам |
 | Замер случая (б) Р1 (отказ модели при найденных выдержках → общий ответ) | не противоречит ли общий ответ документам | задача 2.3/2.4 |
-| Решение «встраивать ли M2» после судьи на золотом dev | BH-13: таблица `sections`, `select_sections`, `RAG_CONTEXT_MODE` | после MVP |
+| Решение «встраивать ли M2» после судьи на золотом dev | BH-13: таблица `sections`, `select_sections`, `RAG_CONTEXT_MODE`; судья — прирост в пределах шума при +58 % токенов | после MVP (решение ML) |
+
+### Поправить в документах ML (сверка бэкенда 01.10)
+
+Документы ML правит ML; бэкенд их не трогает. Расхождения с кодом ветки
+`claude/vibrant-mccarthy-jfc11y` (BH-28…BH-35 сделаны там, PR в `main`
+ждёт «да» владельца — писать «✅ в ветке бэкенда», а не «в `main`»):
+
+- `backend-handoff.md`: BH-28…BH-35 стоят «🆕 в работу» — сделаны
+  (BH-28…31 — 30.09, BH-32…35 — 01.10); «В коде пока `STRICT` — BH-29»
+  — снят; ждёт только BH-36 (после слияния `ml/superscript`).
+- `backend-handoff.md`, BH-28 «Хранение»: реплики не в `qa_log`, а в
+  Redis (`core/dialogue_store.py`), 12 часов (`RAG_HISTORY_TTL_MINUTES`
+  = 720), без индекса — пометить «сделано иначе», как у BH-24.
+- `backend-handoff.md`, BH-32 «Модель»: не `CrossEncoder` в процессе
+  API, а отдельный сервис text-embeddings-inference 1.9.4 (профиль
+  `reranker`, `deploy/reranker/fetch-model.sh`); `HF_HUB_OFFLINE` не
+  используется.
+- `backend-handoff.md`, BH-33…35: умолчание `INGEST_EXTRA_FORMATS` —
+  `xlsx,pptx,doc`, не `xlsx`; константы `SUPPORTED_EXTENSIONS` больше
+  нет — функция `supported_extensions()` (учитывает флаг); совет «.doc»
+  оставлен намеренно — для Word 6.0/95.
+- `backend-handoff.md`: «`tests/stand_harness.py` держит 0,51» —
+  исправлено (читает `RAG_*` из `.env.example`); перевод заведённых
+  компаний на общий ответ (BH-29) не нужен — боевых компаний нет.
+- `ml-backend-contracts.md`: «скрипта переиндексации нет» — есть,
+  `python -m corp_ed.cli reindex`.
+- `ml-code-guide.md`: память диалога и реранкер — в продукте (3 пары;
+  реранкер за флагом, выключен), порог — 0,59, решён 30.09.
+- `ml-summary.md`, `ml-formats.md`: «ждут бэкенда (BH-28, BH-29,
+  BH-33…35)», «сейчас в коде отказ» — сделано; реранкер — решено 01.10.
+- `ml-report.md`: настройки `RAG_NOT_FOUND_MODE` нет — режим в поле
+  компании `tenants.not_found_mode`, меняется `cli set-not-found-mode`.
+- `ml-plan.md`: файла `prompts/program.py` нет (удалён пивотом 25.09).
 
 ## Что ML ждёт от бэкенда
 
 | Что | Статус |
 |---|---|
-| Стенд с `/faq/search` и `/faq/ask` для `eval.run_eval` | код готов; развёртывание — `DEPLOY.md` |
+| Стенд с `/faq/search` и `/faq/ask` для `eval.run_eval` | код и инструкция готовы (`STAGE.md`); сервер Selectel — команда |
 | `diagnostics` в ответе `/faq/ask` для E5 (модель, токены, кредиты, расстояние) | ✅ только ADMIN |
 | `fulltext_rank` в `/faq/search` для подбора порогов пробелов | ✅ |
 | `source_url` в источниках ответа (коннекторы) | ✅ поле `FaqSourceResponse.source_url`, пусто у загрузок |

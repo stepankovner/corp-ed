@@ -12,11 +12,12 @@
 | Сервис | Образ | Что делает |
 |---|---|---|
 | `api` | `corp-ed` | HTTP API (uvicorn), порт 8000 — только для reverse proxy |
-| `worker` | `corp-ed` | фоновый ингест: `python -m corp_ed.worker` |
+| `worker` | `corp-ed` | фоновый ингест и синхронизация подключений: `python -m corp_ed.worker` |
 | `migrate` | `corp-ed` | одноразово при старте: `alembic upgrade head` |
 | `db` | `pgvector/pgvector:pg16` | PostgreSQL + pgvector, единственное хранилище данных |
-| `redis` | `redis:7-alpine` | лимиты частоты и квота эмбеддингов; без диска, без пароля не стартует |
+| `redis` | `redis:7-alpine` | лимиты частоты, квота эмбеддингов, история диалогов (12 часов), одноразовость OAuth `state`, пульс воркера; без диска, без пароля не стартует |
 | `web` | `kronto-web` (`frontend/Dockerfile`) | статика фронтенда: nginx без root, порт 8080, CSP; API не проксирует |
+| `reranker` | `text-embeddings-inference:cpu-1.9.4` (по хешу) | только с `COMPOSE_PROFILES=reranker`: модель реранкера (BH-32), без root, только чтение, ≤ 3 ядер, 2 ГБ |
 | cron на хосте | `corp-ed` | раз в сутки `cli purge` и `cli gaps --all` |
 
 Один образ на всё: API, воркер, миграции, CLI. Код и окружение внутри
@@ -120,13 +121,17 @@ docker compose -f compose.yaml run --rm api python -m corp_ed.cli create-tenant 
 `set-not-found-mode --code acme --mode strict` или флагом
 `--not-found-mode strict` при создании.
 
-Остальные команды: `set-seats`, `set-not-found-mode`, `suspend-tenant`,
-`resume-tenant`, `reindex`, `purge`, `gaps` — `python -m corp_ed.cli --help`.
+Остальные команды: `set-seats`, `set-tariff`, `set-not-found-mode`,
+`suspend-tenant`, `resume-tenant`, `reindex`, `purge`, `gaps`, `leads`
+(заявки на созвон), `rotate-connector-secrets` (раздел 9),
+`connector-check` (адаптер против настоящей системы) —
+`python -m corp_ed.cli --help`.
 
 **Проверка стенда после развёртывания.** Сквозной сценарий через HTTP API,
 тем же путём, что и фронт: вход администратора, загрузка документа с
 случайным кодовым словом, ожидание индексации воркером, вопрос по
-документу (ответ по документам со ссылкой), вопрос вне документов
+документу (ответ по документам со ссылкой), уточняющий вопрос в том же
+диалоге (память диалога), вопрос вне документов
 (общий ответ с пометкой или отказ), оценка, расход кредитов, удаление
 документа. Запускается с любой машины с доступом к API; пароль — только
 переменной окружения:
@@ -178,7 +183,7 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
   адрес тогда и есть `FORWARDED_ALLOW_IPS`.
 - **Фронтенд — на том же имени.** `/api/` и `/health` прокси ведёт в
   `api:8000`, всё остальное — в `web:8080`. Один origin: браузеру не
-  нужен CORS (`CORS_ORIGINS` пуст), а контейнер `web` не стоит в цепочке
+  нужен CORS (`CORS_ALLOWED_ORIGINS` пуст), а контейнер `web` не стоит в цепочке
   `X-Forwarded-For` к API. Готовый пример для nginx на хосте —
   `deploy/nginx/kronto.conf`.
 - **OAuth коннекторов** (`per_user`): `CONNECTOR_OAUTH_CALLBACK_URL` =
@@ -242,8 +247,10 @@ docker compose -f compose.yaml up -d --build
 
 ## 8. Бэкапы и восстановление
 
-Единственное состояние — PostgreSQL. Redis восстанавливать нечего
-(счётчики лимитов).
+Единственное состояние — PostgreSQL. Redis восстанавливать нечего:
+счётчики лимитов, история диалогов и одноразовые `state` живут часы;
+перезапуск Redis стирает историю диалогов — следующий вопрос начнёт
+новый диалог.
 
 ```bash
 docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-$(date +%F).dump
@@ -299,8 +306,8 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
 `worker`. Ссылки на скачивание файлов диска принимаются только на хосте
 портала: чужой хост в `DOWNLOAD_URL` — ошибка документа, а не запрос.
 Для Яндекс 360 — `oauth.yandex.ru` (токены), `cloud-api.yandex.net`
-(REST Диска) и `downloader.disk.yandex.ru` (файлы по подписанной
-ссылке). Для Confluence Server/DC — выход к адресу инсталляции клиента (часто
+(REST Диска), `api.wiki.yandex.net` (Вики), `downloader.dst.yandex.ru` и
+`*.storage.yandex.net` (файлы по подписанной ссылке). Для Confluence Server/DC — выход к адресу инсталляции клиента (часто
 внутри его сети: тогда нужен маршрут или туннель до неё, а адрес всё
 равно должен быть публичным для проверки SSRF — частные адреса
 `validate_outbound_url` не пропускает, см. RISKS №29; как быть с
@@ -373,7 +380,8 @@ Confluence — обычный пользователь, который чита�
 - [ ] `psql -U corp_ed_app -c 'CREATE TABLE t(i int)'` — отказ.
 - [ ] Бэкап снят и восстановлен в тестовой базе хотя бы раз.
 - [ ] Cron `purge` и `gaps` стоит и отработал вручную.
-- [ ] Прогон `security.yaml` на текущем коммите зелёный.
+- [ ] Прогон `security.yaml` на текущем коммите зелёный (кроме CodeQL —
+      до решения по GitHub Code Security, RISKS №13).
 - [ ] `python -m corp_ed.stand check` против стенда — все шаги прошли.
 - [ ] `https://<имя>/` открывает вход; `curl -I https://<имя>/` —
       `Content-Security-Policy: default-src 'self'`; `/assets/*.map` — 404.

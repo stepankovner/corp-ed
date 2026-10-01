@@ -1,6 +1,6 @@
 # Архитектура corp-ed
 
-Карта системы на 25 сентября 2026. Описывает то, что существует в коде,
+Карта системы на 1 октября 2026. Описывает то, что существует в коде,
 а не то, что запланировано. Почему так — `DECISIONS.md`; что не закрыто —
 `RISKS.md`; меры защиты и как их проверить — `SECURITY.md`; как поднять —
 `DEPLOY.md`; сверка с контрактом ML — `INTEGRATION.md`.
@@ -67,7 +67,10 @@ api  →  services  →  repositories  →  domain
 | `/gaps` | `GET`, `PATCH {id}` | ADMIN |
 | `/usage` | `GET` | ADMIN |
 | `/audit` | `GET` | ADMIN |
-| `/health`, `/` | `GET` | без токена |
+| `/invites` | `POST`, `GET`, `DELETE {id}`; `POST preview`, `POST accept` | создание и список — ADMIN; просмотр и принятие ссылки — без токена |
+| `/leads` | `GET form`, `POST` | без токена (запись на созвон со страницы тарифов; приём выключен до политики ПДн) |
+| `/connectors` | `GET kinds`, `GET tariff`, `GET`, `POST`, `GET/PATCH/DELETE {id}`, `PUT {id}/credentials`, `POST {id}/test`, `POST {id}/sync`, `GET {id}/runs`; сотрудник: `GET mine`, `GET/PUT/DELETE {id}/mine`, `POST {id}/oauth/start`; `GET oauth/callback` | управление — ADMIN; «Мои источники» — любой; обратный вызов OAuth — по подписанному `state` |
+| `/health`, `/health/ready`, `/metrics`, `/` | `GET` | без токена; `/metrics` наружу не проксируется (`DEPLOY.md` §10) |
 
 `dependencies.py` — композиционный корень: собирает репозитории,
 сервисы, адаптеры и раздаёт через `Depends`. `get_current_user` —
@@ -87,7 +90,7 @@ api  →  services  →  repositories  →  domain
 | `MaterialService` | документы: текст и файл (проверки, песочница), дубликаты по sha256, переименование с переиндексацией, удаление; ставит задачу воркеру |
 | `IngestService` | нарезка → эмбеддинги → чанки одного материала (в воркере) |
 | `ReindexService` | постановка всех материалов компании/всех компаний в очередь |
-| `FaqService` | ответ: пул кредитов → словарь → эмбеддинг → поиск (вектор или гибрид) → порог → промпт → пометка/отказ → `qa_log`; оценка; отладочный поиск |
+| `FaqService` | ответ: пул кредитов → история диалога (Redis) и переписывание уточняющего вопроса → словарь → эмбеддинг → поиск (вектор или гибрид) → реранкер (если задан `RAG_RERANK_MODEL`) → порог → промпт → пометка/отказ → `qa_log`; оценка; отладочный поиск |
 | `CreditService` | пул кредитов компании за месяц, остановка до платных вызовов, пороги 80/100 % |
 | `GlossaryService` | словарь сокращений компании |
 | `GapService` | отчёт о пробелах для админа, статус |
@@ -114,7 +117,7 @@ api  →  services  →  repositories  →  domain
 
 | Сущность | Назначение |
 |---|---|
-| `Tenant` (не тенантская) | компания: код, активность, `seats`, `not_found_mode` |
+| `Tenant` (не тенантская) | компания: код, активность, `seats`, `not_found_mode`, `tariff`, `connector_limit` |
 | `User` | сотрудник или администратор; `token_version`, `must_change_password` |
 | `RefreshToken` (не тенантская) | sha256 токена, семейство, отзыв |
 | `Material` | документ: текст, источник (имя, формат, размер, sha256), статус индексации |
@@ -144,10 +147,14 @@ api  →  services  →  repositories  →  domain
 |---|---|---|
 | `Settings` | — | окружение, `SECRET_KEY` (≥ 32, `SecretStr`), TTL токенов, база, срок `qa_log` |
 | `LLMSettings` | `YC_*`, `LLM_*`, `EMBEDDING_*` | провайдер и модель, семафор, эмбеддер, доли квоты |
-| `RagSettings` | `RAG_*` | нарезка, лимит, порог, бюджет, температура, способ поиска — **без дефолтов**, значения за ML |
+| `RagSettings` | `RAG_*` | нарезка, лимит, порог, бюджет, температура, способ поиска — **без дефолтов**, значения за ML; память диалога и реранкер — с дефолтами (3 пары; реранкер выключен) |
 | `GapsSettings` | `GAPS_*` | отчёт о пробелах: значения ML без дефолтов, инженерные потолки с дефолтами |
 | `BillingSettings` | `BILLING_*` | кредиты: предложение досье |
 | `HttpSettings` | — | CORS, хосты, Redis, лимиты тела; в `production` — обязательные проверки |
+| `IngestSettings` | `INGEST_*` | песочница разбора, модель разметки PDF, `.xlsx`/`.pptx`/`.doc` (`INGEST_EXTRA_FORMATS`) |
+| `ConnectorSettings` | `CONNECTOR_*` | ключи шифрования секретов, лимиты и бюджет синхронизации, OAuth, egress-прокси |
+| `LeadSettings` | `LEADS_*` | приём заявок на созвон и версия политики ПДн |
+| `TeamNotifySettings` | `TEAM_NOTIFY_*` | бот команды в Telegram |
 
 `EMBEDDING_DIM = 768` — константа схемы: настройка обязана ей равняться.
 
@@ -206,7 +213,7 @@ DomainError (400)
 `httpx.AsyncClient`. Докс выключены в `production`.
 
 Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `RequestID` →
-`TrustedHost` → `BodySizeLimit`. Порядок важен: заголовки безопасности и
+`Metrics` → `TrustedHost` → `BodySizeLimit`. Порядок важен: заголовки безопасности и
 `request_id` есть и у 400 от `TrustedHost`, и у 413.
 
 ---
@@ -224,7 +231,9 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
   Redis (Lua + Redis TIME) с честным разделением долей.
 - `fake.py`, `fake_embedding.py` — для тестов.
 - `ingest/extract.py` — сигнатуры, zip-бомба, docx (mammoth →
-  markdownify), pdf (pymupdf4llm, страницы через `\f`); `sandbox.py` —
+  markdownify), pdf (pymupdf4llm, страницы через `\f`), doc, xlsx и pptx
+  (свои разборщики ML без сторонних библиотек, `INGEST_EXTRA_FORMATS`),
+  txt и md — UTF-8 как есть; `sandbox.py` —
   дочерний `python -I`, чистое окружение, таймаут, бюджет CPU = таймаут ×
   ядер (разбор многопоточный), убийство по лимиту → `timeout`;
   `extract_worker.py` — rlimits; модель разметки PDF — `INGEST_PDF_LAYOUT`; `preprocess.py` (ML) — чистка Markdown.
@@ -236,8 +245,7 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
   `html.py` — очистка HTML страниц до Markdown. Сеть — только через
   `core/outbound.py::OutboundClient` (проверка адреса и закрепление IP; за
   egress-прокси — по имени, `CONNECTOR_OUTBOUND_VIA_PROXY`, `DEPLOY.md` §9a).
-  Адаптеры конкретных систем добавляются этапами: Битрикс24 →
-  Confluence → Яндекс 360.
+  Адаптеры: Битрикс24, Confluence Server/DC, Яндекс 360 (Диск и Вики).
 
 ---
 
@@ -245,10 +253,14 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 
 **Вопрос сотрудника** (`POST /faq/ask`):
 токен → тенант в контекст → лимит частоты → `CreditService.ensure_available`
-(402 до платных вызовов) → режим компании → `expand_query` словарём (только
-для поиска) → эмбеддинг вопроса (слот квоты) → поиск: `vector` (top-K,
-порог на каждой выдержке) или `hybrid` (вектор ∪ полнотекст по 50, RRF,
-порог по лучшему вектору) → `select_context` по бюджету токенов →
+(402 до платных вызовов) → режим компании → история диалога из Redis
+(`conversation_id`, до `RAG_HISTORY_TURNS` пар, 12 часов) и переписывание
+уточняющего вопроса в самостоятельный (таймаут — исходный вопрос) →
+`expand_query` словарём (только для поиска) → эмбеддинг вопроса (слот
+квоты) → поиск: `vector` (top-K, порог на каждой выдержке) или `hybrid`
+(вектор ∪ полнотекст по 50, RRF, порог по лучшему вектору) → реранкер,
+если задан `RAG_RERANK_MODEL` (правило ML `domain.rerank`, сбой — порядок
+поиска) → `select_context` по бюджету токенов →
 `build_faq_messages` → модель (семафор) → `normalize_citations` → если
 отказ или пусто: общий ответ без выдержек с `ensure_general_prefix`
 (или `NOT_FOUND_ANSWER` в строгом режиме) → строка `qa_log` + пороги
@@ -288,8 +300,9 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 режим `organization`: пространства → страницы с предками →
 ограничения чтения по цепочке с раскрытием групп → `visibility` и
 `allowed_emails` по шаблону почты, вложения, storage-формат → HTML;
-`connectors/yandex/` — режим `per_user` с OAuth Яндекс ID, обход Диска
-сотрудника (общие папки внутри), скачивание по подписанной ссылке.
+`connectors/yandex/` — режим `per_user` с OAuth Яндекс ID: личный Диск
+сотрудника (общие папки внутри), общие диски организации и Вики,
+скачивание по подписанной ссылке (живьём не проверены, RISKS №38, №43).
 `cli connector-check`
 гоняет адаптер против источника без базы и умеет записывать ответы в
 фикстуры. Планировщик
@@ -325,7 +338,9 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 Тенантские таблицы (все под RLS): `users`, `materials`, `chunks`,
 `qa_log`, `glossary_terms`, `gap_clusters`, `gap_cluster_questions`,
 `connectors`, `connector_user_grants`, `connector_sync_runs`,
-`material_access`. Очереди без RLS: `ingest_jobs`, `connector_sync_jobs`.
+`material_access`, `invites`. Очереди без RLS: `ingest_jobs`,
+`connector_sync_jobs`; без RLS и `leads` — заявки на созвон, клиента ещё
+нет, читает только команда из CLI.
 
 Ловушки, закреплённые в коде: `postgresql.ENUM(...).create(checkfirst=True)`
 для новых enum (и `create_type=False` при переиспользовании существующего); FORCE RLS и массовые правки; генерируемая колонка `fts`;
@@ -335,7 +350,7 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 
 ## 7. Тесты
 
-790+ тестов, `pytest-asyncio` в режиме `auto`. Схема пересоздаётся на
+1 511 тестов (на 01.10), `pytest-asyncio` в режиме `auto`. Схема пересоздаётся на
 прогон (`create_all` + `apply_all`), тесты работают под ролью
 `corp_ed_app_test` без `SUPERUSER`/`BYPASSRLS` — иначе тесты RLS ничего не
 доказывали бы. Внешние сервисы — фейки; Redis-реализации проверяются с
@@ -347,10 +362,10 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 | `tests/api/` | каждая группа ручек: роли, изоляция, валидация, коды |
 | `tests/llm/`, `tests/ingest/` | адаптеры и разбор ответов, файлы и песочница |
 | `tests/test_*.py` | сервисы: FAQ, гибрид, кредиты, компании, ингест, воркер, отчёт о пробелах, изоляция |
-| `tests/live/` | живая синхронизация с тестовым порталом Битрикс24; пропуск без `BITRIX24_TEST_*` |
+| `tests/live/` | живые проверки: портал Битрикс24 (вебхук), Confluence в Docker (7.19, 8.5, 10.2 — `tests/live/confluence_dc/`), сквозной сценарий стенда с Yandex Cloud; без переменных окружения — пропуск |
 | `tests/ml_eval/`, `test_split*`, `test_gaps`, … | тесты ML (не редактируются бэкендом) |
 
-Порог покрытия в CI — 85 % (текущее ≈ 89 %). mypy strict — на `src`.
+Порог покрытия в CI — 85 % (на 01.10 — 91,36 %). mypy strict — на `src`.
 
 ---
 
@@ -367,13 +382,14 @@ API), `text-embeddings-v2` (768). Выбор — 152-ФЗ и замеры ML.
 
 **Разработка и CI:** uv, ruff (в том числе правила bandit), mypy strict,
 pre-commit, pytest + coverage, Docker Compose; GitHub Actions — тесты,
-миграции, образ; pip-audit, gitleaks, CodeQL, Trivy, SBOM; Dependabot.
+миграции, образы, фронтенд и сквозные тесты в браузере, выкатка на стенд
+и его автовозобновление; pip-audit, gitleaks, CodeQL (с 30.09 падает:
+репозиторий приватный, решение владельца ждёт), Trivy, SBOM; Dependabot.
 
 ---
 
 ## 9. Чего в системе нет
 
-- Фронтенда (демо — krontoai.ru, отдельный репозиторий).
 - Ручек для оплаты: пул кредитов считается, счета не выставляются.
 - MFA, восстановления пароля по почте (пароль сбрасывает администратор).
 - Small-to-big (BH-13) — контракт ML чистовой, решение ML — после MVP (по судье на золотом dev прирост в пределах шума).
