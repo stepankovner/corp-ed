@@ -216,6 +216,17 @@ def test_title_line_breaks_are_joined() -> None:
     assert _lines(data) == ["# Итоги 2025 и планы"]
 
 
+def test_superscript_runs_do_not_glue_to_numbers() -> None:
+    raised = '<a:r><a:rPr baseline="30000"/><a:t>1</a:t></a:r>'
+    body = (
+        f"<a:p><a:r><a:t>Бюджет 5 000 000</a:t></a:r>{raised}"
+        "<a:r><a:t> ₽</a:t></a:r></a:p>"
+    )
+    data = pptx([SlideSpec([title("Итоги"), text_shape([body])])])
+    assert "5 000 000<sup>1</sup> ₽" in pptx_to_markdown(data)
+    assert _lines(data) == ["# Итоги", "Бюджет 5 000 000 ₽"]
+
+
 def test_container_checks() -> None:
     from tests.ingest.samples import docx
     from tests.ingest.xlsx_samples import SheetSpec, xlsx

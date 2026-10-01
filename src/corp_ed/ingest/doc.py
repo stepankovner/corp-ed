@@ -9,13 +9,17 @@
 Что берётся из файла:
 
 1. Текст основного документа — по таблице кусков (CLX: Unicode или
-   однобайтовые куски). Сноски и надписи — в конце, отдельными абзацами;
-   колонтитулы и примечания рецензентов — нет.
+   однобайтовые куски). Сноски (обычные и концевые) — разметкой Markdown:
+   `[^N]` на месте ссылки, `[^N]: текст` в конце; `preprocess` ставит
+   текст сноски на место ссылки (как у .docx). Надписи — в конце,
+   отдельными абзацами; колонтитулы и примечания рецензентов — нет.
 2. Режим исправлений: удалённый рецензентом текст (он остаётся в файле с
    пометкой) выбрасывается. Поля: от поля остаётся результат (текст
    ссылки, номер), код
    (`HYPERLINK …`) выбрасывается; оглавление (`TOC`) — целиком: в нём
    названия всех разделов, такой фрагмент вытесняет из выдачи ответы.
+   Верхний индекс прямым форматированием — `<sup>…</sup>` (как у .docx):
+   номер сноски, набранный вручную, иначе прилипает к числу.
 3. Заголовки — по стилю абзаца: встроенные «Заголовок 1–9», «Название»,
    уровень структуры в стиле или в самом абзаце; имя стиля «Heading N» /
    «Заголовок N». Абзац, целиком набранный полужирным, — `**…**`:
@@ -53,9 +57,13 @@ _NFIB_WORD97 = 0xC1
 
 # Пары (fc, lcb) в FibRgFcLcb97.
 _FC_STSHF = 1
+_FC_PLCFFND_REF = 2
+_FC_PLCFFND_TXT = 3
 _FC_PLCF_BTE_CHPX = 12
 _FC_PLCF_BTE_PAPX = 13
 _FC_CLX = 33
+_FC_PLCFEND_REF = 46
+_FC_PLCFEND_TXT = 47
 
 _SPRM_P_IN_TABLE = 0x2416
 _SPRM_P_TTP = 0x2417
@@ -68,6 +76,8 @@ _SPRM_T_VERT_MERGE = 0xD62B
 _SPRM_C_BOLD = 0x0835
 _SPRM_P_HUGE_PAPX = 0x6646
 _SPRM_C_R_MARK_DEL = 0x0800
+_SPRM_C_ISS = 0x2A48
+_ISS_SUPERSCRIPT = 1
 
 _STI_TITLE = 62
 _HEADING_NAME = re.compile(r"^(?:heading|заголовок)\s*([1-9])$", re.IGNORECASE)
@@ -467,6 +477,7 @@ class _Lookup:
             any(s == _SPRM_C_R_MARK_DEL and o[0] for s, o in _sprms(run.grpprl))
             for run in runs
         ]
+        self.superscript: list[bool] = [_direct_superscript(run.grpprl) for run in runs]
 
     def index(self, fc: int) -> int | None:
         index = bisect_right(self.starts, fc) - 1
@@ -477,6 +488,15 @@ class _Lookup:
     def at(self, fc: int) -> _Run | None:
         index = self.index(fc)
         return self.runs[index] if index is not None else None
+
+
+def _direct_superscript(grpprl: bytes) -> bool:
+    """sprmCIss = 1 — верхний индекс (последний sprm в прогоне главнее)."""
+    value = False
+    for sprm, operand in _sprms(grpprl):
+        if sprm == _SPRM_C_ISS:
+            value = operand[0] == _ISS_SUPERSCRIPT
+    return value
 
 
 def _direct_bold(grpprl: bytes) -> int | None:
@@ -615,27 +635,37 @@ def _read(data: bytes) -> DocText:
     )
 
     ccp_text, ccp_ftn, ccp_hdd, ccp_mcr, ccp_atn, ccp_edn, ccp_txbx, _ = fib.ccp
-    text, fcs = _without_fields(
-        *_without_deleted(*_story(word, pieces, 0, ccp_text), chpx)
+    stories = _Stories(word, table, fib, pieces, chpx)
+    notes = [
+        *stories.notes(_FC_PLCFFND_REF, _FC_PLCFFND_TXT, ccp_text, ccp_ftn),
+        *stories.notes(
+            _FC_PLCFEND_REF,
+            _FC_PLCFEND_TXT,
+            ccp_text + ccp_ftn + ccp_hdd + ccp_mcr + ccp_atn,
+            ccp_edn,
+        ),
+    ]
+    text, fcs = _story(word, pieces, 0, ccp_text)
+    marks = {
+        cp: f"[^{number}]"
+        for number, (cp, note) in enumerate(notes, start=1)
+        if note and 0 <= cp < len(text) and text[cp] not in "\r\x07"
+    }
+    note_fcs = frozenset(fcs[cp] for cp in marks)
+    text, fcs = _without_fields(*_without_deleted(*_with_marks(text, fcs, marks), chpx))
+    text, fcs, sup_fcs = _with_superscript(text, fcs, chpx, note_fcs)
+    paragraphs = _paragraphs(
+        text, fcs, papx, chpx, styles, has_ttp=has_ttp, skip=note_fcs | sup_fcs
     )
-    paragraphs = _paragraphs(text, fcs, papx, chpx, styles, has_ttp=has_ttp)
     document = _assemble(paragraphs, styles)
-
-    notes: list[str] = []
-    for start, length in (
-        (ccp_text, ccp_ftn),
-        (ccp_text + ccp_ftn + ccp_hdd + ccp_mcr + ccp_atn, ccp_edn),
-    ):
-        if length:
-            story, story_fcs = _without_fields(
-                *_story(word, pieces, start, start + length)
-            )
-            notes.extend(
-                p.text for p in _paragraphs(story, story_fcs, None, None, {}) if p.text
-            )
-    if notes:
-        document.footnotes = len(notes)
-        document.blocks.append("Сноски:\n" + "\n".join(notes))
+    definitions = [
+        f"[^{number}]: {note}"
+        for number, (_, note) in enumerate(notes, start=1)
+        if note
+    ]
+    if definitions:
+        document.footnotes = len(definitions)
+        document.blocks.append("\n".join(definitions))
     if ccp_txbx:
         start = ccp_text + ccp_ftn + ccp_hdd + ccp_mcr + ccp_atn + ccp_edn
         story, story_fcs = _without_fields(
@@ -646,6 +676,113 @@ def _read(data: bytes) -> DocText:
         ]
         document.blocks.extend(boxes)
     return document
+
+
+@dataclass(frozen=True)
+class _Stories:
+    """Истории после основного текста: сноски и концевые сноски."""
+
+    word: bytes
+    table: bytes
+    fib: _Fib
+    pieces: list[_Piece]
+    chpx: _Lookup
+
+    def paragraphs(self, start: int, end: int) -> list[str]:
+        text, fcs = _story(self.word, self.pieces, start, end)
+        text, fcs = _without_fields(*_without_deleted(text, fcs, self.chpx))
+        text, fcs, _ = _with_superscript(text, fcs, self.chpx, frozenset())
+        return [p.text for p in _paragraphs(text, fcs, None, None, {}) if p.text]
+
+    def notes(
+        self, ref_pair: int, text_pair: int, start: int, length: int
+    ) -> list[tuple[int, str]]:
+        """Сноски одного вида: позиция ссылки в основном тексте (CP) и текст.
+
+        PlcffndRef (PlcfendRef) — позиции ссылок, PlcffndTxt (PlcfendTxt) —
+        границы текстов внутри истории сносок; последнюю границу Word ставит
+        за концом истории, она не нужна. Если таблицы не читаются, текст не
+        теряется: каждый абзац истории — сноска без ссылки (CP -1).
+        """
+        if not length:
+            return []
+        refs = _plc_positions(self.table, self.fib.pair(ref_pair), data_size=2)
+        bounds = _plc_positions(self.table, self.fib.pair(text_pair), data_size=0)
+        if not refs or len(bounds) < len(refs) + 1:
+            return [(-1, text) for text in self.paragraphs(start, start + length)]
+        result: list[tuple[int, str]] = []
+        for k, cp in enumerate(refs):
+            low = min(bounds[k], length)
+            high = min(max(bounds[k + 1], low), length)
+            result.append((cp, " ".join(self.paragraphs(start + low, start + high))))
+        return result
+
+
+def _plc_positions(table: bytes, pair: tuple[int, int], *, data_size: int) -> list[int]:
+    """CP из PLC: у PLC с данными — по одной на элемент (без замыкающей),
+    у PLC без данных — все."""
+    fc, lcb = pair
+    if lcb < 4 or fc + lcb > len(table):
+        return []
+    count = (lcb - 4) // (4 + data_size) if data_size else lcb // 4
+    return list(struct.unpack_from(f"<{count}I", table, fc))
+
+
+def _with_marks(
+    text: str, fcs: list[int], marks: dict[int, str]
+) -> tuple[str, list[int]]:
+    """Знак ссылки на сноску → `[^N]`; вставленным символам — позиция знака."""
+    if not marks:
+        return text, fcs
+    chars: list[str] = []
+    positions: list[int] = []
+    for cp, (char, fc) in enumerate(zip(text, fcs, strict=True)):
+        mark = marks.get(cp, char)
+        chars.append(mark)
+        positions.extend([fc] * len(mark))
+    return "".join(chars), positions
+
+
+def _with_superscript(
+    text: str, fcs: list[int], chpx: _Lookup, skip: frozenset[int]
+) -> tuple[str, list[int], frozenset[int]]:
+    """Верхний индекс (sprmCIss) → `<sup>…</sup>`, как у .docx после mammoth.
+
+    Набранный вручную индекс — номер сноски, «м²» — иначе прилипает к
+    соседнему символу: «С1ИИ-601828¹» превращалось в «С1ИИ-6018281». Что
+    делать с содержимым, решает `preprocess` (шаг 3). Возвращаются и
+    позиции символов индекса: они, как знаки сносок (skip), не решают,
+    полужирный ли абзац.
+    """
+    if not any(chpx.superscript):
+        return text, fcs, frozenset()
+    flags = [
+        _is_superscript(char, fc, chpx, skip)
+        for char, fc in zip(text, fcs, strict=True)
+    ]
+    chars: list[str] = []
+    positions: list[int] = []
+    for index, (char, fc) in enumerate(zip(text, fcs, strict=True)):
+        if flags[index] and (index == 0 or not flags[index - 1]):
+            chars.append("<sup>")
+            positions.extend([fc] * len("<sup>"))
+        chars.append(char)
+        positions.append(fc)
+        if flags[index] and (index + 1 == len(text) or not flags[index + 1]):
+            chars.append("</sup>")
+            positions.extend([fc] * len("</sup>"))
+    raised = frozenset(fc for fc, flag in zip(fcs, flags, strict=True) if flag)
+    return "".join(chars), positions, raised
+
+
+def _is_superscript(char: str, fc: int, chpx: _Lookup, skip: frozenset[int]) -> bool:
+    run = chpx.index(fc)
+    return (
+        run is not None
+        and chpx.superscript[run]
+        and fc not in skip
+        and ord(char) >= 0x20
+    )
 
 
 def _without_deleted(text: str, fcs: list[int], chpx: _Lookup) -> tuple[str, list[int]]:
@@ -713,7 +850,10 @@ def _paragraphs(
     styles: dict[int, _Style],
     *,
     has_ttp: bool = True,
+    skip: frozenset[int] = frozenset(),
 ) -> list[_Paragraph]:
+    """Абзацы с их свойствами; skip — позиции ссылок на сноски, они не
+    решают, полужирный ли абзац."""
     result: list[_Paragraph] = []
     start = 0
     for index, char in enumerate(text):
@@ -736,7 +876,7 @@ def _paragraphs(
             )
         if chpx is not None and paragraph.text:
             paragraph.bold = _is_bold(
-                raw, fcs[start:index], chpx, styles, paragraph.istd
+                raw, fcs[start:index], chpx, styles, paragraph.istd, skip
             )
         result.append(paragraph)
         start = index + 1
@@ -766,13 +906,20 @@ def _apply_papx(paragraph: _Paragraph, run: _Run) -> None:
 
 
 def _is_bold(
-    raw: str, fcs: list[int], chpx: _Lookup, styles: dict[int, _Style], istd: int
+    raw: str,
+    fcs: list[int],
+    chpx: _Lookup,
+    styles: dict[int, _Style],
+    istd: int,
+    skip: frozenset[int] = frozenset(),
 ) -> bool:
     """Все видимые символы абзаца — полужирные (прямо или по стилю)."""
     style_bold = _style_bold(styles, istd)
+    visible = False
     for char, fc in zip(raw, fcs, strict=True):
-        if char.isspace() or ord(char) < 0x20:
+        if char.isspace() or ord(char) < 0x20 or fc in skip:
             continue
+        visible = True
         index = chpx.index(fc)
         value = chpx.bold[index] if index is not None else None
         bold = (
@@ -782,7 +929,7 @@ def _is_bold(
         )
         if not bold:
             return False
-    return True
+    return visible
 
 
 def _assemble(paragraphs: list[_Paragraph], styles: dict[int, _Style]) -> DocText:
