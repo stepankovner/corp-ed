@@ -191,6 +191,11 @@ def _parse(response: httpx.Response) -> dict[str, Any]:
             raise AdapterError("not_json")
         return data
     if status == 403:
+        message = data.get("message") if isinstance(data, dict) else None
+        if isinstance(message, str) and "basic authentication" in message.lower():
+            # 10.x по умолчанию выключает Basic в REST: логин и пароль не
+            # примут никогда — это отказ в доступе, а не нехватка прав.
+            raise AdapterAuthError("basic_auth_disabled")
         raise AdapterError("forbidden")
     if status == 404:
         raise AdapterError("not_found")

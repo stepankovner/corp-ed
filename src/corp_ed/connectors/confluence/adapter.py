@@ -9,7 +9,15 @@
 значит, его смотрит вся компания — RISKS №37). Вложения наследуют
 читателей страницы.
 
-Личности: Confluence Server не отдаёт почту через REST — почта
+Состав групп в 7.x и 8.x REST отдаёт только администраторам: обычной
+учётке — 401 при рабочем токене (живая проверка 01.10 на 7.19.30 и
+8.5.31; 10.2 отдаёт). Тогда он собирается обратным ходом: все
+пользователи (CQL `type=user`) → группы каждого (`user/memberof`) — один
+раз на запуск и не больше DIRECTORY_LIMIT пользователей; сверх лимита
+группы не раскрываются (права не выдаются — в сторону закрытости).
+
+Личности: 7.x и 8.x не отдают почту через REST даже администратору
+(10.x отдаёт, но адаптер для всех версий берёт шаблон) — почта
 собирается из имени пользователя по шаблону `email_template`
 (`{username}` по умолчанию, то есть логин и есть почта; для LDAP с
 короткими логинами — `{username}@company.ru`).
@@ -68,6 +76,10 @@ _CONTENT_EXPAND = "version,ancestors,space"
 _RESTRICTION_EXPAND = "read.restrictions.user,read.restrictions.group"
 # Ошибки одной страницы или группы, после которых обход продолжается.
 _SKIPPABLE = frozenset({"forbidden", "not_found"})
+DIRECTORY_LIMIT = 2000
+"""Обратный ход по составу групп (7.x, 8.x) — запрос на каждого пользователя:
+2 000 — минуты на запуск; больше — права администратора Confluence
+служебной учётке (тогда состав читается напрямую) — DEPLOY.md."""
 
 SPEC = KindSpec(
     kind=KIND,
@@ -89,8 +101,13 @@ SPEC = KindSpec(
         ),
     ),
     credential_fields=(
-        FieldSpec("token", "Персональный токен доступа (DC 7.9+)", False, True),
-        FieldSpec("username", "Логин служебной учётной записи", False),
+        FieldSpec(
+            "token",
+            "Персональный токен доступа (7.9+; в 10.x — только он)",
+            False,
+            True,
+        ),
+        FieldSpec("username", "Логин служебной учётной записи (до 10.x)", False),
         FieldSpec("password", "Пароль служебной учётной записи", False, True),
     ),
     url_field="base_url",
@@ -126,6 +143,7 @@ class ConfluenceAdapter:
         # Кеши на один запуск: ограничения страниц и состав групп.
         self._restrictions: dict[str, frozenset[str] | None] = {}
         self._groups: dict[str, frozenset[str]] = {}
+        self._directory_groups: dict[str, frozenset[str]] | None = None
 
     async def check(self) -> None:
         user = await self._client.get("user/current")
@@ -340,22 +358,71 @@ class ConfluenceAdapter:
     async def _members(self, group: str) -> frozenset[str]:
         if group in self._groups:
             return self._groups[group]
-        members: set[str] = set()
+        members: frozenset[str]
         try:
-            async for user in self._client.paginate(
-                f"group/{group}/member", limit=GROUP_LIMIT
-            ):
-                if user.get("username"):
-                    members.add(str(user["username"]))
+            members = frozenset(
+                [
+                    str(user["username"])
+                    async for user in self._client.paginate(
+                        f"group/{group}/member", limit=GROUP_LIMIT
+                    )
+                    if user.get("username")
+                ]
+            )
+        except AdapterAuthError:
+            # 7.x и 8.x: состав группы — только администраторам, обычной учётке
+            # 401 при рабочем токене (check прошёл). Настоящий отзыв токена
+            # не потеряется: обратный ход получит тот же 401 и поднимет его.
+            members = (await self._directory()).get(group, frozenset())
         except AdapterError as exc:
-            if exc.retryable or isinstance(exc, AdapterAuthError):
-                raise
-            if exc.code not in _SKIPPABLE:
+            if exc.retryable or exc.code not in _SKIPPABLE:
                 raise
             # Группу не видно служебной учётке: её участники прав не получат.
             logger.warning("confluence_group_unreadable", group=group, code=exc.code)
-        self._groups[group] = frozenset(members)
-        return self._groups[group]
+            members = frozenset()
+        self._groups[group] = members
+        return members
+
+    async def _directory(self) -> dict[str, frozenset[str]]:
+        """Состав всех групп обратным ходом: пользователи → их группы."""
+        if self._directory_groups is not None:
+            return self._directory_groups
+        groups: dict[str, set[str]] = {}
+        users = 0
+        try:
+            async for found in self._client.paginate(
+                "search", {"cql": "type=user"}, limit=GROUP_LIMIT
+            ):
+                user = found.get("user")
+                username = user.get("username") if isinstance(user, dict) else None
+                if not username:
+                    continue
+                users += 1
+                if users > DIRECTORY_LIMIT:
+                    logger.warning(
+                        "confluence_directory_too_large", limit=DIRECTORY_LIMIT
+                    )
+                    groups = {}
+                    break
+                async for group in self._client.paginate(
+                    "user/memberof", {"username": username}, limit=GROUP_LIMIT
+                ):
+                    if group.get("name"):
+                        groups.setdefault(str(group["name"]), set()).add(str(username))
+        except AdapterError as exc:
+            if (
+                exc.retryable
+                or isinstance(exc, AdapterAuthError)
+                or exc.code not in _SKIPPABLE
+            ):
+                raise
+            logger.warning("confluence_directory_unreadable", code=exc.code)
+            groups = {}
+        logger.info("confluence_groups_from_directory", users=users, groups=len(groups))
+        self._directory_groups = {
+            name: frozenset(members) for name, members in groups.items()
+        }
+        return self._directory_groups
 
     def _access(
         self, readers: frozenset[str] | None
