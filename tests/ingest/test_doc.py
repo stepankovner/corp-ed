@@ -8,7 +8,18 @@ import pytest
 from corp_ed.ingest.doc import check_container, doc_to_markdown, read_document
 from corp_ed.ingest.ooxml import OfficeFileError
 from corp_ed.ingest.preprocess import preprocess
-from tests.ingest.doc_samples import Para, Row, Style, cfb, doc, word_streams
+from tests.ingest.doc_samples import (
+    END_SUP,
+    ENDNOTE,
+    FOOTNOTE,
+    SUP,
+    Para,
+    Row,
+    Style,
+    cfb,
+    doc,
+    word_streams,
+)
 
 HEADINGS = [
     Style(0, 0, "Normal"),
@@ -210,15 +221,108 @@ def test_deleted_revision_text_is_dropped() -> None:
     assert _lines(data) == ["Срок — 5 рабочих дней."]
 
 
-def test_footnotes_are_appended() -> None:
-    document = read_document(
-        doc(
-            [Para("Надбавка за язык — 10 % оклада.")],
-            footnotes=["Нужен сертификат B2."],
-        )
+def test_footnotes_and_endnotes_go_to_their_place() -> None:
+    data = doc(
+        [
+            Para("Надбавки", istd=1),
+            Para(f"Надбавка за язык — 10 % оклада.{FOOTNOTE}"),
+            Para(f"Премия{ENDNOTE} — раз в квартал."),
+            Para("Контакты", istd=1),
+            Para("Бухгалтерия."),
+        ],
+        styles=HEADINGS,
+        footnotes=["Нужен сертификат B2."],
+        endnotes=["Только для штатных сотрудников."],
     )
-    assert document.footnotes == 1
-    assert document.blocks[-1] == "Сноски:\nНужен сертификат B2."
+    document = read_document(data)
+    assert document.footnotes == 2
+    assert document.blocks[1] == "Надбавка за язык — 10 % оклада.[^1]"
+    assert document.blocks[-1] == (
+        "[^1]: Нужен сертификат B2.\n[^2]: Только для штатных сотрудников."
+    )
+    assert _lines(data) == [
+        "# Надбавки",
+        "Надбавка за язык — 10 % оклада. (сноска: Нужен сертификат B2.)",
+        "Премия (сноска: Только для штатных сотрудников.) — раз в квартал.",
+        "# Контакты",
+        "Бухгалтерия.",
+        "Сноска: Нужен сертификат B2.",
+        "Сноска: Только для штатных сотрудников.",
+    ]
+
+
+def test_footnote_in_table_cell_stays_in_its_row() -> None:
+    bounds = Row([0, 2000, 4000])
+    data = doc(
+        [
+            Para("Вид", cell_end=True),
+            Para(f"Размер{FOOTNOTE}", cell_end=True),
+            Para("", ttp=True, row=bounds),
+            Para(f"Надбавка{FOOTNOTE}", cell_end=True),
+            Para("10 %", cell_end=True),
+            Para("", ttp=True, row=bounds),
+            Para("Премия", cell_end=True),
+            Para("5 %", cell_end=True),
+            Para("", ttp=True, row=bounds),
+        ],
+        footnotes=["До вычета НДФЛ.", "За знание языка."],
+    )
+    # Ссылка в шапке — в каждой строке: сноска к ней — абзацем после первой.
+    assert _lines(data)[:3] == [
+        "Вид: Надбавка (сноска: За знание языка.); Размер: 10 %",
+        "Сноска: До вычета НДФЛ.",
+        "Вид: Премия; Размер: 5 %",
+    ]
+
+
+def test_footnote_mark_does_not_break_bold_heading() -> None:
+    # Знак сноски не полужирный (стиль «Знак сноски»), абзац — полужирный.
+    data = doc(
+        [Para(f"Надбавки{FOOTNOTE}", bold=True), Para("Текст раздела.")],
+        footnotes=["С 1 января 2026 года."],
+    )
+    assert _lines(data)[:3] == [
+        "## Надбавки",
+        "Сноска: С 1 января 2026 года.",
+        "Текст раздела.",
+    ]
+
+
+def test_manual_superscript_does_not_glue_to_number() -> None:
+    # Верхний индекс прямым форматированием (не сноска Word): номер сноски не
+    # становится частью числа, «м²» остаётся степенью.
+    bounds = Row([0, 2000, 4000])
+    data = doc(
+        [
+            Para("Заявка", cell_end=True),
+            Para("Грант, руб.", cell_end=True),
+            Para("", ttp=True, row=bounds),
+            Para(f"С1ИИ-601828{SUP}1{END_SUP}", cell_end=True),
+            Para(f"5 000 000{SUP}2{END_SUP}", cell_end=True),
+            Para("", ttp=True, row=bounds),
+            Para(f"Офис — 120 м{SUP}2{END_SUP}."),
+            Para(f"Итоги года{SUP}3{END_SUP}", bold=True),
+        ]
+    )
+    assert "С1ИИ-601828<sup>1</sup>" in doc_to_markdown(data)
+    assert _lines(data) == [
+        "Заявка: С1ИИ-601828; Грант, руб.: 5 000 000",
+        "Офис — 120 м².",
+        "## Итоги года",
+    ]
+
+
+def test_footnotes_without_position_tables_are_kept_at_the_end() -> None:
+    data = doc(
+        [Para(f"Надбавка — 10 % оклада.{FOOTNOTE}"), Para("Конец.")],
+        footnotes=["Нужен сертификат B2."],
+        note_tables=False,
+    )
+    assert _lines(data) == [
+        "Надбавка — 10 % оклада.",
+        "Конец.",
+        "Сноска: Нужен сертификат B2.",
+    ]
 
 
 def test_container_checks() -> None:
