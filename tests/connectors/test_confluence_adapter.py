@@ -15,6 +15,7 @@ from corp_ed.connectors.base import (
     RemoteDocument,
 )
 from corp_ed.connectors.confluence import KIND, SPEC
+from corp_ed.connectors.confluence import adapter as adapter_module
 from corp_ed.connectors.confluence.adapter import ConfluenceAdapter, build_adapter
 from corp_ed.connectors.confluence.client import BasicAuth, ConfluenceClient, TokenAuth
 from corp_ed.connectors.confluence.storage import storage_to_html
@@ -131,6 +132,22 @@ async def test_check_with_token_and_basic(server: FakeConfluence) -> None:
     )
     await basic.check()
     assert server.auth_log == ["token", "basic"]
+
+
+async def test_basic_auth_disabled_is_an_auth_error(server: FakeConfluence) -> None:
+    """10.x: Basic в REST выключен — 403 с объяснением. Это отказ в доступе
+    (подключение ждёт человека с токеном), а не «нет прав» на объект."""
+    server.basic_disabled = True
+    basic = build_adapter(
+        {"base_url": server.base},
+        {"username": SERVICE_USER, "password": SERVICE_PASSWORD},
+        server.client(),
+        settings(),
+    )
+
+    with pytest.raises(AdapterAuthError, match="basic_auth_disabled"):
+        await basic.check()
+    await make_adapter(server).check()  # токен работает
 
 
 async def test_check_rejects_anonymous_and_bad_credentials(
@@ -265,6 +282,57 @@ async def test_unreadable_group_grants_nobody(server: FakeConfluence) -> None:
     server.unreadable_groups.add("hr-team")
     documents = await listed(make_adapter(server, spaces="HR"), "pages")
     assert documents["page:101"].allowed_emails == frozenset({"anna"})
+
+
+async def test_groups_from_directory_when_members_are_admin_only(
+    server: FakeConfluence,
+) -> None:
+    """7.x: состав группы — 401 при рабочем токене; собираем обратным
+    ходом (пользователи → их группы), один раз на запуск."""
+    server.members_admin_only = True
+    server.groups["hr-team"].append("vera")
+
+    documents = await listed(make_adapter(server), "pages")
+
+    assert documents["page:101"].allowed_emails == frozenset({"anna", "boris", "vera"})
+    assert documents["page:200"].allowed_emails == frozenset({"ceo"})
+    searches = [q for p, q in server.calls if p == "search"]
+    assert [q["cql"] for q in searches] == ["type=user"]
+    memberof = sorted(q["username"] for p, q in server.calls if p == "user/memberof")
+    assert memberof == server.directory()
+
+
+async def test_directory_over_limit_grants_nobody(
+    server: FakeConfluence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server.members_admin_only = True
+    monkeypatch.setattr(adapter_module, "DIRECTORY_LIMIT", 2)
+
+    documents = await listed(make_adapter(server), "pages")
+
+    # Только явно названные пользователи: группы не раскрыты.
+    assert documents["page:101"].allowed_emails == frozenset({"anna"})
+    assert documents["page:200"].visibility is MaterialVisibility.RESTRICTED
+    assert documents["page:200"].allowed_emails == frozenset()
+
+
+async def test_unreadable_directory_grants_nobody(server: FakeConfluence) -> None:
+    server.members_admin_only = True
+    server.directory_status = 403
+
+    documents = await listed(make_adapter(server), "pages")
+
+    assert documents["page:101"].allowed_emails == frozenset({"anna"})
+    assert documents["page:200"].allowed_emails == frozenset()
+
+
+async def test_revoked_token_still_stops_the_run(server: FakeConfluence) -> None:
+    """401 и на обратном ходе — токен действительно отозван."""
+    server.members_admin_only = True
+    server.directory_status = 401
+
+    with pytest.raises(AdapterAuthError):
+        await listed(make_adapter(server), "pages")
 
 
 async def test_hidden_page_is_skipped_not_fatal(server: FakeConfluence) -> None:

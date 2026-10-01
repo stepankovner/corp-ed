@@ -1,0 +1,39 @@
+# Confluence Data Center для живой проверки адаптера (Р-12 «б», решение 29.09).
+# Только для тестов на своей машине или в песочнице: тестовая лицензия
+# Atlassian на 10 пользователей и 3 часа, данные выдуманные.
+#
+#   CONFLUENCE_LICENSE=… docker compose -f tests/live/confluence_dc/compose.yaml up -d
+#   дальше — мастер, seed.py, токен и тесты: README.md рядом.
+#
+# Версия — CONFLUENCE_VERSION (по умолчанию LTS 10.2; у компаний в России
+# чаще 7.19 и 8.5 — та же команда с CONFLUENCE_VERSION=7.19.30, своим
+# CONFLUENCE_PORT и `-p`, чтобы версии жили рядом).
+name: corp-ed-confluence-dc
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: confluence
+      POSTGRES_PASSWORD: confluence
+      POSTGRES_DB: confluence
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "confluence"]
+      interval: 5s
+      retries: 20
+
+  confluence:
+    image: atlassian/confluence:${CONFLUENCE_VERSION:-10.2.17}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ATL_DB_TYPE: postgresql
+      ATL_JDBC_URL: jdbc:postgresql://db:5432/confluence
+      ATL_JDBC_USER: confluence
+      ATL_JDBC_PASSWORD: confluence
+      ATL_LICENSE_KEY: ${CONFLUENCE_LICENSE:?тестовая лицензия Atlassian — см. README}
+      JVM_MINIMUM_MEMORY: 1024m
+      JVM_MAXIMUM_MEMORY: 2048m
+    ports:
+      - "127.0.0.1:${CONFLUENCE_PORT:-8090}:8090"

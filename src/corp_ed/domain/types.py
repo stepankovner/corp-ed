@@ -25,6 +25,11 @@ class ChunkMatch:
     """ts_rank_cd по полнотекстовой ветке; None — чанк найден только
     вектором. distance известен всегда: полнотекстовая ветка считает его
     тем же запросом."""
+    embed_text: str = ""
+    """Текст, по которому считался эмбеддинг (крошки + текст), — его же
+    видит реранкер (M3)."""
+    rerank_score: float | None = None
+    """Балл реранкера; None — реранкер не применялся."""
     source_url: str | None = None
     """Ссылка на документ в источнике (коннекторы); у ручных загрузок
     пусто. Фронт показывает её в источниках ответа (досье 12.2)."""
@@ -63,11 +68,11 @@ class Retriever(StrEnum):
 class NotFoundMode(StrEnum):
     """Что делать, когда в документах ответа нет (Р1, BH-24).
 
-    STRICT — честный отказ, как в досье 3.1; у новой компании по
-    умолчанию (решение 28.09, DEFAULT_NOT_FOUND_MODE). GENERAL — ответ со
-    строгой пометкой «не из документов компании» и советом уточнить
-    (services/general_answer.py); включает команда через
-    `cli set-not-found-mode`. Новый режим — новое значение здесь, в
+    GENERAL — ответ со строгой пометкой «В документах компании ответа
+    нет» и советом уточнить (services/general_answer.py); у новой
+    компании по умолчанию (решение Артёма 29.09, BH-29,
+    DEFAULT_NOT_FOUND_MODE). STRICT — честный отказ; включает команда
+    через `cli set-not-found-mode`. Новый режим — новое значение здесь, в
     CHECK-ограничении таблицы tenants (миграцией) и ветка в
     FaqService._not_found.
     """
@@ -76,9 +81,10 @@ class NotFoundMode(StrEnum):
     STRICT = "strict"
 
 
-DEFAULT_NOT_FOUND_MODE = NotFoundMode.STRICT
-"""Режим новой компании (решение команды 28.09, Q1): отказ, пока продукт
-не решил иначе. Одно место для модели, CLI и сервисов."""
+DEFAULT_NOT_FOUND_MODE = NotFoundMode.GENERAL
+"""Режим новой компании: общий ответ с пометкой (решение Артёма 29.09,
+BH-29; отменяет отказ по умолчанию от 28.09). Одно место для модели, CLI
+и сервисов."""
 
 
 @dataclass(frozen=True)
@@ -97,6 +103,15 @@ class AnswerDiagnostics:
     output_tokens: int
     credits: int
     nearest_distance: float | None
+    standalone_question: str | None = None
+    """Вопрос после переписывания с учётом диалога (BH-28) — по нему шли
+    поиск и порог. None — истории не было, искали по самому вопросу."""
+    history_turns: int = 0
+    """Сколько прошлых пар реплик учтено."""
+    rerank_model: str | None = None
+    """Модель реранкера, если порядок выдержек дал он."""
+    rerank_ms: int | None = None
+    """Сколько заняла пересортировка (и при сбое — сколько ждали)."""
 
 
 @dataclass(frozen=True)
@@ -111,6 +126,8 @@ class FaqAnswer:
     log_id: UUID | None = None
     """Запись qa_log — к ней сотрудник ставит 👍/👎."""
     diagnostics: AnswerDiagnostics | None = None
+    conversation_id: UUID | None = None
+    """Диалог (BH-28): клиент присылает его со следующим вопросом."""
 
 
 class GapStatus(StrEnum):

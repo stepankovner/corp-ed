@@ -60,7 +60,9 @@ async def create_material(
     dependencies=[Depends(limit_by_tenant(UPLOAD_PER_TENANT))],
 )
 async def upload_material(
-    file: Annotated[UploadFile, File(description="docx, pdf, txt или md")],
+    file: Annotated[
+        UploadFile, File(description="docx, doc, xlsx, pptx, pdf, txt или md")
+    ],
     title: Annotated[str, Form(min_length=1, max_length=MAX_TITLE_LENGTH)],
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,

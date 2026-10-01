@@ -25,6 +25,8 @@ const LABELS: Record<string, string> = {
   forbidden: "Недостаточно прав в источнике",
   not_found: "Не найдено в источнике",
   unauthorized: "Источник не принял токен",
+  anonymous: "Источник не узнал учётную запись — проверьте токен",
+  basic_auth_disabled: "Confluence не принимает логин и пароль — нужен персональный токен",
   invalid_grant: "Доступ отозван — подключитесь заново",
   refresh_token_missing: "Доступ истёк — подключитесь заново",
   app_credentials_missing: "Не заданы ключи приложения",

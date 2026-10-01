@@ -204,6 +204,9 @@ export interface paths {
         /**
          * List Kinds
          * @description Какие системы можно подключить и какие поля у формы.
+         *
+         *     available — входит ли система в тариф компании: небазовые — только
+         *     в «Корпоративном» (решение 30.09).
          */
         get: operations["list_kinds_api_v1_connectors_kinds_get"];
         put?: never;
@@ -252,6 +255,26 @@ export interface paths {
          *     согласии приходит без code, с параметром error (OAuth 2.0).
          */
         get: operations["oauth_callback_api_v1_connectors_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/connectors/tariff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tariff Allowance
+         * @description Тариф компании: сколько подключений можно и сколько заведено.
+         */
+        get: operations["tariff_allowance_api_v1_connectors_tariff_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -853,6 +876,11 @@ export interface components {
         AnswerDiagnosticsResponse: {
             /** Credits */
             credits: number;
+            /**
+             * History Turns
+             * @default 0
+             */
+            history_turns: number;
             /** Input Tokens */
             input_tokens: number;
             /** Model */
@@ -865,6 +893,12 @@ export interface components {
             output_tokens: number;
             /** Prompt Version */
             prompt_version: string;
+            /** Rerank Model */
+            rerank_model?: string | null;
+            /** Rerank Ms */
+            rerank_ms?: number | null;
+            /** Standalone Question */
+            standalone_question?: string | null;
         };
         /**
          * AnswerOrigin
@@ -914,7 +948,7 @@ export interface components {
         Body_upload_material_api_v1_materials_upload_post: {
             /**
              * File
-             * @description docx, pdf, txt или md
+             * @description docx, doc, xlsx, pptx, pdf, txt или md
              */
             file: string;
             /** Title */
@@ -955,6 +989,16 @@ export interface components {
         ConnectorKindResponse: {
             /** App Credential Fields */
             app_credential_fields?: components["schemas"]["FieldSpecResponse"][];
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /**
+             * Base
+             * @default true
+             */
+            base: boolean;
             /** Config Fields */
             config_fields: components["schemas"]["FieldSpecResponse"][];
             /** Credential Fields */
@@ -1074,12 +1118,15 @@ export interface components {
          *       компании ответа нет. Ниже — общая информация, не из документов
          *       компании:»), sources пуст. Фронт обязан показать это явно
          *       (плашка), а не только текстом;
-         *     - none — в документах ответа нет, компания в строгом режиме (по
-         *       умолчанию), или провайдер отфильтровал ответ: content начинается с
+         *     - none — в документах ответа нет, компания в строгом режиме, или
+         *       провайдер отфильтровал ответ: content начинается с
          *       NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —
          *       совет уточнить у руководителя или в профильном отделе; sources пуст.
          *
          *     answer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).
+         *     conversation_id — диалог (BH-28): прислать со следующим вопросом,
+         *     чтобы уточняющий вопрос понимался в контексте; «Новый диалог» — не
+         *     присылать. Номера [n] относятся только к sources этого ответа.
          */
         FaqAnswerResponse: {
             /** Answer Given */
@@ -1088,6 +1135,8 @@ export interface components {
             answer_id: string | null;
             /** Content */
             content: string;
+            /** Conversation Id */
+            conversation_id?: string | null;
             diagnostics?: components["schemas"]["AnswerDiagnosticsResponse"] | null;
             origin: components["schemas"]["AnswerOrigin"];
             /** Sources */
@@ -1095,6 +1144,8 @@ export interface components {
         };
         /** FaqQuestionRequest */
         FaqQuestionRequest: {
+            /** Conversation Id */
+            conversation_id?: string | null;
             /** Question */
             question: string;
         };
@@ -1125,6 +1176,8 @@ export interface components {
             material_title: string;
             /** Position */
             position: number;
+            /** Rerank Score */
+            rerank_score?: number | null;
         };
         /** FaqSearchRequest */
         FaqSearchRequest: {
@@ -1135,6 +1188,11 @@ export interface components {
             limit: number;
             /** Question */
             question: string;
+            /**
+             * Rerank
+             * @default false
+             */
+            rerank: boolean;
             retriever?: components["schemas"]["Retriever"] | null;
         };
         /** FaqSearchResponse */
@@ -1435,18 +1493,13 @@ export interface components {
             /** Seats */
             seats: number;
             /** @default base */
-            tariff: components["schemas"]["LeadTariff"];
+            tariff: components["schemas"]["Tariff"];
             /**
              * Website
              * @default
              */
             website: string;
         };
-        /**
-         * LeadTariff
-         * @enum {string}
-         */
-        LeadTariff: "base" | "custom";
         /** LoginRequest */
         LoginRequest: {
             /** Company Code */
@@ -1656,6 +1709,26 @@ export interface components {
             status: string;
             /** Trigger */
             trigger: string;
+        };
+        /**
+         * Tariff
+         * @enum {string}
+         */
+        Tariff: "base" | "extended" | "enterprise";
+        /**
+         * TariffAllowanceResponse
+         * @description Тариф компании и подключения (решение 30.09, domain/tariffs.py).
+         */
+        TariffAllowanceResponse: {
+            /** Connector Limit */
+            connector_limit: number;
+            /** Connectors */
+            connectors: number;
+            /** Limited By Tariff */
+            limited_by_tariff: boolean;
+            tariff: components["schemas"]["Tariff"];
+            /** Title */
+            title: string;
         };
         /**
          * TokenResponse
@@ -2117,6 +2190,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tariff_allowance_api_v1_connectors_tariff_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TariffAllowanceResponse"];
                 };
             };
         };

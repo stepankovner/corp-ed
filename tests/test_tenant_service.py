@@ -206,9 +206,9 @@ def test_cli_set_seats() -> None:
     assert (args.command, args.code, args.seats) == ("set-seats", "acme", 80)
 
 
-async def test_new_tenant_refuses_by_default(session: AsyncSession) -> None:
-    """Решение 28.09 (Q1): новая компания — честный отказ, пока продукт
-    не решил иначе; общий ответ включает команда."""
+async def test_new_tenant_answers_generally_by_default(session: AsyncSession) -> None:
+    """Решение Артёма 29.09 (BH-29): новая компания — общий ответ с
+    пометкой; строгий отказ включает команда."""
     result = await _service(session).provision(
         company_code="acme",
         name="A",
@@ -217,10 +217,24 @@ async def test_new_tenant_refuses_by_default(session: AsyncSession) -> None:
         admin_password=ADMIN_PASSWORD,
         seats=30,
     )
+    assert result.tenant.not_found_mode == "general"
+
+
+async def test_tenant_can_be_created_strict(session: AsyncSession) -> None:
+    """create-tenant --not-found-mode strict — сознательный выбор отказа."""
+    result = await _service(session).provision(
+        company_code="acme",
+        name="A",
+        admin_email="a@b.ru",
+        admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
+        seats=30,
+        not_found_mode=NotFoundMode.STRICT,
+    )
     assert result.tenant.not_found_mode == "strict"
 
 
-async def test_tenant_row_without_mode_refuses(session: AsyncSession) -> None:
+async def test_tenant_row_without_mode_answers_generally(session: AsyncSession) -> None:
     """И вставка мимо сервиса: значение по умолчанию в ORM и в базе."""
     code = f"raw{uuid4().hex[:8]}"
     await session.execute(
@@ -233,8 +247,8 @@ async def test_tenant_row_without_mode_refuses(session: AsyncSession) -> None:
             {"code": code},
         )
     ).scalar_one()
-    assert mode == DEFAULT_NOT_FOUND_MODE.value == "strict"
-    assert Tenant.__table__.c.not_found_mode.default.arg == "strict"
+    assert mode == DEFAULT_NOT_FOUND_MODE.value == "general"
+    assert Tenant.__table__.c.not_found_mode.default.arg == "general"
     await session.rollback()
 
 
@@ -249,9 +263,9 @@ async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
         seats=30,
     )
 
-    tenant = await service.set_not_found_mode("acme", NotFoundMode.GENERAL)
+    tenant = await service.set_not_found_mode("acme", NotFoundMode.STRICT)
 
-    assert tenant.not_found_mode == "general"
+    assert tenant.not_found_mode == "strict"
     event = (
         await session.execute(
             select(AuditEvent).where(
@@ -259,7 +273,7 @@ async def test_set_not_found_mode_is_audited(session: AsyncSession) -> None:
             )
         )
     ).scalar_one()
-    assert event.details == {"from": "strict", "to": "general"}
+    assert event.details == {"from": "general", "to": "strict"}
 
 
 async def test_database_rejects_unknown_not_found_mode(
@@ -295,7 +309,12 @@ def test_cli_not_found_mode() -> None:
         ["create-tenant", "--code", "acme", "--name", "A", "--seats", "5"]
         + ["--admin-email", "a@b.ru"]
     )
-    assert create.not_found_mode == "strict"
+    assert create.not_found_mode == "general"
+    strict = _parser().parse_args(
+        ["create-tenant", "--code", "acme", "--name", "A", "--seats", "5"]
+        + ["--admin-email", "a@b.ru", "--not-found-mode", "strict"]
+    )
+    assert strict.not_found_mode == "strict"
     with pytest.raises(SystemExit):
         _parser().parse_args(["set-not-found-mode", "--code", "acme", "--mode", "x"])
 

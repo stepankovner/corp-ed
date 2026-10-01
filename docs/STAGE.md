@@ -10,7 +10,8 @@ nginx по `deploy/nginx/kronto.conf`, cron, бэкап, настоящая мо
 
 - Каждое изменение сначала попадает сюда, и проверяем его мы, а не
   клиенты.
-- Сейчас на нём отлаживаем деплой, CI/CD, pgvector, миграции и коннекторы.
+- Сервер ещё не создан (на 01.10, шаг 4.1 — команда). Когда появится,
+  на нём отлаживаем деплой, CI/CD, pgvector, миграции и коннекторы.
 - Когда появится боевой сервер, стенд останется местом, где проверяют
   каждое обновление.
 
@@ -34,26 +35,39 @@ DNS домена ведётся в Яндекс 360 для бизнеса (NS: `
 
 ## 2. Сервер
 
-**Timeweb Cloud, Москва, Ubuntu 24.04, конфигурация Cloud-80: 4 vCPU,
-8 ГБ RAM, 80 ГБ NVMe** — 1 800 ₽/мес. Это цена со страницы тарифов, где
-указана скидка 10 % за оплату на 12 месяцев; почасовая оплата тоже есть
-([Timeweb](https://timeweb.cloud/services/cloud-servers)).
+**Selectel, прерываемый облачный сервер: 4 vCPU, 8 ГБ RAM, 64 ГБ
+сетевой диск, публичный IP, Ubuntu 24.04** (решение 30.09).
 
 **Почему такой размер.**
 
-- На сервере работают PostgreSQL, `api`, `worker`, Redis, `web` и nginx.
+- На сервере работают PostgreSQL, `api`, `worker`, Redis, `web`, nginx и
+  мониторинг (Prometheus, Grafana, Loki — около 1 ГБ).
 - Самое тяжёлое — разбор PDF: песочница берёт до 1,5 ГБ
   (`ingest/extract_worker.py`), модель разметки занимает все ядра
   (WORKLOG, №33).
-- Cloud-50 (2 vCPU / 4 ГБ, 1 080 ₽) формально вместит систему, но без
-  запаса.
+- Реранкер (`compose.yaml`, профиль `reranker`) — ещё ~1,3 ГБ и до 3
+  ядер на время пересортировки; замеры ML сделаны на 4 vCPU.
 
-**Почему Timeweb, хотя для боя мы советуем Selectel.**
+**Что значит «прерываемый»** ([Selectel](https://docs.selectel.ru/en/cloud-servers/create/create-preemptible-server/)):
 
-- Стенду не нужна отказоустойчивость, клиентских данных на нём нет.
-- Он втрое дешевле.
-- Переезд на другой хостинг — это `bootstrap.sh` на новом сервере.
-- Если бой будет в Selectel, стенд стоит перенести туда до пилота.
+- Selectel **останавливает сервер в любой момент в течение 24 часов**
+  после запуска или возобновления. SLA нет.
+- **Сам сервер не поднимается**: в панели он в статусе `EXPIRED`, его
+  нужно «Возобновить». Это делает за нас workflow **Stage resume** раз в
+  10 минут (шаг 4.8), так что после прерывания стенд лежит обычно 10–30
+  минут.
+- **Диск — только сетевой.** С локальным диском при каждом прерывании
+  данные удаляются, и сервер создаётся заново из образа
+  ([Selectel](https://docs.selectel.ru/en/cloud-servers/manage/restore-preemptible-server/)).
+  С сетевым он продолжает с того же места: база, `.env`, сертификат на
+  месте.
+- При каждом прерывании теряется память Redis: лимиты, история диалогов
+  (уточняющий вопрос после прерывания разбирается как самостоятельный).
+  База не страдает.
+- Ночных звонков со стенда нет — только сообщения в Telegram (решение
+  30.09). Звонки — с боевого сервера.
+
+Боевой сервер — не прерываемый; выбор — `RESILIENCE-RESEARCH.md` §3.
 
 ---
 
@@ -64,14 +78,17 @@ push в main ─► CI (тесты, e2e, образы) ─► Deploy
                                            ├─ images: сборка по проверенному коммиту
                                            │   → ghcr.io/stepankovner/corp-ed:<sha>, kronto-web:<sha>
                                            ├─ deploy: ssh deploy@стенд "deploy <sha>"  (+ токен GHCR в stdin)
-                                           └─ check:  ssh deploy@стенд "check"  → stand check 9 шагов
+                                           └─ check:  ssh deploy@стенд "check"  → stand check 10 шагов
 
 стенд:  corp-ed-deploy (deploy/stage/ssh-entry.sh)
           deploy: коммит есть в ветке origin? → git checkout → deploy.sh:
                   pull → compose up (migrate → api, worker, web; db, redis) → все healthy → https через nginx
+                  → мониторинг (deploy/monitoring: Prometheus, Alertmanager, Grafana, Loki…)
           check:  check.sh → python -m corp_ed.stand check против https://stage.krontoai.ru
-        nginx: TLS (Let's Encrypt); /api и /health → 127.0.0.1:8000, остальное → 127.0.0.1:8080
-        cron: 03:10 purge, 03:30 gaps --all, 04:00 pg_dump (хранится 7 дней)
+        nginx: TLS (Let's Encrypt); /api, /health, /health/ready → 127.0.0.1:8000,
+               /grafana/ → 127.0.0.1:3000, остальное → 127.0.0.1:8080
+        cron: 03:10 purge, 03:30 gaps --all, 04:00 pg_dump (хранится 7 дней) — с отметкой успеха
+GitHub Actions «Stage resume», раз в 10 минут: Selectel остановил сервер → unshelve
 ```
 
 - **Образы.** Сервер ничего не собирает: образы строит workflow по
@@ -93,19 +110,29 @@ push в main ─► CI (тесты, e2e, образы) ─► Deploy
 
 ## 4. Первый запуск
 
-Порядок: 1 → 2 → (ждать DNS) → 3 → 4 → 5 → 6.
+Порядок: 1 → 2 → (ждать DNS) → 3 → 4 → 5 → 6 → 7 → 8 → 9.
 
-### 4.1. Сервер в Timeweb Cloud
+### 4.1. Сервер в Selectel
 
-1. `timeweb.cloud` → регистрация (юрлицо или физлицо) → пополнить баланс
-   (хватит суммы за месяц).
-2. Панель → **Облачные серверы** → **Создать**:
-   - **Операционная система:** Ubuntu 24.04;
-   - **Регион:** Москва;
-   - **Конфигурация:** Cloud-80 (4 × 3,3 ГГц, 8 ГБ, 80 ГБ NVMe);
-   - **SSH-ключ:** добавить свой открытый ключ (как создать — ниже);
-   - **Имя:** `corp-ed-stage`.
-3. После создания — скопировать **IPv4-адрес** сервера.
+1. `my.selectel.ru` → регистрация → пополнить баланс (хватит суммы за
+   месяц).
+2. **Отдельный проект для стенда.** Облачная платформа → **Проекты** →
+   создать проект `corp-ed-stage`. В нём не должно быть ничего, кроме
+   стенда: ключ автовозобновления (шаг 4.8) сможет управлять всеми
+   серверами проекта.
+3. В этом проекте → **Облачные серверы** → **Создать сервер**:
+   - **Пул** — любой московский (например, `ru-9`); запомните его — он
+     понадобится в шаге 4.8;
+   - **Источник** — Ubuntu 24.04;
+   - **Конфигурация** — 4 vCPU, 8 ГБ RAM;
+   - **Тип сервера** — **прерываемый**;
+   - **Диск** — **сетевой**, 64 ГБ. Не локальный: с ним данные
+     пропадают при каждом прерывании;
+   - **Сеть** — публичный IP-адрес;
+   - **SSH-ключ** — добавить свой открытый ключ (как создать — ниже);
+   - **Имя** — `corp-ed-stage`.
+4. После создания скопировать **публичный IPv4-адрес** и **ID сервера**
+   (UUID на странице сервера) — ID нужен для шага 4.8.
 
 Если своего SSH-ключа нет, создайте его на своём компьютере. Windows 10/11
 (PowerShell), macOS или Linux:
@@ -113,10 +140,14 @@ push в main ─► CI (тесты, e2e, образы) ─► Deploy
 ```bash
 ssh-keygen -t ed25519 -C "имя@krontoai.ru"
 # Enter на все вопросы; открытый ключ — файл ~/.ssh/id_ed25519.pub
-# (Windows: C:\Users\<имя>\.ssh\id_ed25519.pub) — его текст и вставить в Timeweb
+# (Windows: C:\Users\<имя>\.ssh\id_ed25519.pub) — его текст и вставить в Selectel
 ```
 
 Проверка входа: `ssh root@<IP>`.
+
+**После первого прерывания** проверьте, что IP не сменился (в
+документации Selectel об этом не сказано). Сменился — поправить A-запись
+(шаг 4.2).
 
 ### 4.2. Запись DNS в Яндекс 360
 
@@ -152,29 +183,49 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 
 ### 4.4. Настройка сервера (один раз, под root)
 
-```bash
-ssh root@<IP>
-curl -fsSLO https://raw.githubusercontent.com/stepankovner/corp-ed/main/deploy/stage/bootstrap.sh
-DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=<почта команды> \
-DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash bootstrap.sh
-```
+Репозиторий приватный (с 30.09), поэтому скрипт не скачать с сервера
+по ссылке — его копируют руками, а код сервер забирает своим ключом
+только на чтение.
+
+1. **Скопировать скрипт на сервер.** В GitHub открыть
+   `deploy/stage/bootstrap.sh` → кнопка **Raw** → выделить всё и
+   скопировать. На сервере:
+   ```bash
+   ssh root@<IP>
+   nano /root/bootstrap.sh
+   # вставить (правая кнопка мыши или Shift+Insert), сохранить: Ctrl+O, Enter; выйти: Ctrl+X
+   ```
+2. **Первый запуск:**
+   ```bash
+   DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=<почта команды> \
+   DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash /root/bootstrap.sh
+   ```
+   Он остановится на шаге «Код» и напечатает строку `ssh-ed25519 …
+   corp-ed-stage-read@stage.krontoai.ru` — ключ сервера для чтения
+   репозитория.
+3. **Добавить ключ в GitHub:** репозиторий → **Settings** → **Deploy
+   keys** → **Add deploy key**: Title — `corp-ed-stage`, Key — эта
+   строка, галочку **Allow write access не ставить**.
+4. **Запустить ещё раз** ту же команду из п. 2 — теперь до конца.
 
 Скрипт работает 3–5 минут. Что он делает:
 
-- ставит Docker и compose из архива Ubuntu с ротацией логов, swap 4 ГБ,
-  nginx, certbot, файрвол (открыты только 22, 80, 443), автообновления
-  безопасности;
+- ставит Docker и compose из архива Ubuntu, swap 4 ГБ, nginx, certbot,
+  файрвол (открыты только 22, 80, 443), автообновления безопасности;
+- логи контейнеров — в journald, хранятся 14 дней (не больше 2 ГБ);
 - заводит пользователя `deploy` с ключом выкатки;
-- кладёт код в `/opt/corp-ed` и генерирует `/opt/corp-ed/.env`;
-- выпускает сертификат, ставит конфиг nginx и cron.
+- кладёт код в `/opt/corp-ed` и генерирует `/opt/corp-ed/.env` (память
+  диалога на стенде включена — `RAG_HISTORY_TURNS=3`);
+- выпускает сертификат, ставит конфиг nginx (с Grafana на `/grafana/`) и
+  cron с отметками для мониторинга;
+- генерирует пароль Grafana в `/etc/corp-ed/monitoring.env`.
 
 В конце он печатает строку для `STAGE_SSH_KNOWN_HOSTS`: её нужно
 скопировать для шага 4.6.
 
 Если с сервера не скачиваются образы с Docker Hub, перезапустите
-скрипт, добавив в начало команды
-`REGISTRY_MIRROR=https://dockerhub.timeweb.cloud` (зеркало Timeweb).
-Повторный запуск безопасен.
+скрипт, добавив в начало команды `REGISTRY_MIRROR=<адрес зеркала>`
+(например, `https://mirror.gcr.io`). Повторный запуск безопасен.
 
 ### 4.5. Ключи Yandex Cloud в `/opt/corp-ed/.env`
 
@@ -206,10 +257,24 @@ DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash b
 Остальное в файле менять не нужно. Права файла — 600, владелец
 `deploy`.
 
+**Тревоги в Telegram** (по желанию, можно позже): в тот же файл —
+`TEAM_NOTIFY_TELEGRAM_BOT_TOKEN` и `TEAM_NOTIFY_TELEGRAM_CHAT_ID` (бот и
+чат команды). Их берут и приложение (заявки, исчерпанный лимит), и
+мониторинг (тревоги). Сначала проверьте, что Telegram доступен с сервера
+(RISKS №50): `curl -m 10 -sS https://api.telegram.org -o /dev/null && echo ok`.
+
 ### 4.6. Настройки GitHub
 
 Всё делается на странице репозитория → **Settings**. Нужны права
 администратора репозитория.
+
+> **Тариф GitHub (с 30.09 репозиторий приватный).** По документации
+> GitHub в приватном репозитории environments и их секреты есть только на
+> платных тарифах (Pro, Team, Enterprise), а **Required reviewers** —
+> только на Enterprise. На бесплатном тарифе шаг 1 сделать не получится:
+> скажите бэкенду — ключ переедет в секрет репозитория (правка
+> `deploy.yaml` в одну строку). Тариф виден в Settings аккаунта →
+> **Billing and plans**.
 
 1. **Environments** → **New environment** → имя `stage` → **Configure
    environment**:
@@ -233,12 +298,15 @@ DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash b
 **Actions** → **Deploy** → **Run workflow** → ветка `main` → **Run**.
 
 Три шага должны стать зелёными:
-- **Deploy** — выкатка;
+- **Deploy** — выкатка; после неё поднимается мониторинг;
 - **Reachable from outside** — стенд открывается из интернета;
-- **Stand check** — 9 шагов: вход, загрузка, индексация, ответ модели со
-  ссылкой, кредиты.
+- **Stand check** — 10 шагов: вход, загрузка, индексация, ответ модели со
+  ссылкой, уточняющий вопрос в диалоге, вопрос вне документов, кредиты.
 
-После этого `https://stage.krontoai.ru` открывается в браузере.
+После этого `https://stage.krontoai.ru` открывается в браузере, а
+Grafana — на `https://stage.krontoai.ru/grafana/` (вход `admin`, пароль:
+`ssh root@<IP> grep GRAFANA /etc/corp-ed/monitoring.env`). Дашборд —
+**Kronto → Kronto — стенд**.
 
 **Своя компания, чтобы смотреть стенд глазами.** Проверочную компанию
 `stand-check` workflow заводит сам. Для входа в браузере нужна своя:
@@ -248,9 +316,71 @@ ssh root@<IP>
 cd /opt/corp-ed
 sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
     python -m corp_ed.cli create-tenant --code demo --name "Демо" --seats 10 \
-    --admin-email <ваша почта> --not-found-mode general
+    --admin-email <ваша почта>
 # временный пароль команда спросит дважды (скрытый ввод); при первом входе система попросит его сменить
+# тариф по умолчанию — «Базовый» (до 5 подключений); другой: --tariff extended | enterprise
 ```
+
+### 4.8. Автовозобновление сервера (Selectel → GitHub)
+
+Нужно, чтобы стенд сам поднимался после прерывания.
+
+> **Цена в минутах Actions.** GitHub округляет каждый запуск до минуты:
+> раз в 10 минут — около 4 300 минут в месяц, больше бесплатного объёма
+> приватного репозитория (2 000 минут на тарифе Free). Пока
+> `STAGE_RESUME_ENABLED` не задана, задание пропускается и минут не
+> тратит. Как включать — решение Б владельца: свой runner на маленькой
+> постоянной ВМ (его минуты бесплатны) или реже, например раз в 30
+> минут (~1 450 минут, стенд лежит после прерывания дольше).
+
+1. **Сервисный пользователь Selectel.** `my.selectel.ru` → **Управление
+   доступом** → **Сервисные пользователи** → **Добавить пользователя**:
+   - имя — `corp-ed-stage-resume`, пароль — сгенерировать и сохранить;
+   - роль — **Администратор проекта**, отметить **только** проект
+     `corp-ed-stage`.
+2. **Номер аккаунта** — в правом верхнем углу панели Selectel.
+3. **GitHub** → Settings → **Secrets and variables** → **Actions**:
+   - вкладка **Secrets** → **New repository secret**, две штуки:
+
+     | Имя | Значение |
+     |---|---|
+     | `SELECTEL_USER` | `corp-ed-stage-resume` |
+     | `SELECTEL_PASSWORD` | пароль сервисного пользователя |
+
+   - вкладка **Variables**, пять штук:
+
+     | Имя | Значение |
+     |---|---|
+     | `STAGE_RESUME_ENABLED` | `true` |
+     | `SELECTEL_ACCOUNT_ID` | номер аккаунта |
+     | `SELECTEL_PROJECT` | `corp-ed-stage` |
+     | `SELECTEL_REGION` | пул сервера, например `ru-9` |
+     | `STAGE_SERVER_ID` | ID сервера из шага 4.1 |
+4. **Проверка:** Actions → **Stage resume** → **Run workflow**. В логе —
+   `статус сервера: ACTIVE`. Если сервер в этот момент остановлен —
+   `отправлен на возобновление`, через пару минут он работает.
+
+Выключенный вручную сервер (статус `SHUTOFF`) workflow не включает —
+его выключили нарочно.
+
+### 4.9. Проверка снаружи (Ping-Admin)
+
+Мониторинг на самом сервере молчит, когда сервер лежит целиком. Снаружи
+смотрит Ping-Admin — российский сервис, он же будет звонить ночью с
+боевого сервера (решение 30.09).
+
+1. `ping-admin.ru` → регистрация → пополнить баланс.
+2. **Добавить задание** → HTTP(S):
+   - адрес — `https://stage.krontoai.ru/health/ready`;
+   - проверять, что в ответе есть текст `"status":"ok"`;
+   - интервал — 5 минут;
+   - подтверждение из нескольких точек — включить, чтобы не было ложных
+     тревог.
+3. **Оповещения** — Telegram (чат команды). **Звонки и SMS для стенда не
+   включать**: прерываемый сервер будет «падать» каждые сутки.
+
+`/health/ready` отвечает `{"status":"ok"}`, когда работают база, Redis и
+воркер; иначе — `503` и имена упавших частей.
 
 ---
 
@@ -269,11 +399,23 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
   пункт).
 - **Проверка без выкатки** (на сервере):
   `sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/corp-ed-deploy`.
+- **Мониторинг:** `https://stage.krontoai.ru/grafana/` — дашборд
+  «Kronto — стенд»: доступность и SLO, время ответа, ответы по источнику,
+  деградации, очереди воркера, процессор, память, диск, ночные задачи,
+  ошибки из логов. Тревоги — в Telegram (если заданы
+  `TEAM_NOTIFY_TELEGRAM_*`), правила — `deploy/monitoring/prometheus/rules/`.
+  SLO — одно число в `deploy/monitoring/prometheus/rules/slo.yml`.
 - **Логи:**
   - сервисы: `cd /opt/corp-ed && docker compose -f compose.yaml logs -f
-    api worker`;
+    api worker` или в Grafana → Explore → Loki
+    (`{container=~"corp-ed-.*"}`), 14 дней;
   - история выкаток: `/var/log/corp-ed/deploys.log`;
   - cron: `/var/log/corp-ed/cron.log`.
+- **Реранкер** (когда ML скажет включить): на сервере
+  `sudo /opt/corp-ed/deploy/reranker/fetch-model.sh`, затем в `.env` —
+  `COMPOSE_PROFILES=reranker` и
+  `RAG_RERANK_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, и выкатка (или
+  `docker compose -f compose.yaml up -d`).
 - **База:** `docker compose -f compose.yaml exec db psql -U corp_ed corp_ed`.
 - **Изменились `kronto.conf`, cron или `bootstrap.sh`** — перезапустить
   `bootstrap.sh` с теми же переменными. Выкатка их не трогает.
@@ -283,23 +425,25 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
 ## 6. Правила стенда
 
 - **Только тестовые данные**, никаких документов клиентов, и вот почему:
-  - Yandex AI Studio по умолчанию сохраняет запросы (RISKS №48), пока в
-    код не добавлен `x-data-logging-enabled: false`;
   - сервер — обычный, не в аттестованном сегменте по 152-ФЗ;
-  - бэкапы лежат только на самом сервере.
+  - бэкапы лежат только на самом сервере;
+  - Yandex AI Studio с 30.09 получает `x-data-logging-enabled: false` во
+    всех запросах (RISKS №48), но для эмбеддингов Яндекс его действие
+    не подтверждает.
 - **Приём заявок** на созвон выключен (`LEADS_ENABLED` по умолчанию `false`).
 - **Telegram.** Стенд — то место, где стоит проверить
   `curl -m 10 https://api.telegram.org` с российского сервера (RISKS №50)
-  до того, как включать `TEAM_NOTIFY_TELEGRAM_*`.
+  до того, как включать `TEAM_NOTIFY_TELEGRAM_*` (заявки и тревоги
+  мониторинга).
 - **SSH.** Вход — только по ключам. Когда свой ключ проверен, пароль
   для SSH лучше выключить (`PasswordAuthentication no` в
   `/etc/ssh/sshd_config`, затем `systemctl reload ssh`).
 
 ---
 
-## 7. Что проверено (29.09, в среде сессии)
+## 7. Что проверено
 
-**Выкатка целиком, на имитации сервера:**
+**29.09, выкатка целиком на имитации сервера:**
 
 - образы собраны по коммиту и положены в registry, закрытый паролем, —
   как приватный GHCR;
@@ -326,9 +470,34 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
 по `.github/workflows/deploy.yaml`. `make-env.sh` проверен загрузкой всех
 настроек приложения в `ENVIRONMENT=production`.
 
+**30.09, в среде сессии:**
+
+- **мониторинг** — стек `deploy/monitoring` против API и воркера: все 9
+  целей Prometheus отвечают, все правила загружаются, каждый запрос
+  дашборда разбирается, Grafana сама заводит дашборд и источники, Loki
+  готов, конфиг Alertmanager проходит `amtool` с Telegram и без,
+  node-exporter читает отметки ночных задач, nginx принимает `include`
+  с Grafana и без. Найдено и исправлено: метка `job` у отметок cron
+  конфликтовала с меткой Prometheus (теперь `task`); API тоже отдаёт
+  пульс воркера со значением 0 — правила смотрят только `job="worker"`;
+- **реранкер** — сервис из `compose.yaml` (профиль `reranker`) с моделью
+  от `fetch-model.sh`: запуск без root и только на чтение, правильный
+  порядок на русских фрагментах, 30 фрагментов по ~1 200 символов — ~1,9 с
+  (ONNX fp32) на 4 ядрах;
+- **автовозобновление** — `resume.py` против поддельного API Selectel:
+  остановленный Selectel сервер получает ровно один `unshelve`, `ACTIVE`
+  и `SHUTOFF` не трогаются, ошибки входа и неизвестный сервер — код
+  ошибки.
+
 **Не проверено — нужен настоящий сервер и настройки GitHub:**
 
 - `bootstrap.sh` на чистой Ubuntu 24.04: версии `docker.io` и
-  `docker-compose-v2`, ufw, выпуск сертификата;
+  `docker-compose-v2`, ufw, выпуск сертификата, journald;
+- node-exporter с `rslave` (в песочнице корень не shared — на Ubuntu с
+  systemd он shared);
 - запуск workflow в GitHub и публикация в GHCR;
-- доступ к Docker Hub, GHCR, Yandex Cloud и Telegram из сети Timeweb.
+- API Selectel: токен сервисного пользователя, статус прерванного
+  сервера, `unshelve`; сохраняется ли IP после прерывания;
+- доступ к Docker Hub, GHCR, Hugging Face (модель реранкера), Yandex
+  Cloud и Telegram из сети Selectel;
+- Ping-Admin.

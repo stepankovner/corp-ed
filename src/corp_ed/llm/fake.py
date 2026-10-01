@@ -47,6 +47,9 @@ _FIRST_EXCERPT = re.compile(
 )
 
 
+_CONDENSE_QUESTION = re.compile(r"\nНовый вопрос: (.+)\nОтвет:\Z", re.S)
+
+
 class DevAdapter(LLMGateway):
     """Модель для разработки (LLM_PROVIDER=fake): без сети и ключей.
 
@@ -65,8 +68,13 @@ class DevAdapter(LLMGateway):
         response_format: dict[str, Any] | None = None,
     ) -> Completion:
         prompt = messages[-1].content if messages else ""
+        condense = _CONDENSE_QUESTION.search(prompt)
         match = _FIRST_EXCERPT.search(prompt)
-        if match:
+        if condense:
+            # Переписывание уточняющего вопроса (BH-28): без модели вопрос
+            # остаётся как есть — поиск идёт по нему.
+            content = condense.group(1).strip()
+        elif match:
             fragment = " ".join(match.group(1).split())[:280]
             content = (
                 f"Режим разработки, ответ без модели. По документам: {fragment} [1]"

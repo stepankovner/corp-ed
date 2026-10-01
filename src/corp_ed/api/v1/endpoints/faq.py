@@ -35,7 +35,9 @@ async def ask_faq(
     service: Annotated[FaqService, Depends(get_faq_service)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> FaqAnswerResponse:
-    answer = await service.answer(data.question, current_user)
+    answer = await service.answer(
+        data.question, current_user, conversation_id=data.conversation_id
+    )
     # Модель, токены и расстояние — только админу: сотруднику они не нужны,
     # а расстояние — внутреннее свойство порога, клиенты не должны на него
     # опираться (решение от 17.09).
@@ -51,6 +53,7 @@ async def ask_faq(
         origin=answer.origin,
         sources=[FaqSourceResponse.model_validate(s) for s in answer.sources],
         diagnostics=diagnostics,
+        conversation_id=answer.conversation_id,
     )
 
 
@@ -70,7 +73,11 @@ async def search_faq(
     продуктовом ответе. Компания — из токена, как везде.
     """
     matches = await service.search(
-        data.question, data.limit, data.retriever, viewer=current_user
+        data.question,
+        data.limit,
+        data.retriever,
+        viewer=current_user,
+        rerank=data.rerank,
     )
     return FaqSearchResponse(
         matches=[
@@ -83,6 +90,7 @@ async def search_faq(
                 content=match.content,
                 distance=match.distance,
                 fulltext_rank=match.fulltext_rank,
+                rerank_score=match.rerank_score,
             )
             for match in matches
         ]

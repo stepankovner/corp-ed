@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { api, unwrap } from "../api/client";
 import { ApiError, networkError } from "../api/errors";
 import {
   ChatContext,
+  loadConversation,
   loadTurns,
   MAX_TURNS,
   PREFIX,
+  saveConversation,
   type ChatApi,
   type Turn,
   type Vote,
@@ -20,6 +22,10 @@ function newId(): string {
 
 export function ChatProvider({ userId, children }: { userId: string; children: ReactNode }) {
   const [turns, setTurns] = useState<Turn[]>(() => loadTurns(userId));
+  // Диалог на бэкенде (BH-28): id приходит с первым ответом и уходит со
+  // следующими вопросами. В ref — чтобы вопрос сразу после ответа не взял
+  // устаревшее значение из замыкания.
+  const conversation = useRef<string | null>(loadConversation(userId));
 
   useEffect(() => {
     try {
@@ -37,7 +43,14 @@ export function ChatProvider({ userId, children }: { userId: string; children: R
   const run = useCallback(
     async (id: string, question: string) => {
       try {
-        const answer = await unwrap(api.POST("/api/v1/faq/ask", { body: { question } }));
+        const body = conversation.current
+          ? { question, conversation_id: conversation.current }
+          : { question };
+        const answer = await unwrap(api.POST("/api/v1/faq/ask", { body }));
+        if (answer.conversation_id) {
+          conversation.current = answer.conversation_id;
+          saveConversation(userId, answer.conversation_id);
+        }
         patch(id, { id, question, state: "done", answer, vote: null });
       } catch (error) {
         const failure = error instanceof ApiError ? error : networkError();
@@ -51,7 +64,7 @@ export function ChatProvider({ userId, children }: { userId: string; children: R
         });
       }
     },
-    [patch],
+    [patch, userId],
   );
 
   const ask = useCallback(
@@ -93,7 +106,12 @@ export function ChatProvider({ userId, children }: { userId: string; children: R
     [patch, turns],
   );
 
-  const reset = useCallback(() => setTurns([]), []);
+  const reset = useCallback(() => {
+    // «Новый диалог»: следующий вопрос — без истории на бэкенде.
+    conversation.current = null;
+    saveConversation(userId, null);
+    setTurns([]);
+  }, [userId]);
   const busy = turns.some((turn) => turn.state === "pending");
 
   const value = useMemo<ChatApi>(

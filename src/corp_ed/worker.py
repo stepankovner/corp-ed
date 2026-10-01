@@ -22,6 +22,7 @@ Identity map сессии, пережившей задачу другого те
 
 import asyncio
 import contextlib
+import os
 import signal
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -29,7 +30,11 @@ from pathlib import Path
 
 import httpx
 import structlog
+from prometheus_client import start_http_server
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.connectors.registry import default_registry
@@ -43,7 +48,9 @@ from corp_ed.core.config import (
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.metrics import WORKER_HEARTBEAT, WORKER_JOBS, WORKER_QUEUE
 from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.readiness import WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import MaterialStatus
@@ -160,6 +167,7 @@ class IngestWorker:
             await session.rollback()
             await jobs.mark_failed(job.id, ERROR_NOT_FOUND)
             await session.commit()
+            WORKER_JOBS.labels("ingest", "skipped").inc()
             log.info("ingest_skipped_missing_material")
             return
         except LLMError as exc:
@@ -173,6 +181,7 @@ class IngestWorker:
 
         await jobs.mark_done(job.id)
         await session.commit()
+        WORKER_JOBS.labels("ingest", "done").inc()
         log.info("ingest_done", chunks=chunks)
 
     async def _fail(
@@ -187,10 +196,13 @@ class IngestWorker:
         if retryable and job.attempts < self.max_attempts:
             await service.mark(job.material_id, MaterialStatus.PENDING, error)
             await jobs.retry_later(job.id, error, retry_delay(job.attempts))
+            result = "retry"
         else:
             await service.mark(job.material_id, MaterialStatus.FAILED, error)
             await jobs.mark_failed(job.id, error)
+            result = "failed"
         await session.commit()
+        WORKER_JOBS.labels("ingest", result).inc()
 
 
 SYNC_MAX_ATTEMPTS = 3
@@ -257,11 +269,15 @@ class SyncWorker:
             jobs = ConnectorSyncJobRepository(session)
             if error is None:
                 await jobs.mark_done(job.id)
+                result = "done"
             elif retryable and job.attempts < self.max_attempts:
                 await jobs.retry_later(job.id, error, retry_delay(job.attempts))
+                result = "retry"
             else:
                 await jobs.mark_failed(job.id, error)
+                result = "failed"
             await session.commit()
+        WORKER_JOBS.labels("sync", result).inc()
 
     async def schedule_due(self) -> int:
         """Поставить в очередь подключения, чей интервал истёк.
@@ -310,16 +326,63 @@ class SyncWorker:
 
 
 async def heartbeat(
-    stop: asyncio.Event, path: Path = HEARTBEAT_PATH, every: float = HEARTBEAT_EVERY
+    stop: asyncio.Event,
+    path: Path = HEARTBEAT_PATH,
+    every: float = HEARTBEAT_EVERY,
+    *,
+    redis: Redis | None = None,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> None:
-    """Обновлять файл-пульс, пока воркер не остановлен."""
+    """Пульс, пока воркер не остановлен.
+
+    Файл — для проверки живости контейнера (compose.yaml); ключ в Redis —
+    для /health/ready API (core/readiness.py); метрики — глубина очередей
+    и время пульса для Prometheus. Сбой любой части не останавливает
+    остальные.
+    """
     while not stop.is_set():
         try:
             path.touch()
         except OSError:
             logger.warning("worker_heartbeat_failed", path=str(path))
+        if redis is not None:
+            try:
+                await redis.set(WORKER_HEARTBEAT_KEY, "1", ex=WORKER_HEARTBEAT_TTL)
+            except RedisError:
+                logger.warning("worker_heartbeat_redis_failed")
+        if session_maker is not None:
+            await _update_queue_metrics(session_maker)
+        WORKER_HEARTBEAT.set_to_current_time()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(stop.wait(), timeout=every)
+
+
+_QUEUE_COUNTS = {
+    "ingest": text("SELECT status, count(*) FROM ingest_jobs GROUP BY status"),
+    "sync": text("SELECT status, count(*) FROM connector_sync_jobs GROUP BY status"),
+}
+"""Очереди не под RLS (воркер берёт задачу до того, как знает компанию),
+поэтому счёт по всем компаниям — одним запросом без tenant_scope."""
+
+
+async def _update_queue_metrics(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    try:
+        async with session_maker() as session:
+            counts = {
+                queue: (await session.execute(query)).all()
+                for queue, query in _QUEUE_COUNTS.items()
+            }
+    except SQLAlchemyError:
+        logger.warning("worker_queue_metrics_failed")
+        return
+    # Статус, из которого задачи ушли, должен пропасть, а не остаться с
+    # прошлым числом (в правилах тревог — «or vector(0)»).
+    WORKER_QUEUE.clear()
+    for queue, rows in counts.items():
+        for status, count in rows:
+            WORKER_QUEUE.labels(queue, str(status).lower()).set(count)
 
 
 def _ingest_throttle(redis: Redis | None, rate: float) -> Throttle:
@@ -337,6 +400,10 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
     redis = (
         Redis.from_url(http.redis_url.get_secret_value()) if http.redis_url else None
     )
+    # Метрики для Prometheus — внутри сети Docker, порт не публикуется.
+    metrics_port = int(os.environ.get("WORKER_METRICS_PORT", "9101"))
+    if metrics_port:
+        start_http_server(metrics_port)
     stop = asyncio.Event()
     (install_signals or _install_signals)(stop)
 
@@ -362,7 +429,7 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             await asyncio.gather(
                 ingest_worker.run_forever(stop),
                 sync_worker.run_forever(stop),
-                heartbeat(stop),
+                heartbeat(stop, redis=redis, session_maker=get_session_maker()),
             )
         finally:
             await drain_team_notifier(notifier)

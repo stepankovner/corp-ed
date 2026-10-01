@@ -258,8 +258,8 @@ function ConnectorView({
           <>
             {runs.data[0] && runSkips(runs.data[0].stats).includes("не читаются") ? (
               <Notice kind="info" title="Часть файлов в источнике ассистент не читает">
-                {runSkips(runs.data[0].stats)}. Чтобы они попали в ответы, сохраните их как .docx
-                или PDF.
+                {runSkips(runs.data[0].stats)}. Чтобы они попали в ответы, сохраните их в
+                поддерживаемом формате: .docx, .xlsx, .pptx или PDF.
               </Notice>
             ) : null}
             <Table label="История синхронизаций">

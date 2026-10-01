@@ -9,6 +9,7 @@ from corp_ed.llm.errors import LLMError
 from corp_ed.llm.retry import call_with_retry
 from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.types import EmbeddingResult
+from corp_ed.llm.yandex_headers import auth_headers
 
 URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
 
@@ -104,7 +105,7 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
             response = await self._client.post(
                 URL,
                 json=payload,
-                headers={"Authorization": f"Api-Key {self._api_key}"},
+                headers=auth_headers(self._api_key),
                 timeout=httpx.Timeout(
                     connect=5.0,
                     read=self._read_timeout,

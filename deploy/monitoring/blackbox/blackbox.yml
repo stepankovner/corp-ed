@@ -1,0 +1,16 @@
+modules:
+  # Изнутри сети Docker: Host «api» есть в ALLOWED_HOSTS стенда.
+  http_ready:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200]
+      fail_if_body_not_matches_regexp: ['"status":"ok"']
+  # Через nginx хоста, как у пользователя, с проверкой сертификата.
+  https_public:
+    prober: http
+    timeout: 10s
+    http:
+      valid_status_codes: [200]
+      fail_if_not_ssl: true
+      fail_if_body_not_matches_regexp: ['"status":"ok"']

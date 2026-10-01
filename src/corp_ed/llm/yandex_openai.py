@@ -21,6 +21,7 @@ from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.retry import call_with_retry
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
+from corp_ed.llm.yandex_headers import auth_headers
 
 URL = "https://llm.api.cloud.yandex.net/v1/chat/completions"
 
@@ -125,7 +126,7 @@ class YandexOpenAIAdapter(LLMGateway):
                 URL,
                 json=payload,
                 headers={
-                    "Authorization": f"Api-Key {self._api_key}",
+                    **auth_headers(self._api_key),
                     "OpenAI-Project": self._folder_id,
                 },
                 timeout=httpx.Timeout(

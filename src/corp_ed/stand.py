@@ -7,14 +7,16 @@
 
 `check` — сквозной сценарий этапа 5 (WORKLOG): вход администратора,
 загрузка небольшого документа, ожидание индексации воркером, вопрос по
-документу (ответ по документам со ссылкой на него), вопрос вне документов
-(общий ответ с пометкой или отказ — по режиму компании), оценка ответа,
+документу (ответ по документам со ссылкой на него), оценка ответа,
+уточняющий вопрос в том же диалоге (память диалога, BH-28), вопрос вне
+документов (общий ответ с пометкой или отказ — по режиму компании),
 расход кредитов, удаление документа. Каждый шаг печатается с итогом;
 код выхода 1, если хоть один не прошёл. Документ создаётся с уникальным
 кодовым словом, поэтому повторные запуски не конфликтуют и не зависят
 от того, что уже загружено в компанию.
 
-`upload` — загрузить папку документов (docx, pdf, txt, md) в компанию:
+`upload` — загрузить папку документов (docx, doc, xlsx, pptx, pdf, txt,
+md) в компанию:
 демо-корпус для стенда ML (backend-handoff v2, раздел 3). Названия — из
 JSON «имя файла → название» или по имени файла.
 
@@ -44,11 +46,15 @@ import httpx
 
 API = "/api/v1"
 DEFAULT_BASE_URL = "http://localhost:8000"
-SUPPORTED_SUFFIXES = (".docx", ".pdf", ".txt", ".md")
+# Что сервер принимает при всех включённых форматах Р-5 (INGEST_EXTRA_FORMATS);
+# выключенный формат сервер отклонит с подсказкой — шаг покажет это.
+SUPPORTED_SUFFIXES = (".docx", ".doc", ".xlsx", ".pptx", ".pdf", ".txt", ".md")
 INDEX_TIMEOUT = 300.0
 POLL_INTERVAL = 2.0
 # Вопрос, на который в документах компании ответа быть не может.
 OUTSIDE_QUESTION = "Какая сейчас температура на поверхности Венеры в градусах Цельсия?"
+FOLLOW_UP_QUESTION = "А кто его называет?"
+"""Уточнение к вопросу про кодовое слово: понятно только в диалоге (BH-28)."""
 
 
 class StandError(Exception):
@@ -289,6 +295,8 @@ async def run_check(
                 "оценка ответа", rated.status_code == 204, f"HTTP {rated.status_code}"
             )
 
+        await _check_follow_up(client, answer, report)
+
         outside = await _ask(client, OUTSIDE_QUESTION)
         outside_sources = outside.get("sources", [])
         report.add(
@@ -325,8 +333,46 @@ def _yes(value: bool) -> str:
     return "да" if value else "нет"
 
 
-async def _ask(client: StandClient, question: str) -> dict[str, Any]:
-    response = await client.request("POST", "/faq/ask", json={"question": question})
+async def _check_follow_up(
+    client: StandClient, previous: dict[str, Any], report: Report
+) -> None:
+    """Уточняющий вопрос в том же диалоге (BH-28).
+
+    Диалог должен продолжиться (тот же conversation_id). Если память
+    включена на сервере (RAG_HISTORY_TURNS > 0), «А кто его называет?»
+    должен пониматься как вопрос про кодовое слово: ответ — по документу,
+    про дежурного инженера. Выключена — шаг это только сообщает.
+    """
+    conversation = previous.get("conversation_id")
+    follow = await _ask(client, FOLLOW_UP_QUESTION, conversation_id=conversation)
+    same = bool(conversation) and follow.get("conversation_id") == conversation
+    diagnostics = follow.get("diagnostics") or {}
+    turns = int(diagnostics.get("history_turns") or 0)
+    if not turns:
+        report.add(
+            "уточняющий вопрос",
+            same,
+            f"диалог продолжен: {_yes(same)}; память диалога на сервере "
+            "выключена (RAG_HISTORY_TURNS=0)",
+        )
+        return
+    about_duty = "дежурн" in str(follow.get("content", "")).casefold()
+    report.add(
+        "уточняющий вопрос",
+        same and follow.get("origin") == "documents" and about_duty,
+        f"диалог продолжен: {_yes(same)}, учтено реплик {turns}, "
+        f"понят как «{diagnostics.get('standalone_question')}», "
+        f"origin {follow.get('origin')}, ответ про дежурного: {_yes(about_duty)}",
+    )
+
+
+async def _ask(
+    client: StandClient, question: str, *, conversation_id: str | None = None
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"question": question}
+    if conversation_id:
+        body["conversation_id"] = conversation_id
+    response = await client.request("POST", "/faq/ask", json=body)
     if response.status_code != 200:
         raise StandError(f"вопрос: HTTP {response.status_code} {_code(response)}")
     answer: dict[str, Any] = response.json()

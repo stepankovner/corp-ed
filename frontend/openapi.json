@@ -8,6 +8,11 @@
             "title": "Credits",
             "type": "integer"
           },
+          "history_turns": {
+            "default": 0,
+            "title": "History Turns",
+            "type": "integer"
+          },
           "input_tokens": {
             "title": "Input Tokens",
             "type": "integer"
@@ -52,6 +57,39 @@
           "prompt_version": {
             "title": "Prompt Version",
             "type": "string"
+          },
+          "rerank_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Model"
+          },
+          "rerank_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Ms"
+          },
+          "standalone_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Standalone Question"
           }
         },
         "required": [
@@ -172,7 +210,7 @@
         "properties": {
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "docx, pdf, txt или md",
+            "description": "docx, doc, xlsx, pptx, pdf, txt или md",
             "title": "File",
             "type": "string"
           },
@@ -275,6 +313,16 @@
             },
             "title": "App Credential Fields",
             "type": "array"
+          },
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "base": {
+            "default": true,
+            "title": "Base",
+            "type": "boolean"
           },
           "config_fields": {
             "items": {
@@ -580,7 +628,7 @@
         "type": "object"
       },
       "FaqAnswerResponse": {
-        "description": "Ответ ассистента.\n\norigin:\n- documents — ответ по документам компании, sources — выдержки;\n- general_knowledge — в документах ответа нет, ответ из общих\n  знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах\n  компании ответа нет. Ниже — общая информация, не из документов\n  компании:»), sources пуст. Фронт обязан показать это явно\n  (плашка), а не только текстом;\n- none — в документах ответа нет, компания в строгом режиме (по\n  умолчанию), или провайдер отфильтровал ответ: content начинается с\n  NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —\n  совет уточнить у руководителя или в профильном отделе; sources пуст.\n\nanswer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).",
+        "description": "Ответ ассистента.\n\norigin:\n- documents — ответ по документам компании, sources — выдержки;\n- general_knowledge — в документах ответа нет, ответ из общих\n  знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах\n  компании ответа нет. Ниже — общая информация, не из документов\n  компании:»), sources пуст. Фронт обязан показать это явно\n  (плашка), а не только текстом;\n- none — в документах ответа нет, компания в строгом режиме, или\n  провайдер отфильтровал ответ: content начинается с\n  NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —\n  совет уточнить у руководителя или в профильном отделе; sources пуст.\n\nanswer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).\nconversation_id — диалог (BH-28): прислать со следующим вопросом,\nчтобы уточняющий вопрос понимался в контексте; «Новый диалог» — не\nприсылать. Номера [n] относятся только к sources этого ответа.",
         "properties": {
           "answer_given": {
             "title": "Answer Given",
@@ -601,6 +649,18 @@
           "content": {
             "title": "Content",
             "type": "string"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
           },
           "diagnostics": {
             "anyOf": [
@@ -636,6 +696,18 @@
       "FaqQuestionRequest": {
         "additionalProperties": false,
         "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
           "question": {
             "maxLength": 1000,
             "minLength": 1,
@@ -695,6 +767,17 @@
           "position": {
             "title": "Position",
             "type": "integer"
+          },
+          "rerank_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Score"
           }
         },
         "required": [
@@ -725,6 +808,11 @@
             "minLength": 1,
             "title": "Question",
             "type": "string"
+          },
+          "rerank": {
+            "default": false,
+            "title": "Rerank",
+            "type": "boolean"
           },
           "retriever": {
             "anyOf": [
@@ -1461,7 +1549,7 @@
             "type": "integer"
           },
           "tariff": {
-            "$ref": "#/components/schemas/LeadTariff",
+            "$ref": "#/components/schemas/Tariff",
             "default": "base"
           },
           "website": {
@@ -1483,14 +1571,6 @@
         ],
         "title": "LeadRequest",
         "type": "object"
-      },
-      "LeadTariff": {
-        "enum": [
-          "base",
-          "custom"
-        ],
-        "title": "LeadTariff",
-        "type": "string"
       },
       "LoginRequest": {
         "additionalProperties": false,
@@ -1996,6 +2076,48 @@
           "error_code"
         ],
         "title": "SyncRunResponse",
+        "type": "object"
+      },
+      "Tariff": {
+        "enum": [
+          "base",
+          "extended",
+          "enterprise"
+        ],
+        "title": "Tariff",
+        "type": "string"
+      },
+      "TariffAllowanceResponse": {
+        "description": "Тариф компании и подключения (решение 30.09, domain/tariffs.py).",
+        "properties": {
+          "connector_limit": {
+            "title": "Connector Limit",
+            "type": "integer"
+          },
+          "connectors": {
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "limited_by_tariff": {
+            "title": "Limited By Tariff",
+            "type": "boolean"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/Tariff"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tariff",
+          "title",
+          "connectors",
+          "connector_limit",
+          "limited_by_tariff"
+        ],
+        "title": "TariffAllowanceResponse",
         "type": "object"
       },
       "TokenResponse": {
@@ -2669,7 +2791,7 @@
     },
     "/api/v1/connectors/kinds": {
       "get": {
-        "description": "Какие системы можно подключить и какие поля у формы.",
+        "description": "Какие системы можно подключить и какие поля у формы.\n\navailable — входит ли система в тариф компании: небазовые — только\nв «Корпоративном» (решение 30.09).",
         "operationId": "list_kinds_api_v1_connectors_kinds_get",
         "responses": {
           "200": {
@@ -2803,6 +2925,33 @@
           }
         },
         "summary": "Oauth Callback",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/v1/connectors/tariff": {
+      "get": {
+        "description": "Тариф компании: сколько подключений можно и сколько заведено.",
+        "operationId": "tariff_allowance_api_v1_connectors_tariff_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TariffAllowanceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Tariff Allowance",
         "tags": [
           "connectors"
         ]

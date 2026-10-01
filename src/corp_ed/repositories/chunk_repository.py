@@ -65,6 +65,7 @@ class ChunkRepository:
             select(
                 Chunk.id,
                 Chunk.content,
+                Chunk.embed_text,
                 Chunk.material_id,
                 Chunk.position,
                 Chunk.heading_path,
@@ -96,6 +97,7 @@ class ChunkRepository:
             ChunkMatch(
                 id=row.id,
                 content=row.content,
+                embed_text=row.embed_text,
                 material_id=row.material_id,
                 position=row.position,
                 distance=row.distance,
@@ -132,6 +134,7 @@ class ChunkRepository:
             select(
                 Chunk.id,
                 Chunk.content,
+                Chunk.embed_text,
                 Chunk.material_id,
                 Chunk.position,
                 Chunk.heading_path,
@@ -158,6 +161,7 @@ class ChunkRepository:
             ChunkMatch(
                 id=row.id,
                 content=row.content,
+                embed_text=row.embed_text,
                 material_id=row.material_id,
                 position=row.position,
                 distance=row.distance,

@@ -137,15 +137,44 @@ class CreditsExhaustedError(DomainError):
 
 
 class ConnectorLimitError(ConflictError):
-    """Технический потолок подключений на компанию (CONNECTOR_MAX_PER_TENANT).
+    """Технический потолок подключений на компанию (CONNECTOR_MAX_PER_TENANT
+    или tenants.connector_limit) — защита от скрипта в любом тарифе.
 
-    Не тарифная граница: тариф строится от мест (решение команды 25.09).
     HTTP 409 с кодом connector_limit.
     """
 
     def __init__(self, limit: int) -> None:
         super().__init__(f"В компании не больше {limit} подключений")
         self.code = "connector_limit"
+
+
+class TariffConnectorLimitError(ConflictError):
+    """Тариф компании не даёт больше подключений (domain/tariffs.py).
+
+    HTTP 409 с кодом tariff_connector_limit: админ видит, какой тариф
+    снимает ограничение.
+    """
+
+    def __init__(self, tariff_title: str, limit: int) -> None:
+        super().__init__(
+            f"В тарифе «{tariff_title}» — до {limit} подключений. "
+            "Больше — в тарифе «Расширенный»"
+        )
+        self.code = "tariff_connector_limit"
+
+
+class ConnectorNotInTariffError(ConflictError):
+    """Система вне базового списка — только в тарифе «Корпоративный».
+
+    HTTP 409 с кодом connector_not_in_tariff.
+    """
+
+    def __init__(self, tariff_title: str) -> None:
+        super().__init__(
+            f"Эта система не входит в тариф «{tariff_title}» — "
+            "она доступна в тарифе «Корпоративный»"
+        )
+        self.code = "connector_not_in_tariff"
 
 
 class InvalidConnectorConfigError(DomainError):

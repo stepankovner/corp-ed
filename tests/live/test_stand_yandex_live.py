@@ -87,6 +87,33 @@ async def test_stand_check_with_real_yandex_cloud(
     assert report.ok, "\n".join(report.lines())
 
 
+async def test_stand_check_with_dialogue_memory(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Как на стенде: память диалога включена (3 пары, BH-28). Уточнение
+    «А кто его называет?» настоящая модель переписывает в вопрос про
+    кодовое слово, и ответ — по документу, про дежурного инженера."""
+    await make_admin(session, tenant_ctx)
+    rag = production_rag().model_copy(update={"history_turns": 3})
+    async with (
+        yandex_cloud() as (embeddings, llm),
+        stand_client(session_maker, embeddings, llm, rag, dialogue=True) as client,
+    ):
+        report = await run_check(
+            client,
+            company="test",
+            email="stand-admin@test.com",
+            password=PASSWORD,
+            before_poll=ingest_hook(session_maker, embeddings, rag),
+            poll_interval=0.5,
+        )
+    follow_up = next(step for step in report.steps if step.name == "уточняющий вопрос")
+    assert "учтено реплик 1" in follow_up.detail, follow_up.detail
+    assert report.ok, "\n".join(report.lines())
+
+
 @pytest.mark.skipif(
     not HAVE_PORTAL, reason="нужны BITRIX24_TEST_PORTAL и BITRIX24_TEST_WEBHOOK"
 )

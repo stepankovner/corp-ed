@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import GapCluster, GapClusterQuestion, QaLog
+from corp_ed.repositories.qa_log_repository import question_text
 
 
 class GapRepository:
@@ -56,7 +57,7 @@ class GapRepository:
             return {}
         tenant_id = require_tenant()
         rows = await self.session.execute(
-            select(GapClusterQuestion.cluster_id, QaLog.question)
+            select(GapClusterQuestion.cluster_id, question_text())
             .join(QaLog, QaLog.id == GapClusterQuestion.qa_log_id)
             .where(
                 GapClusterQuestion.tenant_id == tenant_id,

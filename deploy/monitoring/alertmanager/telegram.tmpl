@@ -1,0 +1,9 @@
+{{/* Сообщение в Telegram: что случилось и что делать, без меток Prometheus. */}}
+{{ define "kronto.telegram" -}}
+{{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} <b>{{ .CommonLabels.stand }}</b>{{ if eq .Status "resolved" }} — прошло{{ end }}
+{{- range .Alerts }}
+
+{{ if eq .Labels.severity "critical" }}‼️ {{ end }}<b>{{ .Annotations.summary }}</b>
+{{ .Annotations.description }}
+{{- end }}
+{{- end }}

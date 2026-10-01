@@ -28,6 +28,7 @@ from sqlalchemy.orm import Mapped, deferred, mapped_column
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
 from corp_ed.domain.mixins import TenantMixin
+from corp_ed.domain.tariffs import DEFAULT_TARIFF
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE
 
 
@@ -73,6 +74,14 @@ class Tenant(Base):
             "not_found_mode IN ('general', 'strict')",
             name="ck_tenants_not_found_mode",
         ),
+        CheckConstraint(
+            "tariff IN ('base', 'extended', 'enterprise')",
+            name="ck_tenants_tariff",
+        ),
+        CheckConstraint(
+            "connector_limit IS NULL OR connector_limit > 0",
+            name="ck_tenants_connector_limit_positive",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -85,13 +94,21 @@ class Tenant(Base):
     # (досье 10.2). Задаёт команда при подключении (CLI).
     seats: Mapped[int] = mapped_column(default=30, server_default="30")
     # Ответ, когда в документах ничего нет: strict или general
-    # (NotFoundMode). По умолчанию strict (DEFAULT_NOT_FOUND_MODE);
+    # (NotFoundMode). По умолчанию general (DEFAULT_NOT_FOUND_MODE);
     # меняет команда через CLI.
     not_found_mode: Mapped[str] = mapped_column(
         String(16),
         default=DEFAULT_NOT_FOUND_MODE.value,
         server_default=DEFAULT_NOT_FOUND_MODE.value,
     )
+    # Тариф (domain/tariffs.py, решение 30.09): сколько подключений и
+    # какие системы. Задаёт команда через CLI.
+    tariff: Mapped[str] = mapped_column(
+        String(16), default=DEFAULT_TARIFF.value, server_default=DEFAULT_TARIFF.value
+    )
+    # Технический потолок подключений для этой компании; NULL — общий
+    # CONNECTOR_MAX_PER_TENANT. Поднимает команда (cli set-tariff).
+    connector_limit: Mapped[int | None]
 
 
 class User(TenantMixin, Base):
@@ -167,7 +184,9 @@ class Lead(Base):
             "status IN ('new', 'contacted', 'scheduled', 'rejected')",
             name="ck_leads_status",
         ),
-        CheckConstraint("tariff IN ('base', 'custom')", name="ck_leads_tariff"),
+        CheckConstraint(
+            "tariff IN ('base', 'extended', 'enterprise')", name="ck_leads_tariff"
+        ),
         CheckConstraint("seats > 0", name="ck_leads_seats_positive"),
         Index("ix_leads_created_at", "created_at"),
     )
@@ -441,7 +460,8 @@ class QaLog(TenantMixin, Base):
     Вопрос хранится ПОСЛЕ mask_pii (почта, телефоны, паспорта, ФИО):
     для подписи кластеров пробелов текст нужен, но персональные данные в
     нём — нет. Срок хранения — QA_LOG_RETENTION_DAYS, удаляет команда
-    purge. Ответ модели не хранится.
+    purge. Ответ модели не хранится — и для памяти диалога тоже: реплики
+    живут в Redis несколько часов (core/dialogue_store.py).
     """
 
     __tablename__ = "qa_log"
@@ -482,6 +502,19 @@ class QaLog(TenantMixin, Base):
     feedback: Mapped[int | None] = mapped_column(SmallInteger)
     # Заполняет ночная задача отчёта о пробелах (classify_miss).
     miss_kind: Mapped[str | None] = mapped_column(String(32))
+    # Память диалога (BH-28). Сами реплики — в Redis, не здесь
+    # (core/dialogue_store.py); журнал знает только, к какому диалогу
+    # относится вопрос и как его поняли. standalone_question — после
+    # mask_pii, как question; NULL — истории не было, искали по question.
+    conversation_id: Mapped[UUID | None] = mapped_column(Uuid)
+    standalone_question: Mapped[str | None] = mapped_column(Text)
+    condense_prompt_version: Mapped[str | None] = mapped_column(String(32))
+    history_turns: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Реранкер (M3, BH-32): модель, если порядок выдержек дал он; NULL —
+    # порядок вектора (выключен, нечего переставлять или не ответил
+    # вовремя). rerank_ms — сколько ждали реранкер, и при сбое тоже.
+    rerank_model: Mapped[str | None] = mapped_column(String(128))
+    rerank_ms: Mapped[int | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -21,6 +21,7 @@ from corp_ed.core.config import (
     get_lead_settings,
 )
 from corp_ed.core.database import get_session
+from corp_ed.core.dialogue_store import DialogueStore
 from corp_ed.core.exceptions import (
     NotAuthenticatedError,
     PasswordChangeRequiredError,
@@ -36,6 +37,7 @@ from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.reranker import HttpReranker, Reranker
 from corp_ed.llm.throttle import Throttle
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -338,6 +340,29 @@ def get_team_notifier(request: Request) -> TeamNotifier:
     return notifier
 
 
+def get_dialogue_store(request: Request) -> DialogueStore | None:
+    """Реплики диалогов (BH-28): Redis в бою, память процесса без Redis.
+    В тестах lifespan не запускается — памяти диалога нет, пока тест сам
+    не положит хранилище в app.state."""
+    store: DialogueStore | None = getattr(request.app.state, "dialogue_store", None)
+    return store
+
+
+def get_reranker(
+    request: Request, settings: Annotated[RagSettings, Depends(get_rag_settings)]
+) -> Reranker | None:
+    """Реранкер (M3, BH-32): HTTP-сервис из compose.yaml или ничего —
+    пустой RAG_RERANK_MODEL выключает его."""
+    if not settings.rerank_model:
+        return None
+    return HttpReranker(
+        get_http_client(request),
+        settings.rerank_url,
+        model=settings.rerank_model,
+        timeout=settings.rerank_timeout_ms / 1000,
+    )
+
+
 def get_credit_service(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
@@ -367,6 +392,8 @@ def get_faq_service(
     llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[RagSettings, Depends(get_rag_settings)],
+    dialogue_store: Annotated[DialogueStore | None, Depends(get_dialogue_store)],
+    reranker: Annotated[Reranker | None, Depends(get_reranker)],
 ) -> FaqService:
     return FaqService(
         chunk_repo=chunk_repo,
@@ -387,6 +414,13 @@ def get_faq_service(
         general_source=ModelKnowledgeSource(
             llm_gateway, temperature=settings.faq_temperature
         ),
+        dialogue_store=dialogue_store,
+        history_turns=settings.history_turns,
+        history_ttl_minutes=settings.history_ttl_minutes,
+        condense_timeout=settings.condense_timeout_seconds,
+        reranker=reranker,
+        rerank_depth=settings.rerank_depth,
+        rerank_timeout=settings.rerank_timeout_ms / 1000,
     )
 
 

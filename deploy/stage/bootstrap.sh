@@ -2,11 +2,14 @@
 # Первичная настройка тестового стенда на чистой Ubuntu 24.04 (docs/STAGE.md).
 #
 # Один раз, под root, на новом сервере — после того как A-запись DOMAIN
-# указывает на его адрес:
+# указывает на его адрес. Репозиторий приватный: скрипт копируется руками
+# (GitHub → файл → Raw, STAGE.md §4.4), затем:
 #
-#   curl -fsSLO https://raw.githubusercontent.com/stepankovner/corp-ed/main/deploy/stage/bootstrap.sh
 #   DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=ops@krontoai.ru \
 #   DEPLOY_PUBKEY="ssh-ed25519 AAAA… corp-ed-stage-deploy" bash bootstrap.sh
+#
+# Первый запуск остановится на шаге «Код»: он напечатает ключ сервера для
+# GitHub (Deploy key, только чтение). Добавить ключ и запустить ещё раз.
 #
 # Повторный запуск безопасен: каждый шаг проверяет, сделан ли он, и
 # ничего не пересоздаёт (.env, сертификат, данные базы остаются).
@@ -15,12 +18,13 @@ set -euo pipefail
 : "${DOMAIN:?DOMAIN — имя стенда; A-запись уже указывает на этот сервер}"
 : "${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL — почта для уведомлений о сертификате}"
 : "${DEPLOY_PUBKEY:?DEPLOY_PUBKEY — открытый ключ, которым выкатывает GitHub Actions}"
-REPO_URL="${REPO_URL:-https://github.com/stepankovner/corp-ed.git}"
+# Приватный репозиторий — по SSH ключом сервера (deploy key, только чтение).
+REPO_URL="${REPO_URL:-git@github.com:stepankovner/corp-ed.git}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-ghcr.io/stepankovner}"
 APP_DIR="${APP_DIR:-/opt/corp-ed}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 # Зеркало Docker Hub на случай, если hub.docker.com с сервера недоступен
-# (у Timeweb — https://dockerhub.timeweb.cloud). Пусто — без зеркала.
+# (например, https://mirror.gcr.io). Пусто — без зеркала.
 REGISTRY_MIRROR="${REGISTRY_MIRROR:-}"
 SWAP_SIZE="${SWAP_SIZE:-4G}"
 
@@ -37,15 +41,32 @@ apt-get update -q
 # Docker и compose — из архива Ubuntu: он доступен из РФ через зеркала,
 # в отличие от download.docker.com. Нужен compose v2 (docker compose).
 apt-get install -y -q --no-install-recommends \
-    ca-certificates curl git openssl cron ufw unattended-upgrades \
+    ca-certificates curl git openssh-client openssl cron ufw unattended-upgrades \
     nginx certbot docker.io docker-compose-v2
 
-log "Docker: ротация логов${REGISTRY_MIRROR:+, зеркало $REGISTRY_MIRROR}"
-# Без ротации json-file растёт без предела и однажды заполняет диск
-# (MONITORING-RESEARCH.md §1). Действует на контейнеры, созданные после.
+log "Журнал: 14 дней, логи Docker — в journald"
+# Логи контейнеров — в journald (решение 30.09: хранить 14 дней). Оттуда
+# их читает Alloy для Grafana (deploy/monitoring) — без доступа к сокету
+# Docker; `docker logs` работает как раньше. Файлы журнала — по суткам,
+# чтобы срок соблюдался с точностью до дня; общий объём — не больше 2 ГБ.
+# RateLimit выключен: иначе journald молча выбрасывает всплеск логов.
+mkdir -p /etc/systemd/journald.conf.d
+journald_conf="[Journal]
+Storage=persistent
+SystemMaxUse=2G
+MaxRetentionSec=14day
+MaxFileSec=1day
+RateLimitIntervalSec=0"
+if [[ "$(cat /etc/systemd/journald.conf.d/corp-ed.conf 2>/dev/null)" != "$journald_conf" ]]; then
+    printf '%s\n' "$journald_conf" > /etc/systemd/journald.conf.d/corp-ed.conf
+    systemctl restart systemd-journald
+fi
+
+log "Docker: логи в journald${REGISTRY_MIRROR:+, зеркало $REGISTRY_MIRROR}"
+# Действует на контейнеры, созданные после.
 mirrors=""
 [[ -n "$REGISTRY_MIRROR" ]] && mirrors=", \"registry-mirrors\": [\"$REGISTRY_MIRROR\"]"
-daemon_json="{\"log-driver\": \"json-file\", \"log-opts\": {\"max-size\": \"50m\", \"max-file\": \"5\"}$mirrors}"
+daemon_json="{\"log-driver\": \"journald\"$mirrors}"
 if [[ "$(cat /etc/docker/daemon.json 2>/dev/null)" != "$daemon_json" ]]; then
     mkdir -p /etc/docker
     printf '%s\n' "$daemon_json" > /etc/docker/daemon.json
@@ -76,9 +97,38 @@ printf 'command="/usr/local/bin/corp-ed-deploy",no-port-forwarding,no-X11-forwar
 chown "$DEPLOY_USER:$DEPLOY_USER" "$home/.ssh/authorized_keys"
 chmod 600 "$home/.ssh/authorized_keys"
 
+log "Ключ сервера для чтения репозитория"
+# Репозиторий приватный (с 30.09): код и каждую выкатку сервер забирает
+# своим ключом — deploy key в GitHub, только чтение. Ключ хоста GitHub
+# закреплён, а не принят на веру при первом подключении (docs.github.com,
+# «GitHub's SSH key fingerprints»: SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU).
+github_key="$home/.ssh/github_read"
+if [[ ! -f "$github_key" ]]; then
+    sudo -u "$DEPLOY_USER" ssh-keygen -q -t ed25519 -N "" \
+        -C "corp-ed-stage-read@$DOMAIN" -f "$github_key"
+fi
+printf 'Host github.com\n    IdentityFile %s\n    IdentitiesOnly yes\n' "$github_key" > "$home/.ssh/config"
+echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" \
+    > "$home/.ssh/known_hosts"
+chown "$DEPLOY_USER:$DEPLOY_USER" "$home/.ssh/config" "$home/.ssh/known_hosts"
+chmod 600 "$home/.ssh/config" "$home/.ssh/known_hosts"
+
 log "Код в $APP_DIR"
+install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$APP_DIR"
 if [[ ! -d "$APP_DIR/.git" ]]; then
-    git clone --quiet "$REPO_URL" "$APP_DIR"
+    if ! sudo -u "$DEPLOY_USER" git clone --quiet "$REPO_URL" "$APP_DIR"; then
+        cat >&2 <<EOF
+
+Код не скачался: репозиторий приватный, у сервера пока нет доступа.
+GitHub → репозиторий → Settings → Deploy keys → Add deploy key:
+  Title — corp-ed-stage, Key — строка ниже, «Allow write access» НЕ ставить.
+
+$(cat "$github_key.pub")
+
+Затем запустите bootstrap.sh ещё раз с теми же переменными.
+EOF
+        exit 2
+    fi
 fi
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_DIR"
 
@@ -94,6 +144,27 @@ install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/log/corp-ed
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/backups/corp-ed
 # Пароль компании для сквозной проверки (check.sh) — только здесь.
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/corp-ed
+# Отметки ночных задач для node-exporter (cron-run.sh, «мёртвая рука»).
+install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/node_exporter/textfile
+
+log "Мониторинг: настройки"
+# Пароль Grafana — один раз, дальше не меняется. Файл читают root и
+# deploy (deploy.sh поднимает мониторинг при каждой выкатке).
+if [[ ! -f /etc/corp-ed/monitoring.env ]]; then
+    (
+        umask 027
+        printf '%s\n' \
+            "# Мониторинг стенда (deploy/monitoring). Grafana: https://$DOMAIN/grafana/, вход admin." \
+            "DOMAIN=$DOMAIN" \
+            "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 16)" \
+            "APP_NETWORK=$(basename "$APP_DIR")_default" \
+            "PUBLIC_TARGETS_FILE=/etc/corp-ed/public-targets.yml" \
+            > /etc/corp-ed/monitoring.env
+    )
+    chgrp "$DEPLOY_USER" /etc/corp-ed/monitoring.env
+fi
+printf -- '- targets: ["https://%s/health/ready"]\n' "$DOMAIN" > /etc/corp-ed/public-targets.yml
+chmod 644 /etc/corp-ed/public-targets.yml
 
 log ".env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
@@ -122,6 +193,9 @@ log "nginx"
 # Боевой конфиг, только с именем стенда: проверяем ровно то, что пойдёт в бой.
 sed "s/app\.krontoai\.ru/$DOMAIN/g" "$APP_DIR/deploy/nginx/kronto.conf" > /etc/nginx/sites-available/kronto
 ln -sf /etc/nginx/sites-available/kronto /etc/nginx/sites-enabled/kronto
+# Grafana стенда (deploy/monitoring) — под паролем, по тому же TLS.
+install -d /etc/nginx/kronto.d
+install -m 644 "$APP_DIR/deploy/monitoring/nginx-grafana.conf" /etc/nginx/kronto.d/grafana.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t -q
 systemctl enable --now nginx >/dev/null
@@ -132,9 +206,11 @@ cat > /etc/cron.d/corp-ed <<EOF
 # Регулярные задачи стенда (DEPLOY.md §6, §8). Ставит bootstrap.sh.
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-10 3 * * * $DEPLOY_USER cd $APP_DIR && docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli purge >> /var/log/corp-ed/cron.log 2>&1
-30 3 * * * $DEPLOY_USER cd $APP_DIR && docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli gaps --all >> /var/log/corp-ed/cron.log 2>&1
-0 4 * * * $DEPLOY_USER $APP_DIR/deploy/stage/backup.sh >> /var/log/corp-ed/cron.log 2>&1
+# cron-run.sh отмечает успех для мониторинга: нет отметки больше 26 часов —
+# тревога (deploy/monitoring/prometheus/rules/kronto.yml).
+10 3 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh purge docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli purge >> /var/log/corp-ed/cron.log 2>&1
+30 3 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh gaps docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli gaps --all >> /var/log/corp-ed/cron.log 2>&1
+0 4 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh backup deploy/stage/backup.sh >> /var/log/corp-ed/cron.log 2>&1
 EOF
 chmod 644 /etc/cron.d/corp-ed
 
@@ -154,4 +230,6 @@ cat <<EOF
   - включите выкатку: переменная репозитория STAGE_ENABLED=true и Run
     workflow «Deploy». Проверка стенда вручную:
       sudo -u $DEPLOY_USER SSH_ORIGINAL_COMMAND=check /usr/local/bin/corp-ed-deploy
+  - мониторинг поднимется с первой выкаткой: https://$DOMAIN/grafana/,
+    вход admin, пароль — sudo grep GRAFANA /etc/corp-ed/monitoring.env
 EOF
