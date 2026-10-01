@@ -134,6 +134,12 @@
 .docx {
   color: var(--accent);
 }
+.xlsx {
+  color: #1c6b45;
+}
+.pptx {
+  color: #b5541c;
+}
 .web {
   color: #1c6b45;
   border-radius: 50%;

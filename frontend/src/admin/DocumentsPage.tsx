@@ -24,8 +24,10 @@ import { ConfirmDialog, Segmented } from "./common";
 type Material = Schemas["MaterialResponse"];
 type Filter = "all" | "ready" | "processing" | "failed";
 
-const ACCEPT = ".pdf,.docx,.txt,.md";
-const ACCEPTED = /\.(pdf|docx|txt|md)$/i;
+// Что принимает сервер при всех включённых форматах Р-5 (INGEST_EXTRA_FORMATS);
+// выключенный формат сервер отклонит сам — с советом, как сохранить файл.
+const ACCEPT = ".pdf,.docx,.doc,.xlsx,.pptx,.txt,.md";
+const ACCEPTED = /\.(pdf|docx?|xlsx|pptx|txt|md)$/i;
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 const STATUS: Record<Material["status"], { label: string; tone: Tone }> = {
@@ -54,10 +56,18 @@ function titleFromFile(name: string): string {
   );
 }
 
+const FORMAT_CLASS: Record<string, string | undefined> = {
+  pdf: styles.pdf,
+  docx: styles.docx,
+  doc: styles.docx,
+  xlsx: styles.xlsx,
+  pptx: styles.pptx,
+};
+
 export function DocIcon({ format, url }: { format: string | null; url?: string | null }) {
   const kind = (format ?? "").toLowerCase();
   if (!kind && url) return <span className={`${styles.docIcon} ${styles.web}`}>web</span>;
-  const cls = kind === "pdf" ? styles.pdf : kind === "docx" ? styles.docx : "";
+  const cls = FORMAT_CLASS[kind] ?? "";
   return <span className={`${styles.docIcon} ${cls}`}>{kind || "txt"}</span>;
 }
 
@@ -121,7 +131,10 @@ export function DocumentsPage() {
       const item = items[index];
       if (!item) continue;
       if (!ACCEPTED.test(file.name)) {
-        update(item.id, { state: "error", message: "Поддерживаются PDF, DOCX, TXT и MD" });
+        update(item.id, {
+          state: "error",
+          message: "Поддерживаются DOCX, DOC, XLSX, PPTX, PDF, TXT и MD",
+        });
         continue;
       }
       if (file.size > MAX_UPLOAD_BYTES) {

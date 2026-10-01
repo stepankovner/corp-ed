@@ -210,7 +210,7 @@
         "properties": {
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "docx, pdf, txt или md",
+            "description": "docx, doc, xlsx, pptx, pdf, txt или md",
             "title": "File",
             "type": "string"
           },

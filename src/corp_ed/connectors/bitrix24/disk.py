@@ -37,7 +37,7 @@ from corp_ed.connectors.common import (
     to_int,
 )
 from corp_ed.domain.types import RemoteDocumentKind
-from corp_ed.ingest.extract import SUPPORTED_EXTENSIONS
+from corp_ed.ingest.extract import supported_extensions
 
 logger = structlog.get_logger()
 
@@ -153,7 +153,7 @@ class DiskModule:
     ) -> RemoteDocument | None:
         name = str(entry.get("NAME") or "")
         file_id = str(entry.get("ID"))
-        if PurePath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
+        if PurePath(name).suffix.lower() not in supported_extensions():
             note_unsupported(name, file_id)
             return None
         size = to_int(entry.get("SIZE"))

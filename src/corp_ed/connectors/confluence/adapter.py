@@ -54,7 +54,7 @@ from corp_ed.connectors.registry import (
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.domain.types import ConnectorMode, MaterialVisibility, RemoteDocumentKind
-from corp_ed.ingest.extract import SUPPORTED_EXTENSIONS
+from corp_ed.ingest.extract import supported_extensions
 
 logger = structlog.get_logger()
 
@@ -75,7 +75,9 @@ SPEC = KindSpec(
     mode=ConnectorMode.ORGANIZATION,
     modules=(
         ModuleSpec(MODULE_PAGES, "Страницы"),
-        ModuleSpec(MODULE_ATTACHMENTS, "Вложения страниц (docx, pdf, txt, md)"),
+        ModuleSpec(
+            MODULE_ATTACHMENTS, "Вложения страниц (docx, doc, xlsx, pptx, pdf, txt, md)"
+        ),
     ),
     config_fields=(
         FieldSpec("base_url", "Адрес Confluence (https://wiki.company.ru/)"),
@@ -267,7 +269,7 @@ class ConfluenceAdapter:
     ) -> RemoteDocument | None:
         title = str(attachment.get("title") or "")
         attachment_id = str(attachment.get("id") or "")
-        if PurePath(title).suffix.lower() not in SUPPORTED_EXTENSIONS:
+        if PurePath(title).suffix.lower() not in supported_extensions():
             note_unsupported(title, attachment_id)
             return None
         size = to_int(attachment.get("extensions", {}).get("fileSize"))

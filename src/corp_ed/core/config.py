@@ -463,6 +463,10 @@ def get_http_settings() -> HttpSettings:
     return HttpSettings()
 
 
+EXTRA_FORMAT_NAMES = ("xlsx", "pptx", "doc")
+"""Форматы Р-5, которые включает INGEST_EXTRA_FORMATS (ingest/extract.py)."""
+
+
 class IngestSettings(BaseSettings):
     """Разбор файлов в песочнице (API — загрузка, воркер — коннекторы).
 
@@ -471,9 +475,15 @@ class IngestSettings(BaseSettings):
     дороже по CPU при том же объёме текста (RISKS №40); качество таблиц и
     заголовков без неё не сравнивалось. По умолчанию — как было (включена),
     решение команды и ML — одной переменной INGEST_PDF_LAYOUT=false.
+
+    extra_formats — форматы Р-5 (решение Артёма 29.09: по одному, после
+    приёмки ML; .xlsx, .pptx и .doc приняты 01.10, ml-formats.md), через
+    запятую. Убрать формат — он снова отклоняется с подсказкой и не
+    скачивается из подключённых систем; уже загруженные файлы остаются.
     """
 
     pdf_layout: bool = True
+    extra_formats: str = "xlsx,pptx,doc"
 
     model_config = SettingsConfigDict(
         env_prefix="INGEST_",
@@ -481,6 +491,23 @@ class IngestSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("extra_formats")
+    @classmethod
+    def validate_extra_formats(cls, value: str) -> str:
+        # Опечатка в имени формата — ошибка старта, а не молча выключенный
+        # формат.
+        unknown = set(_split_csv(value.lower())) - set(EXTRA_FORMAT_NAMES)
+        if unknown:
+            raise ValueError(
+                f"INGEST_EXTRA_FORMATS: unknown {sorted(unknown)}, "
+                f"allowed {list(EXTRA_FORMAT_NAMES)}"
+            )
+        return value
+
+    @property
+    def extra_format_names(self) -> list[str]:
+        return _split_csv(self.extra_formats.lower())
 
 
 @lru_cache

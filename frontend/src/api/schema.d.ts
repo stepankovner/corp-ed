@@ -948,7 +948,7 @@ export interface components {
         Body_upload_material_api_v1_materials_upload_post: {
             /**
              * File
-             * @description docx, pdf, txt или md
+             * @description docx, doc, xlsx, pptx, pdf, txt или md
              */
             file: string;
             /** Title */

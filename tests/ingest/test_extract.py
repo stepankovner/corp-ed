@@ -47,7 +47,7 @@ def test_detects_supported_formats(filename: str, fmt: SourceFormat) -> None:
     assert detect_format(filename, data).format is fmt
 
 
-@pytest.mark.parametrize("filename", ["old.doc", "slides.pptx", "run.exe", "noext"])
+@pytest.mark.parametrize("filename", ["old.rtf", "slides.ppt", "run.exe", "noext"])
 def test_rejects_unsupported_extension(filename: str) -> None:
     assert _code(lambda: detect_format(filename, b"data")) == "unsupported_format"
 
@@ -55,21 +55,22 @@ def test_rejects_unsupported_extension(filename: str) -> None:
 @pytest.mark.parametrize(
     ("filename", "advice"),
     [
-        ("old.doc", ".docx или PDF"),
-        ("slides.pptx", "как PDF"),
-        ("budget.xlsx", "листы как PDF"),
+        ("old.rtf", ".docx или PDF"),
+        ("slides.odp", ".pptx или PDF"),
+        ("budget.ods", ".xlsx или PDF"),
     ],
 )
 def test_unsupported_format_message_gives_advice(filename: str, advice: str) -> None:
-    """Решение 28.09 (П-3): совет, как загрузить файл, а не только отказ."""
+    """Решение 28.09 (П-3): совет, как загрузить файл, а не только отказ.
+    Совет по флагу форматов Р-5 — tests/ingest/test_office_intake.py."""
     message = error_message("unsupported_format", filename)
     assert advice in message
-    assert message.endswith("Поддерживаются файлы docx, pdf, txt и md")
+    assert message.endswith("Поддерживаются файлы docx, doc, xlsx, pptx, pdf, txt и md")
 
 
 def test_unknown_format_keeps_plain_message() -> None:
     assert error_message("unsupported_format", "run.exe") == (
-        "Поддерживаются файлы docx, pdf, txt и md"
+        "Поддерживаются файлы docx, doc, xlsx, pptx, pdf, txt и md"
     )
 
 
@@ -82,7 +83,9 @@ def test_rejects_docx_renamed_to_pdf() -> None:
     assert _code(lambda: detect_format("a.pdf", docx)) == "format_mismatch"
 
 
-@pytest.mark.parametrize("magic", [b"MZ\x90\x00", b"\x7fELF\x02", b"PK\x03\x04"])
+@pytest.mark.parametrize(
+    "magic", [b"MZ\x90\x00", b"\x7fELF\x02", b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
+)
 def test_rejects_binary_renamed_to_text(magic: bytes) -> None:
     assert _code(lambda: detect_format("a.txt", magic + b"rest")) == "format_mismatch"
 
