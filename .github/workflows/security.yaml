@@ -60,6 +60,11 @@ jobs:
     name: Secrets in history (gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # На pull_request gitleaks-action читает список коммитов PR через API:
+      # в приватном репозитории (с 30.09) без этого права — 403.
+      pull-requests: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
