@@ -619,7 +619,7 @@ def _table(out: list[str], grid: _Grid, rows: list[int], group_level: int) -> No
             second is not None
             and grid.has_horizontal_merge(header)
             and grid.units(second) >= 2
-            and _is_subheader(grid.rows[second], columns)
+            and _is_subheader(grid, header, second, columns)
         ):
             header_rows.append(second)
             body = body[1:]
@@ -671,15 +671,31 @@ def _is_header(cells: dict[int, str], columns: list[int]) -> bool:
     return textual * 2 >= len(values)
 
 
-def _is_subheader(cells: dict[int, str], columns: list[int]) -> bool:
-    """Вторая строка шапки под объединением: короткие подписи, числа можно.
+def _is_subheader(grid: _Grid, header: int, second: int, columns: list[int]) -> bool:
+    """Вторая строка шапки под объединением, а не первая строка данных.
 
-    Под «Численность» над двумя столбцами стоят «2025» и «2026» — это
-    шапка, хотя значения числовые; правило текста против чисел здесь не
-    работает.
+    Под «Численность», объединённой над двумя столбцами, стоят «2025» и
+    «2026» — подписи, хотя и числа. Признак — вне объединения строка пустая
+    или повторяет верхнюю («Отдел», объединённый по вертикали); у строки
+    данных там новое значение («Продажи»), и такую строку шапкой не считаем.
     """
-    values = [cells[c] for c in columns if cells.get(c)]
-    return bool(values) and all(len(v) <= TITLE_MAX_CHARS for v in values)
+    spans = [
+        merge
+        for merge in {grid.merge_of.get((header, c)) for c in columns}
+        if merge is not None
+        and sum(1 for c in columns if grid.merge_of.get((header, c)) == merge) > 1
+    ]
+    top, below = grid.rows[header], grid.rows[second]
+    under = [c for c in columns if grid.merge_of.get((header, c)) in spans]
+    if not under or any(len(below.get(c, "")) > TITLE_MAX_CHARS for c in under):
+        return False
+    if not all(below.get(c) for c in under):
+        return False
+    return all(
+        not below.get(c) or below.get(c) == top.get(c)
+        for c in columns
+        if c not in under
+    )
 
 
 def _is_group(grid: _Grid, row: int, columns: list[int]) -> bool:
