@@ -81,7 +81,11 @@ def extract_markdown(path: Path) -> str:
 
         with path.open("rb") as file:
             html = mammoth.convert_to_html(file).value
-        return str(markdownify.markdownify(html, heading_style="ATX"))
+        # sup_symbol — как предложено бэкенду (BH-36): верхний индекс
+        # остаётся тегом, `preprocess` решает, что с ним делать.
+        return str(
+            markdownify.markdownify(html, heading_style="ATX", sup_symbol="<sup>")
+        )
     if suffix == ".xlsx":
         from corp_ed.ingest.xlsx import xlsx_to_markdown
 

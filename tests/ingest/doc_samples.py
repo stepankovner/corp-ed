@@ -14,6 +14,14 @@ _OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _FREE, _END, _FAT, _NO = 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
 SECTOR = 512
 
+FOOTNOTE = "\x02"
+"""Ссылка на сноску в тексте абзаца: k-я ссылка — k-я строка `footnotes`."""
+ENDNOTE = ""
+"""Ссылка на концевую сноску; в поток пишется тем же знаком \\x02."""
+SUP, END_SUP = "", ""
+"""Начало и конец верхнего индекса в тексте абзаца (sprmCIss = 1); в поток
+сами знаки не пишутся."""
+
 
 @dataclass
 class Row:
@@ -163,14 +171,25 @@ def word_streams(
     *,
     styles: list[Style] | None = None,
     footnotes: list[str] | None = None,
+    endnotes: list[str] | None = None,
+    note_tables: bool = True,
     nfib: int = 0x00C1,
     flags: int = 0x1200,
 ) -> dict[str, bytes]:
-    """Потоки WordDocument и 1Table."""
+    """Потоки WordDocument и 1Table.
+
+    Сноски — как у Word: история сносок после основного текста (каждая
+    начинается знаком \\x02, в конце истории — лишний знак абзаца), позиции
+    ссылок — PlcffndRef, границы текстов — PlcffndTxt (у концевых —
+    PlcfendRef, PlcfendTxt). Знак ссылки в тексте — не полужирный, как
+    стиль «Знак сноски». note_tables=False — без этих таблиц. Текст между
+    SUP и END_SUP — верхний индекс прямым форматированием (как Ctrl+Shift+=).
+    """
     word = bytearray(1024)
     pieces: list[tuple[int, int, int]] = []
     cp = 0
     para_fc: list[tuple[int, int, Para]] = []
+    refs: dict[str, list[int]] = {FOOTNOTE: [], ENDNOTE: []}
 
     def add(text: str, compressed: bool) -> tuple[int, int]:
         nonlocal cp
@@ -187,14 +206,49 @@ def word_streams(
         cp += units
         return fc, len(word)
 
+    # Особые символы абзаца: (начало FC, конец FC, вид) — "ref" или "sup".
+    special: list[tuple[int, int, str]] = []
     for para in paragraphs:
         mark = "\x07" if para.cell_end or para.ttp else "\r"
-        start, end = add(para.text + mark, para.compressed)
+        kinds: list[tuple[str, str]] = []
+        raised = False
+        for char in para.text + mark:
+            if char in (SUP, END_SUP):
+                raised = char == SUP
+                continue
+            kind = "ref" if char in refs else "sup" if raised else ""
+            kinds.append((char, kind))
+        stored = "".join(char for char, _ in kinds).replace(ENDNOTE, FOOTNOTE)
+        para_cp = cp
+        start, end = add(stored, para.compressed)
+        units = 0
+        for (char, kind), unit in zip(kinds, stored, strict=True):
+            size = (
+                len(unit.encode("cp1252"))
+                if para.compressed
+                else len(unit.encode("utf-16-le", "surrogatepass")) // 2
+            )
+            fc = start + (units if para.compressed else 2 * units)
+            if kind == "ref":
+                refs[char].append(para_cp + units)
+            if kind:
+                special.append((fc, fc + (size if para.compressed else 2 * size), kind))
+            units += size
         para_fc.append((start, end, para))
     ccp_text = cp
-    for note in footnotes or []:
-        add("\x02 " + note + "\r", False)
-    ccp_ftn = cp - ccp_text
+
+    def story(notes: list[str]) -> tuple[int, list[int]]:
+        story_start, bounds = cp, []
+        for note in notes:
+            bounds.append(cp - story_start)
+            add("\x02 " + note + "\r", False)
+        if notes:
+            bounds += [cp - story_start, cp - story_start + 3]
+            add("\r", False)
+        return cp - story_start, bounds
+
+    ccp_ftn, footnote_bounds = story(footnotes or [])
+    ccp_edn, endnote_bounds = story(endnotes or [])
 
     def pages_for(
         runs: list[tuple[int, int, bytes]], build: object
@@ -222,15 +276,19 @@ def word_streams(
         return struct.pack("<H", para.istd) + grpprl
 
     papx_runs = [(s, e, papx_data(p)) for s, e, p in para_fc]
-    chpx_runs = [
-        (
-            s,
-            e,
-            (_sprm(0x0835, b"\x01") if p.bold else b"")
-            + (_sprm(0x0800, b"\x01") if p.deleted else b""),
-        )
-        for s, e, p in para_fc
-    ]
+    chpx_runs: list[tuple[int, int, bytes]] = []
+    for s, e, p in para_fc:
+        deleted = _sprm(0x0800, b"\x01") if p.deleted else b""
+        props = (_sprm(0x0835, b"\x01") if p.bold else b"") + deleted
+        by_kind = {"ref": deleted, "sup": props + _sprm(0x2A48, b"\x01")}
+        cursor = s
+        for run_start, run_end, kind in [r for r in special if s <= r[0] < e]:
+            if cursor < run_start:
+                chpx_runs.append((cursor, run_start, props))
+            chpx_runs.append((run_start, run_end, by_kind[kind]))
+            cursor = run_end
+        if cursor < e:
+            chpx_runs.append((cursor, e, props))
     papx_pages = pages_for(papx_runs, _papx_page)
     chpx_pages = pages_for(chpx_runs, _chpx_page)
 
@@ -251,6 +309,21 @@ def word_streams(
     clx = b"\x02" + struct.pack("<I", len(plc)) + plc
     clx_fc = len(table)
     table.extend(clx)
+    note_pairs: dict[int, tuple[int, int]] = {}
+    for (ref_index, text_index), positions, bounds in (
+        ((2, 3), refs[FOOTNOTE], footnote_bounds),
+        ((46, 47), refs[ENDNOTE], endnote_bounds),
+    ):
+        if not note_tables or not positions:
+            continue
+        ref_plc = struct.pack(f"<{len(positions) + 1}I", *positions, cp) + struct.pack(
+            f"<{len(positions)}h", *range(1, len(positions) + 1)
+        )
+        note_pairs[ref_index] = (len(table), len(ref_plc))
+        table.extend(ref_plc)
+        text_plc = struct.pack(f"<{len(bounds)}I", *bounds)
+        note_pairs[text_index] = (len(table), len(text_plc))
+        table.extend(text_plc)
 
     fib = bytearray(900)
     struct.pack_into("<HH", fib, 0, 0xA5EC, nfib)
@@ -258,7 +331,7 @@ def word_streams(
     struct.pack_into("<H", fib, 0x20, 14)
     struct.pack_into("<H", fib, 0x3E, 22)
     longs = [0] * 22
-    longs[0], longs[3], longs[4] = len(word), ccp_text, ccp_ftn
+    longs[0], longs[3], longs[4], longs[8] = len(word), ccp_text, ccp_ftn, ccp_edn
     struct.pack_into("<22i", fib, 0x40, *longs)
     struct.pack_into("<H", fib, 0x98, 93)
     pairs = {
@@ -266,6 +339,7 @@ def word_streams(
         12: (chpx_fc, len(chpx_plc)),
         13: (papx_fc, len(papx_plc)),
         33: (clx_fc, len(clx)),
+        **note_pairs,
     }
     for index, (fc, lcb) in pairs.items():
         struct.pack_into("<II", fib, 0x9A + 8 * index, fc, lcb)
