@@ -184,15 +184,30 @@ def _unescape(text: str) -> str:
 
 
 def _rich_text(element: Element) -> str:
-    """Текст <si> или <is>: <t> и <r><t>, без фонетики <rPh>."""
+    """Текст <si> или <is>: <t> и <r><t>, без фонетики <rPh>.
+
+    Верхний индекс в прогоне (`vertAlign superscript`) — `<sup>…</sup>`:
+    иначе номер сноски прилипает к числу; дальше решает `preprocess`.
+    """
     parts: list[str] = []
     for child in element:
         name = local(child.tag)
         if name == "t":
             parts.append(child.text or "")
         elif name == "r":
-            parts.extend(t.text or "" for t in child if local(t.tag) == "t")
+            text = "".join(t.text or "" for t in child if local(t.tag) == "t")
+            raised = bool(text.strip()) and _is_superscript(child)
+            parts.append(f"<sup>{text}</sup>" if raised else text)
     return _unescape("".join(parts))
+
+
+def _is_superscript(run: Element) -> bool:
+    props = next((p for p in run if local(p.tag) == "rPr"), None)
+    if props is None:
+        return False
+    return any(
+        local(p.tag) == "vertAlign" and p.get("val") == "superscript" for p in props
+    )
 
 
 def _shared_strings(archive: zipfile.ZipFile, part: str) -> list[str]:

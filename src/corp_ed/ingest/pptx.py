@@ -266,12 +266,17 @@ def _paragraph_lines(body: Element) -> list[str]:
 
 
 def _paragraph_text(paragraph: Element) -> str:
+    """Текст абзаца; верхний индекс (`baseline` > 0) — `<sup>…</sup>`, как у
+    .xlsx: иначе номер сноски прилипает к числу."""
     parts: list[str] = []
     for item in paragraph:
         name = local(item.tag)
         if name in ("r", "fld"):
             text = child(item, "t")
-            parts.append(text.text or "" if text is not None else "")
+            value = text.text or "" if text is not None else ""
+            props = child(item, "rPr")
+            raised = props is not None and int(props.get("baseline", "0")) > 0
+            parts.append(f"<sup>{value}</sup>" if raised and value.strip() else value)
         elif name == "br":
             parts.append("\n")
     return "".join(parts).strip()
