@@ -17,11 +17,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.config import EMBEDDING_DIM, RagSettings
 from corp_ed.core.exceptions import ConflictError, ServiceUnavailableError
 from corp_ed.domain.models import Chunk, Material, QaLog, User
-from corp_ed.domain.rerank import RerankText, rerank_order, rerank_passage
+from corp_ed.domain.rerank import order_by_scores
 from corp_ed.domain.types import AnswerOrigin, ChunkMatch, Retriever
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
-from corp_ed.llm.reranker import FakeReranker, HttpReranker, Reranker, RerankerError
+from corp_ed.llm.reranker import (
+    FakeReranker,
+    HttpReranker,
+    Reranker,
+    RerankerError,
+    RerankText,
+    rerank_passage,
+)
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
@@ -51,9 +58,9 @@ def _match(n: int, text: str, embed: str = "") -> ChunkMatch:
 def test_order_is_by_score_and_stable_on_ties() -> None:
     a, b, c = _match(1, "a"), _match(2, "b"), _match(3, "c")
 
-    assert rerank_order([a, b, c], [0.1, 0.9, 0.1]) == [b, a, c]
+    assert order_by_scores([a, b, c], [0.1, 0.9, 0.1]) == [b, a, c]
     with pytest.raises(ValueError):
-        rerank_order([a], [])
+        order_by_scores([a], [])
 
 
 def test_passage_is_embed_text_like_the_ml_measure() -> None:

@@ -17,8 +17,25 @@ HuggingFace text-embeddings-inference с ручкой POST /rerank. Так API �
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from enum import StrEnum
 
 import httpx
+
+from corp_ed.domain.types import ChunkMatch
+
+
+class RerankText(StrEnum):
+    """Что показываем реранкеру: embed — крошки «Документ > Раздел» и
+    текст, как видит эмбеддер (так мерил ML); llm — текст для промпта."""
+
+    EMBED = "embed"
+    LLM = "llm"
+
+
+def rerank_passage(match: ChunkMatch, kind: RerankText) -> str:
+    if kind is RerankText.EMBED and match.embed_text:
+        return match.embed_text
+    return match.content
 
 
 class RerankerError(Exception):

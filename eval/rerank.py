@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from corp_ed.domain.rerank import order_by_scores, rerank
+
 DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
 DEFAULT_DEPTH = 30
 DEFAULT_MAX_LENGTH = 512
@@ -37,10 +39,7 @@ RerankText = Literal["embed", "llm"]
 
 def rerank_ranking(ranking: Sequence[int], scores: Sequence[float]) -> list[int]:
     """Кандидаты по убыванию балла; при равных баллах — исходный порядок."""
-    if len(ranking) != len(scores):
-        raise ValueError("ranking и scores разной длины")
-    order = sorted(range(len(ranking)), key=lambda i: (-scores[i], i))
-    return [ranking[i] for i in order]
+    return order_by_scores(ranking, scores)
 
 
 def rerank_candidates(
@@ -53,20 +52,10 @@ def rerank_candidates(
 ) -> list[int]:
     """Переупорядочить первые depth кандидатов; остальные — следом, как были.
 
-    max_distance — порог продукта: реранкер видит только прошедших его,
-    не прошедшие идут после них в исходном порядке (в e2e их всё равно
-    отрежет relevant_matches).
+    Та же функция, что в продукте (`corp_ed.domain.rerank.rerank`, BH-32):
+    реранкер видит только прошедших порог, не прошедшие идут после них.
     """
-    head = list(ranking[:depth])
-    passed = [
-        i
-        for i in head
-        if max_distance is None or (i in distance_of and distance_of[i] <= max_distance)
-    ]
-    rest = [i for i in head if i not in set(passed)] + list(ranking[depth:])
-    if not passed:
-        return list(ranking)
-    return rerank_ranking(passed, score(passed)) + rest
+    return rerank(ranking, distance_of, score, depth=depth, max_distance=max_distance)
 
 
 @dataclass

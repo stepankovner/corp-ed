@@ -2,9 +2,10 @@
 
 Папка с документами → Markdown → preprocess → чанки нужной конфигурации.
 Извлечение повторяет то, что предложено бэкенду (docs/backend-handoff.md, BH-2):
-docx — mammoth + markdownify, pdf — pymupdf4llm постранично через \\f.
-md и txt читаются как есть. Библиотеки извлечения нужны, только если в
-папке есть docx/pdf (eval/requirements.txt).
+docx — mammoth + markdownify, pdf — pymupdf4llm постранично через \\f,
+xlsx, pptx, doc — `corp_ed.ingest.xlsx` / `pptx` / `doc` (Р-5, BH-33…35). md
+и txt читаются как есть. Библиотеки извлечения нужны, только если в папке
+есть docx/pdf (eval/requirements.txt).
 """
 
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ from corp_ed.domain.split import (
 )
 from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
 
-SUPPORTED_SUFFIXES = (".md", ".txt", ".docx", ".pdf")
+SUPPORTED_SUFFIXES = (".md", ".txt", ".docx", ".pdf", ".xlsx", ".pptx", ".doc")
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,18 @@ def extract_markdown(path: Path) -> str:
         with path.open("rb") as file:
             html = mammoth.convert_to_html(file).value
         return str(markdownify.markdownify(html, heading_style="ATX"))
+    if suffix == ".xlsx":
+        from corp_ed.ingest.xlsx import xlsx_to_markdown
+
+        return xlsx_to_markdown(path.read_bytes())
+    if suffix == ".doc":
+        from corp_ed.ingest.doc import doc_to_markdown
+
+        return doc_to_markdown(path.read_bytes())
+    if suffix == ".pptx":
+        from corp_ed.ingest.pptx import pptx_to_markdown
+
+        return pptx_to_markdown(path.read_bytes())
     if suffix == ".pdf":
         import pymupdf4llm
 

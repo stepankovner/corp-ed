@@ -33,12 +33,11 @@ from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import User, UserRole
-from corp_ed.domain.rerank import RerankText
 from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.reranker import HttpReranker, Reranker
+from corp_ed.llm.reranker import HttpReranker, Reranker, RerankText
 from corp_ed.llm.throttle import Throttle
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.chunk_repository import ChunkRepository

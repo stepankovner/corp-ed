@@ -275,7 +275,7 @@ def corpus(tmp_path: Path) -> Path:
     (folder / "Памятка.txt").write_text(
         "Больничный оплачивается по закону.", encoding="utf-8"
     )
-    (folder / "игнор.xlsx").write_text("не документ", encoding="utf-8")
+    (folder / "игнор.odp").write_text("не документ", encoding="utf-8")
     return folder
 
 
@@ -326,6 +326,26 @@ def test_crumbs_without_title(tmp_path: Path) -> None:
     assert regulation.llm_text.startswith("polozhenie_v2 > Положение об отпусках")
     # Без заголовков крошки — одно название: в эмбеддинге их не остаётся.
     assert chunks["Памятка"].embed_text == "Больничный по закону."
+
+
+def test_load_corpus_reads_xlsx(tmp_path: Path) -> None:
+    from tests.ingest.xlsx_samples import SheetSpec, xlsx
+
+    (tmp_path / "Нормы.xlsx").write_bytes(
+        xlsx(
+            [
+                SheetSpec(
+                    "Суточные",
+                    {"A1": "Страна", "B1": "Сумма", "A2": "Франция", "B2": 2500},
+                )
+            ]
+        )
+    )
+    chunks = chunk_corpus(load_corpus(tmp_path), ChunkingConfig())
+
+    assert [c.material for c in chunks] == ["Нормы"]
+    assert chunks[0].heading_path == ["Суточные"]
+    assert chunks[0].embed_text == "Нормы > Суточные\nСтрана: Франция; Сумма: 2500"
 
 
 def test_chunking_config_names() -> None:

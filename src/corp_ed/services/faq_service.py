@@ -23,7 +23,7 @@ from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
-from corp_ed.domain.rerank import RerankText, rerank_order, rerank_passage
+from corp_ed.domain.rerank import order_by_scores
 from corp_ed.domain.types import (
     DEFAULT_NOT_FOUND_MODE,
     AnswerDiagnostics,
@@ -36,7 +36,7 @@ from corp_ed.domain.types import (
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.reranker import Reranker, RerankerError
+from corp_ed.llm.reranker import Reranker, RerankerError, RerankText, rerank_passage
 from corp_ed.llm.types import Completion, FinishReason
 from corp_ed.prompts.dialogue import (
     CONDENSE_PROMPT_VERSION,
@@ -389,7 +389,7 @@ class FaqService:
             for match, score in zip(matches, scores, strict=True)
         ]
         return _Reranked(
-            matches=rerank_order(scored, scores)[:limit],
+            matches=order_by_scores(scored, scores)[:limit],
             model=self.reranker.model,
             ms=elapsed,
         )
