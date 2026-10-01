@@ -34,9 +34,10 @@
 ### Дорога 1: документ загружают
 
 ```
-файл docx / pdf / txt / md (+ xlsx, pptx — BH-33, BH-34)
+файл docx / pdf / txt / md (+ xlsx, pptx, doc — BH-33…BH-35)
   │  [бэкенд] файл → Markdown (docx: mammoth + markdownify; pdf: pymupdf4llm,
-  │           страницы склеены символом \f; xlsx, pptx: ingest/xlsx.py, pptx.py — код ML)
+  │           страницы склеены символом \f; xlsx, pptx, doc: ingest/xlsx.py,
+  │           pptx.py, doc.py — код ML)
   ▼
 preprocess(markdown) ─────────────────────────── ingest/preprocess.py
   │  символы, колонтитулы, HTML, таблицы → «ключ: значение», ссылки,
@@ -432,6 +433,38 @@ zip-бомба, тип главной части по `[Content_Types].xml`), с
 - SmartArt → узлы (`dgm:pt` без типа или `node`) списком;
 - заметки — заполнитель `body` части `notesSlide`.
 
+### 3.13. `ingest/doc.py` — Word 97–2003 (Р-5)
+
+Двоичный .doc без сторонних библиотек: контейнер OLE (`_Cfb`: FAT,
+мини-поток, каталог; цепочки — с защитой от петель) и MS-DOC.
+
+- `check_container(data)` — контейнер OLE, поток `WordDocument`, FIB:
+  `wIdent`, версия (Word 6/95 → `unsupported_format`), пароль
+  (`fEncrypted`, `fObfuscated`, поток `EncryptedPackage` → `encrypted`).
+- Текст — по таблице кусков CLX (`_pieces`, `_story`): однобайтовые куски
+  (cp1252) и Unicode; у каждого символа — его позиция FC в
+  `WordDocument`, по ней ищутся свойства. Unicode читается по одной
+  единице UTF-16: суррогатная пара склеивается позже, в `_clean`.
+- Поля (`_without_fields`): код выбрасывается, результат остаётся;
+  оглавление (`TOC`) — целиком.
+- Свойства абзацев — страницы FKP (`_fkp_runs`, `_sprms`): ячейка
+  (`sprmPFInTable`), конец строки (`sprmPFTtp`), глубина (`sprmPItap`),
+  уровень структуры (`sprmPOutLvl`), описание строки (`sprmTDefTable`,
+  `sprmTVertMerge`). Не влезли в FKP — `sprmPHugePapx`, свойства в
+  потоке `Data` (так у широких таблиц).
+- Стили (`_styles`, STSH): встроенный номер `sti` (1–9 — заголовки,
+  62 — «Название»), уровень структуры стиля, полужирный; цепочка
+  `istdBase`.
+- Полужирный по символам (CHPX, `sprmCFBold`, в т. ч. «как в стиле» /
+  «наоборот»): абзац целиком полужирный → `**…**`.
+- Таблица (`_sheet`): границы ячеек всех строк → общая сетка; широкая
+  ячейка — объединение по горизонтали, `vertMerge` — по вертикали; дальше
+  `xlsx.table_lines`.
+
+Тесты собирают .doc в коде (`tests/ingest/doc_samples.py`: OLE, FIB, CLX,
+FKP, STSH, поток Data); разбор сверен с antiword и с файлами, которые
+сохранил Word (`sandbox/formats`).
+
 ---
 
 ## 4. Eval — как мы измеряем
@@ -638,6 +671,7 @@ src/corp_ed/
   ingest/xlsx.py           книга Excel → Markdown (Р-5, BH-33)
   ingest/pptx.py           презентация → Markdown (Р-5, BH-34)
   ingest/ooxml.py          общее для .xlsx и .pptx: пакет, связи, разбор XML
+  ingest/doc.py            Word 97–2003 (.doc) → Markdown (Р-5, BH-35)
   domain/tokens.py         длина в токенах (len/3)
   domain/markdown.py       общие утилиты Markdown
   domain/split.py          нарезка v2, крошки, два текста, разделы

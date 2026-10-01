@@ -162,6 +162,29 @@ def test_years_under_merged_header_are_a_second_header_row() -> None:
     ]
 
 
+def test_data_row_under_merged_header_is_not_taken_for_header() -> None:
+    # «Сумма» объединена над двумя столбцами, но под ней сразу данные:
+    # в первом столбце новое значение («Годовая»), а не «Вид» и не пусто.
+    data = xlsx(
+        [
+            SheetSpec(
+                "Лист1",
+                {
+                    "A1": "Вид",
+                    "B1": "Сумма",
+                    "A2": "Годовая",
+                    "B2": "1 оклад",
+                    "C2": "в марте",
+                },
+                merges=["B1:C1"],
+            )
+        ]
+    )
+    assert _lines(xlsx_to_markdown(data)) == [
+        "Вид: Годовая; Сумма: 1 оклад; Сумма: в марте"
+    ]
+
+
 def test_single_value_row_inside_table_is_a_group_heading() -> None:
     data = xlsx(
         [
