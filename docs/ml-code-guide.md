@@ -34,9 +34,9 @@
 ### Дорога 1: документ загружают
 
 ```
-файл docx / pdf / txt / md
+файл docx / pdf / txt / md (+ xlsx — BH-33)
   │  [бэкенд] файл → Markdown (docx: mammoth + markdownify; pdf: pymupdf4llm,
-  │           страницы склеены символом \f)
+  │           страницы склеены символом \f; xlsx: ingest/xlsx.py — код ML)
   ▼
 preprocess(markdown) ─────────────────────────── ingest/preprocess.py
   │  символы, колонтитулы, HTML, таблицы → «ключ: значение», ссылки,
@@ -387,6 +387,29 @@ ChunkDraft(
 прошедших, но не решает, отвечать ли. Стенд (`eval/rerank.py`) вызывает
 эти же функции — продукт и замер переставляют одинаково.
 
+### 3.11. `ingest/xlsx.py` — книга Excel → Markdown (Р-5)
+
+Первый из новых форматов (`ml-formats.md`). Только стандартная
+библиотека: .xlsx — zip с XML, читаем `zipfile` и потоковым
+`xml.etree.iterparse`. Встраивает бэкенд (BH-33) в `extract.py`, в
+песочнице, как docx.
+
+- `check_container(data)` — до разбора: сигнатура, книга с паролем
+  (OLE с `EncryptedPackage`), zip-бомба, zip без книги.
+- `read_workbook(data) -> Workbook` — видимые листы: ячейки
+  `(строка, столбец) → текст` и объединения; скрытые листы и формулы без
+  сохранённого результата — счётчиками для статистики.
+- `workbook_to_markdown(workbook)` — лист → `#`, короткий текст над
+  таблицей → заголовок таблицы, объединённые ячейки размножаются, шапка в
+  две строки → «Верх — низ», строка-группа (`_is_group`) → подзаголовок с
+  повтором шапки, текст под таблицей — абзац. Дальше `preprocess` делает из
+  строк таблицы «ключ: значение; …», как для docx и pdf.
+- `format_number(number, code)` — число по коду формата Excel: даты
+  `01.10.2026`, время, проценты, рубли, запятая в дробях.
+
+Ошибки — `XlsxError(code)` с кодами `ExtractionError`. Тесты собирают
+книги в коде (`tests/ingest/xlsx_samples.py`) — бинарников в git нет.
+
 ---
 
 ## 4. Eval — как мы измеряем
@@ -589,6 +612,7 @@ uv run ruff check && uv run ruff format --check && uv run mypy
 ```
 src/corp_ed/
   ingest/preprocess.py     очистка документа (10 шагов)
+  ingest/xlsx.py           книга Excel → Markdown (Р-5, BH-33)
   domain/tokens.py         длина в токенах (len/3)
   domain/markdown.py       общие утилиты Markdown
   domain/split.py          нарезка v2, крошки, два текста, разделы

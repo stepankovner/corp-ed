@@ -204,6 +204,7 @@ docs/             документация, см. ниже
 | [`docs/ml-summary.md`](docs/ml-summary.md) | ML простыми словами: что встроено, метрики, решения |
 | [`docs/ml-report.md`](docs/ml-report.md) | все замеры ML с таблицами и статистикой |
 | [`docs/ml-code-guide.md`](docs/ml-code-guide.md) | как устроен ML-код |
+| [`docs/ml-formats.md`](docs/ml-formats.md) | форматы файлов: критерии приёмки и статистика по каждому |
 | [`docs/ml-vs-alice.md`](docs/ml-vs-alice.md) | сравнение с Алисой AI для бизнеса, одна страница |
 | [`docs/backend-handoff.md`](docs/backend-handoff.md) | что ML передаёт бэкенду: настройки, контракты, статус |
 | `docs/ml-plan.md`, `ml-golden-guide.md`, `ml-alice-protocol.md`, `ml-backend-contracts.md` | план ML, как писать эталонные вопросы, протокол сравнения, ранние контракты |
