@@ -17,7 +17,9 @@ Markdown, но без мусора, который ест токены и лом
    (номера сносок) в заголовках.
 4. Таблицы → строки «Заголовок1: значение; Заголовок2: значение». Чанк,
    разрезавший таблицу, без шапки бесполезен; строка с ключами
-   самодостаточна.
+   самодостаточна. Пустая шапка (таблица Word без помеченной строки
+   заголовка — так по умолчанию) → шапкой становится первая строка, если
+   похожа на шапку: иначе ключи терялись целиком (`ml-formats.md`).
 5. Ссылки: [текст](url) → текст, голые URL удаляются. Почтовые адреса
    остаются — это содержательный ответ на «куда писать».
 6. Экранирование markdownify (tenant\\_id → tenant_id).
@@ -88,6 +90,11 @@ _TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?\
 _CELL_BORDER = re.compile(r"(?<!\\)\|")
 _PLACEHOLDER_HEADER = re.compile(
     r"^(?:col\s*\d+|column\s*\d+|колонка\s*\d+)$", re.IGNORECASE
+)
+_HEADER_MAX_CHARS = 150
+_NUMERIC_CELL = re.compile(
+    r"^[-+−]?\d[\d\s]*(?:[.,]\d+)?\s*(?:%|₽|\$|€|руб\.?)?$"
+    r"|^\d{1,2}\.\d{1,2}\.\d{2,4}$"
 )
 
 _IMAGE = re.compile(r"!\[([^\]]*)\]\((?:[^()]|\([^)]*\))*\)")
@@ -245,6 +252,8 @@ def _linearize_tables(text: str) -> str:
         if _starts_table(lines, fenced, i):
             keys = _table_keys(_split_cells(line))
             rows, i = _collect_rows(lines, fenced, i + 2)
+            if not any(keys) and rows and _looks_like_header(rows[0]):
+                keys, rows = _table_keys(rows[0]), rows[1:]
             result.extend(["", *_table_to_lines(keys, rows), ""])
             previous_keys = keys
             continue
@@ -312,6 +321,22 @@ def _clean_cell(cell: str) -> str:
 def _table_keys(header: list[str]) -> list[str]:
     keys = [_clean_cell(cell).rstrip(":").strip() for cell in header]
     return ["" if _PLACEHOLDER_HEADER.match(key) else key for key in keys]
+
+
+def _looks_like_header(row: list[str]) -> bool:
+    """Первая строка таблицы с пустой шапкой — на самом деле шапка?
+
+    markdownify ставит пустую шапку `|  |  |`, когда в HTML нет `<th>`:
+    mammoth делает `<th>` только из строк, помеченных в Word «повторять
+    как заголовок», а по умолчанию пометки нет. Тогда настоящая шапка —
+    первая строка. Признак — как у `ingest.xlsx`: хотя бы два значения,
+    все короткие, текста не меньше, чем чисел.
+    """
+    values = [value for value in (_clean_cell(cell) for cell in row) if value]
+    if len(values) < 2 or any(len(value) > _HEADER_MAX_CHARS for value in values):
+        return False
+    textual = sum(1 for value in values if not _NUMERIC_CELL.match(value))
+    return textual * 2 >= len(values)
 
 
 def _rows_to_lines(keys: list[str] | None, rows: list[list[str]]) -> list[str]:
