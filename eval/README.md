@@ -25,6 +25,10 @@ python -m eval.bench --corpus путь/к/документам --dataset eval/pr
     --split dev --retriever vector
 ```
 
+В папке корпуса — .md, .txt, .docx, .pdf и .xlsx (с 01.10, разбор
+`corp_ed.ingest.xlsx` — как в продукте после BH-33). Замер по форматам —
+[`docs/ml-formats.md`](../docs/ml-formats.md).
+
 ## Что считается «продуктом»
 
 Значения по умолчанию у `offline_e2e` и `judge` — те, что стоят в
