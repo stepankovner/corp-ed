@@ -185,12 +185,16 @@ log "SSH: вход только по ключу"
 # Пароль остаётся для консоли в панели Selectel. 00-… читается раньше
 # 50-cloud-init.conf, а sshd берёт первое значение. Нет ключа у root — не
 # трогаем: кто вошёл по паролю, потерял бы SSH.
+# KexAlgorithms: набор OpenSSH по умолчанию, постквантовый обмен первым. С
+# сервером Selectel ssh 10.x договорился о непостквантовом и предупредил
+# (02.10); от чего так в образе — не выяснено, строка закрывает любой случай.
 sshd_drop=/etc/ssh/sshd_config.d/00-corp-ed.conf
 if grep -qsE '(ssh-(ed25519|rsa)|ecdsa-sha2-[a-z0-9]+) AAAA' /root/.ssh/authorized_keys; then
     printf '%s\n' \
         'PasswordAuthentication no' \
         'KbdInteractiveAuthentication no' \
-        'PermitRootLogin prohibit-password' > "$sshd_drop"
+        'PermitRootLogin prohibit-password' \
+        'KexAlgorithms ^sntrup761x25519-sha512@openssh.com' > "$sshd_drop"
     sshd -t || { rm -f "$sshd_drop"; echo "sshd не принял настройку — оставлена прежняя" >&2; exit 1; }
     # Ubuntu 24.04 поднимает sshd по первому подключению (ssh.socket):
     # не запущен — новую настройку прочтёт при старте.
