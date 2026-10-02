@@ -1,7 +1,11 @@
 name: CI
 
 on:
+  # push — только main: ветку PR проверяет pull_request. С push на
+  # любую ветку каждый пуш в PR запускал прогон дважды, а минуты Actions
+  # у приватного репозитория ограничены (02.10 выкатка #56 не получила исполнителя).
   push:
+    branches: [main]
   pull_request:
     branches: [main]
 

@@ -521,6 +521,20 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
   пункт).
 - **Проверка без выкатки** (на сервере):
   `sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy`.
+- **Выкатка без Actions** (кончились минуты, GitHub недоступен) — образы
+  собираются на сервере, 5–10 минут:
+
+  ```bash
+  cd /opt/kronto
+  sudo -u deploy git fetch --prune origin
+  sudo -u deploy git checkout --force --detach origin/main
+  sudo -u deploy docker compose -f compose.yaml build api web
+  sudo -u deploy docker compose -f compose.yaml up -d --no-build --remove-orphans
+  sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy
+  ```
+
+  Признак, что минуты кончились: задание в Actions падает за несколько
+  секунд без шагов и лога; расход — GitHub → Settings → Billing → Usage.
 - **Мониторинг:** `https://stage.krontoai.ru/grafana/` — дашборд
   «Kronto — стенд»: доступность и SLO, время ответа, ответы по источнику,
   деградации, очереди воркера, процессор, память, диск, ночные задачи,
