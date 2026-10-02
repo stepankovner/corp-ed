@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
-import { formatDate, formatNumber } from "../lib/format";
+import { formatCalendarDate, formatNumber } from "../lib/format";
 import { Notice } from "../ui/Notice";
 import { Page, PageHeader } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
@@ -37,8 +37,8 @@ function UsageView({ usage }: { usage: Schemas["UsageResponse"] }) {
     <div className={pageStyles.stack}>
       {usage.exhausted ? (
         <Notice kind="error" title="Лимит исчерпан">
-          Сотрудники не могут задавать вопросы до {formatDate(usage.period_end)}. Чтобы увеличить
-          лимит, добавьте рабочие места — напишите нам.
+          Сотрудники не могут задавать вопросы до {formatCalendarDate(usage.period_end)}. Чтобы
+          увеличить лимит, добавьте рабочие места — напишите нам.
         </Notice>
       ) : usage.warning ? (
         <Notice kind="warn" title="Лимит скоро закончится">
@@ -47,7 +47,7 @@ function UsageView({ usage }: { usage: Schemas["UsageResponse"] }) {
       ) : null}
       <div className={pageStyles.card}>
         <p className="mono muted">
-          {formatDate(usage.period_start)} — {formatDate(usage.period_end)}
+          {formatCalendarDate(usage.period_start)} — {formatCalendarDate(usage.period_end, -1)}
         </p>
         <p
           style={{ fontSize: "var(--fs-h3)", fontWeight: 500, margin: "8px 0 16px" }}

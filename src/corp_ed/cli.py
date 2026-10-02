@@ -114,6 +114,20 @@ def _parser() -> argparse.ArgumentParser:
         "enterprise — «Корпоративный»",
     )
 
+    reset = commands.add_parser(
+        "reset-password",
+        help="временный пароль сотруднику — например, администратору, "
+        "который забыл свой",
+    )
+    reset.add_argument("--code", required=True)
+    reset.add_argument("--email", required=True)
+    reset.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="временный пароль — первой строкой stdin; без флага — скрытый "
+        "ввод в терминале",
+    )
+
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")
     seats.add_argument("--code", required=True)
     seats.add_argument("--seats", required=True, type=int)
@@ -315,6 +329,23 @@ async def _run(args: argparse.Namespace) -> int:
             )
             return 0
 
+        if args.command == "reset-password":
+            user = await service.reset_password(
+                args.code,
+                args.email,
+                _read_admin_password(
+                    from_stdin=args.password_stdin,
+                    prompt="Временный пароль: ",
+                    stdin_flag="--password-stdin",
+                ),
+            )
+            print(f"{user.email}: временный пароль задан, сессии закрыты.")
+            print(
+                "Передайте пароль отдельным каналом; при входе система "
+                "потребует сменить его."
+            )
+            return 0
+
         if args.command == "set-seats":
             check = await seats_check(session, args.code, args.seats)
             if check.stops_pool and not args.yes:
@@ -396,23 +427,35 @@ async def _leads(args: argparse.Namespace) -> int:
         return 0
 
 
-def _read_admin_password(*, from_stdin: bool) -> str:
-    """Временный пароль администратора — от оператора, не от программы.
+def _read_admin_password(
+    *,
+    from_stdin: bool,
+    prompt: str = "Временный пароль администратора: ",
+    stdin_flag: str = "--admin-password-stdin",
+) -> str:
+    """Временный пароль — от оператора, не от программы.
 
     CLI не генерирует, не печатает и не хранит пароль (RISKS №42): его
     нельзя увидеть в выводе, истории терминала или журнале CI. Скрытый
     ввод дважды в терминале или первая строка stdin (как `docker login
-    --password-stdin`). Политику проверяет TenantService.provision.
+    --password-stdin`). Политику проверяет TenantService.
     """
     if from_stdin:
         return sys.stdin.readline().rstrip("\r\n")
     if not sys.stdin.isatty():
         raise DomainError(
-            "Нет терминала для ввода пароля: передайте его через --admin-password-stdin"
+            f"Нет терминала для ввода пароля: передайте его через {stdin_flag}"
         )
-    password = getpass.getpass("Временный пароль администратора: ")
+    password = getpass.getpass(prompt)
     if getpass.getpass("Повторите пароль: ") != password:
         raise DomainError("Пароли не совпадают")
+    if not password.isascii():
+        # Скрытый ввод не показывает раскладку: русская превращает пароль
+        # в кириллицу, а клиент наберёт его латиницей (стенд 02.10).
+        raise DomainError(
+            "В пароле есть не латинские символы — проверьте раскладку "
+            "клавиатуры и введите снова"
+        )
     return password
 
 

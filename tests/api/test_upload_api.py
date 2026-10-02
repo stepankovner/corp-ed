@@ -322,3 +322,9 @@ async def test_employee_cannot_delete(
         f"/api/v1/materials/{material.id}", headers=bearer(account)
     )
     assert response.status_code == 403
+
+
+async def test_upload_rejects_blank_title(
+    api: httpx.AsyncClient, admin_account: User
+) -> None:
+    assert (await _upload(api, admin_account, title="   ")).status_code == 422

@@ -2,10 +2,11 @@
 
 Выбор библиотек — рекомендация ML по замеру на 6 реальных документах:
 - docx: mammoth → HTML → markdownify (заголовки → #, таблицы, списки);
+  колонтитулы mammoth пропускает — их текст читается отдельно;
 - pdf: pymupdf4llm (заголовки и таблицы; markitdown даёт ноль
   заголовков), страницы склеиваются PAGE_BREAK (\\f) — по ним preprocess
   находит колонтитулы;
-- txt, md: как есть, только UTF-8;
+- txt, md: как есть; UTF-8, а ещё UTF-16 с BOM и Windows-1251;
 - xlsx, pptx, doc (Р-5, BH-33…BH-35): разбор ML — ingest/xlsx.py,
   ingest/pptx.py, ingest/doc.py, только стандартная библиотека. Каждый
   включён флагом INGEST_EXTRA_FORMATS: формат выключается без выкладки
@@ -23,6 +24,7 @@
 """
 
 import io
+import re
 import zipfile
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
@@ -70,7 +72,7 @@ class ExtractionError(Exception):
 ERROR_MESSAGES = {
     "unsupported_format": "Поддерживаются файлы docx, doc, xlsx, pptx, pdf, txt и md",
     "format_mismatch": "Содержимое файла не соответствует его расширению",
-    "not_utf8": "Текстовый файл должен быть в кодировке UTF-8",
+    "not_utf8": "Не удалось прочитать текстовый файл — сохраните его в кодировке UTF-8",
     "encrypted": "Файл защищён паролем — снимите защиту и загрузите снова",
     "no_text": "В файле нет текста (возможно, это скан без распознавания)",
     "too_many_pages": "Слишком много страниц в документе",
@@ -125,8 +127,14 @@ def supported_message(enabled: Collection[SourceFormat] | None = None) -> str:
     return f"Поддерживаются файлы {', '.join(names[:-1])} и {names[-1]}"
 
 
+_TEXT_SUFFIXES = (".txt", ".md", ".markdown")
+
+
 def error_message(code: str, filename: str | None = None) -> str:
     """Сообщение админу; для неподдерживаемого формата — с советом."""
+    if code == "no_text" and filename and filename.lower().endswith(_TEXT_SUFFIXES):
+        # Пустой .txt — не скан: совет про распознавание только путает.
+        return "Файл пустой — в нём нет текста"
     if code != "unsupported_format":
         return ERROR_MESSAGES[code]
     enabled = enabled_formats()
@@ -235,6 +243,13 @@ def _office(fmt: SourceFormat) -> tuple[_Check, _Convert]:
 
 
 def _check_docx_container(data: bytes) -> None:
+    if data.startswith(b"\xd0\xcf\x11\xe0") and (
+        "EncryptedPackage".encode("utf-16-le") in data
+    ):
+        # Word с паролем — OLE-контейнер, а не zip. Без этой проверки
+        # клиент читал «не соответствует расширению» (стенд 02.10);
+        # xlsx и pptx проверяет так же ooxml.check_package.
+        raise ExtractionError("encrypted")
     if not data.startswith(b"PK\x03\x04"):
         raise ExtractionError("format_mismatch")
     try:
@@ -283,11 +298,35 @@ def extract(fmt: SourceFormat, data: bytes, *, pdf_layout: bool = True) -> str:
 
 
 def _decode_text(data: bytes) -> str:
+    """UTF-8, а если не он — UTF-16 с BOM («Юникод» старого Блокнота)
+    или Windows-1251: так сохраняют старые программы Windows, и такие
+    .txt у клиентов есть (стенд 02.10: файл отклонялся)."""
     try:
         # utf-8-sig: BOM от Блокнота Windows не должен попасть в текст.
         return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    try:
+        if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            return data.decode("utf-16")
+        text = data.decode("cp1251")
     except UnicodeDecodeError as exc:
         raise ExtractionError("not_utf8") from exc
+    if not _looks_russian(text):
+        raise ExtractionError("not_utf8")
+    return text
+
+
+def _looks_russian(text: str) -> bool:
+    """Windows-1251 декодирует почти любые байты; принимаем, только если
+    вышел русский текст: больше половины букв — русские, управляющих
+    символов почти нет. Иначе это другая кодировка или двоичный файл."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return False
+    russian = sum("А" <= ch <= "я" or ch in "Ёё" for ch in letters)
+    controls = sum(ch < " " and ch not in "\t\n\r\f" for ch in text)
+    return russian > 0.5 * len(letters) and controls <= len(text) // 1000
 
 
 def _extract_docx(data: bytes) -> str:
@@ -304,7 +343,53 @@ def _extract_docx(data: bytes) -> str:
     except Exception as exc:  # noqa: BLE001 — любая ошибка парсера = битый файл
         raise ExtractionError("corrupted") from exc
     markdown: str = markdownify.markdownify(result.value, heading_style="ATX")
-    return markdown
+    headers = _docx_running_text(data, "header")
+    footers = _docx_running_text(data, "footer")
+    # Верхний колонтитул — перед текстом: номер положения и редакция
+    # попадают в первый фрагмент рядом с названием; нижний — в конец.
+    parts = [*headers, markdown, *footers]
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+_RUNNING_PART = re.compile(r"word/(header|footer)\d*\.xml")
+
+
+def _docx_running_text(data: bytes, kind: str) -> list[str]:
+    """Тексты колонтитулов docx без повторов.
+
+    Там бывают номер положения, редакция, телефон ответственного, а
+    mammoth колонтитулы не читает (стенд 02.10: «П-ОТП-07» из верхнего
+    колонтитула не находился). Номера страниц — поля, их кэш из одних
+    цифр отбрасывается.
+    """
+    from corp_ed.ingest import ooxml
+
+    blocks: list[str] = []
+    try:
+        with ooxml.open_archive(data) as archive:
+            for part in sorted(archive.namelist()):
+                match = _RUNNING_PART.fullmatch(part)
+                if match is None or match.group(1) != kind:
+                    continue
+                lines = []
+                for _, element in ooxml.parse(archive, part):
+                    if ooxml.local(element.tag) != "p":
+                        continue
+                    text = "".join(
+                        node.text or ""
+                        for node in element.iter()
+                        if ooxml.local(node.tag) == "t"
+                    ).strip()
+                    if text and not text.isdigit():
+                        lines.append(text)
+                block = "\n\n".join(lines)
+                if block and block not in blocks:
+                    blocks.append(block)
+    except Exception:  # noqa: BLE001 — любая ошибка разбора колонтитула
+        # Колонтитулы — добавка: сломанные не должны валить документ,
+        # который mammoth уже прочитал.
+        return []
+    return blocks
 
 
 def _extract_pdf(data: bytes, *, layout: bool = True) -> str:

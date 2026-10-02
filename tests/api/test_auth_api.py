@@ -550,7 +550,10 @@ async def test_change_password_requires_current_password(
 ) -> None:
     response = await api.post(
         "/api/v1/auth/change-password",
-        json={"current_password": "guess-guess-guess", "new_password": "x" * 20},
+        json={
+            "current_password": "guess-guess-guess",
+            "new_password": "new horse battery 2026",
+        },
         headers=bearer(account),
     )
     # Не 401: иначе клиент решит, что сессия истекла.
@@ -566,6 +569,46 @@ async def test_change_password_enforces_policy(
         headers=bearer(account),
     )
     assert response.status_code == 422
+
+
+async def test_policy_rejections_do_not_lock_password_change(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """Подбор пароля под правила не упирается в лимит (стенд 02.10: после
+    пяти «слишком распространённый» человек ждал 15 минут)."""
+    for weak in ["short", "aaaaaaaaaaaa", "password1234", "abababababab", "x", "y"]:
+        rejected = await api.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": PASSWORD, "new_password": weak},
+            headers=bearer(account),
+        )
+        assert rejected.status_code == 422
+
+    changed = await api.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": PASSWORD, "new_password": "new horse battery 2026"},
+        headers=bearer(account),
+    )
+    assert changed.status_code == 200
+
+
+async def test_wrong_current_password_is_still_limited(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    statuses = [
+        (
+            await api.post(
+                "/api/v1/auth/change-password",
+                json={
+                    "current_password": f"guess-guess-{attempt}",
+                    "new_password": "new horse battery 2026",
+                },
+                headers=bearer(account),
+            )
+        ).status_code
+        for attempt in range(6)
+    ]
+    assert statuses == [400] * 5 + [429]
 
 
 async def test_temporary_password_blocks_everything_but_change(

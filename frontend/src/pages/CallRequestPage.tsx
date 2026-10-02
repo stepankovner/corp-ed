@@ -4,7 +4,7 @@ import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
-import { formatDate } from "../lib/format";
+import { formatCalendarDate } from "../lib/format";
 import { priceLabel, tariffByCode, TARIFFS, type TariffCode } from "../lib/tariffs";
 import { Button } from "../ui/Button";
 import { Checkbox, SelectField, TextAreaField, TextField } from "../ui/Field";
@@ -86,8 +86,8 @@ function RequestForm({ form }: { form: Schemas["LeadFormResponse"] }) {
   if (send.isSuccess) {
     return (
       <Notice kind="ok" title="Заявка отправлена">
-        Мы перезвоним по номеру {phone.trim()}, чтобы подтвердить созвон {formatDate(day)} в {slot}{" "}
-        по Москве.
+        Мы перезвоним по номеру {phone.trim()}, чтобы подтвердить созвон {formatCalendarDate(day)} в{" "}
+        {slot} по Москве.
       </Notice>
     );
   }

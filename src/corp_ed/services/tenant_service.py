@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import structlog
 from pydantic import EmailStr, TypeAdapter, ValidationError
@@ -14,6 +15,7 @@ from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.connector_repository import ConnectorRepository
+from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 
@@ -284,6 +286,53 @@ class TenantService:
             "tenant_not_found_mode_changed", tenant_id=str(tenant.id), mode=mode.value
         )
         return tenant
+
+    async def reset_password(
+        self, company_code: str, email: str, temporary_password: str
+    ) -> User:
+        """Временный пароль сотруднику компании — из CLI на сервере.
+
+        Сотрудникам пароль сбрасывает администратор компании в интерфейсе,
+        а единственному администратору, который забыл свой, — только
+        команда Kronto (стенд 02.10: восстановить доступ было нечем).
+        Пароль, как у create-tenant, придумывает оператор (RISKS №42);
+        при входе его потребуют сменить, все сессии закрываются.
+        """
+        tenant = await self.tenant_repo.get_by_company_code(company_code)
+        if tenant is None:
+            raise ConflictError(f"Компании с кодом '{company_code}' нет")
+        with tenant_scope(tenant.id):
+            user = await self.user_repo.get_by_email(email.strip())
+            if user is None:
+                raise ConflictError(
+                    f"В компании '{tenant.company_code}' нет сотрудника с почтой "
+                    f"{email.strip()}"
+                )
+            if not user.is_active:
+                raise ConflictError(
+                    "Учётка заблокирована: новый пароль не поможет войти. "
+                    "Разблокировать её может администратор компании"
+                )
+            validate_password(temporary_password, email=user.email)
+            user.hashed_password = hash_password(temporary_password)
+            user.must_change_password = True
+            user.token_version += 1
+            await RefreshTokenRepository(self.session).revoke_user(
+                user.id, datetime.now(UTC)
+            )
+            # actor_id пуст — как у create-tenant: сделала команда из CLI.
+            self.audit.record(
+                AuditAction.USER_PASSWORD_RESET,
+                tenant_id=tenant.id,
+                target_type="user",
+                target_id=user.id,
+                details={"source": "cli"},
+            )
+            await self.session.commit()
+        logger.info(
+            "password_reset_by_operator", tenant_id=str(tenant.id), user_id=str(user.id)
+        )
+        return user
 
 
 def _tariff_state(tenant: Tenant) -> dict[str, str | int | None]:

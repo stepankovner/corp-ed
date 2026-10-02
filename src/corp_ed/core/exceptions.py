@@ -45,7 +45,7 @@ class EmailAlreadyExistsError(ConflictError):
     """Email уже зарегистрирован."""
 
     def __init__(self, email: str) -> None:
-        super().__init__(f"User with email '{email}' already exists")
+        super().__init__(f"Сотрудник с почтой {email} уже есть в компании")
 
 
 class TenantMismatchError(Exception):
@@ -84,6 +84,17 @@ class SelfModificationError(ConflictError):
 
     def __init__(self) -> None:
         super().__init__("Нельзя изменить собственную роль или заблокировать себя")
+
+
+class SelfPasswordResetError(ConflictError):
+    """Администратор выдаёт временный пароль сам себе.
+
+    Сброс закрывает все сессии: не скопировал пароль — вышел из системы,
+    а единственный администратор компании так теряет доступ.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("Свой пароль меняйте в меню профиля: «Сменить пароль»")
 
 
 class SeatsLimitError(ConflictError):

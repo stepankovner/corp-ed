@@ -398,6 +398,86 @@ def test_cli_never_prints_the_admin_password() -> None:
     assert "admin_password=" in source
 
 
+async def _provisioned(session: AsyncSession) -> TenantService:
+    service = _service(session)
+    await service.provision(
+        company_code="acme",
+        name="A",
+        admin_email="admin@acme.ru",
+        admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
+        seats=30,
+    )
+    return service
+
+
+async def _update_only_user(session: AsyncSession, **changes: object) -> User:
+    """Единственный пользователь компании; правки — в контексте тенанта,
+    иначе хук изоляции не даст их записать."""
+    tenant = (await session.execute(select(Tenant))).scalar_one()
+    with tenant_scope(tenant.id):
+        user = (await session.execute(select(User))).scalar_one()
+        for name, value in changes.items():
+            setattr(user, name, value)
+        await session.commit()
+    return user
+
+
+async def test_operator_resets_forgotten_admin_password(session: AsyncSession) -> None:
+    service = await _provisioned(session)
+    admin = await _update_only_user(session, must_change_password=False)
+    version = admin.token_version
+
+    user = await service.reset_password("ACME", " Admin@Acme.ru ", "Reset-by-team-2026")
+
+    assert user.id == admin.id
+    assert verify_password("Reset-by-team-2026", user.hashed_password)
+    assert user.must_change_password is True
+    assert user.token_version == version + 1
+    event = (
+        await session.execute(
+            select(AuditEvent).where(AuditEvent.action == "user.password_reset")
+        )
+    ).scalar_one()
+    assert event.actor_user_id is None
+    assert event.details == {"source": "cli"}
+    assert current_tenant.get() is None
+
+
+async def test_operator_reset_needs_existing_active_user(session: AsyncSession) -> None:
+    service = await _provisioned(session)
+    with pytest.raises(ConflictError, match="Компании"):
+        await service.reset_password("ghost", "admin@acme.ru", "Reset-by-team-2026")
+    with pytest.raises(ConflictError, match="нет сотрудника"):
+        await service.reset_password("acme", "nobody@acme.ru", "Reset-by-team-2026")
+    with pytest.raises(WeakPasswordError):
+        await service.reset_password("acme", "admin@acme.ru", "short")
+
+    await _update_only_user(session, is_active=False)
+    with pytest.raises(ConflictError, match="заблокирована"):
+        await service.reset_password("acme", "admin@acme.ru", "Reset-by-team-2026")
+
+
+def test_cli_reset_password_args() -> None:
+    args = _parser().parse_args(
+        ["reset-password", "--code", "acme", "--email", "a@b.ru", "--password-stdin"]
+    )
+    assert (args.code, args.email, args.password_stdin) == ("acme", "a@b.ru", True)
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["reset-password", "--code", "acme"])
+
+
+def test_cli_rejects_password_typed_in_cyrillic_layout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Скрытый ввод не показывает раскладку: «Ыщьуерштп» вместо «Something»."""
+    answers = iter(["Ыщьуерштп-2026", "Ыщьуерштп-2026"])
+    monkeypatch.setattr(sys, "stdin", _Tty())
+    monkeypatch.setattr(getpass, "getpass", lambda prompt: next(answers))
+    with pytest.raises(DomainError, match="раскладку"):
+        _read_admin_password(from_stdin=False)
+
+
 class _Tty(io.StringIO):
     def isatty(self) -> bool:
         return True

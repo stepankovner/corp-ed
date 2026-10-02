@@ -10,6 +10,7 @@ from corp_ed.core.exceptions import (
     LastAdminError,
     NotFoundError,
     SelfModificationError,
+    SelfPasswordResetError,
 )
 from corp_ed.core.password_policy import validate_password
 from corp_ed.core.security import generate_temporary_password, hash_password
@@ -81,7 +82,7 @@ class UserService:
         user = await self.repository.create(
             User(
                 email=email,
-                full_name=full_name,
+                full_name=_name(full_name),
                 role=role,
                 hashed_password=hash_password(password),
                 must_change_password=True,
@@ -138,7 +139,8 @@ class UserService:
         if is_active is not None:
             user.is_active = is_active
         if full_name is not None:
-            user.full_name = full_name
+            # Пустая строка — стереть имя; None — не трогать.
+            user.full_name = _name(full_name)
 
         if changes_access:
             user.token_version += 1
@@ -173,6 +175,8 @@ class UserService:
         а значит, не использует один и тот же для всех.
         """
         user = await self._get(user_id)
+        if user.id == actor.id:
+            raise SelfPasswordResetError()
         temporary = generate_temporary_password()
 
         user.hashed_password = hash_password(temporary)
@@ -199,3 +203,10 @@ class UserService:
         if user is None:
             raise NotFoundError("Пользователь не найден")
         return user
+
+
+def _name(full_name: str | None) -> str | None:
+    """Имя без пробелов по краям; из одних пробелов — нет имени."""
+    if full_name is None:
+        return None
+    return full_name.strip() or None

@@ -141,6 +141,34 @@ def test_docx_headings_become_markdown() -> None:
     assert "По заявлению работника." in markdown
 
 
+def test_docx_running_text_is_extracted() -> None:
+    """Стенд 02.10: номер положения жил только в верхнем колонтитуле."""
+    data = samples.docx(
+        [("Положение об отпусках", "Heading1"), ("Текст положения.", None)],
+        extra_parts={
+            "word/header1.xml": samples.running_part("hdr", ["Положение П-ОТП-07"]),
+            "word/header2.xml": samples.running_part("hdr", ["Положение П-ОТП-07"]),
+            "word/footer1.xml": samples.running_part(
+                "ftr", ["Вопросы — внутренний телефон 2318", "7"]
+            ),
+        },
+    )
+    markdown = extract(SourceFormat.DOCX, data)
+
+    assert markdown.index("П-ОТП-07") < markdown.index("# Положение об отпусках")
+    assert markdown.count("П-ОТП-07") == 1
+    assert markdown.rstrip().endswith("Вопросы — внутренний телефон 2318")
+    assert "\n7" not in markdown
+
+
+def test_broken_running_text_does_not_fail_docx() -> None:
+    data = samples.docx(
+        [("Текст положения.", None)],
+        extra_parts={"word/header1.xml": "<w:hdr"},
+    )
+    assert "Текст положения." in extract(SourceFormat.DOCX, data)
+
+
 def test_pdf_pages_are_joined_with_page_break() -> None:
     data = samples.pdf([[("First page text", 11)], [("Second page text", 11)]])
     markdown = extract(SourceFormat.PDF, data)
@@ -164,9 +192,26 @@ def test_corrupted_pdf_is_rejected() -> None:
     assert _code(lambda: extract(SourceFormat.PDF, b"%PDF-1.7 broken")) == ("corrupted")
 
 
-def test_text_must_be_utf8() -> None:
-    cp1251 = "Отпуск 28 дней".encode("cp1251")
-    assert _code(lambda: extract(SourceFormat.TXT, cp1251)) == "not_utf8"
+def test_windows_encodings_are_read() -> None:
+    """Стенд 02.10: .txt из старого Блокнота отклонялся."""
+    text = "Отпуск — 28 календарных дней.\r\nПропуск: кабинет 101."
+    assert extract(SourceFormat.TXT, text.encode("cp1251")) == text
+    assert extract(SourceFormat.TXT, text.encode("utf-16")) == text
+    big_endian = b"\xfe\xff" + text.encode("utf-16-be")
+    assert extract(SourceFormat.MD, big_endian) == text
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        bytes(range(0x80, 0x98)) * 50,  # не текст ни в одной кодировке
+        # Западноевропейский текст: в cp1251 акценты стали бы кириллицей.
+        "Le café du coin est fermé le dimanche. Über alles.".encode("latin-1"),
+        b"\x01\x02\x03\xe0\xe1" * 200,  # двоичный файл
+    ],
+)
+def test_undecodable_text_is_rejected(data: bytes) -> None:
+    assert _code(lambda: extract(SourceFormat.TXT, data)) == "not_utf8"
 
 
 def test_bom_and_nul_are_removed() -> None:
@@ -176,6 +221,8 @@ def test_bom_and_nul_are_removed() -> None:
 
 def test_empty_text_is_rejected() -> None:
     assert _code(lambda: extract(SourceFormat.TXT, b"  \n\n ")) == "no_text"
+    assert error_message("no_text", "пусто.txt") == "Файл пустой — в нём нет текста"
+    assert "скан" in error_message("no_text", "скан.pdf")
 
 
 def test_oversized_text_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

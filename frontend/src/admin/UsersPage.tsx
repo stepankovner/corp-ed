@@ -323,7 +323,8 @@ function EditUserDialog({
       unwrap(
         api.PATCH("/api/v1/users/{user_id}", {
           params: { path: { user_id: user.id } },
-          body: { full_name: fullName.trim() || null, ...(self ? {} : { role }) },
+          // Пустая строка стирает имя: null сервер понял бы как «не менять».
+          body: { full_name: fullName.trim(), ...(self ? {} : { role }) },
         }),
       ),
     onSuccess: async () => {

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 
 import { api, unwrap } from "../api/client";
-import { formatDate } from "../lib/format";
+import { formatCalendarDate } from "../lib/format";
 import { Notice } from "../ui/Notice";
 import styles from "./AppShell.module.css";
 
@@ -27,7 +27,7 @@ export function UsageBanner() {
     <div className={styles.banner}>
       {exhausted ? (
         <Notice kind="error" title="Лимит вопросов исчерпан">
-          Сотрудники не смогут задавать вопросы до {formatDate(period_end)}.{" "}
+          Сотрудники не смогут задавать вопросы до {formatCalendarDate(period_end)}.{" "}
           <Link to="/admin/usage">Подробнее о лимите</Link>
         </Notice>
       ) : (
