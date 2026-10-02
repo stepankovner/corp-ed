@@ -15,7 +15,7 @@
   SELECTEL_USER, SELECTEL_PASSWORD  сервисный пользователь
   SELECTEL_ACCOUNT_ID               номер аккаунта
   SELECTEL_PROJECT                  имя проекта, где только стенд
-  SELECTEL_REGION                   пул, например ru-9
+  SELECTEL_REGION                   пул, например ru-7
   STAGE_SERVER_ID                   id сервера (UUID)
 """
 
