@@ -89,11 +89,10 @@ jobs:
     permissions:
       contents: read
       packages: read
-    # Секрет STAGE_SSH_KEY — в окружении stage: правила защиты окружения
-    # (например, обязательный ревьюер) действуют на каждую выкатку.
-    environment:
-      name: stage
-      url: https://${{ vars.STAGE_DOMAIN }}
+    # Секрет STAGE_SSH_KEY — секрет репозитория, а не окружения: в
+    # приватном репозитории environments есть только на платных тарифах
+    # GitHub. Ключ на сервере умеет только `deploy <sha>` и `check`, и
+    # выкатывает только коммиты из веток этого репозитория (STAGE.md §3).
 
     steps:
       - name: SSH key and pinned host key
