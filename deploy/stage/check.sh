@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # Сквозная проверка стенда (python -m corp_ed.stand check) с самого
 # сервера — после каждой выкатки ее вызывает workflow Deploy
-# (corp-ed-deploy check). Вход, загрузка документа, индексация воркером,
+# (kronto-deploy check). Вход, загрузка документа, индексация воркером,
 # ответ по документу с настоящей моделью, уточняющий вопрос в диалоге,
 # вопрос вне документов, кредиты.
 #
 # Для проверки нужна компания с администратором. Её скрипт заводит сам
 # при первом запуске, а пароль хранит только на сервере
-# (/var/lib/corp-ed/stand-check.env, 600) — ни в GitHub, ни в чат он не
-# попадает. Вручную: sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/corp-ed-deploy
+# (/var/lib/kronto/stand-check.env, 600) — ни в GitHub, ни в чат он не
+# попадает. Вручную: sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy
 set -euo pipefail
 # shellcheck source=/dev/null
-. /etc/corp-ed/stage.env
+. /etc/kronto/stage.env
 
 COMPANY=stand-check
 EMAIL=stand-check@krontoai.ru
-state=/var/lib/corp-ed/stand-check.env
+state=/var/lib/kronto/stand-check.env
 cd "$APP_DIR"
 
 if [[ ! -f "$state" ]]; then
@@ -40,7 +40,7 @@ run_check() {
     CORP_ED_BASE_URL="https://$DOMAIN" CORP_ED_COMPANY="$COMPANY" CORP_ED_EMAIL="$EMAIL" \
         docker run --rm --add-host "$DOMAIN:host-gateway" \
         -e CORP_ED_BASE_URL -e CORP_ED_COMPANY -e CORP_ED_EMAIL -e CORP_ED_PASSWORD -e CORP_ED_NEW_PASSWORD \
-        corp-ed:local python -m corp_ed.stand check
+        kronto-api:local python -m corp_ed.stand check
 }
 
 logged_in() { grep -q '^OK  вход администратора' <<<"$1"; }

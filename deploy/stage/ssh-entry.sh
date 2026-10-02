@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# corp-ed-deploy: принудительная команда ключа выкатки (authorized_keys
+# kronto-deploy: принудительная команда ключа выкатки (authorized_keys
 # пользователя deploy, ставит bootstrap.sh). С этим ключом можно только
 # две вещи — ни shell, ни проброса портов:
 #
@@ -10,7 +10,7 @@
 # После изменения файла — перезапустить bootstrap.sh.
 set -euo pipefail
 # shellcheck source=/dev/null
-. /etc/corp-ed/stage.env
+. /etc/kronto/stage.env
 
 read -r action sha extra <<<"${SSH_ORIGINAL_COMMAND:-}" || true
 cd "$APP_DIR"

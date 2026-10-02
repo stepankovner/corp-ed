@@ -11,7 +11,7 @@ x-app: &app
   build:
     context: .
     dockerfile: Dockerfile
-  image: corp-ed:local
+  image: kronto-api:local
   env_file: .env
   environment:
     # Приложение ходит в базу НЕ владельцем схемы: RLS для него действует,
@@ -91,7 +91,7 @@ services:
     tmpfs:
       - /tmp
     volumes:
-      - ${RERANK_MODEL_DIR:-/var/lib/corp-ed/reranker-model}:/model:ro
+      - ${RERANK_MODEL_DIR:-/var/lib/kronto/reranker-model}:/model:ro
     cpus: ${RERANK_CPUS:-3}
     mem_limit: 2g
     healthcheck:

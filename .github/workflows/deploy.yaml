@@ -74,9 +74,9 @@ jobs:
           # source связывает пакет с репозиторием (видимость, страница пакета).
           labels=(--label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
                   --label "org.opencontainers.image.revision=$SHA")
-          docker build "${labels[@]}" -t "$prefix/corp-ed:$SHA" .
+          docker build "${labels[@]}" -t "$prefix/kronto-api:$SHA" .
           docker build "${labels[@]}" -t "$prefix/kronto-web:$SHA" frontend
-          docker push --quiet "$prefix/corp-ed:$SHA"
+          docker push --quiet "$prefix/kronto-api:$SHA"
           docker push --quiet "$prefix/kronto-web:$SHA"
 
   deploy:
@@ -112,7 +112,7 @@ jobs:
           SHA: ${{ needs.images.outputs.sha }}
           HOST: ${{ vars.STAGE_HOST }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Ключ на сервере привязан к corp-ed-deploy (deploy/stage/ssh-entry.sh):
+        # Ключ на сервере привязан к kronto-deploy (deploy/stage/ssh-entry.sh):
         # другой команды с ним не выполнить. Токен — через stdin, не в
         # командной строке.
         run: |

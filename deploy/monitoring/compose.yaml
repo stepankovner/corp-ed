@@ -4,7 +4,7 @@
 #
 # Поднимает deploy/stage/deploy.sh после каждой выкатки:
 #   docker compose -f deploy/monitoring/compose.yaml \
-#     --env-file .env --env-file /etc/corp-ed/monitoring.env up -d
+#     --env-file .env --env-file /etc/kronto/monitoring.env up -d
 # Из .env приложения берутся только TEAM_NOTIFY_TELEGRAM_* (тревоги в тот
 # же чат, что заявки); из monitoring.env — домен и пароль Grafana.
 #
@@ -12,7 +12,7 @@
 # вход по паролю). Prometheus, Alertmanager и Loki слушают только сеть
 # Docker. Метрики и логи — 14 дней (решение 30.09).
 
-name: corp-ed-monitoring
+name: kronto-monitoring
 
 x-restart: &restart
   restart: unless-stopped
@@ -28,7 +28,7 @@ services:
       - --storage.tsdb.retention.size=4GB
     volumes:
       - ./prometheus:/etc/prometheus:ro
-      # Адрес стенда для проверки снаружи — из /etc/corp-ed (bootstrap.sh).
+      # Адрес стенда для проверки снаружи — из /etc/kronto (bootstrap.sh).
       - ${PUBLIC_TARGETS_FILE:-./prometheus/public-targets.yml}:/etc/prometheus/public-targets.yml:ro
       - prometheus_data:/prometheus
     networks: [monitoring, app]
@@ -54,7 +54,7 @@ services:
     image: grafana/grafana:13.2.3
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD — в /etc/corp-ed/monitoring.env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD — в /etc/kronto/monitoring.env}
       GF_SERVER_ROOT_URL: https://${DOMAIN:?DOMAIN}/grafana/
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_USERS_ALLOW_SIGN_UP: "false"
@@ -139,7 +139,7 @@ networks:
   # /metrics API и воркера, blackbox проверяет /health/ready.
   app:
     external: true
-    name: ${APP_NETWORK:-corp-ed_default}
+    name: ${APP_NETWORK:-kronto_default}
 
 volumes:
   prometheus_data:

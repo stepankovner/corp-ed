@@ -1,4 +1,4 @@
 # Публичные адреса стенда для blackbox (job public). deploy.sh
-# перезаписывает файл на хосте именем из /etc/corp-ed/stage.env — здесь
+# перезаписывает файл на хосте именем из /etc/kronto/stage.env — здесь
 # значение по умолчанию.
 - targets: ["https://stage.krontoai.ru/health/ready"]

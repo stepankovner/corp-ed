@@ -1,4 +1,4 @@
-# Развёртывание corp-ed
+# Развёртывание Kronto
 
 Как поднять и обслуживать систему в бою. Что и почему устроено именно
 так — в `DECISIONS.md`; что известно и не закрыто — в `RISKS.md`;
@@ -11,14 +11,14 @@
 
 | Сервис | Образ | Что делает |
 |---|---|---|
-| `api` | `corp-ed` | HTTP API (uvicorn), порт 8000 — только для reverse proxy |
-| `worker` | `corp-ed` | фоновый ингест и синхронизация подключений: `python -m corp_ed.worker` |
-| `migrate` | `corp-ed` | одноразово при старте: `alembic upgrade head` |
+| `api` | `kronto-api` | HTTP API (uvicorn), порт 8000 — только для reverse proxy |
+| `worker` | `kronto-api` | фоновый ингест и синхронизация подключений: `python -m corp_ed.worker` |
+| `migrate` | `kronto-api` | одноразово при старте: `alembic upgrade head` |
 | `db` | `pgvector/pgvector:pg16` | PostgreSQL + pgvector, единственное хранилище данных |
 | `redis` | `redis:7-alpine` | лимиты частоты, квота эмбеддингов, история диалогов (12 часов), одноразовость OAuth `state`, пульс воркера; без диска, без пароля не стартует |
 | `web` | `kronto-web` (`frontend/Dockerfile`) | статика фронтенда: nginx без root, порт 8080, CSP; API не проксирует |
 | `reranker` | `text-embeddings-inference:cpu-1.9.4` (по хешу) | только с `COMPOSE_PROFILES=reranker`: модель реранкера (BH-32), без root, только чтение, ≤ 3 ядер, 2 ГБ |
-| cron на хосте | `corp-ed` | раз в сутки `cli purge` и `cli gaps --all` |
+| cron на хосте | `kronto-api` | раз в сутки `cli purge` и `cli gaps --all` |
 
 Один образ на всё: API, воркер, миграции, CLI. Код и окружение внутри
 принадлежат root и доступны только на чтение; процессы работают под
@@ -199,9 +199,9 @@ Cron на хосте (или systemd timer), под пользователем �
 
 ```cron
 # Удалить журнал вопросов старше QA_LOG_RETENTION_DAYS и аудит старше года.
-10 3 * * *  cd /opt/corp-ed && docker compose -f compose.yaml run --rm api python -m corp_ed.cli purge
+10 3 * * *  cd /opt/kronto && docker compose -f compose.yaml run --rm api python -m corp_ed.cli purge
 # Пересобрать отчёт о пробелах по всем активным компаниям (после purge).
-30 3 * * *  cd /opt/corp-ed && docker compose -f compose.yaml run --rm api python -m corp_ed.cli gaps --all
+30 3 * * *  cd /opt/kronto && docker compose -f compose.yaml run --rm api python -m corp_ed.cli gaps --all
 ```
 
 `purge` удаляет и журнал запусков коннекторов старше
@@ -253,7 +253,7 @@ docker compose -f compose.yaml up -d --build
 новый диалог.
 
 ```bash
-docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-$(date +%F).dump
+docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > kronto-$(date +%F).dump
 ```
 
 Раз в сутки, хранить не меньше 30 дней вне хоста. Дамп содержит
@@ -374,6 +374,10 @@ Confluence — обычный пользователь, который чита�
       отдаёт).
 - [ ] `ss -ltn` на хосте: 8000 и 8080 слушаются только на `127.0.0.1`;
       снаружи `curl http://<ip>:8000/health` не соединяется.
+- [ ] SSH только по ключу: `sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '`
+      — `no` и `without-password`. Стенд делает это в `bootstrap.sh`
+      (`/etc/ssh/sshd_config.d/00-kronto.conf`); Selectel по умолчанию
+      пускает root и по паролю.
 - [ ] После входа в браузере в `docker compose -f compose.yaml logs api` у
       запросов адрес клиента настоящий, а не `172.30.61.1`.
 - [ ] Запрос с чужим `Host` получает 400.

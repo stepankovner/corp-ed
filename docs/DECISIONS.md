@@ -2327,3 +2327,44 @@ LDAP/AD и SSO, обратный ход на тысячах пользовате
 **Статус.** Р-12 «б» выполнен: Confluence остаётся в каталоге. Открыт
 вопрос, как достать Confluence из закрытой сети клиента
 (`OPEN-QUESTIONS.md`, П-11).
+
+## 2026-10-02 — Имена инфраструктуры: kronto вместо corp-ed
+
+**Контекст.** Артём 02.10, во время настройки стенда: «надо везде делать
+kronto, никакого corp-ed». `corp-ed` — рабочее имя репозитория с
+начала проекта; продукт и домен — Kronto (`krontoai.ru`). Записанного
+решения об именах не было.
+
+**Решение.** Всё, что видно на серверах, в GitHub и в Selectel, — `kronto`:
+
+| Где | Было | Стало |
+|---|---|---|
+| Пути на сервере | `/opt/corp-ed` | `/opt/kronto` |
+| | `/etc/corp-ed` | `/etc/kronto` |
+| | `/var/{log,lib,backups}/corp-ed` | `/var/{log,lib,backups}/kronto` |
+| Команда ключа выкатки | `corp-ed-deploy` | `kronto-deploy` |
+| Служебные файлы | cron, journald, `sshd_config.d` с `corp-ed` в имени | то же с `kronto` |
+| Образ API (GHCR, локальный, CI) | `corp-ed` | `kronto-api` (рядом с `kronto-web`) |
+| Проект compose на стенде | `corp-ed` | `kronto` (по имени каталога) |
+| Сеть и контейнеры | `corp-ed_default`, `corp-ed-*` | `kronto_default`, `kronto-*` |
+| Мониторинг | `corp-ed-monitoring` | `kronto-monitoring` |
+| Ключи | `corp-ed-stage-deploy`, `corp-ed-stage-read@…` | `kronto-stage-deploy`, `kronto-stage-read@…` |
+| Ключ в GitHub, проект и сервисный пользователь Selectel | с `corp-ed` | `kronto-stage…` |
+| Дампы | `corp_ed-*.dump` | `kronto-*.dump` |
+
+Переименовано до первой выкатки — данных на стенде нет, переносить
+нечего.
+
+**Не тронуто — внутри кода** (`OPEN-QUESTIONS.md`, П-13):
+
+- Python-пакет `corp_ed` и команды `python -m corp_ed.…`;
+- база и роли `corp_ed`, `corp_ed_app`;
+- метрики `corp_ed_*`;
+- ключи Redis `corp-ed:*`;
+- имя репозитория `stepankovner/corp-ed`.
+
+Клиенты их не видят. Переименование задевает миграции, политики RLS,
+данные в Redis и открытые PR ML (#45–#49).
+
+**Статус.** Действует.
+

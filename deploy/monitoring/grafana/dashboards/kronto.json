@@ -965,7 +965,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{container=~\"corp-ed-.*\"} |~ `\"level\": ?\"(warning|error|critical)\"`"
+          "expr": "{container=~\"kronto-.*\"} |~ `\"level\": ?\"(warning|error|critical)\"`"
         }
       ],
       "options": {

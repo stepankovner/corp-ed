@@ -120,7 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Build image
-        run: docker build -t corp-ed:scan .
+        run: docker build -t kronto-api:scan .
       # Сканер — официальный образ с ghcr (без лимитов Docker Hub); tag
       # latest осознанно: устаревший сканер пропускает новые проверки, а
       # его результат не входит в поставку. Закрепить по digest — RISKS №18.
@@ -135,7 +135,7 @@ jobs:
             -v "$HOME/.cache/trivy:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest image \
             --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
-            --pkg-types os,library corp-ed:scan
+            --pkg-types os,library kronto-api:scan
       # Образ фронтенда (nginx со статикой) — тот же порог.
       - name: Build web image
         run: docker build -t kronto-web:scan frontend
@@ -161,7 +161,7 @@ jobs:
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD:/work" -v "$HOME/.cache/trivy:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest image \
-            --format cyclonedx --output /work/sbom.cdx.json corp-ed:scan
+            --format cyclonedx --output /work/sbom.cdx.json kronto-api:scan
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-cyclonedx
