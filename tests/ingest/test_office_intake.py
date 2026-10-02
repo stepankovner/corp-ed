@@ -160,6 +160,8 @@ def test_advice_points_to_the_supported_office_format(
         ("a.doc", cfb({"Workbook": b"\0" * 5000}), "format_mismatch"),
         ("a.doc", "{\\rtf1\\ansi текст}".encode("cp1251"), "format_mismatch"),
         ("a.xlsx", OLE + "EncryptedPackage".encode("utf-16-le"), "encrypted"),
+        ("a.docx", OLE + "EncryptedPackage".encode("utf-16-le"), "encrypted"),
+        ("a.docx", cfb({"WordDocument": b"\0" * 5000}), "format_mismatch"),
         (
             "a.doc",
             cfb({"EncryptedPackage": b"\0" * 100, "EncryptionInfo": b"\0" * 10}),
@@ -174,6 +176,8 @@ def test_advice_points_to_the_supported_office_format(
         "xls-as-doc",
         "rtf-as-doc",
         "xlsx-with-password",
+        "docx-with-password",
+        "doc-as-docx",
         "doc-with-password",
     ],
 )

@@ -38,7 +38,10 @@ def _paragraph(text: str, style: str | None = None) -> str:
 
 
 def docx(
-    paragraphs: list[tuple[str, str | None]], *, body_xml: str | None = None
+    paragraphs: list[tuple[str, str | None]],
+    *,
+    body_xml: str | None = None,
+    extra_parts: dict[str, str] | None = None,
 ) -> bytes:
     body = body_xml or "".join(_paragraph(text, style) for text, style in paragraphs)
     document = (
@@ -52,7 +55,15 @@ def docx(
         archive.writestr("word/_rels/document.xml.rels", _DOC_RELS)
         archive.writestr("word/styles.xml", _STYLES)
         archive.writestr("word/document.xml", document)
+        for name, xml in (extra_parts or {}).items():
+            archive.writestr(name, xml)
     return buffer.getvalue()
+
+
+def running_part(tag: str, lines: list[str]) -> str:
+    """Колонтитул docx: tag — hdr или ftr."""
+    body = "".join(_paragraph(line, None) for line in lines)
+    return f'<?xml version="1.0" encoding="UTF-8"?><w:{tag} {_W}>{body}</w:{tag}>'
 
 
 def pdf(pages: list[list[tuple[str, int]]], *, password: str | None = None) -> bytes:

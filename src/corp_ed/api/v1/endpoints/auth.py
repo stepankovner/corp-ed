@@ -33,6 +33,7 @@ from corp_ed.api.v1.session_cookie import (
     session_response,
 )
 from corp_ed.core.exceptions import InvalidCredentialsError, NotAuthenticatedError
+from corp_ed.core.password_policy import validate_password
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.models import User
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -146,7 +147,12 @@ async def change_password(
     новая пара токенов для текущего устройства.
 
     Лимит — против подбора текущего пароля украденным access-токеном.
+    Новый пароль проверяется по политике до лимита: человек, который
+    подбирает пароль под правила, не должен упереться в «слишком много
+    запросов» (стенд 02.10). Политика не трогает текущий пароль, так что
+    перебору это ничего не даёт.
     """
+    validate_password(data.new_password, email=current_user.email)
     await enforce(limiter, PASSWORD_CHANGE_PER_USER, str(current_user.id))
     pair = await auth_service.change_password(
         current_user, data.current_password, data.new_password

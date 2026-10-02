@@ -275,3 +275,44 @@ async def test_reset_password_issues_new_temporary_and_logs_out(
     )
     assert me.status_code == 401
     assert temporary != PASSWORD
+
+
+async def test_admin_cannot_reset_own_password(
+    api: httpx.AsyncClient, admin_account: User
+) -> None:
+    """Сброс закрывает все сессии: себе — только «Сменить пароль"."""
+    response = await api.post(
+        f"/api/v1/users/{admin_account.id}/reset-password",
+        headers=bearer(admin_account),
+    )
+    assert response.status_code == 409
+    me = await api.get("/api/v1/auth/me", headers=bearer(admin_account))
+    assert me.status_code == 200
+
+
+async def test_duplicate_email_message_is_russian(
+    api: httpx.AsyncClient, admin_account: User, account: User
+) -> None:
+    response = await api.post(
+        "/api/v1/users",
+        json={"email": account.email.upper()},
+        headers=bearer(admin_account),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        f"Сотрудник с почтой {account.email} уже есть в компании"
+    )
+
+
+async def test_full_name_is_trimmed_and_can_be_cleared(
+    api: httpx.AsyncClient, admin_account: User, account: User
+) -> None:
+    target = f"/api/v1/users/{account.id}"
+    headers = bearer(admin_account)
+
+    named = await api.patch(target, json={"full_name": "  Анна  "}, headers=headers)
+    assert named.json()["full_name"] == "Анна"
+    untouched = await api.patch(target, json={"full_name": None}, headers=headers)
+    assert untouched.json()["full_name"] == "Анна"
+    cleared = await api.patch(target, json={"full_name": "   "}, headers=headers)
+    assert cleared.json()["full_name"] is None

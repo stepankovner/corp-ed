@@ -26,8 +26,8 @@ type Filter = "all" | "ready" | "processing" | "failed";
 
 // Что принимает сервер при всех включённых форматах Р-5 (INGEST_EXTRA_FORMATS);
 // выключенный формат сервер отклонит сам — с советом, как сохранить файл.
-const ACCEPT = ".pdf,.docx,.doc,.xlsx,.pptx,.txt,.md";
-const ACCEPTED = /\.(pdf|docx?|xlsx|pptx|txt|md)$/i;
+const ACCEPT = ".pdf,.docx,.doc,.xlsx,.pptx,.txt,.md,.markdown";
+const ACCEPTED = /\.(pdf|docx?|xlsx|pptx|txt|md|markdown)$/i;
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
 const STATUS: Record<Material["status"], { label: string; tone: Tone }> = {
@@ -223,7 +223,8 @@ export function DocumentsPage() {
         <div className={styles.dropText}>
           <span>Перетащите файлы сюда</span>
           <span className="muted">
-            PDF, DOCX, TXT или MD, до 25 МБ каждый. Сканы без текстового слоя не читаются.
+            PDF, Word (DOCX, DOC), Excel (XLSX), PowerPoint (PPTX), TXT или MD, до 25 МБ каждый.
+            Сканы без текстового слоя не читаются.
           </span>
         </div>
         <Button variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>

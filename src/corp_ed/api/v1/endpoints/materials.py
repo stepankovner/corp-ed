@@ -63,7 +63,9 @@ async def upload_material(
     file: Annotated[
         UploadFile, File(description="docx, doc, xlsx, pptx, pdf, txt или md")
     ],
-    title: Annotated[str, Form(min_length=1, max_length=MAX_TITLE_LENGTH)],
+    title: Annotated[
+        str, Form(min_length=1, max_length=MAX_TITLE_LENGTH, pattern=r"\S")
+    ],
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,
 ) -> MaterialResponse:

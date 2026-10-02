@@ -407,8 +407,17 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
     python -m corp_ed.cli create-tenant --code demo --name "Демо" --seats 10 \
     --admin-email <ваша почта>
 # временный пароль команда спросит дважды (скрытый ввод); при первом входе система попросит его сменить
+# перед вводом проверьте раскладку: экран её не покажет, а войти потом придётся латиницей
 # тариф по умолчанию — «Базовый» (до 5 подключений); другой: --tariff extended | enterprise
 ```
+
+Не получается войти: «Неверный логин или пароль» сервис отвечает на любую
+ошибку, причину пишет в журнал — `docker logs kronto-api-1 --since 1h 2>&1
+| grep login_failed` (`reason`: `unknown_or_inactive_company` — код
+компании, `unknown_user` — почта, `wrong_password` — пароль). Учтите, что
+форма входа подставляет код компании прошлого входа. Пароль забыт —
+`… python -m corp_ed.cli reset-password --code demo --email <почта>` (как
+выше, через `sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api`).
 
 ### 4.8. Автовозобновление сервера (Selectel → GitHub)
 
