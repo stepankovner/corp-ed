@@ -203,6 +203,7 @@ docs/             документация, см. ниже
 | [`docs/SECURITY.md`](docs/SECURITY.md) | модель угроз, меры с тестами, OWASP, чек-лист пентеста |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | роли базы, переменные, прокси, cron, бэкапы, ротация ключей |
 | [`docs/STAGE.md`](docs/STAGE.md) | тестовый стенд: прерываемый сервер Selectel, первичная настройка, выкатка из GitHub Actions, мониторинг, автовозобновление, правила |
+| [`docs/STAGE-TESTING.md`](docs/STAGE-TESTING.md) | тестирование стенда: логика и работоспособность, качество ответов, что исправлено и что открыто |
 | [`docs/CONNECTORS-RESEARCH.md`](docs/CONNECTORS-RESEARCH.md) | исследование перед коннекторами: как у других, что API отдают по правам |
 | [`docs/MONITORING-RESEARCH.md`](docs/MONITORING-RESEARCH.md) | исследование перед мониторингом: сценарии отказов, варианты по слоям, ограничения в РФ |
 | [`docs/RESILIENCE-RESEARCH.md`](docs/RESILIENCE-RESEARCH.md) | отказоустойчивость ML-части, выбор хостинга, что ещё сделать |
