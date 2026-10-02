@@ -22,7 +22,7 @@ env:
 jobs:
   checks:
     name: Lint, types, tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     services:
@@ -90,7 +90,7 @@ jobs:
 
   frontend:
     name: Frontend lint, types, tests, build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
@@ -138,7 +138,7 @@ jobs:
 
   e2e:
     name: End-to-end (browser against the API, fake LLM)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     services:
@@ -256,7 +256,7 @@ jobs:
 
   migrations:
     name: Migrations on a fresh database
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     services:
@@ -334,7 +334,7 @@ jobs:
 
   image:
     name: Docker image builds and runs unprivileged
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout code

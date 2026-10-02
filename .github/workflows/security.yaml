@@ -23,7 +23,7 @@ env:
 jobs:
   dependencies:
     name: Known vulnerabilities in dependencies (pip-audit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -40,7 +40,7 @@ jobs:
 
   frontend-dependencies:
     name: Known vulnerabilities in frontend dependencies (npm audit)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -58,7 +58,7 @@ jobs:
 
   secrets:
     name: Secrets in history (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -75,7 +75,7 @@ jobs:
 
   codeql:
     name: Static analysis (CodeQL)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -97,7 +97,7 @@ jobs:
   # Python-анализа остаются прежними.
   codeql-frontend:
     name: Static analysis of the frontend (CodeQL)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -115,7 +115,7 @@ jobs:
 
   image:
     name: Image vulnerabilities and SBOM (Trivy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
