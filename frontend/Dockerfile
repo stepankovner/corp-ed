@@ -13,6 +13,12 @@ RUN npm run build
 # api:8000 (docs/DEPLOY.md §5) — цепочка X-Forwarded-For к API не меняется.
 FROM nginxinc/nginx-unprivileged:1.30-alpine@sha256:ed04ec1ff34502c339ee5c3ae3f855442398edc1d05591e2b98981dcbbd20b1e AS runtime
 
+# Исправления безопасности Alpine поверх закреплённого базового образа —
+# как `apt-get upgrade` в образе API: новые CVE (например, pcre2 02.10)
+# не ждут, пока выйдет новый образ nginx.
+USER root
+RUN apk upgrade --no-cache
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 # Базовый образ и так работает под uid 101 (nginx); явная строка — для
