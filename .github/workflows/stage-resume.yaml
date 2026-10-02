@@ -27,7 +27,7 @@ jobs:
   resume:
     name: Resume the preemptible stand
     if: vars.STAGE_RESUME_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout code
