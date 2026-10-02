@@ -6,7 +6,7 @@
 # (GitHub → файл → Raw, STAGE.md §4.4), затем:
 #
 #   DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=ops@krontoai.ru \
-#   DEPLOY_PUBKEY="ssh-ed25519 AAAA… corp-ed-stage-deploy" bash bootstrap.sh
+#   DEPLOY_PUBKEY="ssh-ed25519 AAAA… kronto-stage-deploy" bash bootstrap.sh
 #
 # Первый запуск остановится на шаге «Код»: он напечатает ключ сервера для
 # GitHub (Deploy key, только чтение). Добавить ключ и запустить ещё раз.
@@ -21,7 +21,7 @@ set -euo pipefail
 # Приватный репозиторий — по SSH ключом сервера (deploy key, только чтение).
 REPO_URL="${REPO_URL:-git@github.com:stepankovner/corp-ed.git}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-ghcr.io/stepankovner}"
-APP_DIR="${APP_DIR:-/opt/corp-ed}"
+APP_DIR="${APP_DIR:-/opt/kronto}"
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 # Зеркало Docker Hub на случай, если hub.docker.com с сервера недоступен
 # (например, https://mirror.gcr.io). Пусто — без зеркала.
@@ -57,8 +57,8 @@ SystemMaxUse=2G
 MaxRetentionSec=14day
 MaxFileSec=1day
 RateLimitIntervalSec=0"
-if [[ "$(cat /etc/systemd/journald.conf.d/corp-ed.conf 2>/dev/null)" != "$journald_conf" ]]; then
-    printf '%s\n' "$journald_conf" > /etc/systemd/journald.conf.d/corp-ed.conf
+if [[ "$(cat /etc/systemd/journald.conf.d/kronto.conf 2>/dev/null)" != "$journald_conf" ]]; then
+    printf '%s\n' "$journald_conf" > /etc/systemd/journald.conf.d/kronto.conf
     systemctl restart systemd-journald
 fi
 
@@ -90,9 +90,9 @@ id "$DEPLOY_USER" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash "$D
 usermod -aG docker "$DEPLOY_USER"
 home=$(getent passwd "$DEPLOY_USER" | cut -d: -f6)
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$home/.ssh"
-# Ключ из GitHub Actions может только вызвать corp-ed-deploy: ни shell, ни
+# Ключ из GitHub Actions может только вызвать kronto-deploy: ни shell, ни
 # проброса портов. Группа docker равна root, поэтому ключ — только так.
-printf 'command="/usr/local/bin/corp-ed-deploy",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty %s\n' \
+printf 'command="/usr/local/bin/kronto-deploy",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty %s\n' \
     "$DEPLOY_PUBKEY" > "$home/.ssh/authorized_keys"
 chown "$DEPLOY_USER:$DEPLOY_USER" "$home/.ssh/authorized_keys"
 chmod 600 "$home/.ssh/authorized_keys"
@@ -105,7 +105,7 @@ log "Ключ сервера для чтения репозитория"
 github_key="$home/.ssh/github_read"
 if [[ ! -f "$github_key" ]]; then
     sudo -u "$DEPLOY_USER" ssh-keygen -q -t ed25519 -N "" \
-        -C "corp-ed-stage-read@$DOMAIN" -f "$github_key"
+        -C "kronto-stage-read@$DOMAIN" -f "$github_key"
 fi
 printf 'Host github.com\n    IdentityFile %s\n    IdentitiesOnly yes\n' "$github_key" > "$home/.ssh/config"
 echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" \
@@ -121,7 +121,7 @@ if [[ ! -d "$APP_DIR/.git" ]]; then
 
 Код не скачался: репозиторий приватный, у сервера пока нет доступа.
 GitHub → репозиторий → Settings → Deploy keys → Add deploy key:
-  Title — corp-ed-stage, Key — строка ниже, «Allow write access» НЕ ставить.
+  Title — kronto-stage, Key — строка ниже, «Allow write access» НЕ ставить.
 
 $(cat "$github_key.pub")
 
@@ -132,25 +132,25 @@ EOF
 fi
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_DIR"
 
-mkdir -p /etc/corp-ed
-cat > /etc/corp-ed/stage.env <<EOF
-# Настройки стенда для corp-ed-deploy и скриптов deploy/stage (bootstrap.sh).
+mkdir -p /etc/kronto
+cat > /etc/kronto/stage.env <<EOF
+# Настройки стенда для kronto-deploy и скриптов deploy/stage (bootstrap.sh).
 APP_DIR=$APP_DIR
 IMAGE_PREFIX=$IMAGE_PREFIX
 DOMAIN=$DOMAIN
 EOF
-install -m 755 "$APP_DIR/deploy/stage/ssh-entry.sh" /usr/local/bin/corp-ed-deploy
-install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/log/corp-ed
-install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/backups/corp-ed
+install -m 755 "$APP_DIR/deploy/stage/ssh-entry.sh" /usr/local/bin/kronto-deploy
+install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/log/kronto
+install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/backups/kronto
 # Пароль компании для сквозной проверки (check.sh) — только здесь.
-install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/corp-ed
+install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/kronto
 # Отметки ночных задач для node-exporter (cron-run.sh, «мёртвая рука»).
 install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/node_exporter/textfile
 
 log "Мониторинг: настройки"
 # Пароль Grafana — один раз, дальше не меняется. Файл читают root и
 # deploy (deploy.sh поднимает мониторинг при каждой выкатке).
-if [[ ! -f /etc/corp-ed/monitoring.env ]]; then
+if [[ ! -f /etc/kronto/monitoring.env ]]; then
     (
         umask 027
         printf '%s\n' \
@@ -158,13 +158,13 @@ if [[ ! -f /etc/corp-ed/monitoring.env ]]; then
             "DOMAIN=$DOMAIN" \
             "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 16)" \
             "APP_NETWORK=$(basename "$APP_DIR")_default" \
-            "PUBLIC_TARGETS_FILE=/etc/corp-ed/public-targets.yml" \
-            > /etc/corp-ed/monitoring.env
+            "PUBLIC_TARGETS_FILE=/etc/kronto/public-targets.yml" \
+            > /etc/kronto/monitoring.env
     )
-    chgrp "$DEPLOY_USER" /etc/corp-ed/monitoring.env
+    chgrp "$DEPLOY_USER" /etc/kronto/monitoring.env
 fi
-printf -- '- targets: ["https://%s/health/ready"]\n' "$DOMAIN" > /etc/corp-ed/public-targets.yml
-chmod 644 /etc/corp-ed/public-targets.yml
+printf -- '- targets: ["https://%s/health/ready"]\n' "$DOMAIN" > /etc/kronto/public-targets.yml
+chmod 644 /etc/kronto/public-targets.yml
 
 log ".env"
 if [[ ! -f "$APP_DIR/.env" ]]; then
@@ -188,13 +188,17 @@ log "SSH: вход только по ключу"
 # KexAlgorithms: набор OpenSSH по умолчанию, постквантовый обмен первым. С
 # сервером Selectel ssh 10.x договорился о непостквантовом и предупредил
 # (02.10); от чего так в образе — не выяснено, строка закрывает любой случай.
-sshd_drop=/etc/ssh/sshd_config.d/00-corp-ed.conf
+sshd_drop=/etc/ssh/sshd_config.d/00-kronto.conf
 if grep -qsE '(ssh-(ed25519|rsa)|ecdsa-sha2-[a-z0-9]+) AAAA' /root/.ssh/authorized_keys; then
     printf '%s\n' \
         'PasswordAuthentication no' \
         'KbdInteractiveAuthentication no' \
         'PermitRootLogin prohibit-password' \
         'KexAlgorithms ^sntrup761x25519-sha512@openssh.com' > "$sshd_drop"
+    # Проверке sshd -t нужен /run/sshd, а его держит только запущенная
+    # служба: после обновления openssh-server (шаг «Пакеты») её может не
+    # быть — sshd поднимется по первому подключению (ssh.socket).
+    install -d -m 755 /run/sshd
     sshd -t || { rm -f "$sshd_drop"; echo "sshd не принял настройку — оставлена прежняя" >&2; exit 1; }
     # Ubuntu 24.04 поднимает sshd по первому подключению (ssh.socket):
     # не запущен — новую настройку прочтёт при старте.
@@ -225,17 +229,17 @@ systemctl enable --now nginx >/dev/null
 systemctl reload nginx
 
 log "cron: purge, gaps, бэкап"
-cat > /etc/cron.d/corp-ed <<EOF
+cat > /etc/cron.d/kronto <<EOF
 # Регулярные задачи стенда (DEPLOY.md §6, §8). Ставит bootstrap.sh.
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # cron-run.sh отмечает успех для мониторинга: нет отметки больше 26 часов —
 # тревога (deploy/monitoring/prometheus/rules/kronto.yml).
-10 3 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh purge docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli purge >> /var/log/corp-ed/cron.log 2>&1
-30 3 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh gaps docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli gaps --all >> /var/log/corp-ed/cron.log 2>&1
-0 4 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh backup deploy/stage/backup.sh >> /var/log/corp-ed/cron.log 2>&1
+10 3 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh purge docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli purge >> /var/log/kronto/cron.log 2>&1
+30 3 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh gaps docker compose -f compose.yaml run --rm --no-deps api python -m corp_ed.cli gaps --all >> /var/log/kronto/cron.log 2>&1
+0 4 * * * $DEPLOY_USER cd $APP_DIR && deploy/stage/cron-run.sh backup deploy/stage/backup.sh >> /var/log/kronto/cron.log 2>&1
 EOF
-chmod 644 /etc/cron.d/corp-ed
+chmod 644 /etc/cron.d/kronto
 
 log "Готово"
 cat <<EOF
@@ -252,7 +256,7 @@ cat <<EOF
       $DOMAIN $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)
   - включите выкатку: переменная репозитория STAGE_ENABLED=true и Run
     workflow «Deploy». Проверка стенда вручную:
-      sudo -u $DEPLOY_USER SSH_ORIGINAL_COMMAND=check /usr/local/bin/corp-ed-deploy
+      sudo -u $DEPLOY_USER SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy
   - мониторинг поднимется с первой выкаткой: https://$DOMAIN/grafana/,
-    вход admin, пароль — sudo grep GRAFANA /etc/corp-ed/monitoring.env
+    вход admin, пароль — sudo grep GRAFANA /etc/kronto/monitoring.env
 EOF

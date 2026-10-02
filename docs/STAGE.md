@@ -78,11 +78,11 @@ DNS домена ведётся в Яндекс 360 для бизнеса (NS: `
 ```
 push в main ─► CI (тесты, e2e, образы) ─► Deploy
                                            ├─ images: сборка по проверенному коммиту
-                                           │   → ghcr.io/stepankovner/corp-ed:<sha>, kronto-web:<sha>
+                                           │   → ghcr.io/stepankovner/kronto-api:<sha>, kronto-web:<sha>
                                            ├─ deploy: ssh deploy@стенд "deploy <sha>"  (+ токен GHCR в stdin)
                                            └─ check:  ssh deploy@стенд "check"  → stand check 10 шагов
 
-стенд:  corp-ed-deploy (deploy/stage/ssh-entry.sh)
+стенд:  kronto-deploy (deploy/stage/ssh-entry.sh)
           deploy: коммит есть в ветке origin? → git checkout → deploy.sh:
                   pull → compose up (migrate → api, worker, web; db, redis) → все healthy → https через nginx
                   → мониторинг (deploy/monitoring: Prometheus, Alertmanager, Grafana, Loki…)
@@ -107,7 +107,7 @@ GitHub Actions «Stage resume», раз в 10 минут: Selectel остано�
 - **Проверка после выкатки.** Это тот же `stand check`, что в
   `DEPLOY.md` §4, но запускает его сам сервер:
   - при первом запуске он заводит компанию `stand-check`;
-  - её пароль хранится только на сервере (`/var/lib/corp-ed`, права 600);
+  - её пароль хранится только на сервере (`/var/lib/kronto`, права 600);
   - итог проверки виден в логе workflow.
 
 ---
@@ -159,7 +159,7 @@ GitHub Actions «Stage resume», раз в 10 минут: Selectel остано�
    ресурсы блокируются, а через 14 дней без пополнения сервер и диски
    удаляются.
 2. **Отдельный проект для стенда.** Облачная платформа → **Проекты** →
-   создать проект `corp-ed-stage`. В нём не должно быть ничего, кроме
+   создать проект `kronto-stage`. В нём не должно быть ничего, кроме
    стенда: ключ автовозобновления (шаг 4.8) сможет управлять всеми
    серверами проекта.
 3. В этом проекте: в верхнем меню **Продукты** → **Облачные серверы** →
@@ -167,7 +167,7 @@ GitHub Actions «Stage resume», раз в 10 минут: Selectel остано�
 
    | Блок | Что выбрать |
    |---|---|
-   | **Имя и расположение** | имя любое, например `corp-ed-stage` (станет именем хоста); **локация** — `ru-7a` («Москва / Зона доступности 1»). После создания локацию не поменять |
+   | **Имя и расположение** | имя любое, например `kronto-stage` (станет именем хоста); **локация** — `ru-7a` («Москва / Зона доступности 1»). После создания локацию не поменять |
    | **Источник** | вкладка **ОС** → Ubuntu. Тумблер **«Автовыбор образа» выключить**: он подставляет версию с драйвером видеокарты. **Версия** — ровно **«Ubuntu 24.04 LTS 64-bit»** (в списке последняя, «512 МБ RAM / 5 ГБ Диск» — это минимальные требования образа, а не размер сервера), без «GPU Driver» и пометки «GPU optimized»: видеокарты у сервера нет. Варианты «… Docker» тоже не брать: Docker ставит `bootstrap.sh` из архива Ubuntu, второй экземпляр — лишний риск конфликта пакетов. Другую ОС не берите: `bootstrap.sh` написан под 24.04 |
    | **Конфигурация** | линейка **Standard** → **Фиксированная** 4 vCPU и 8 ГБ RAM (или **Произвольная** с теми же цифрами). Чекбокс **«Выделенные ядра»**, если есть, — **снять**: стенду они не нужны, а стоят дороже |
    | **Загрузочный диск** | **сетевой**. В разных версиях окна это чекбокс **«Локальный SSD NVMe диск»** (не отмечать) или поле **«Загрузочный диск»**, где по умолчанию «Локальный — SSD NVMe» (сменить на сетевой). С локальным диском прерываемый сервер при каждой остановке теряет все данные и создаётся заново из образа, а переехать с ним на обычный сервер нельзя (4.10) |
@@ -265,13 +265,13 @@ algorithm` (ssh 10.x, macOS) — сервер договорился о непо
 Отдельный ключ, не ваш личный. Создаётся на своём компьютере:
 
 ```bash
-ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
+ssh-keygen -t ed25519 -N "" -C kronto-stage-deploy -f kronto-stage-deploy
 ```
 
 Получатся два файла:
 
-- `corp-ed-stage-deploy.pub` — открытый, пойдёт на сервер (шаг 4.4);
-- `corp-ed-stage-deploy` — приватный, пойдёт в GitHub (шаг 4.6). После
+- `kronto-stage-deploy.pub` — открытый, пойдёт на сервер (шаг 4.4);
+- `kronto-stage-deploy` — приватный, пойдёт в GitHub (шаг 4.6). После
   этого его можно удалить.
 
 ### 4.4. Настройка сервера (один раз, под root)
@@ -291,13 +291,13 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 2. **Первый запуск:**
    ```bash
    DOMAIN=stage.krontoai.ru LETSENCRYPT_EMAIL=<почта команды> \
-   DEPLOY_PUBKEY="<весь текст файла corp-ed-stage-deploy.pub>" bash /root/bootstrap.sh
+   DEPLOY_PUBKEY="<весь текст файла kronto-stage-deploy.pub>" bash /root/bootstrap.sh
    ```
    Он остановится на шаге «Код» и напечатает строку `ssh-ed25519 …
-   corp-ed-stage-read@stage.krontoai.ru` — ключ сервера для чтения
+   kronto-stage-read@stage.krontoai.ru` — ключ сервера для чтения
    репозитория.
 3. **Добавить ключ в GitHub:** репозиторий → **Settings** → **Deploy
-   keys** → **Add deploy key**: Title — `corp-ed-stage`, Key — эта
+   keys** → **Add deploy key**: Title — `kronto-stage`, Key — эта
    строка, галочку **Allow write access не ставить**.
 4. **Запустить ещё раз** ту же команду из п. 2 — теперь до конца.
 
@@ -311,11 +311,11 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
   постквантовый обмен ключами (пропадает предупреждение `post-quantum`);
 - логи контейнеров — в journald, хранятся 14 дней (не больше 2 ГБ);
 - заводит пользователя `deploy` с ключом выкатки;
-- кладёт код в `/opt/corp-ed` и генерирует `/opt/corp-ed/.env` (память
+- кладёт код в `/opt/kronto` и генерирует `/opt/kronto/.env` (память
   диалога на стенде включена — `RAG_HISTORY_TURNS=3`);
 - выпускает сертификат, ставит конфиг nginx (с Grafana на `/grafana/`) и
   cron с отметками для мониторинга;
-- генерирует пароль Grafana в `/etc/corp-ed/monitoring.env`.
+- генерирует пароль Grafana в `/etc/kronto/monitoring.env`.
 
 В конце он печатает строку для `STAGE_SSH_KNOWN_HOSTS`: её нужно
 скопировать для шага 4.6.
@@ -324,9 +324,9 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 скрипт, добавив в начало команды `REGISTRY_MIRROR=<адрес зеркала>`
 (например, `https://mirror.gcr.io`). Повторный запуск безопасен.
 
-### 4.5. Ключи Yandex Cloud в `/opt/corp-ed/.env`
+### 4.5. Ключи Yandex Cloud в `/opt/kronto/.env`
 
-`/opt/corp-ed/.env` — файл **на сервере**, не в репозитории и не на
+`/opt/kronto/.env` — файл **на сервере**, не в репозитории и не на
 вашем компьютере. Его создал `bootstrap.sh`: в нём все пароли и секреты
 стенда, уже сгенерированные. Не хватает только двух значений.
 
@@ -342,13 +342,13 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 2. **Вписать их** на сервере:
    ```bash
    ssh root@<IP>
-   nano /opt/corp-ed/.env
+   nano /opt/kronto/.env
    # найти строки YC_FOLDER_ID= и YC_API_KEY=, вписать значения после «=» без пробелов и кавычек
    # сохранить: Ctrl+O, Enter; выйти: Ctrl+X
    ```
 3. **Если стенд уже выкачен** — применить новые значения:
    ```bash
-   cd /opt/corp-ed && sudo -u deploy docker compose -f compose.yaml up -d
+   cd /opt/kronto && sudo -u deploy docker compose -f compose.yaml up -d
    ```
 
 Остальное в файле менять не нужно. Права файла — 600, владелец
@@ -367,7 +367,7 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 
 1. **Secrets and variables** → **Actions** → вкладка **Secrets** →
    **New repository secret**: имя `STAGE_SSH_KEY`, значение — весь текст
-   приватного файла `corp-ed-stage-deploy`, включая строки `-----BEGIN…`
+   приватного файла `kronto-stage-deploy`, включая строки `-----BEGIN…`
    и `-----END…`. Это секрет репозитория, а не окружения (Environments):
    environments в приватном репозитории есть только на платных тарифах
    GitHub, а секрет репозитория работает на любом.
@@ -393,7 +393,7 @@ ssh-keygen -t ed25519 -N "" -C corp-ed-stage-deploy -f corp-ed-stage-deploy
 
 После этого `https://stage.krontoai.ru` открывается в браузере, а
 Grafana — на `https://stage.krontoai.ru/grafana/` (вход `admin`, пароль:
-`ssh root@<IP> grep GRAFANA /etc/corp-ed/monitoring.env`). Дашборд —
+`ssh root@<IP> grep GRAFANA /etc/kronto/monitoring.env`). Дашборд —
 **Kronto → Kronto — стенд**.
 
 **Своя компания, чтобы смотреть стенд глазами.** Проверочную компанию
@@ -401,7 +401,7 @@ Grafana — на `https://stage.krontoai.ru/grafana/` (вход `admin`, пар�
 
 ```bash
 ssh root@<IP>
-cd /opt/corp-ed
+cd /opt/kronto
 sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
     python -m corp_ed.cli create-tenant --code demo --name "Демо" --seats 10 \
     --admin-email <ваша почта>
@@ -423,16 +423,16 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
 
 1. **Сервисный пользователь Selectel.** `my.selectel.ru` → **Управление
    доступом** → **Сервисные пользователи** → **Добавить пользователя**:
-   - имя — `corp-ed-stage-resume`, пароль — сгенерировать и сохранить;
+   - имя — `kronto-stage-resume`, пароль — сгенерировать и сохранить;
    - роль — **Администратор проекта**, отметить **только** проект
-     `corp-ed-stage`.
+     `kronto-stage`.
 2. **Номер аккаунта** — в правом верхнем углу панели Selectel.
 3. **GitHub** → Settings → **Secrets and variables** → **Actions**:
    - вкладка **Secrets** → **New repository secret**, две штуки:
 
      | Имя | Значение |
      |---|---|
-     | `SELECTEL_USER` | `corp-ed-stage-resume` |
+     | `SELECTEL_USER` | `kronto-stage-resume` |
      | `SELECTEL_PASSWORD` | пароль сервисного пользователя |
 
    - вкладка **Variables**, пять штук:
@@ -441,7 +441,7 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
      |---|---|
      | `STAGE_RESUME_ENABLED` | `true` |
      | `SELECTEL_ACCOUNT_ID` | номер аккаунта |
-     | `SELECTEL_PROJECT` | `corp-ed-stage` |
+     | `SELECTEL_PROJECT` | `kronto-stage` |
      | `SELECTEL_REGION` | пул сервера без буквы сегмента: `ru-7` |
      | `STAGE_SERVER_ID` | ID сервера из шага 4.1 |
 4. **Проверка:** Actions → **Stage resume** → **Run workflow**. В логе —
@@ -510,7 +510,7 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
   который откатываемся. Миграции сами не откатываются (см. предыдущий
   пункт).
 - **Проверка без выкатки** (на сервере):
-  `sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/corp-ed-deploy`.
+  `sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy`.
 - **Мониторинг:** `https://stage.krontoai.ru/grafana/` — дашборд
   «Kronto — стенд»: доступность и SLO, время ответа, ответы по источнику,
   деградации, очереди воркера, процессор, память, диск, ночные задачи,
@@ -518,13 +518,13 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
   `TEAM_NOTIFY_TELEGRAM_*`), правила — `deploy/monitoring/prometheus/rules/`.
   SLO — одно число в `deploy/monitoring/prometheus/rules/slo.yml`.
 - **Логи:**
-  - сервисы: `cd /opt/corp-ed && docker compose -f compose.yaml logs -f
+  - сервисы: `cd /opt/kronto && docker compose -f compose.yaml logs -f
     api worker` или в Grafana → Explore → Loki
-    (`{container=~"corp-ed-.*"}`), 14 дней;
-  - история выкаток: `/var/log/corp-ed/deploys.log`;
-  - cron: `/var/log/corp-ed/cron.log`.
+    (`{container=~"kronto-.*"}`), 14 дней;
+  - история выкаток: `/var/log/kronto/deploys.log`;
+  - cron: `/var/log/kronto/cron.log`.
 - **Реранкер** (когда ML скажет включить): на сервере
-  `sudo /opt/corp-ed/deploy/reranker/fetch-model.sh`, затем в `.env` —
+  `sudo /opt/kronto/deploy/reranker/fetch-model.sh`, затем в `.env` —
   `COMPOSE_PROFILES=reranker` и
   `RAG_RERANK_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, и выкатка (или
   `docker compose -f compose.yaml up -d`).

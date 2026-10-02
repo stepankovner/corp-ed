@@ -88,7 +88,7 @@ groups:
           severity: warning
         annotations:
           summary: "На диске меньше 15 % места"
-          description: "Свободно {{ $value | humanizePercentage }}. Логи, дампы (/var/backups/corp-ed), образы Docker."
+          description: "Свободно {{ $value | humanizePercentage }}. Логи, дампы (/var/backups/kronto), образы Docker."
 
       - alert: DiskFull
         expr: node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 0.05
@@ -119,7 +119,7 @@ groups:
           severity: warning
         annotations:
           summary: "Ночная задача {{ $labels.task }} не проходила больше 26 часов"
-          description: "Лог — /var/log/corp-ed/cron.log на сервере."
+          description: "Лог — /var/log/kronto/cron.log на сервере."
 
       - alert: NightlyBackupNeverRan
         expr: absent(corp_ed_cron_last_success_timestamp_seconds{task="backup"})
@@ -128,4 +128,4 @@ groups:
           severity: warning
         annotations:
           summary: "Бэкап базы ни разу не прошёл"
-          description: "Нет отметки успеха backup больше 26 часов. Лог — /var/log/corp-ed/cron.log."
+          description: "Нет отметки успеха backup больше 26 часов. Лог — /var/log/kronto/cron.log."

@@ -8,12 +8,12 @@
 # файла: подменённая модель не запустится. По умолчанию — fp32, та же
 # точность, что в замере ML; int8 быстрее (~1,2 с против ~1,9 с на 30
 # кандидатов, 4 vCPU, замер 30.09), но баллы чуть другие — только после
-# замера ML. Каталог по умолчанию — /var/lib/corp-ed/reranker-model
+# замера ML. Каталог по умолчанию — /var/lib/kronto/reranker-model
 # (RERANK_MODEL_DIR в compose.yaml).
 set -euo pipefail
 
 variant="${1:-fp32}"
-dir="${2:-/var/lib/corp-ed/reranker-model}"
+dir="${2:-/var/lib/kronto/reranker-model}"
 repo="https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1/resolve"
 revision=1427fd652930e4ba29e8149678df786c240d8825
 

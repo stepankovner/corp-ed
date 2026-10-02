@@ -340,19 +340,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Build image
-        run: docker build -t corp-ed:ci .
+        run: docker build -t kronto-api:ci .
 
       - name: Image smoke test
         run: |
           # Не root.
-          test "$(docker run --rm corp-ed:ci id -u)" != "0"
+          test "$(docker run --rm kronto-api:ci id -u)" != "0"
           # Приложение импортируется, CLI и alembic на месте.
           docker run --rm -e SECRET_KEY=ci-only-secret-key-0123456789abcdef -e DATABASE_URL=postgresql+asyncpg://x:x@db/x \
-            corp-ed:ci python -c "import corp_ed.main, corp_ed.worker, corp_ed.cli"
-          docker run --rm corp-ed:ci python -m corp_ed.cli --help >/dev/null
-          docker run --rm corp-ed:ci alembic --help >/dev/null
+            kronto-api:ci python -c "import corp_ed.main, corp_ed.worker, corp_ed.cli"
+          docker run --rm kronto-api:ci python -m corp_ed.cli --help >/dev/null
+          docker run --rm kronto-api:ci alembic --help >/dev/null
           # Песочница парсера: rlimits ставятся в дочернем процессе.
-          docker run --rm corp-ed:ci python -c "import resource, corp_ed.ingest.extract_worker"
+          docker run --rm kronto-api:ci python -c "import resource, corp_ed.ingest.extract_worker"
 
       - name: Build web image
         run: docker build -t kronto-web:ci frontend
