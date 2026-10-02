@@ -180,6 +180,25 @@ ufw allow OpenSSH >/dev/null
 ufw allow 'Nginx Full' >/dev/null
 ufw --force enable >/dev/null
 
+log "SSH: вход только по ключу"
+# Selectel пускает root по SSH и с паролем из панели — его подбирают боты.
+# Пароль остаётся для консоли в панели Selectel. 00-… читается раньше
+# 50-cloud-init.conf, а sshd берёт первое значение. Нет ключа у root — не
+# трогаем: кто вошёл по паролю, потерял бы SSH.
+sshd_drop=/etc/ssh/sshd_config.d/00-corp-ed.conf
+if grep -qsE '(ssh-(ed25519|rsa)|ecdsa-sha2-[a-z0-9]+) AAAA' /root/.ssh/authorized_keys; then
+    printf '%s\n' \
+        'PasswordAuthentication no' \
+        'KbdInteractiveAuthentication no' \
+        'PermitRootLogin prohibit-password' > "$sshd_drop"
+    sshd -t || { rm -f "$sshd_drop"; echo "sshd не принял настройку — оставлена прежняя" >&2; exit 1; }
+    # Ubuntu 24.04 поднимает sshd по первому подключению (ssh.socket):
+    # не запущен — новую настройку прочтёт при старте.
+    systemctl try-reload-or-restart ssh
+else
+    echo "у root нет SSH-ключа — вход по паролю оставлен (STAGE.md, шаг 4.1)" >&2
+fi
+
 log "TLS для $DOMAIN"
 if [[ ! -d "/etc/letsencrypt/live/$DOMAIN" ]]; then
     # standalone: nginx на время выпуска и продления останавливается

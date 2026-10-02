@@ -374,6 +374,10 @@ Confluence — обычный пользователь, который чита�
       отдаёт).
 - [ ] `ss -ltn` на хосте: 8000 и 8080 слушаются только на `127.0.0.1`;
       снаружи `curl http://<ip>:8000/health` не соединяется.
+- [ ] SSH только по ключу: `sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '`
+      — `no` и `without-password`. Стенд делает это в `bootstrap.sh`
+      (`/etc/ssh/sshd_config.d/00-corp-ed.conf`); Selectel по умолчанию
+      пускает root и по паролю.
 - [ ] После входа в браузере в `docker compose -f compose.yaml logs api` у
       запросов адрес клиента настоящий, а не `172.30.61.1`.
 - [ ] Запрос с чужим `Host` получает 400.
