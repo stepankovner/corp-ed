@@ -31,7 +31,11 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
             className={styles.account}
             aria-label={`Профиль: ${name}${me.full_name ? `, ${me.email}` : ""}`}
           >
-            <Avatar name={name} initials={personInitials(me.full_name, me.email)} />
+            <Avatar
+              name={name}
+              src={me.avatar_url}
+              initials={personInitials(me.full_name, me.email)}
+            />
             <span className={styles.accountText}>
               <span className={styles.accountName}>{name}</span>
               {me.full_name ? <span className={styles.accountEmail}>{me.email}</span> : null}

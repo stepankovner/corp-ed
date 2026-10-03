@@ -13,19 +13,22 @@ import { ConfirmDialog } from "../admin/common";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Notice } from "../ui/Notice";
-import { EmptyState, Page, PageHeader } from "../ui/Page";
+import { EmptyState } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
 import { PageSpinner } from "../ui/Spinner";
+import settingsStyles from "./Settings.module.css";
 
 type Mine = Schemas["MyConnectorResponse"];
 
 /**
- * Источники, которые сотрудник подключает своим аккаунтом (режим per_user):
- * Kronto видит в них только то, что доступно ему самому. Возврат с портала
- * приходит сюда с ?status=ok|error&connector_id=&error_code=.
+ * «Мои подключения» в настройках (ТЗ §4, бывшие «Мои источники»):
+ * источники, которые сотрудник подключает своим аккаунтом (режим
+ * per_user), — kronto видит в них только то, что доступно ему самому.
+ * Возврат с портала приходит на /sources?status=ok|error&connector_id=&
+ * error_code= и переадресуется сюда с теми же параметрами.
  */
-export function MySourcesPage() {
-  useDocumentTitle("Мои источники");
+export function ConnectionsTab() {
+  useDocumentTitle("Мои подключения");
   const me = useMe();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -57,13 +60,12 @@ export function MySourcesPage() {
   });
 
   return (
-    <Page>
-      <PageHeader
-        label="доступ"
-        title="Мои источники"
-        description="Подключите рабочие аккаунты — и Kronto будет отвечать ещё и по документам, которые доступны лично вам. Другие сотрудники их не увидят."
-      />
-      <div className={pageStyles.stack}>
+    <>
+      <div className={settingsStyles.stack}>
+        <p className={settingsStyles.lead}>
+          Подключите рабочие аккаунты — и kronto будет отвечать ещё и по документам, которые
+          доступны лично вам. Другие сотрудники их не увидят.
+        </p>
         {returned.status === "ok" ? (
           <Notice kind="ok" title="Аккаунт подключён">
             Документы появятся в ответах после ближайшей синхронизации — обычно в течение часа.
@@ -142,7 +144,7 @@ export function MySourcesPage() {
         open={disconnecting !== null}
         onOpenChange={(open) => !open && setDisconnecting(null)}
         title="Отключить аккаунт?"
-        description="Kronto перестанет видеть ваши документы из этого источника и уберёт их из ответов."
+        description="kronto перестанет видеть ваши документы из этого источника и уберёт их из ответов."
         confirmLabel="Отключить"
         onConfirm={async () => {
           if (!disconnecting) return;
@@ -154,7 +156,7 @@ export function MySourcesPage() {
           await queryClient.invalidateQueries({ queryKey: ["connectors", "mine"] });
         }}
       />
-    </Page>
+    </>
   );
 }
 

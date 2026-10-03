@@ -6,7 +6,11 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
     email: "anna@meridian-stroy.ru",
     first_name: "Анна",
     last_name: "Смирнова",
+    patronymic: null,
     full_name: "Анна Смирнова",
+    phone: null,
+    telegram: null,
+    avatar_url: null,
     must_change_password: false,
     last_login_at: null,
     company: {
@@ -14,6 +18,8 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
       member_id: "m-1",
       name: "ООО «Меридиан Строй»",
       role: "employee",
+      position: null,
+      department: null,
     },
     companies: [
       {
@@ -36,6 +42,8 @@ export function adminMe(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas
       member_id: "m-1",
       name: "ООО «Меридиан Строй»",
       role: "admin",
+      position: null,
+      department: null,
     },
     companies: [
       {

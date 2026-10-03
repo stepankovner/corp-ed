@@ -17,6 +17,8 @@ function member(id: string, overrides: Partial<Member> = {}): Member {
     full_name: null,
     role: "employee",
     status: "active",
+    position: null,
+    department_id: null,
     last_login_at: null,
     created_at: "2026-10-01T10:00:00+03:00",
     ...overrides,
@@ -54,6 +56,9 @@ function company(people: Member[], seats = 30) {
     http.get("/api/v1/usage", () => HttpResponse.json(usage(seats))),
     http.get("/api/v1/users", () => HttpResponse.json(state.people)),
     http.get("/api/v1/invites", () => HttpResponse.json([])),
+    http.get("/api/v1/departments", () =>
+      HttpResponse.json([{ id: "d-1", name: "Продажи", members: 1 }]),
+    ),
   );
   return state;
 }
@@ -153,6 +158,35 @@ describe("люди компании", () => {
       { id: "m-2", blocked: true },
       { id: "m-2", role: "admin" },
     ]);
+  });
+
+  it("должность и отдел: видны под именем, правятся из меню строки", async () => {
+    const user = userEvent.setup();
+    const state = company([SELF, { ...PETR, position: "Инженер", department_id: "d-1" }]);
+    let body: unknown;
+    server.use(
+      http.patch("/api/v1/people/:memberId", async ({ request, params }) => {
+        body = { memberId: params.memberId, ...((await request.json()) as object) };
+        state.people = state.people.map((m) =>
+          m.id === "m-2" ? { ...m, position: "Ведущий инженер" } : m,
+        );
+        return HttpResponse.json({});
+      }),
+    );
+    renderApp("/admin/users");
+
+    expect(await screen.findByText("Инженер · Продажи")).toBeInTheDocument();
+    const menu = await openActions(user, "Пётр Орлов");
+    await user.click(within(menu).getByRole("menuitem", { name: "Должность и отдел" }));
+    const dialog = screen.getByRole("dialog", { name: "Должность и отдел" });
+    const position = within(dialog).getByLabelText(/^Должность/);
+    expect(position).toHaveValue("Инженер");
+    await user.clear(position);
+    await user.type(position, "Ведущий инженер");
+    await user.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByText("Ведущий инженер · Продажи")).toBeInTheDocument();
+    expect(body).toEqual({ memberId: "m-2", position: "Ведущий инженер", department_id: "d-1" });
   });
 
   it("отказ сервера (последний администратор) — во всплывающем сообщении", async () => {

@@ -96,9 +96,11 @@ class UserRepository:
             select(User)
             .join(Account, User.account_id == Account.id)
             .where(User.status == MemberStatus.ACTIVE)
+            # Без фамилии (учётки до 03.10) — в конце, а не первыми.
             .order_by(
-                func.lower(func.coalesce(Account.last_name, "")),
-                func.lower(func.coalesce(Account.first_name, "")),
+                Account.last_name.is_(None),
+                func.lower(Account.last_name),
+                func.lower(Account.first_name),
                 Account.email,
             )
         )

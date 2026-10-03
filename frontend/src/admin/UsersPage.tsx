@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Ellipsis, LockOpen, ShieldCheck, UserMinus, UserRound } from "lucide-react";
+import {
+  Ban,
+  BriefcaseBusiness,
+  Ellipsis,
+  LockOpen,
+  ShieldCheck,
+  UserMinus,
+  UserRound,
+} from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
@@ -8,6 +16,8 @@ import { useCompany } from "../auth/context";
 import { formatDateTime, formatRelative } from "../lib/format";
 import { personInitials } from "../lib/initials";
 import { useDocumentTitle } from "../lib/title";
+import { DEPARTMENTS_KEY } from "../people/keys";
+import { WorkEditDialog, type WorkTarget } from "../people/WorkEditDialog";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -61,8 +71,18 @@ export function UsersPage() {
   // Места — из того же ответа, что лимит вопросов: место занимают только
   // работающие, заблокированные и ждущие одобрения — нет (решение 28.09).
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => unwrap(api.GET("/api/v1/usage")) });
+  // Названия отделов для подписи под именем (в списке — только id).
+  const departments = useQuery({
+    queryKey: DEPARTMENTS_KEY,
+    queryFn: () => unwrap(api.GET("/api/v1/departments")),
+  });
   const [search, setSearch] = useState("");
   const [removing, setRemoving] = useState<Member | null>(null);
+  const [editingWork, setEditingWork] = useState<WorkTarget | null>(null);
+  const departmentName = useMemo(() => {
+    const names = new Map((departments.data ?? []).map((item) => [item.id, item.name]));
+    return (member: Member) => (member.department_id ? names.get(member.department_id) : undefined);
+  }, [departments.data]);
 
   const list = useMemo(() => users.data ?? [], [users.data]);
   const pending = list.filter((m) => m.status === "pending");
@@ -76,10 +96,11 @@ export function UsersPage() {
       (m) =>
         m.status !== "pending" &&
         (!needle ||
-          (m.email ?? "").toLowerCase().includes(needle) ||
-          (m.full_name ?? "").toLowerCase().includes(needle)),
+          [m.email, m.full_name, m.position, departmentName(m)].some((value) =>
+            (value ?? "").toLowerCase().includes(needle),
+          )),
     );
-  }, [list, search]);
+  }, [list, search, departmentName]);
 
   // Меню закрывается сразу, поэтому итог (и отказ сервера: последний
   // администратор, нет мест) — во всплывающем сообщении.
@@ -195,8 +216,8 @@ export function UsersPage() {
               <input
                 className={styles.search}
                 type="search"
-                placeholder="Поиск по имени или почте"
-                aria-label="Поиск по имени или почте"
+                placeholder="Имя, почта, должность, отдел"
+                aria-label="Поиск по имени, почте, должности, отделу"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -222,7 +243,9 @@ export function UsersPage() {
                 return (
                   <tr key={member.id}>
                     <td>
-                      <Person member={member} self={self} />
+                      <Person member={member} self={self}>
+                        <Work position={member.position} department={departmentName(member)} />
+                      </Person>
                     </td>
                     <td>
                       <Badge tone={member.role === "admin" ? "accent" : "muted"}>
@@ -245,6 +268,14 @@ export function UsersPage() {
                           member={member}
                           busy={update.isPending && update.variables.member.id === member.id}
                           onChange={(change) => update.mutate({ member, change })}
+                          onEditWork={() =>
+                            setEditingWork({
+                              memberId: member.id,
+                              name: memberName(member),
+                              position: member.position,
+                              departmentId: member.department_id,
+                            })
+                          }
                           onRemove={() => setRemoving(member)}
                         />
                       )}
@@ -262,6 +293,9 @@ export function UsersPage() {
         </>
       )}
       <InvitesSection />
+      {editingWork ? (
+        <WorkEditDialog target={editingWork} onClose={() => setEditingWork(null)} />
+      ) : null}
 
       <ConfirmDialog
         open={removing !== null}
@@ -319,15 +353,23 @@ function Person({
   );
 }
 
+/** «Должность · Отдел» под именем; пусто — ничего. */
+function Work({ position, department }: { position: string | null; department?: string }) {
+  const text = [position, department].filter(Boolean).join(" · ");
+  return text ? <span className={tableStyles.sub}>{text}</span> : null;
+}
+
 function MemberActions({
   member,
   busy,
   onChange,
+  onEditWork,
   onRemove,
 }: {
   member: Member;
   busy: boolean;
   onChange: (change: Change) => void;
+  onEditWork: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -338,6 +380,15 @@ function MemberActions({
         </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {/* Заблокированному должность не правят: в справочнике его нет. */}
+        {member.status === "active" ? (
+          <DropdownMenuItem
+            icon={<BriefcaseBusiness size={16} aria-hidden />}
+            onSelect={onEditWork}
+          >
+            Должность и отдел
+          </DropdownMenuItem>
+        ) : null}
         {member.role === "admin" ? (
           <DropdownMenuItem
             icon={<UserRound size={16} aria-hidden />}

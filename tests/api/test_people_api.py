@@ -455,3 +455,24 @@ async def test_departments_are_isolated_between_companies(
         "/api/v1/departments", json={"name": "Продажи"}, headers=bearer(other_admin)
     )
     assert same.status_code == 201
+
+
+async def test_directory_is_alphabetical_with_nameless_last(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    session.add_all(
+        [
+            make_user(email="yakov@test.com", full_name="Яков Яковлев"),
+            make_user(email="boris@test.com", full_name="Борис Акулов"),
+        ]
+    )
+    await session.commit()
+
+    response = await api.get("/api/v1/people", headers=bearer(account))
+
+    # Учётка worker@test.com — без имени (до 03.10): в конце, а не первой.
+    assert [p["email"] for p in response.json()] == [
+        "boris@test.com",
+        "yakov@test.com",
+        "worker@test.com",
+    ]
