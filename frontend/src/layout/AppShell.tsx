@@ -2,7 +2,7 @@ import { Menu } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
 
-import { useMe } from "../auth/context";
+import { isAdmin, needsStrongFactor, useMe } from "../auth/context";
 import { ChatProvider } from "../chat/ChatProvider";
 import { MOBILE_QUERY, useMediaQuery } from "../lib/media";
 import { IconButton } from "../ui/IconButton";
@@ -34,8 +34,10 @@ const FOCUSABLE = 'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1
 
 export function AppShell() {
   const me = useMe();
+  // Переписка — своя у каждой компании человека: другая компания — другой ключ.
+  const chatKey = `${me.id}:${me.company?.tenant_id ?? "none"}`;
   return (
-    <ChatProvider userId={me.id}>
+    <ChatProvider key={chatKey} userId={chatKey}>
       <Shell />
     </ChatProvider>
   );
@@ -161,7 +163,7 @@ function Shell() {
             <NewDialogButton compact />
           </header>
         ) : null}
-        {me.role === "admin" ? <UsageBanner /> : null}
+        {isAdmin(me) && !needsStrongFactor(me) ? <UsageBanner /> : null}
         <main className={styles.main} id="main" tabIndex={-1}>
           <Outlet />
         </main>

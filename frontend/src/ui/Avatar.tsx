@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { tileIndex } from "../lib/initials";
 import styles from "./Avatar.module.css";
 
@@ -15,7 +17,8 @@ export function Avatar({
   colorful = false,
   className,
 }: {
-  initials: string;
+  /** Инициалы или значок (компании ещё нет). */
+  initials: ReactNode;
   /** Полное имя или название: от него — цвет плитки. */
   name: string;
   shape?: "circle" | "square";

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useMe } from "../auth/context";
+import { isAdmin, useCompany, useMe } from "../auth/context";
 import { useDocumentTitle } from "../lib/title";
 import { WindowMark } from "../ui/Logo";
 import { Spinner } from "../ui/Spinner";
@@ -17,6 +17,7 @@ interface Opened {
 
 export function ChatPage() {
   const me = useMe();
+  const company = useCompany();
   useDocumentTitle("Вопросы");
   const { turns, busy, ask, retry, vote } = useChat();
   const [opened, setOpened] = useState<Opened | null>(null);
@@ -70,7 +71,7 @@ export function ChatPage() {
               </span>
               <h2 className={styles.welcomeTitle}>Здравствуйте!</h2>
               <p className={styles.welcomeText}>
-                Я отвечаю по документам {me.company_name} и к каждому ответу прикладываю источник.
+                Я отвечаю по документам «{company.name}» и к каждому ответу прикладываю источник.
                 Если в документах ответа нет — скажу об этом прямо.
               </p>
             </div>
@@ -96,11 +97,7 @@ export function ChatPage() {
                   onVote={(value) => void vote(turn.id, value)}
                 />
               ) : (
-                <FailedView
-                  turn={turn}
-                  isAdmin={me.role === "admin"}
-                  onRetry={() => void retry(turn.id)}
-                />
+                <FailedView turn={turn} isAdmin={isAdmin(me)} onRetry={() => void retry(turn.id)} />
               )}
             </div>
           ))}

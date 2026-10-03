@@ -206,6 +206,29 @@
         "title": "AuditEventResponse",
         "type": "object"
       },
+      "BackupCodesResponse": {
+        "properties": {
+          "backup_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Codes"
+          }
+        },
+        "required": [
+          "backup_codes"
+        ],
+        "title": "BackupCodesResponse",
+        "type": "object"
+      },
       "Body_upload_material_api_v1_materials_upload_post": {
         "properties": {
           "file": {
@@ -250,6 +273,120 @@
           "new_password"
         ],
         "title": "ChangePasswordRequest",
+        "type": "object"
+      },
+      "CompanyRequestCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "company_name": {
+            "maxLength": 200,
+            "minLength": 2,
+            "title": "Company Name",
+            "type": "string"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats"
+          }
+        },
+        "required": [
+          "company_name"
+        ],
+        "title": "CompanyRequestCreate",
+        "type": "object"
+      },
+      "CompanyRequestResponse": {
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "approved",
+              "rejected",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "company_name",
+          "seats",
+          "comment",
+          "status",
+          "created_at",
+          "decided_at"
+        ],
+        "title": "CompanyRequestResponse",
         "type": "object"
       },
       "ConnectorCreateRequest": {
@@ -626,6 +763,87 @@
           "credentials"
         ],
         "title": "CredentialsRequest",
+        "type": "object"
+      },
+      "CurrentCompany": {
+        "properties": {
+          "member_id": {
+            "format": "uuid",
+            "title": "Member Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "member_id",
+          "name",
+          "role"
+        ],
+        "title": "CurrentCompany",
+        "type": "object"
+      },
+      "EmailChangeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_email": {
+            "format": "email",
+            "title": "New Email",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_email",
+          "password"
+        ],
+        "title": "EmailChangeRequest",
+        "type": "object"
+      },
+      "EmailRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "EmailRequest",
+        "type": "object"
+      },
+      "EmailSentResponse": {
+        "description": "Ответ один и тот же, есть учётка или нет (по нему не перебрать адреса).",
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "EmailSentResponse",
         "type": "object"
       },
       "FaqAnswerResponse": {
@@ -1180,54 +1398,6 @@
         "title": "IngestResponse",
         "type": "object"
       },
-      "InviteAcceptRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "company_code": {
-            "maxLength": 63,
-            "minLength": 1,
-            "title": "Company Code",
-            "type": "string"
-          },
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          },
-          "full_name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "password": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Password",
-            "type": "string"
-          },
-          "token": {
-            "maxLength": 128,
-            "minLength": 16,
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "company_code",
-          "token",
-          "email",
-          "password"
-        ],
-        "title": "InviteAcceptRequest",
-        "type": "object"
-      },
       "InviteCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1256,6 +1426,11 @@
             ],
             "title": "Max Uses"
           },
+          "requires_approval": {
+            "default": false,
+            "title": "Requires Approval",
+            "type": "boolean"
+          },
           "ttl_days": {
             "default": 7,
             "maximum": 30.0,
@@ -1269,8 +1444,8 @@
       },
       "InviteCreatedResponse": {
         "properties": {
-          "company_code": {
-            "title": "Company Code",
+          "code": {
+            "title": "Code",
             "type": "string"
           },
           "invite": {
@@ -1284,7 +1459,7 @@
         "required": [
           "invite",
           "token",
-          "company_code"
+          "code"
         ],
         "title": "InviteCreatedResponse",
         "type": "object"
@@ -1310,12 +1485,17 @@
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
+          },
+          "requires_approval": {
+            "title": "Requires Approval",
+            "type": "boolean"
           }
         },
         "required": [
           "company_name",
           "expires_at",
-          "email_domain"
+          "email_domain",
+          "requires_approval"
         ],
         "title": "InvitePreviewResponse",
         "type": "object"
@@ -1352,6 +1532,10 @@
             "title": "Max Uses",
             "type": "integer"
           },
+          "requires_approval": {
+            "title": "Requires Approval",
+            "type": "boolean"
+          },
           "status": {
             "enum": [
               "active",
@@ -1374,32 +1558,60 @@
           "max_uses",
           "uses",
           "email_domain",
+          "requires_approval",
           "status"
         ],
         "title": "InviteResponse",
         "type": "object"
       },
-      "InviteTokenRequest": {
+      "InviteSecretRequest": {
         "additionalProperties": false,
         "properties": {
-          "company_code": {
-            "maxLength": 63,
-            "minLength": 1,
-            "title": "Company Code",
-            "type": "string"
-          },
-          "token": {
+          "secret": {
             "maxLength": 128,
-            "minLength": 16,
-            "title": "Token",
+            "minLength": 8,
+            "title": "Secret",
             "type": "string"
           }
         },
         "required": [
-          "company_code",
-          "token"
+          "secret"
         ],
-        "title": "InviteTokenRequest",
+        "title": "InviteSecretRequest",
+        "type": "object"
+      },
+      "JoinResponse": {
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "joined",
+              "pending",
+              "already_member"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "outcome",
+          "company_name",
+          "session"
+        ],
+        "title": "JoinResponse",
         "type": "object"
       },
       "LeadFormResponse": {
@@ -1573,15 +1785,24 @@
         "title": "LeadRequest",
         "type": "object"
       },
+      "LeaveCompanyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "title": "LeaveCompanyRequest",
+        "type": "object"
+      },
       "LoginRequest": {
         "additionalProperties": false,
         "properties": {
-          "company_code": {
-            "maxLength": 63,
-            "minLength": 1,
-            "title": "Company Code",
-            "type": "string"
-          },
           "email": {
             "format": "email",
             "title": "Email",
@@ -1592,14 +1813,73 @@
             "minLength": 1,
             "title": "Password",
             "type": "string"
+          },
+          "remember": {
+            "default": true,
+            "title": "Remember",
+            "type": "boolean"
           }
         },
         "required": [
-          "company_code",
           "email",
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "LoginResponse": {
+        "description": "Вход: сразу сессия (доверенное устройство) или второй фактор.",
+        "properties": {
+          "access_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "expires_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In"
+          },
+          "mfa": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MfaChallenge"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "mfa_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "LoginResponse",
         "type": "object"
       },
       "MaterialCreateRequest": {
@@ -1786,18 +2066,38 @@
       },
       "MeResponse": {
         "properties": {
-          "company_code": {
-            "title": "Company Code",
-            "type": "string"
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/MembershipItem"
+            },
+            "title": "Companies",
+            "type": "array"
           },
-          "company_name": {
-            "title": "Company Name",
-            "type": "string"
+          "company": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrentCompany"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "email": {
             "format": "email",
             "title": "Email",
             "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
           },
           "full_name": {
             "anyOf": [
@@ -1827,12 +2127,62 @@
             ],
             "title": "Last Login At"
           },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "mfa": {
+            "$ref": "#/components/schemas/MfaState"
+          },
           "must_change_password": {
             "title": "Must Change Password",
             "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "first_name",
+          "last_name",
+          "full_name",
+          "must_change_password",
+          "last_login_at",
+          "company",
+          "companies",
+          "mfa"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "MemberStatus": {
+        "description": "Состояние членства в компании.\n\nACTIVE — работает и занимает место; BLOCKED — заблокирован админом,\nместо не занимает; PENDING — вступил по приглашению с одобрением и\nждёт админа; LEFT — ушёл сам или убран админом: учётка жива, доступа\nк компании нет, вернуться можно по новому приглашению.",
+        "enum": [
+          "active",
+          "blocked",
+          "pending",
+          "left"
+        ],
+        "title": "MemberStatus",
+        "type": "string"
+      },
+      "MembershipItem": {
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
           },
           "role": {
             "$ref": "#/components/schemas/UserRole"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemberStatus"
           },
           "tenant_id": {
             "format": "uuid",
@@ -1841,17 +2191,136 @@
           }
         },
         "required": [
-          "id",
-          "email",
-          "full_name",
-          "role",
           "tenant_id",
           "company_name",
-          "company_code",
-          "must_change_password",
-          "last_login_at"
+          "role",
+          "status"
         ],
-        "title": "MeResponse",
+        "title": "MembershipItem",
+        "type": "object"
+      },
+      "MfaChallenge": {
+        "properties": {
+          "email_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Hint"
+          },
+          "methods": {
+            "items": {
+              "enum": [
+                "email",
+                "totp",
+                "passkey",
+                "backup"
+              ],
+              "type": "string"
+            },
+            "title": "Methods",
+            "type": "array"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "methods",
+          "email_hint"
+        ],
+        "title": "MfaChallenge",
+        "type": "object"
+      },
+      "MfaState": {
+        "properties": {
+          "strong": {
+            "title": "Strong",
+            "type": "boolean"
+          },
+          "strong_required": {
+            "title": "Strong Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "strong",
+          "strong_required"
+        ],
+        "title": "MfaState",
+        "type": "object"
+      },
+      "MfaTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "MfaTokenRequest",
+        "type": "object"
+      },
+      "MfaVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          },
+          "method": {
+            "enum": [
+              "email",
+              "totp",
+              "passkey",
+              "backup"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "method"
+        ],
+        "title": "MfaVerifyRequest",
         "type": "object"
       },
       "ModuleSpecResponse": {
@@ -1925,6 +2394,29 @@
         "title": "MyConnectorResponse",
         "type": "object"
       },
+      "NameUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "first_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name"
+        ],
+        "title": "NameUpdateRequest",
+        "type": "object"
+      },
       "OAuthCallbackResponse": {
         "description": "Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.",
         "properties": {
@@ -1977,17 +2469,236 @@
         "title": "OAuthStartResponse",
         "type": "object"
       },
-      "PasswordResetResponse": {
+      "PasskeyCreatedResponse": {
         "properties": {
-          "temporary_password": {
-            "title": "Temporary Password",
+          "backup_codes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Codes"
+          },
+          "passkey": {
+            "$ref": "#/components/schemas/PasskeyResponse"
+          }
+        },
+        "required": [
+          "passkey",
+          "backup_codes"
+        ],
+        "title": "PasskeyCreatedResponse",
+        "type": "object"
+      },
+      "PasskeyOptionsResponse": {
+        "properties": {
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          }
+        },
+        "required": [
+          "options"
+        ],
+        "title": "PasskeyOptionsResponse",
+        "type": "object"
+      },
+      "PasskeyRegisterRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object"
+          },
+          "name": {
+            "default": "Ключ доступа",
+            "maxLength": 100,
+            "title": "Name",
+            "type": "string"
+          },
+          "setup_token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Setup Token",
             "type": "string"
           }
         },
         "required": [
-          "temporary_password"
+          "setup_token",
+          "credential"
         ],
-        "title": "PasswordResetResponse",
+        "title": "PasskeyRegisterRequest",
+        "type": "object"
+      },
+      "PasskeyResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "created_at",
+          "last_used_at"
+        ],
+        "title": "PasskeyResponse",
+        "type": "object"
+      },
+      "PasskeySetupResponse": {
+        "properties": {
+          "options": {
+            "additionalProperties": true,
+            "title": "Options",
+            "type": "object"
+          },
+          "setup_token": {
+            "title": "Setup Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "options",
+          "setup_token"
+        ],
+        "title": "PasskeySetupResponse",
+        "type": "object"
+      },
+      "PasswordConfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "PasswordConfirmRequest",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "consent": {
+            "const": true,
+            "title": "Consent",
+            "type": "boolean"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "First Name",
+            "type": "string"
+          },
+          "invite": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite"
+          },
+          "last_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Last Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "first_name",
+          "last_name",
+          "email",
+          "password",
+          "consent"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "ResetPasswordRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "New Password",
+            "type": "string"
+          },
+          "second_factor": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Factor"
+          },
+          "token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "new_password"
+        ],
+        "title": "ResetPasswordRequest",
         "type": "object"
       },
       "Retriever": {
@@ -1998,6 +2709,137 @@
         ],
         "title": "Retriever",
         "type": "string"
+      },
+      "SecondFactorConfirmRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 32,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "code"
+        ],
+        "title": "SecondFactorConfirmRequest",
+        "type": "object"
+      },
+      "SecurityResponse": {
+        "properties": {
+          "backup_codes_left": {
+            "title": "Backup Codes Left",
+            "type": "integer"
+          },
+          "passkeys": {
+            "items": {
+              "$ref": "#/components/schemas/PasskeyResponse"
+            },
+            "title": "Passkeys",
+            "type": "array"
+          },
+          "strong_required": {
+            "title": "Strong Required",
+            "type": "boolean"
+          },
+          "totp_enabled": {
+            "title": "Totp Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "totp_enabled",
+          "passkeys",
+          "backup_codes_left",
+          "strong_required"
+        ],
+        "title": "SecurityResponse",
+        "type": "object"
+      },
+      "SessionResponse": {
+        "properties": {
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip"
+          },
+          "last_active_at": {
+            "format": "date-time",
+            "title": "Last Active At",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "device",
+          "ip",
+          "started_at",
+          "last_active_at",
+          "current"
+        ],
+        "title": "SessionResponse",
+        "type": "object"
+      },
+      "SwitchCompanyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "tenant_id"
+        ],
+        "title": "SwitchCompanyRequest",
+        "type": "object"
       },
       "SyncRequestedResponse": {
         "properties": {
@@ -2121,6 +2963,22 @@
         "title": "TariffAllowanceResponse",
         "type": "object"
       },
+      "TokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "TokenRequest",
+        "type": "object"
+      },
       "TokenResponse": {
         "description": "Access-токен для заголовка Authorization. Refresh-токен в тело не\nпопадает: он уходит в httpOnly-cookie (api/v1/session_cookie.py).",
         "properties": {
@@ -2143,6 +3001,52 @@
           "expires_in"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "TotpEnableRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 12,
+            "minLength": 6,
+            "title": "Code",
+            "type": "string"
+          },
+          "setup_token": {
+            "maxLength": 128,
+            "minLength": 16,
+            "title": "Setup Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "setup_token",
+          "code"
+        ],
+        "title": "TotpEnableRequest",
+        "type": "object"
+      },
+      "TotpSetupResponse": {
+        "properties": {
+          "otpauth_uri": {
+            "title": "Otpauth Uri",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          },
+          "setup_token": {
+            "title": "Setup Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "secret",
+          "otpauth_uri",
+          "setup_token"
+        ],
+        "title": "TotpSetupResponse",
         "type": "object"
       },
       "UsageResponse": {
@@ -2206,76 +3110,8 @@
         "title": "UsageResponse",
         "type": "object"
       },
-      "UserCreateRequest": {
-        "additionalProperties": false,
-        "description": "Новый сотрудник. Без password система сгенерирует временный.",
-        "properties": {
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          },
-          "full_name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "password": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Password"
-          },
-          "role": {
-            "$ref": "#/components/schemas/UserRole",
-            "default": "employee"
-          }
-        },
-        "required": [
-          "email"
-        ],
-        "title": "UserCreateRequest",
-        "type": "object"
-      },
-      "UserCreatedResponse": {
-        "properties": {
-          "temporary_password": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Temporary Password"
-          },
-          "user": {
-            "$ref": "#/components/schemas/UserResponse"
-          }
-        },
-        "required": [
-          "user",
-          "temporary_password"
-        ],
-        "title": "UserCreatedResponse",
-        "type": "object"
-      },
       "UserResponse": {
-        "description": "Пользователь без пароля, хеша и версии токенов.",
+        "description": "Человек в компании: членство и имя с почтой из учётки.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -2283,9 +3119,16 @@
             "type": "string"
           },
           "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "email",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
           },
           "full_name": {
             "anyOf": [
@@ -2303,10 +3146,6 @@
             "title": "Id",
             "type": "string"
           },
-          "is_active": {
-            "title": "Is Active",
-            "type": "boolean"
-          },
           "last_login_at": {
             "anyOf": [
               {
@@ -2319,12 +3158,11 @@
             ],
             "title": "Last Login At"
           },
-          "must_change_password": {
-            "title": "Must Change Password",
-            "type": "boolean"
-          },
           "role": {
             "$ref": "#/components/schemas/UserRole"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MemberStatus"
           }
         },
         "required": [
@@ -2332,8 +3170,7 @@
           "email",
           "full_name",
           "role",
-          "is_active",
-          "must_change_password",
+          "status",
           "last_login_at",
           "created_at"
         ],
@@ -2341,7 +3178,7 @@
         "type": "object"
       },
       "UserRole": {
-        "description": "Роль сотрудника внутри своей компании.\n\nADMIN — управляет документами и пользователями компании, видит\nотладку поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы.\nЗаводить компании (тенанты) не может ни одна роль: это делает\nкоманда Kronto через CLI на сервере (см. corp_ed.cli).",
+        "description": "Роль человека в компании — свойство членства, а не учётки (ТЗ §2):\nв одной компании он администратор, в другой — сотрудник.\n\nADMIN — управляет документами и людьми компании, видит отладку\nпоиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы. Отдельных\n«владельца» и «редактора» нет (решение владельца продукта 03.10).\nЗаводить компании не может ни одна роль: заявку одобряет команда\nKronto (corp_ed.cli, позже — наша панель).",
         "enum": [
           "admin",
           "employee"
@@ -2352,19 +3189,7 @@
       "UserUpdateRequest": {
         "additionalProperties": false,
         "properties": {
-          "full_name": {
-            "anyOf": [
-              {
-                "maxLength": 200,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Full Name"
-          },
-          "is_active": {
+          "blocked": {
             "anyOf": [
               {
                 "type": "boolean"
@@ -2373,7 +3198,7 @@
                 "type": "null"
               }
             ],
-            "title": "Is Active"
+            "title": "Blocked"
           },
           "role": {
             "anyOf": [
@@ -2428,6 +3253,27 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VerifyCodeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^\\s*\\d{6}\\s*$",
+            "title": "Code",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "code"
+        ],
+        "title": "VerifyCodeRequest",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -2464,6 +3310,745 @@
           }
         },
         "summary": "Read Root"
+      }
+    },
+    "/api/v1/account": {
+      "patch": {
+        "operationId": "update_name_api_v1_account_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NameUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Name",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/backup-codes": {
+      "post": {
+        "description": "Новые 10 резервных кодов; старые перестают действовать.",
+        "operationId": "regenerate_backup_codes_api_v1_account_backup_codes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupCodesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Regenerate Backup Codes",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/company-requests": {
+      "get": {
+        "operationId": "list_company_requests_api_v1_account_company_requests_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CompanyRequestResponse"
+                  },
+                  "title": "Response List Company Requests Api V1 Account Company Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Company Requests",
+        "tags": [
+          "account"
+        ]
+      },
+      "post": {
+        "description": "Заявка «Подключить компанию»: одобряет команда Kronto.",
+        "operationId": "create_company_request_api_v1_account_company_requests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Company Request",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/company-requests/{request_id}/cancel": {
+      "post": {
+        "operationId": "cancel_company_request_api_v1_account_company_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanyRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Company Request",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/delete": {
+      "post": {
+        "description": "Удалить учётку (152-ФЗ). Пароль — подтверждение, что это владелец.",
+        "operationId": "delete_account_api_v1_account_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Account",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/email": {
+      "post": {
+        "description": "Письмо со ссылкой на новый адрес; почта сменится после перехода.",
+        "operationId": "request_email_change_api_v1_account_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Email Change",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/email/confirm": {
+      "post": {
+        "description": "Ссылка из письма на новый адрес. Без входа: письмо могут открыть\nна другом устройстве.",
+        "operationId": "confirm_email_change_api_v1_account_email_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Email Change",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/email/revert": {
+      "post": {
+        "description": "«Это не я» из письма на прежний адрес. Без входа: у владельца,\nскорее всего, его уже нет.",
+        "operationId": "revert_email_change_api_v1_account_email_revert_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revert Email Change",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/leave": {
+      "post": {
+        "description": "Выйти из компании. Учётка остаётся.",
+        "operationId": "leave_company_api_v1_account_leave_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LeaveCompanyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Leave Company",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/passkeys": {
+      "post": {
+        "operationId": "register_passkey_api_v1_account_passkeys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasskeyRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Register Passkey",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/passkeys/options": {
+      "post": {
+        "description": "Параметры для navigator.credentials.create().",
+        "operationId": "passkey_options_api_v1_account_passkeys_options_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeySetupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Passkey Options",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/passkeys/{passkey_id}/delete": {
+      "post": {
+        "operationId": "delete_passkey_api_v1_account_passkeys__passkey_id__delete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "passkey_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Passkey Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Passkey",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/security": {
+      "get": {
+        "operationId": "read_security_api_v1_account_security_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Security",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/sessions": {
+      "get": {
+        "description": "Где открыта учётка: браузер, адрес, когда начат сеанс.",
+        "operationId": "list_sessions_api_v1_account_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionResponse"
+                  },
+                  "title": "Response List Sessions Api V1 Account Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Sessions",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/sessions/{session_id}/end": {
+      "post": {
+        "description": "Выйти на одном устройстве. Его access-токен доживёт до 15 минут —\nдля немедленного выхода везде есть /auth/logout-all.",
+        "operationId": "end_session_api_v1_account_sessions__session_id__end_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "End Session",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/totp/disable": {
+      "post": {
+        "operationId": "disable_totp_api_v1_account_totp_disable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecondFactorConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Disable Totp",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/totp/enable": {
+      "post": {
+        "operationId": "enable_totp_api_v1_account_totp_enable_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TotpEnableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupCodesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Enable Totp",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/totp/setup": {
+      "post": {
+        "description": "Секрет для приложения (QR из otpauth_uri). Действует после\nподтверждения кодом — /account/totp/enable.",
+        "operationId": "start_totp_setup_api_v1_account_totp_setup_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TotpSetupResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Totp Setup",
+        "tags": [
+          "account"
+        ]
       }
     },
     "/api/v1/audit": {
@@ -2585,9 +4170,51 @@
         ]
       }
     },
+    "/api/v1/auth/forgot-password": {
+      "post": {
+        "description": "Ссылка для нового пароля. Ответ одинаковый, есть учётка или нет.",
+        "operationId": "forgot_password_api_v1_auth_forgot_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Forgot Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
-        "description": "Вход. Два лимита против перебора (ASVS 6.3.1):\n\n- на IP — все попытки: один адрес не перебирает много учёток;\n- на учётку — только неудачные: распределённый перебор одной учётки\n  с многих адресов. Успешный вход счётчик обнуляет.",
+        "description": "Вход по почте и паролю (ТЗ §2–3). Верный пароль даёт сессию сразу,\nтолько если браузер — доверенное устройство учётки; иначе — шаг\nвторого фактора (/auth/mfa/verify).\n\nДва лимита против перебора (ASVS 6.3.1):\n- на IP — все попытки: один адрес не перебирает много учёток;\n- на почту — только неудачные: распределённый перебор одной учётки\n  с многих адресов. Успешный вход счётчик обнуляет.",
         "operationId": "login_api_v1_auth_login_post",
         "requestBody": {
           "content": {
@@ -2604,7 +4231,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/LoginResponse"
                 }
               }
             },
@@ -2668,7 +4295,7 @@
     },
     "/api/v1/auth/me": {
       "get": {
-        "description": "Кто вошёл. Доступна и до смены временного пароля: фронту нужно\nзнать must_change_password, чтобы показать форму смены.",
+        "description": "Кто вошёл: учётка, выбранная компания и все компании человека.\nДоступна и до смены временного пароля: фронту нужно знать\nmust_change_password, чтобы показать форму смены.",
         "operationId": "read_me_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -2693,6 +4320,130 @@
         ]
       }
     },
+    "/api/v1/auth/mfa/passkey-options": {
+      "post": {
+        "description": "Параметры для navigator.credentials.get() на шаге входа.",
+        "operationId": "passkey_login_options_api_v1_auth_mfa_passkey_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasskeyOptionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Passkey Login Options",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/resend": {
+      "post": {
+        "description": "Новый код на почту для того же шага входа.",
+        "operationId": "resend_login_code_api_v1_auth_mfa_resend_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Login Code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/mfa/verify": {
+      "post": {
+        "description": "Второй шаг входа: код из письма, приложения, резервный или ключ\nдоступа. «Запомнить» — доверенное устройство на 30 дней, если ни одна\nкомпания человека это не запретила.",
+        "operationId": "verify_second_factor_api_v1_auth_mfa_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MfaVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Second Factor",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "description": "Новая пара по refresh-токену из cookie (ротация). Так же фронт\nвосстанавливает сессию после перезагрузки страницы: access-токен\nживёт только в памяти вкладки.",
@@ -2710,6 +4461,262 @@
           }
         },
         "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "Регистрация (ТЗ §2): учётка без компании и письмо с кодом. Ответ\nодинаковый, есть ли уже учётка с этой почтой.",
+        "operationId": "register_api_v1_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/reset-password": {
+      "post": {
+        "description": "Новый пароль по ссылке из письма: прежние сессии закрываются,\nоткрывается новая.",
+        "operationId": "reset_password_api_v1_auth_reset_password_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/switch-company": {
+      "post": {
+        "description": "Перейти в другую свою компанию — новая пара токенов.",
+        "operationId": "switch_company_api_v1_auth_switch_company_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SwitchCompanyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Switch Company",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/verify-email": {
+      "post": {
+        "description": "Подтвердить почту кодом из письма и сразу войти.",
+        "operationId": "verify_email_code_api_v1_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email Code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/verify-email/link": {
+      "post": {
+        "description": "Подтвердить почту по ссылке из письма и сразу войти.",
+        "operationId": "verify_email_link_api_v1_auth_verify_email_link_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email Link",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/verify-email/resend": {
+      "post": {
+        "operationId": "resend_verification_api_v1_auth_verify_email_resend_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailSentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resend Verification",
         "tags": [
           "auth"
         ]
@@ -3897,7 +5904,7 @@
     },
     "/api/v1/invites": {
       "get": {
-        "description": "Последние ссылки компании с их состоянием; токенов в ответе нет.",
+        "description": "Последние приглашения компании с их состоянием; ссылок и кодов нет.",
         "operationId": "list_invites_api_v1_invites_get",
         "responses": {
           "200": {
@@ -3926,7 +5933,7 @@
         ]
       },
       "post": {
-        "description": "Ссылка-приглашение в свою компанию. Токен — в ответе один раз.",
+        "description": "Приглашение в свою компанию. Ссылка и код — в ответе один раз.",
         "operationId": "create_invite_api_v1_invites_post",
         "requestBody": {
           "content": {
@@ -3973,24 +5980,24 @@
     },
     "/api/v1/invites/accept": {
       "post": {
-        "description": "Завести учётку сотрудника по ссылке и сразу войти.",
+        "description": "Вступить в компанию своей учёткой. Вступил — сессия сразу\nпереключается на эту компанию; ждёт одобрения — сессия прежняя.",
         "operationId": "accept_invite_api_v1_invites_accept_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InviteAcceptRequest"
+                "$ref": "#/components/schemas/InviteSecretRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/JoinResponse"
                 }
               }
             },
@@ -4007,6 +6014,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Accept Invite",
         "tags": [
           "invites"
@@ -4015,13 +6027,13 @@
     },
     "/api/v1/invites/preview": {
       "post": {
-        "description": "В какую компанию ведёт ссылка — для карточки «Присоединиться».",
+        "description": "В какую компанию ведёт приглашение — до входа, для карточки\n«Вступить».",
         "operationId": "preview_invite_api_v1_invites_preview_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InviteTokenRequest"
+                "$ref": "#/components/schemas/InviteSecretRequest"
               }
             }
           },
@@ -4504,6 +6516,7 @@
     },
     "/api/v1/users": {
       "get": {
+        "description": "Люди компании: работают, заблокированы, ждут одобрения.",
         "operationId": "list_users_api_v1_users_get",
         "responses": {
           "200": {
@@ -4530,28 +6543,26 @@
         "tags": [
           "users"
         ]
-      },
-      "post": {
-        "operationId": "create_user_api_v1_users_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserCreateRequest"
-              }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "delete": {
+        "description": "Убрать из компании. Учётка человека остаётся.",
+        "operationId": "remove_user_api_v1_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserCreatedResponse"
-                }
-              }
-            },
+          "204": {
             "description": "Successful Response"
           },
           "422": {
@@ -4570,13 +6581,11 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Create User",
+        "summary": "Remove User",
         "tags": [
           "users"
         ]
-      }
-    },
-    "/api/v1/users/{user_id}": {
+      },
       "patch": {
         "operationId": "update_user_api_v1_users__user_id__patch",
         "parameters": [
@@ -4634,9 +6643,10 @@
         ]
       }
     },
-    "/api/v1/users/{user_id}/reset-password": {
+    "/api/v1/users/{user_id}/approve": {
       "post": {
-        "operationId": "reset_password_api_v1_users__user_id__reset_password_post",
+        "description": "Пустить вступившего по приглашению с одобрением.",
+        "operationId": "approve_user_api_v1_users__user_id__approve_post",
         "parameters": [
           {
             "in": "path",
@@ -4654,7 +6664,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PasswordResetResponse"
+                  "$ref": "#/components/schemas/UserResponse"
                 }
               }
             },
@@ -4676,7 +6686,48 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Reset Password",
+        "summary": "Approve User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/reject": {
+      "post": {
+        "operationId": "reject_user_api_v1_users__user_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject User",
         "tags": [
           "users"
         ]

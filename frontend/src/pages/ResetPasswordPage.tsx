@@ -1,4 +1,4 @@
 // Заготовка: страница появится в этом же этапе.
-export function JoinPage() {
+export function ResetPasswordPage() {
   return null;
 }

@@ -4,15 +4,55 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
   return {
     id: "u-1",
     email: "anna@meridian-stroy.ru",
+    first_name: "Анна",
+    last_name: "Смирнова",
     full_name: "Анна Смирнова",
-    role: "employee",
-    tenant_id: "t-1",
-    company_name: "ООО «Меридиан Строй»",
-    company_code: "meridian",
     must_change_password: false,
     last_login_at: null,
+    company: {
+      tenant_id: "t-1",
+      member_id: "m-1",
+      name: "ООО «Меридиан Строй»",
+      role: "employee",
+    },
+    companies: [
+      {
+        tenant_id: "t-1",
+        company_name: "ООО «Меридиан Строй»",
+        role: "employee",
+        status: "active",
+      },
+    ],
+    mfa: { strong: false, strong_required: false },
     ...overrides,
   };
+}
+
+/** Администратор компании с приложением-аутентификатором. */
+export function adminMe(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeResponse"] {
+  return me({
+    company: {
+      tenant_id: "t-1",
+      member_id: "m-1",
+      name: "ООО «Меридиан Строй»",
+      role: "admin",
+    },
+    companies: [
+      {
+        tenant_id: "t-1",
+        company_name: "ООО «Меридиан Строй»",
+        role: "admin",
+        status: "active",
+      },
+    ],
+    mfa: { strong: true, strong_required: true },
+    ...overrides,
+  });
+}
+
+/** Учётка без компании (ТЗ §2). */
+export function loneMe(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeResponse"] {
+  return me({ company: null, companies: [], ...overrides });
 }
 
 export function tokens(n = 1): Schemas["TokenResponse"] {

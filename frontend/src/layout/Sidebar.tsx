@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  House,
   Link2,
   MessageSquareText,
   PanelLeftClose,
@@ -12,13 +13,15 @@ import {
 import { useId, useState, type Ref } from "react";
 import { Link, matchPath, useLocation, useNavigate } from "react-router";
 
-import { useMe } from "../auth/context";
+import { errorMessage } from "../api/errors";
+import { isAdmin, needsStrongFactor, useAuth, useMe, type Me } from "../auth/context";
 import { useChat } from "../chat/store";
 import { IconButton } from "../ui/IconButton";
 import { Logo } from "../ui/Logo";
 import { Tooltip } from "../ui/Tooltip";
+import { useToast } from "../ui/useToast";
 import { AccountMenu } from "./AccountMenu";
-import { CompanySwitcher } from "./CompanySwitcher";
+import { CompanySwitcher, type CompanyOption } from "./CompanySwitcher";
 import { ADMIN_SECTIONS } from "./navigation";
 import styles from "./Sidebar.module.css";
 
@@ -40,8 +43,21 @@ interface Props {
  */
 export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
   const me = useMe();
+  const { switchCompany } = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
   const collapsed = mode === "collapsed";
-  const role = me.role === "admin" ? "администратор" : "сотрудник";
+  // Разделы компании — когда она выбрана и защита входа в порядке.
+  const inCompany = me.company !== null && !needsStrongFactor(me);
+
+  async function select(tenantId: string) {
+    try {
+      await switchCompany(tenantId);
+      void navigate("/");
+    } catch (err) {
+      toast.show(errorMessage(err), { tone: "error" });
+    }
+  }
 
   return (
     <div className={`${styles.inner} ${collapsed ? styles.collapsed : ""}`}>
@@ -74,20 +90,33 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
 
       <div className={styles.company}>
         <CompanySwitcher
-          companies={[{ id: me.tenant_id, name: me.company_name, caption: role }]}
-          currentId={me.tenant_id}
+          companies={companyOptions(me)}
+          currentId={me.company?.tenant_id ?? null}
+          onSelect={(id) => void select(id)}
           collapsed={collapsed}
         />
       </div>
 
-      <NewDialogButton collapsed={collapsed} />
+      {inCompany ? <NewDialogButton collapsed={collapsed} /> : null}
 
       <div className={styles.scroll}>
         <nav aria-label="Разделы">
           <ul className={styles.list}>
-            <NavItem to="/" end icon={MessageSquareText} label="Вопросы" collapsed={collapsed} />
-            <NavItem to="/sources" icon={Link2} label="Мои источники" collapsed={collapsed} />
-            {me.role === "admin" ? <AdminNav collapsed={collapsed} /> : null}
+            {inCompany ? (
+              <>
+                <NavItem
+                  to="/"
+                  end
+                  icon={MessageSquareText}
+                  label="Вопросы"
+                  collapsed={collapsed}
+                />
+                <NavItem to="/sources" icon={Link2} label="Мои источники" collapsed={collapsed} />
+                {isAdmin(me) ? <AdminNav collapsed={collapsed} /> : null}
+              </>
+            ) : (
+              <NavItem to="/" end icon={House} label="Главная" collapsed={collapsed} />
+            )}
           </ul>
         </nav>
         {/*
@@ -102,6 +131,25 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
       </div>
     </div>
   );
+}
+
+const ROLE_CAPTION = { admin: "администратор", employee: "сотрудник" } as const;
+
+/** Компании человека для переключателя: ушедшие не показываем. */
+function companyOptions(me: Me): CompanyOption[] {
+  return me.companies
+    .filter((item) => item.status !== "left")
+    .map((item) => ({
+      id: item.tenant_id,
+      name: item.company_name,
+      caption:
+        item.status === "pending"
+          ? "ждёт одобрения"
+          : item.status === "blocked"
+            ? "доступ закрыт"
+            : ROLE_CAPTION[item.role],
+      disabled: item.status !== "active",
+    }));
 }
 
 /** «Новый диалог»: то же, что делала кнопка в окне чата, — сбросить переписку. */

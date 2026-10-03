@@ -104,3 +104,40 @@
     padding: var(--s-4) 0;
   }
 }
+/* Строка «Нет учётной записи? …» под формой. */
+.alt {
+  font-size: var(--fs-small);
+  text-align: center;
+}
+/* Ссылки-действия под формой: «Другой способ», «Назад». */
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-4);
+  font-size: var(--fs-small);
+}
+.linkButton {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.linkButton:hover:not(:disabled) {
+  text-decoration-thickness: 2px;
+}
+.linkButton:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+.code {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  letter-spacing: 0.2em;
+}

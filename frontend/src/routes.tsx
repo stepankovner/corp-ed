@@ -1,13 +1,18 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, type RouteObject } from "react-router";
 
-import { PublicOnly, RequireAdmin, RequireAuth } from "./auth/guards";
-import { ChatPage } from "./chat/ChatPage";
+import { PublicOnly, RequireAdmin, RequireAuth, RequireCompany } from "./auth/guards";
 import { AppShell } from "./layout/AppShell";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
+import { ConfirmEmailPage, RevertEmailPage } from "./pages/EmailChangePages";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { HomePage } from "./pages/HomePage";
 import { JoinPage } from "./pages/JoinPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { RegisterPage } from "./pages/RegisterPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { PageSpinner } from "./ui/Spinner";
 
 // Управление нужно только администраторам — отдельными чанками; его
@@ -38,20 +43,35 @@ const CallRequestPage = lazy(() =>
 const MySourcesPage = lazy(() =>
   import("./pages/MySourcesPage").then((m) => ({ default: m.MySourcesPage })),
 );
+// Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
+const SettingsPage = lazy(() =>
+  import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
+);
 
 function lazyPage(node: ReactNode) {
   return <Suspense fallback={<PageSpinner />}>{node}</Suspense>;
 }
 
 export const routes: RouteObject[] = [
-  // Ссылка-приглашение открывается и без входа, и под чужой учёткой.
-  { path: "/join/:companyCode", element: <JoinPage /> },
+  // Приглашение открывается и без входа (сохраним и вернёмся после него),
+  // и под учёткой — тогда вступление одной кнопкой.
+  { path: "/join", element: <JoinPage /> },
+  // Ссылки из писем: работают со входом и без — письмо могли открыть на
+  // другом устройстве.
+  { path: "/verify-email", element: <VerifyEmailPage /> },
+  { path: "/reset-password", element: <ResetPasswordPage /> },
+  { path: "/confirm-email", element: <ConfirmEmailPage /> },
+  { path: "/revert-email", element: <RevertEmailPage /> },
   // Тарифы и запись на созвон — для всех, со входом и без.
   { path: "/pricing", element: lazyPage(<PricingPage />) },
   { path: "/pricing/request", element: lazyPage(<CallRequestPage />) },
   {
     element: <PublicOnly />,
-    children: [{ path: "/login", element: <LoginPage /> }],
+    children: [
+      { path: "/login", element: <LoginPage /> },
+      { path: "/register", element: <RegisterPage /> },
+      { path: "/forgot-password", element: <ForgotPasswordPage /> },
+    ],
   },
   {
     element: <RequireAuth />,
@@ -60,21 +80,27 @@ export const routes: RouteObject[] = [
       {
         element: <AppShell />,
         children: [
-          { path: "/", element: <ChatPage /> },
-          { path: "/sources", element: lazyPage(<MySourcesPage />) },
+          { path: "/", element: <HomePage /> },
+          { path: "/settings/*", element: lazyPage(<SettingsPage />) },
           {
-            path: "/admin",
-            element: <RequireAdmin />,
+            element: <RequireCompany />,
             children: [
-              { index: true, element: <Navigate to="documents" replace /> },
-              { path: "documents", element: lazyPage(<DocumentsPage />) },
-              { path: "connectors", element: lazyPage(<ConnectorsPage />) },
-              { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },
-              { path: "users", element: lazyPage(<UsersPage />) },
-              { path: "gaps", element: lazyPage(<GapsPage />) },
-              { path: "glossary", element: lazyPage(<GlossaryPage />) },
-              { path: "usage", element: lazyPage(<UsagePage />) },
-              { path: "audit", element: lazyPage(<AuditPage />) },
+              { path: "/sources", element: lazyPage(<MySourcesPage />) },
+              {
+                path: "/admin",
+                element: <RequireAdmin />,
+                children: [
+                  { index: true, element: <Navigate to="documents" replace /> },
+                  { path: "documents", element: lazyPage(<DocumentsPage />) },
+                  { path: "connectors", element: lazyPage(<ConnectorsPage />) },
+                  { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },
+                  { path: "users", element: lazyPage(<UsersPage />) },
+                  { path: "gaps", element: lazyPage(<GapsPage />) },
+                  { path: "glossary", element: lazyPage(<GlossaryPage />) },
+                  { path: "usage", element: lazyPage(<UsagePage />) },
+                  { path: "audit", element: lazyPage(<AuditPage />) },
+                ],
+              },
             ],
           },
           { path: "*", element: <NotFoundPage /> },

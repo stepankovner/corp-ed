@@ -1,7 +1,7 @@
-import { ChevronsUpDown, KeyRound, LogOut } from "lucide-react";
+import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
 import { Link } from "react-router";
 
-import { useAuth, useMe } from "../auth/context";
+import { displayName, useAuth, useMe } from "../auth/context";
 import { personInitials } from "../lib/initials";
 import { Avatar } from "../ui/Avatar";
 import {
@@ -15,12 +15,13 @@ import { Tooltip } from "../ui/Tooltip";
 import styles from "./Sidebar.module.css";
 import { ThemeOptions } from "./ThemeOptions";
 
-/** Учётная запись внизу боковой панели: пароль, тема, выход. */
+const ROLE_CAPTION = { admin: "администратор", employee: "сотрудник" } as const;
+
+/** Учётная запись внизу боковой панели: настройки, тема, выход. */
 export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
   const me = useMe();
   const { logout } = useAuth();
-  const name = me.full_name || me.email;
-  const role = me.role === "admin" ? "администратор" : "сотрудник";
+  const name = displayName(me);
   return (
     <DropdownMenu>
       <Tooltip content={name} side="right" disabled={!collapsed}>
@@ -48,13 +49,13 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
           <span className={styles.menuName}>{name}</span>
           {me.full_name ? <span className={styles.menuEmail}>{me.email}</span> : null}
           <span className={`mono ${styles.menuMeta}`}>
-            {me.company_name} · {role}
+            {me.company ? `${me.company.name} · ${ROLE_CAPTION[me.company.role]}` : "без компании"}
           </span>
         </div>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to="/change-password">
-            <KeyRound size={16} aria-hidden /> Сменить пароль
+          <Link to="/settings">
+            <Settings size={16} aria-hidden /> Настройки
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

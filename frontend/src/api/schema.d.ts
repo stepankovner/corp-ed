@@ -4,3369 +4,5161 @@
  */
 
 export interface paths {
-    "/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read Root */
-        get: operations["read_root__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+  "/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/audit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Audit Events
-         * @description Журнал своей компании, новые сверху. Постранично: before —
-         *     created_at последней записи предыдущей страницы.
-         *
-         *     Компания — только из токена. Параметра tenant_id нет: чужой журнал
-         *     не запросить даже по ошибке.
-         */
-        get: operations["list_audit_events_api_v1_audit_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Read Root */
+    get: operations["read_root__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/change-password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Change Password
-         * @description Сменить пароль. Все прежние сессии закрываются, возвращается
-         *     новая пара токенов для текущего устройства.
-         *
-         *     Лимит — против подбора текущего пароля украденным access-токеном.
-         *     Новый пароль проверяется по политике до лимита: человек, который
-         *     подбирает пароль под правила, не должен упереться в «слишком много
-         *     запросов» (стенд 02.10). Политика не трогает текущий пароль, так что
-         *     перебору это ничего не даёт.
-         */
-        post: operations["change_password_api_v1_auth_change_password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Name */
+    patch: operations["update_name_api_v1_account_patch"];
+    trace?: never;
+  };
+  "/api/v1/account/backup-codes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Login
-         * @description Вход. Два лимита против перебора (ASVS 6.3.1):
-         *
-         *     - на IP — все попытки: один адрес не перебирает много учёток;
-         *     - на учётку — только неудачные: распределённый перебор одной учётки
-         *       с многих адресов. Успешный вход счётчик обнуляет.
-         */
-        post: operations["login_api_v1_auth_login_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Regenerate Backup Codes
+     * @description Новые 10 резервных кодов; старые перестают действовать.
+     */
+    post: operations["regenerate_backup_codes_api_v1_account_backup_codes_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/company-requests": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Logout
-         * @description Отозвать цепочку текущего входа и стереть cookie.
-         */
-        post: operations["logout_api_v1_auth_logout_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List Company Requests */
+    get: operations["list_company_requests_api_v1_account_company_requests_get"];
+    put?: never;
+    /**
+     * Create Company Request
+     * @description Заявка «Подключить компанию»: одобряет команда Kronto.
+     */
+    post: operations["create_company_request_api_v1_account_company_requests_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/company-requests/{request_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/logout-all": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Logout Everywhere */
-        post: operations["logout_everywhere_api_v1_auth_logout_all_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Cancel Company Request */
+    post: operations["cancel_company_request_api_v1_account_company_requests__request_id__cancel_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read Me
-         * @description Кто вошёл. Доступна и до смены временного пароля: фронту нужно
-         *     знать must_change_password, чтобы показать форму смены.
-         */
-        get: operations["read_me_api_v1_auth_me_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Delete Account
+     * @description Удалить учётку (152-ФЗ). Пароль — подтверждение, что это владелец.
+     */
+    post: operations["delete_account_api_v1_account_delete_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/email": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/auth/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Refresh
-         * @description Новая пара по refresh-токену из cookie (ротация). Так же фронт
-         *     восстанавливает сессию после перезагрузки страницы: access-токен
-         *     живёт только в памяти вкладки.
-         */
-        post: operations["refresh_api_v1_auth_refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Request Email Change
+     * @description Письмо со ссылкой на новый адрес; почта сменится после перехода.
+     */
+    post: operations["request_email_change_api_v1_account_email_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/email/confirm": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Connectors */
-        get: operations["list_connectors_api_v1_connectors_get"];
-        put?: never;
-        /**
-         * Create Connector
-         * @description Создать подключение. Учётные данные — отдельным PUT .../credentials
-         *     (режим organization) или каждым сотрудником (режим per_user).
-         */
-        post: operations["create_connector_api_v1_connectors_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Confirm Email Change
+     * @description Ссылка из письма на новый адрес. Без входа: письмо могут открыть
+     *     на другом устройстве.
+     */
+    post: operations["confirm_email_change_api_v1_account_email_confirm_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/email/revert": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/kinds": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Kinds
-         * @description Какие системы можно подключить и какие поля у формы.
-         *
-         *     available — входит ли система в тариф компании: небазовые — только
-         *     в «Корпоративном» (решение 30.09).
-         */
-        get: operations["list_kinds_api_v1_connectors_kinds_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Revert Email Change
+     * @description «Это не я» из письма на прежний адрес. Без входа: у владельца,
+     *     скорее всего, его уже нет.
+     */
+    post: operations["revert_email_change_api_v1_account_email_revert_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/leave": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/mine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * My Connectors
-         * @description Подключения, которые сотрудник авторизует сам, и его состояние в них.
-         */
-        get: operations["my_connectors_api_v1_connectors_mine_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Leave Company
+     * @description Выйти из компании. Учётка остаётся.
+     */
+    post: operations["leave_company_api_v1_account_leave_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/passkeys": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/oauth/callback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Oauth Callback
-         * @description Возврат браузера сотрудника с портала: код → токены → грант.
-         *
-         *     Без аутентификации: кто и к какому подключению — из подписанного
-         *     state. С CONNECTOR_OAUTH_RETURN_URL — редирект на фронт с
-         *     connector_id и status (ok / error и error_code); без него — JSON.
-         *     Ошибка — тоже 200 с кодом: браузеру некуда «упасть». Отказ в
-         *     согласии приходит без code, с параметром error (OAuth 2.0).
-         */
-        get: operations["oauth_callback_api_v1_connectors_oauth_callback_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Register Passkey */
+    post: operations["register_passkey_api_v1_account_passkeys_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/passkeys/options": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/tariff": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Tariff Allowance
-         * @description Тариф компании: сколько подключений можно и сколько заведено.
-         */
-        get: operations["tariff_allowance_api_v1_connectors_tariff_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Passkey Options
+     * @description Параметры для navigator.credentials.create().
+     */
+    post: operations["passkey_options_api_v1_account_passkeys_options_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/passkeys/{passkey_id}/delete": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Connector */
-        get: operations["get_connector_api_v1_connectors__connector_id__get"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete Connector
-         * @description Удалить подключение вместе с его документами.
-         */
-        delete: operations["delete_connector_api_v1_connectors__connector_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Connector */
-        patch: operations["update_connector_api_v1_connectors__connector_id__patch"];
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Delete Passkey */
+    post: operations["delete_passkey_api_v1_account_passkeys__passkey_id__delete_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/security": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}/credentials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Credentials
-         * @description Учётные данные подключения (режим organization). Только запись:
-         *     в ответах — лишь credentials_set_at. Ставит синхронизацию в очередь.
-         */
-        put: operations["set_credentials_api_v1_connectors__connector_id__credentials_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** Read Security */
+    get: operations["read_security_api_v1_account_security_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}/mine": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set My Credentials
-         * @description Авторизовать себя в источнике (режим per_user). Документы из
-         *     листинга сотрудника появятся после ближайшей синхронизации.
-         */
-        put: operations["set_my_credentials_api_v1_connectors__connector_id__mine_put"];
-        post?: never;
-        /** Revoke My Credentials */
-        delete: operations["revoke_my_credentials_api_v1_connectors__connector_id__mine_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Sessions
+     * @description Где открыта учётка: браузер, адрес, когда начат сеанс.
+     */
+    get: operations["list_sessions_api_v1_account_sessions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/sessions/{session_id}/end": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}/oauth/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Oauth Start
-         * @description Адрес авторизации на портале: фронт открывает его в браузере
-         *     сотрудника, портал вернёт браузер на /connectors/oauth/callback.
-         */
-        post: operations["oauth_start_api_v1_connectors__connector_id__oauth_start_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * End Session
+     * @description Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
+     *     для немедленного выхода везде есть /auth/logout-all.
+     */
+    post: operations["end_session_api_v1_account_sessions__session_id__end_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/totp/disable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Runs */
-        get: operations["list_runs_api_v1_connectors__connector_id__runs_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Disable Totp */
+    post: operations["disable_totp_api_v1_account_totp_disable_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/totp/enable": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}/sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sync Now
-         * @description «Синхронизировать сейчас»: 202, работа — в воркере; прогресс — в runs.
-         */
-        post: operations["sync_now_api_v1_connectors__connector_id__sync_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Enable Totp */
+    post: operations["enable_totp_api_v1_account_totp_enable_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/account/totp/setup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/connectors/{connector_id}/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Test Connector
-         * @description Проверить учётные данные без загрузки документов.
-         */
-        post: operations["test_connector_api_v1_connectors__connector_id__test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Start Totp Setup
+     * @description Секрет для приложения (QR из otpauth_uri). Действует после
+     *     подтверждения кодом — /account/totp/enable.
+     */
+    post: operations["start_totp_setup_api_v1_account_totp_setup_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/audit": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/faq/answers/{answer_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Rate Answer
-         * @description 👍 (1) или 👎 (-1) к своему ответу. Нужно отчёту о пробелах и eval.
-         */
-        patch: operations["rate_answer_api_v1_faq_answers__answer_id__patch"];
-        trace?: never;
+    /**
+     * List Audit Events
+     * @description Журнал своей компании, новые сверху. Постранично: before —
+     *     created_at последней записи предыдущей страницы.
+     *
+     *     Компания — только из токена. Параметра tenant_id нет: чужой журнал
+     *     не запросить даже по ошибке.
+     */
+    get: operations["list_audit_events_api_v1_audit_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/change-password": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/faq/ask": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Ask Faq */
-        post: operations["ask_faq_api_v1_faq_ask_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Change Password
+     * @description Сменить пароль. Все прежние сессии закрываются, возвращается
+     *     новая пара токенов для текущего устройства.
+     *
+     *     Лимит — против подбора текущего пароля украденным access-токеном.
+     *     Новый пароль проверяется по политике до лимита: человек, который
+     *     подбирает пароль под правила, не должен упереться в «слишком много
+     *     запросов» (стенд 02.10). Политика не трогает текущий пароль, так что
+     *     перебору это ничего не даёт.
+     */
+    post: operations["change_password_api_v1_auth_change_password_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/forgot-password": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/faq/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Search Faq
-         * @description Отладка поиска для eval (BH-5): top-K с расстояниями, без порога и LLM.
-         *
-         *     Только ADMIN: показывает сырые выдержки и расстояния, которых нет в
-         *     продуктовом ответе. Компания — из токена, как везде.
-         */
-        post: operations["search_faq_api_v1_faq_search_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Forgot Password
+     * @description Ссылка для нового пароля. Ответ одинаковый, есть учётка или нет.
+     */
+    post: operations["forgot_password_api_v1_auth_forgot_password_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/login": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/gaps": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Gaps
-         * @description Чего не хватает в документах компании — важное сверху (BH-23).
-         *
-         *     Только пробелы (gap) и отказы модели при найденных выдержках
-         *     (model_refusal); остальные промахи — внутренний мониторинг. Отчёт
-         *     обновляется раз в сутки ночной задачей. Компания — из токена.
-         */
-        get: operations["list_gaps_api_v1_gaps_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Login
+     * @description Вход по почте и паролю (ТЗ §2–3). Верный пароль даёт сессию сразу,
+     *     только если браузер — доверенное устройство учётки; иначе — шаг
+     *     второго фактора (/auth/mfa/verify).
+     *
+     *     Два лимита против перебора (ASVS 6.3.1):
+     *     - на IP — все попытки: один адрес не перебирает много учёток;
+     *     - на почту — только неудачные: распределённый перебор одной учётки
+     *       с многих адресов. Успешный вход счётчик обнуляет.
+     */
+    post: operations["login_api_v1_auth_login_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/gaps/{cluster_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Set Gap Status
-         * @description Отметить пробел: в работе, закрыт (документ загружен), отклонён.
-         *
-         *     Статус переживает ночную пересборку, пока группа узнаётся по общим
-         *     вопросам.
-         */
-        patch: operations["set_gap_status_api_v1_gaps__cluster_id__patch"];
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Logout
+     * @description Отозвать цепочку текущего входа и стереть cookie.
+     */
+    post: operations["logout_api_v1_auth_logout_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/logout-all": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/glossary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Terms
-         * @description Словарь сокращений своей компании (M5, BH-14).
-         */
-        get: operations["list_terms_api_v1_glossary_get"];
-        put?: never;
-        /**
-         * Create Term
-         * @description Добавить сокращение. Действует со следующего вопроса: расшифровка
-         *     дописывается к вопросу перед поиском, переиндексация не нужна.
-         */
-        post: operations["create_term_api_v1_glossary_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Logout Everywhere */
+    post: operations["logout_everywhere_api_v1_auth_logout_all_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/glossary/{term_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Term */
-        delete: operations["delete_term_api_v1_glossary__term_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Term */
-        patch: operations["update_term_api_v1_glossary__term_id__patch"];
-        trace?: never;
+    /**
+     * Read Me
+     * @description Кто вошёл: учётка, выбранная компания и все компании человека.
+     *     Доступна и до смены временного пароля: фронту нужно знать
+     *     must_change_password, чтобы показать форму смены.
+     */
+    get: operations["read_me_api_v1_auth_me_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/mfa/passkey-options": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/invites": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Invites
-         * @description Последние ссылки компании с их состоянием; токенов в ответе нет.
-         */
-        get: operations["list_invites_api_v1_invites_get"];
-        put?: never;
-        /**
-         * Create Invite
-         * @description Ссылка-приглашение в свою компанию. Токен — в ответе один раз.
-         */
-        post: operations["create_invite_api_v1_invites_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Passkey Login Options
+     * @description Параметры для navigator.credentials.get() на шаге входа.
+     */
+    post: operations["passkey_login_options_api_v1_auth_mfa_passkey_options_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/mfa/resend": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/invites/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Accept Invite
-         * @description Завести учётку сотрудника по ссылке и сразу войти.
-         */
-        post: operations["accept_invite_api_v1_invites_accept_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Resend Login Code
+     * @description Новый код на почту для того же шага входа.
+     */
+    post: operations["resend_login_code_api_v1_auth_mfa_resend_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/mfa/verify": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/invites/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Preview Invite
-         * @description В какую компанию ведёт ссылка — для карточки «Присоединиться».
-         */
-        post: operations["preview_invite_api_v1_invites_preview_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Verify Second Factor
+     * @description Второй шаг входа: код из письма, приложения, резервный или ключ
+     *     доступа. «Запомнить» — доверенное устройство на 30 дней, если ни одна
+     *     компания человека это не запретила.
+     */
+    post: operations["verify_second_factor_api_v1_auth_mfa_verify_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/refresh": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/invites/{invite_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Revoke Invite */
-        delete: operations["revoke_invite_api_v1_invites__invite_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Refresh
+     * @description Новая пара по refresh-токену из cookie (ротация). Так же фронт
+     *     восстанавливает сессию после перезагрузки страницы: access-токен
+     *     живёт только в памяти вкладки.
+     */
+    post: operations["refresh_api_v1_auth_refresh_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/register": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/leads": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Submit Lead
-         * @description Заявка на созвон со страницы тарифов (досье 10.1). Без входа:
-         *     лимит по IP и общий суточный, ловушка для ботов, согласие с версией
-         *     политики. Команда видит заявки в `cli leads list`.
-         */
-        post: operations["submit_lead_api_v1_leads_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Register
+     * @description Регистрация (ТЗ §2): учётка без компании и письмо с кодом. Ответ
+     *     одинаковый, есть ли уже учётка с этой почтой.
+     */
+    post: operations["register_api_v1_auth_register_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/reset-password": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/leads/form": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Lead Form
-         * @description Настройки формы записи на созвон — без входа.
-         */
-        get: operations["lead_form_api_v1_leads_form_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Reset Password
+     * @description Новый пароль по ссылке из письма: прежние сессии закрываются,
+     *     открывается новая.
+     */
+    post: operations["reset_password_api_v1_auth_reset_password_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/switch-company": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/materials": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Materials */
-        get: operations["list_materials_api_v1_materials_get"];
-        put?: never;
-        /**
-         * Create Material
-         * @description Создать материал и сразу поставить его в очередь на индексацию.
-         */
-        post: operations["create_material_api_v1_materials_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Switch Company
+     * @description Перейти в другую свою компанию — новая пара токенов.
+     */
+    post: operations["switch_company_api_v1_auth_switch_company_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/verify-email": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/materials/upload": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Upload Material
-         * @description Загрузить документ файлом.
-         *
-         *     title — человеческое название («Правила отбора в акселератор»), а не
-         *     имя файла: оно уходит в крошки эмбеддинга и в подписи источников.
-         *     Формат определяется по содержимому, а не по расширению и не по
-         *     Content-Type, который присылает клиент.
-         */
-        post: operations["upload_material_api_v1_materials_upload_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Verify Email Code
+     * @description Подтвердить почту кодом из письма и сразу войти.
+     */
+    post: operations["verify_email_code_api_v1_auth_verify_email_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/verify-email/link": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/materials/{material_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Material */
-        get: operations["get_material_api_v1_materials__material_id__get"];
-        put?: never;
-        post?: never;
-        /** Delete Material */
-        delete: operations["delete_material_api_v1_materials__material_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Update Material
-         * @description Переименовать. Материал встаёт в очередь на переиндексацию.
-         */
-        patch: operations["update_material_api_v1_materials__material_id__patch"];
-        trace?: never;
+    get?: never;
+    put?: never;
+    /**
+     * Verify Email Link
+     * @description Подтвердить почту по ссылке из письма и сразу войти.
+     */
+    post: operations["verify_email_link_api_v1_auth_verify_email_link_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/verify-email/resend": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/materials/{material_id}/ingest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Ingest Material
-         * @description Переиндексировать: 202 сразу, работа — в воркере.
-         *
-         *     Прогресс — по статусу в GET /materials/{id}.
-         */
-        post: operations["ingest_material_api_v1_materials__material_id__ingest_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    get?: never;
+    put?: never;
+    /** Resend Verification */
+    post: operations["resend_verification_api_v1_auth_verify_email_resend_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/usage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Usage
-         * @description Пул кредитов своей компании: сколько потрачено и сколько осталось.
-         *
-         *     Только ADMIN: пул общий, решать, что делать при исчерпании (докупить
-         *     места, подождать месяц), — администратору компании. Компания — из
-         *     токена, параметра tenant_id нет.
-         */
-        get: operations["get_usage_api_v1_usage_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /** List Connectors */
+    get: operations["list_connectors_api_v1_connectors_get"];
+    put?: never;
+    /**
+     * Create Connector
+     * @description Создать подключение. Учётные данные — отдельным PUT .../credentials
+     *     (режим organization) или каждым сотрудником (режим per_user).
+     */
+    post: operations["create_connector_api_v1_connectors_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/kinds": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Users */
-        get: operations["list_users_api_v1_users_get"];
-        put?: never;
-        /** Create User */
-        post: operations["create_user_api_v1_users_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * List Kinds
+     * @description Какие системы можно подключить и какие поля у формы.
+     *
+     *     available — входит ли система в тариф компании: небазовые — только
+     *     в «Корпоративном» (решение 30.09).
+     */
+    get: operations["list_kinds_api_v1_connectors_kinds_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/mine": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/users/{user_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update User */
-        patch: operations["update_user_api_v1_users__user_id__patch"];
-        trace?: never;
+    /**
+     * My Connectors
+     * @description Подключения, которые сотрудник авторизует сам, и его состояние в них.
+     */
+    get: operations["my_connectors_api_v1_connectors_mine_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/oauth/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    "/api/v1/users/{user_id}/reset-password": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Reset Password */
-        post: operations["reset_password_api_v1_users__user_id__reset_password_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
+    /**
+     * Oauth Callback
+     * @description Возврат браузера сотрудника с портала: код → токены → грант.
+     *
+     *     Без аутентификации: кто и к какому подключению — из подписанного
+     *     state. С CONNECTOR_OAUTH_RETURN_URL — редирект на фронт с
+     *     connector_id и status (ok / error и error_code); без него — JSON.
+     *     Ошибка — тоже 200 с кодом: браузеру некуда «упасть». Отказ в
+     *     согласии приходит без code, с параметром error (OAuth 2.0).
+     */
+    get: operations["oauth_callback_api_v1_connectors_oauth_callback_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/tariff": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
+    /**
+     * Tariff Allowance
+     * @description Тариф компании: сколько подключений можно и сколько заведено.
+     */
+    get: operations["tariff_allowance_api_v1_connectors_tariff_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Connector */
+    get: operations["get_connector_api_v1_connectors__connector_id__get"];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Connector
+     * @description Удалить подключение вместе с его документами.
+     */
+    delete: operations["delete_connector_api_v1_connectors__connector_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Connector */
+    patch: operations["update_connector_api_v1_connectors__connector_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}/credentials": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set Credentials
+     * @description Учётные данные подключения (режим organization). Только запись:
+     *     в ответах — лишь credentials_set_at. Ставит синхронизацию в очередь.
+     */
+    put: operations["set_credentials_api_v1_connectors__connector_id__credentials_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}/mine": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Set My Credentials
+     * @description Авторизовать себя в источнике (режим per_user). Документы из
+     *     листинга сотрудника появятся после ближайшей синхронизации.
+     */
+    put: operations["set_my_credentials_api_v1_connectors__connector_id__mine_put"];
+    post?: never;
+    /** Revoke My Credentials */
+    delete: operations["revoke_my_credentials_api_v1_connectors__connector_id__mine_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}/oauth/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Oauth Start
+     * @description Адрес авторизации на портале: фронт открывает его в браузере
+     *     сотрудника, портал вернёт браузер на /connectors/oauth/callback.
+     */
+    post: operations["oauth_start_api_v1_connectors__connector_id__oauth_start_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Runs */
+    get: operations["list_runs_api_v1_connectors__connector_id__runs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}/sync": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sync Now
+     * @description «Синхронизировать сейчас»: 202, работа — в воркере; прогресс — в runs.
+     */
+    post: operations["sync_now_api_v1_connectors__connector_id__sync_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connectors/{connector_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Test Connector
+     * @description Проверить учётные данные без загрузки документов.
+     */
+    post: operations["test_connector_api_v1_connectors__connector_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/faq/answers/{answer_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Rate Answer
+     * @description 👍 (1) или 👎 (-1) к своему ответу. Нужно отчёту о пробелах и eval.
+     */
+    patch: operations["rate_answer_api_v1_faq_answers__answer_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/faq/ask": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Ask Faq */
+    post: operations["ask_faq_api_v1_faq_ask_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/faq/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Search Faq
+     * @description Отладка поиска для eval (BH-5): top-K с расстояниями, без порога и LLM.
+     *
+     *     Только ADMIN: показывает сырые выдержки и расстояния, которых нет в
+     *     продуктовом ответе. Компания — из токена, как везде.
+     */
+    post: operations["search_faq_api_v1_faq_search_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/gaps": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Gaps
+     * @description Чего не хватает в документах компании — важное сверху (BH-23).
+     *
+     *     Только пробелы (gap) и отказы модели при найденных выдержках
+     *     (model_refusal); остальные промахи — внутренний мониторинг. Отчёт
+     *     обновляется раз в сутки ночной задачей. Компания — из токена.
+     */
+    get: operations["list_gaps_api_v1_gaps_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/gaps/{cluster_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Set Gap Status
+     * @description Отметить пробел: в работе, закрыт (документ загружен), отклонён.
+     *
+     *     Статус переживает ночную пересборку, пока группа узнаётся по общим
+     *     вопросам.
+     */
+    patch: operations["set_gap_status_api_v1_gaps__cluster_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/glossary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Terms
+     * @description Словарь сокращений своей компании (M5, BH-14).
+     */
+    get: operations["list_terms_api_v1_glossary_get"];
+    put?: never;
+    /**
+     * Create Term
+     * @description Добавить сокращение. Действует со следующего вопроса: расшифровка
+     *     дописывается к вопросу перед поиском, переиндексация не нужна.
+     */
+    post: operations["create_term_api_v1_glossary_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/glossary/{term_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete Term */
+    delete: operations["delete_term_api_v1_glossary__term_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Term */
+    patch: operations["update_term_api_v1_glossary__term_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/invites": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Invites
+     * @description Последние приглашения компании с их состоянием; ссылок и кодов нет.
+     */
+    get: operations["list_invites_api_v1_invites_get"];
+    put?: never;
+    /**
+     * Create Invite
+     * @description Приглашение в свою компанию. Ссылка и код — в ответе один раз.
+     */
+    post: operations["create_invite_api_v1_invites_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/invites/accept": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Accept Invite
+     * @description Вступить в компанию своей учёткой. Вступил — сессия сразу
+     *     переключается на эту компанию; ждёт одобрения — сессия прежняя.
+     */
+    post: operations["accept_invite_api_v1_invites_accept_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/invites/preview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Preview Invite
+     * @description В какую компанию ведёт приглашение — до входа, для карточки
+     *     «Вступить».
+     */
+    post: operations["preview_invite_api_v1_invites_preview_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/invites/{invite_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Revoke Invite */
+    delete: operations["revoke_invite_api_v1_invites__invite_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/leads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Submit Lead
+     * @description Заявка на созвон со страницы тарифов (досье 10.1). Без входа:
+     *     лимит по IP и общий суточный, ловушка для ботов, согласие с версией
+     *     политики. Команда видит заявки в `cli leads list`.
+     */
+    post: operations["submit_lead_api_v1_leads_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/leads/form": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Lead Form
+     * @description Настройки формы записи на созвон — без входа.
+     */
+    get: operations["lead_form_api_v1_leads_form_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/materials": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Materials */
+    get: operations["list_materials_api_v1_materials_get"];
+    put?: never;
+    /**
+     * Create Material
+     * @description Создать материал и сразу поставить его в очередь на индексацию.
+     */
+    post: operations["create_material_api_v1_materials_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/materials/upload": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Upload Material
+     * @description Загрузить документ файлом.
+     *
+     *     title — человеческое название («Правила отбора в акселератор»), а не
+     *     имя файла: оно уходит в крошки эмбеддинга и в подписи источников.
+     *     Формат определяется по содержимому, а не по расширению и не по
+     *     Content-Type, который присылает клиент.
+     */
+    post: operations["upload_material_api_v1_materials_upload_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/materials/{material_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Material */
+    get: operations["get_material_api_v1_materials__material_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Material */
+    delete: operations["delete_material_api_v1_materials__material_id__delete"];
+    options?: never;
+    head?: never;
+    /**
+     * Update Material
+     * @description Переименовать. Материал встаёт в очередь на переиндексацию.
+     */
+    patch: operations["update_material_api_v1_materials__material_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/materials/{material_id}/ingest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Ingest Material
+     * @description Переиндексировать: 202 сразу, работа — в воркере.
+     *
+     *     Прогресс — по статусу в GET /materials/{id}.
+     */
+    post: operations["ingest_material_api_v1_materials__material_id__ingest_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Usage
+     * @description Пул кредитов своей компании: сколько потрачено и сколько осталось.
+     *
+     *     Только ADMIN: пул общий, решать, что делать при исчерпании (докупить
+     *     места, подождать месяц), — администратору компании. Компания — из
+     *     токена, параметра tenant_id нет.
+     */
+    get: operations["get_usage_api_v1_usage_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/users": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Users
+     * @description Люди компании: работают, заблокированы, ждут одобрения.
+     */
+    get: operations["list_users_api_v1_users_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/users/{user_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove User
+     * @description Убрать из компании. Учётка человека остаётся.
+     */
+    delete: operations["remove_user_api_v1_users__user_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update User */
+    patch: operations["update_user_api_v1_users__user_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/users/{user_id}/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Approve User
+     * @description Пустить вступившего по приглашению с одобрением.
+     */
+    post: operations["approve_user_api_v1_users__user_id__approve_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/users/{user_id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject User */
+    post: operations["reject_user_api_v1_users__user_id__reject_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-    schemas: {
-        /**
-         * AnswerDiagnosticsResponse
-         * @description Только для ADMIN: модель, версия промпта, токены — для eval (E5).
-         */
-        AnswerDiagnosticsResponse: {
-            /** Credits */
-            credits: number;
-            /**
-             * History Turns
-             * @default 0
-             */
-            history_turns: number;
-            /** Input Tokens */
-            input_tokens: number;
-            /** Model */
-            model: string | null;
-            /** Model Version */
-            model_version: string | null;
-            /** Nearest Distance */
-            nearest_distance: number | null;
-            /** Output Tokens */
-            output_tokens: number;
-            /** Prompt Version */
-            prompt_version: string;
-            /** Rerank Model */
-            rerank_model?: string | null;
-            /** Rerank Ms */
-            rerank_ms?: number | null;
-            /** Standalone Question */
-            standalone_question?: string | null;
-        };
-        /**
-         * AnswerOrigin
-         * @description Откуда взят ответ.
-         *
-         *     DOCUMENTS — из выдержек документов компании, со ссылками.
-         *     GENERAL_KNOWLEDGE — в документах ответа не нашлось, модель ответила
-         *     из общих знаний. Такой ответ всегда помечен: первой строкой текста
-         *     (GENERAL_ANSWER_PREFIX) и этим полем — фронт показывает предупреждение
-         *     по полю, не разбирая текст.
-         *     NONE — в документах ответа нет, а компания выбрала строгий режим:
-         *     честный отказ (REFUSAL_ANSWER: NOT_FOUND_ANSWER и совет уточнить) без
-         *     ответа из общих знаний.
-         * @enum {string}
-         */
-        AnswerOrigin: "documents" | "general_knowledge" | "none";
-        /** AuditEventResponse */
-        AuditEventResponse: {
-            /** Action */
-            action: string;
-            /** Actor User Id */
-            actor_user_id: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Details */
-            details: {
-                [key: string]: unknown;
-            };
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Ip */
-            ip: string | null;
-            /** Request Id */
-            request_id: string | null;
-            /** Target Id */
-            target_id: string | null;
-            /** Target Type */
-            target_type: string | null;
-        };
-        /** Body_upload_material_api_v1_materials_upload_post */
-        Body_upload_material_api_v1_materials_upload_post: {
-            /**
-             * File
-             * @description docx, doc, xlsx, pptx, pdf, txt или md
-             */
-            file: string;
-            /** Title */
-            title: string;
-        };
-        /** ChangePasswordRequest */
-        ChangePasswordRequest: {
-            /** Current Password */
-            current_password: string;
-            /** New Password */
-            new_password: string;
-        };
-        /** ConnectorCreateRequest */
-        ConnectorCreateRequest: {
-            /** Config */
-            config?: {
-                [key: string]: string;
-            };
-            /** Kind */
-            kind: string;
-            /** Modules */
-            modules: string[];
-            /** Name */
-            name: string;
-            /** Sync Interval Minutes */
-            sync_interval_minutes?: number | null;
-        };
-        /**
-         * ConnectorKindResponse
-         * @description Вид коннектора из каталога — для формы подключения на фронте.
-         *
-         *     credential_fields — что вводит админ (organization) или сотрудник
-         *     (per_user без OAuth); app_credential_fields — секреты приложения,
-         *     которые в режиме per_user задаёт админ; oauth — сотрудник
-         *     авторизуется редиректом (POST /connectors/{id}/oauth/start), а
-         *     oauth_callback_url админ вписывает в карточку приложения.
-         */
-        ConnectorKindResponse: {
-            /** App Credential Fields */
-            app_credential_fields?: components["schemas"]["FieldSpecResponse"][];
-            /**
-             * Available
-             * @default true
-             */
-            available: boolean;
-            /**
-             * Base
-             * @default true
-             */
-            base: boolean;
-            /** Config Fields */
-            config_fields: components["schemas"]["FieldSpecResponse"][];
-            /** Credential Fields */
-            credential_fields: components["schemas"]["FieldSpecResponse"][];
-            /** Extra */
-            extra?: {
-                [key: string]: string;
-            };
-            /** Kind */
-            kind: string;
-            mode: components["schemas"]["ConnectorMode"];
-            /** Modules */
-            modules: components["schemas"]["ModuleSpecResponse"][];
-            /**
-             * Oauth
-             * @default false
-             */
-            oauth: boolean;
-            /** Oauth Callback Url */
-            oauth_callback_url?: string | null;
-            /** Title */
-            title: string;
-        };
-        /**
-         * ConnectorMode
-         * @description Как коннектор получает документы и права (DECISIONS «Коннекторы»).
-         *
-         *     ORGANIZATION — админ подключает одну учётную запись на компанию,
-         *     адаптер выгружает документы и их ACL (Confluence). PER_USER — админ
-         *     ставит приложение, каждый сотрудник авторизует его сам; документ
-         *     виден сотруднику, если есть в ЕГО листинге (Битрикс24, Яндекс).
-         * @enum {string}
-         */
-        ConnectorMode: "organization" | "per_user";
-        /** ConnectorResponse */
-        ConnectorResponse: {
-            /** Config */
-            config: {
-                [key: string]: unknown;
-            };
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Credentials Set At */
-            credentials_set_at: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Kind */
-            kind: string;
-            /** Last Error Code */
-            last_error_code: string | null;
-            /** Last Sync At */
-            last_sync_at: string | null;
-            mode: components["schemas"]["ConnectorMode"];
-            /** Modules */
-            modules: string[];
-            /** Name */
-            name: string;
-            status: components["schemas"]["ConnectorStatus"];
-            /** Sync Interval Minutes */
-            sync_interval_minutes: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * ConnectorStatus
-         * @enum {string}
-         */
-        ConnectorStatus: "active" | "paused" | "error";
-        /** ConnectorTestResponse */
-        ConnectorTestResponse: {
-            /** Error Code */
-            error_code?: string | null;
-            /** Ok */
-            ok: boolean;
-        };
-        /** ConnectorUpdateRequest */
-        ConnectorUpdateRequest: {
-            /** Config */
-            config?: {
-                [key: string]: string;
-            } | null;
-            /** Modules */
-            modules?: string[] | null;
-            /** Name */
-            name?: string | null;
-            status?: components["schemas"]["ConnectorStatus"] | null;
-            /** Sync Interval Minutes */
-            sync_interval_minutes?: number | null;
-        };
-        /**
-         * CredentialsRequest
-         * @description Учётные данные — только на запись: в ответах их нет.
-         */
-        CredentialsRequest: {
-            /** Credentials */
-            credentials: {
-                [key: string]: string;
-            };
-        };
-        /**
-         * FaqAnswerResponse
-         * @description Ответ ассистента.
-         *
-         *     origin:
-         *     - documents — ответ по документам компании, sources — выдержки;
-         *     - general_knowledge — в документах ответа нет, ответ из общих
-         *       знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах
-         *       компании ответа нет. Ниже — общая информация, не из документов
-         *       компании:»), sources пуст. Фронт обязан показать это явно
-         *       (плашка), а не только текстом;
-         *     - none — в документах ответа нет, компания в строгом режиме, или
-         *       провайдер отфильтровал ответ: content начинается с
-         *       NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —
-         *       совет уточнить у руководителя или в профильном отделе; sources пуст.
-         *
-         *     answer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).
-         *     conversation_id — диалог (BH-28): прислать со следующим вопросом,
-         *     чтобы уточняющий вопрос понимался в контексте; «Новый диалог» — не
-         *     присылать. Номера [n] относятся только к sources этого ответа.
-         */
-        FaqAnswerResponse: {
-            /** Answer Given */
-            answer_given: boolean;
-            /** Answer Id */
-            answer_id: string | null;
-            /** Content */
-            content: string;
-            /** Conversation Id */
-            conversation_id?: string | null;
-            diagnostics?: components["schemas"]["AnswerDiagnosticsResponse"] | null;
-            origin: components["schemas"]["AnswerOrigin"];
-            /** Sources */
-            sources: components["schemas"]["FaqSourceResponse"][];
-        };
-        /** FaqQuestionRequest */
-        FaqQuestionRequest: {
-            /** Conversation Id */
-            conversation_id?: string | null;
-            /** Question */
-            question: string;
-        };
-        /**
-         * FaqSearchMatch
-         * @description Форма ответа согласована с клиентом eval (ml-backend-contracts, 3).
-         */
-        FaqSearchMatch: {
-            /**
-             * Chunk Id
-             * Format: uuid
-             */
-            chunk_id: string;
-            /** Content */
-            content: string;
-            /** Distance */
-            distance: number;
-            /** Fulltext Rank */
-            fulltext_rank: number | null;
-            /** Heading Path */
-            heading_path: string[];
-            /**
-             * Material Id
-             * Format: uuid
-             */
-            material_id: string;
-            /** Material Title */
-            material_title: string;
-            /** Position */
-            position: number;
-            /** Rerank Score */
-            rerank_score?: number | null;
-        };
-        /** FaqSearchRequest */
-        FaqSearchRequest: {
-            /**
-             * Limit
-             * @default 10
-             */
-            limit: number;
-            /** Question */
-            question: string;
-            /**
-             * Rerank
-             * @default false
-             */
-            rerank: boolean;
-            retriever?: components["schemas"]["Retriever"] | null;
-        };
-        /** FaqSearchResponse */
-        FaqSearchResponse: {
-            /** Matches */
-            matches: components["schemas"]["FaqSearchMatch"][];
-        };
-        /** FaqSourceResponse */
-        FaqSourceResponse: {
-            /** Content */
-            content: string;
-            /** Heading Path */
-            heading_path: string[];
-            /**
-             * Material Id
-             * Format: uuid
-             */
-            material_id: string;
-            /** Position */
-            position: number;
-            /** Source Url */
-            source_url?: string | null;
-            /** Title */
-            title: string;
-        };
-        /** FeedbackRequest */
-        FeedbackRequest: {
-            /**
-             * Value
-             * @enum {integer}
-             */
-            value: -1 | 1;
-        };
-        /** FieldSpecResponse */
-        FieldSpecResponse: {
-            /** Name */
-            name: string;
-            /** Required */
-            required: boolean;
-            /** Secret */
-            secret: boolean;
-            /** Title */
-            title: string;
-        };
-        /**
-         * GapClusterResponse
-         * @description Пробел: тема, чего не хватает, насколько это важно.
-         *
-         *     sample_questions — последние вопросы группы после mask_pii. Это текст
-         *     сотрудников: фронт выводит его как текст, не как разметку.
-         */
-        GapClusterResponse: {
-            /**
-             * First Seen
-             * Format: date-time
-             */
-            first_seen: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Last Seen
-             * Format: date-time
-             */
-            last_seen: string;
-            /** Missing */
-            missing: string;
-            /** Priority */
-            priority: number;
-            /** Question Count */
-            question_count: number;
-            /** Sample Questions */
-            sample_questions: string[];
-            status: components["schemas"]["GapStatus"];
-            /** Title */
-            title: string;
-            /** User Count */
-            user_count: number;
-        };
-        /** GapReportResponse */
-        GapReportResponse: {
-            /** Clusters */
-            clusters: components["schemas"]["GapClusterResponse"][];
-        };
-        /**
-         * GapStatus
-         * @description Что админ сделал с пробелом в отчёте (BH-22).
-         * @enum {string}
-         */
-        GapStatus: "new" | "in_progress" | "resolved" | "dismissed";
-        /** GapStatusRequest */
-        GapStatusRequest: {
-            status: components["schemas"]["GapStatus"];
-        };
-        /**
-         * GlossaryTermCreateRequest
-         * @description «ДМС» → «добровольное медицинское страхование».
-         */
-        GlossaryTermCreateRequest: {
-            /** Expansion */
-            expansion: string;
-            /** Term */
-            term: string;
-        };
-        /** GlossaryTermResponse */
-        GlossaryTermResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Expansion */
-            expansion: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Term */
-            term: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** GlossaryTermUpdateRequest */
-        GlossaryTermUpdateRequest: {
-            /** Expansion */
-            expansion?: string | null;
-            /** Term */
-            term?: string | null;
-        };
-        /**
-         * GrantStatus
-         * @description Состояние авторизации сотрудника в коннекторе per_user.
-         * @enum {string}
-         */
-        GrantStatus: "active" | "expired" | "revoked";
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /** IngestResponse */
-        IngestResponse: {
-            /**
-             * Material Id
-             * Format: uuid
-             */
-            material_id: string;
-            status: components["schemas"]["MaterialStatus"];
-        };
-        /** InviteAcceptRequest */
-        InviteAcceptRequest: {
-            /** Company Code */
-            company_code: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Full Name */
-            full_name?: string | null;
-            /** Password */
-            password: string;
-            /** Token */
-            token: string;
-        };
-        /** InviteCreateRequest */
-        InviteCreateRequest: {
-            /** Email Domain */
-            email_domain?: string | null;
-            /** Max Uses */
-            max_uses?: number | null;
-            /**
-             * Ttl Days
-             * @default 7
-             */
-            ttl_days: number;
-        };
-        /** InviteCreatedResponse */
-        InviteCreatedResponse: {
-            /** Company Code */
-            company_code: string;
-            invite: components["schemas"]["InviteResponse"];
-            /** Token */
-            token: string;
-        };
-        /** InvitePreviewResponse */
-        InvitePreviewResponse: {
-            /** Company Name */
-            company_name: string;
-            /** Email Domain */
-            email_domain: string | null;
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
-        };
-        /** InviteResponse */
-        InviteResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Email Domain */
-            email_domain: string | null;
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Max Uses */
-            max_uses: number;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "active" | "expired" | "revoked" | "used_up";
-            /** Uses */
-            uses: number;
-        };
-        /** InviteTokenRequest */
-        InviteTokenRequest: {
-            /** Company Code */
-            company_code: string;
-            /** Token */
-            token: string;
-        };
-        /**
-         * LeadFormResponse
-         * @description Что нужно форме записи: открыта ли она, политика, даты и окна.
-         */
-        LeadFormResponse: {
-            /** Enabled */
-            enabled: boolean;
-            /**
-             * First Date
-             * Format: date
-             */
-            first_date: string;
-            /**
-             * Last Date
-             * Format: date
-             */
-            last_date: string;
-            /** Policy Url */
-            policy_url: string | null;
-            /** Policy Version */
-            policy_version: string | null;
-            /** Slots */
-            slots: string[];
-            /** Timezone */
-            timezone: string;
-        };
-        /** LeadReceivedResponse */
-        LeadReceivedResponse: {
-            /**
-             * Status
-             * @default received
-             * @constant
-             */
-            status: "received";
-        };
-        /** LeadRequest */
-        LeadRequest: {
-            /** Comment */
-            comment?: string | null;
-            /** Company Name */
-            company_name: string;
-            /** Consent */
-            consent: boolean;
-            /** Contact Name */
-            contact_name: string;
-            /** Email */
-            email?: string | null;
-            /** Phone */
-            phone: string;
-            /** Policy Version */
-            policy_version: string;
-            /**
-             * Preferred Date
-             * Format: date
-             */
-            preferred_date: string;
-            /** Preferred Slot */
-            preferred_slot: string;
-            /** Seats */
-            seats: number;
-            /** @default base */
-            tariff: components["schemas"]["Tariff"];
-            /**
-             * Website
-             * @default
-             */
-            website: string;
-        };
-        /** LoginRequest */
-        LoginRequest: {
-            /** Company Code */
-            company_code: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Password */
-            password: string;
-        };
-        /**
-         * MaterialCreateRequest
-         * @description Документ компании в виде текста (Markdown или простой текст).
-         *
-         *     title — человеческое название («Положение об отпусках»), а не имя
-         *     файла: оно уходит в крошки эмбеддинга и в подписи источников.
-         */
-        MaterialCreateRequest: {
-            /** Content */
-            content: string;
-            /** Title */
-            title: string;
-        };
-        /**
-         * MaterialResponse
-         * @description Материал без содержимого: клиенту нужен статус, а не текст.
-         */
-        MaterialResponse: {
-            /** Connector Id */
-            connector_id?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Indexed At */
-            indexed_at: string | null;
-            /** Source Filename */
-            source_filename: string | null;
-            /** Source Format */
-            source_format: string | null;
-            /** Source Size */
-            source_size: number | null;
-            /** Source Url */
-            source_url?: string | null;
-            status: components["schemas"]["MaterialStatus"];
-            /** Status Error */
-            status_error: string | null;
-            /** Synced At */
-            synced_at?: string | null;
-            /** Title */
-            title: string;
-            /**
-             * Visibility
-             * @default tenant
-             */
-            visibility: string;
-        };
-        /**
-         * MaterialStatus
-         * @description Где материал на пути к поиску.
-         *
-         *     PENDING — поставлен в очередь, PROCESSING — воркер нарезает и считает
-         *     эмбеддинги, READY — чанки на месте, FAILED — не получилось (причина —
-         *     кодом в status_error, подробности только в логе).
-         * @enum {string}
-         */
-        MaterialStatus: "pending" | "processing" | "ready" | "failed";
-        /** MaterialUpdateRequest */
-        MaterialUpdateRequest: {
-            /** Title */
-            title: string;
-        };
-        /** MeResponse */
-        MeResponse: {
-            /** Company Code */
-            company_code: string;
-            /** Company Name */
-            company_name: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Full Name */
-            full_name: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Last Login At */
-            last_login_at: string | null;
-            /** Must Change Password */
-            must_change_password: boolean;
-            role: components["schemas"]["UserRole"];
-            /**
-             * Tenant Id
-             * Format: uuid
-             */
-            tenant_id: string;
-        };
-        /** ModuleSpecResponse */
-        ModuleSpecResponse: {
-            /** Name */
-            name: string;
-            /** Title */
-            title: string;
-        };
-        /**
-         * MyConnectorResponse
-         * @description Коннектор режима per_user глазами сотрудника: подключён ли он сам.
-         */
-        MyConnectorResponse: {
-            /** Grant Error Code */
-            grant_error_code: string | null;
-            grant_status: components["schemas"]["GrantStatus"] | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Kind */
-            kind: string;
-            /** Name */
-            name: string;
-            /**
-             * Oauth
-             * @default false
-             */
-            oauth: boolean;
-        };
-        /**
-         * OAuthCallbackResponse
-         * @description Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.
-         */
-        OAuthCallbackResponse: {
-            /** Connector Id */
-            connector_id: string | null;
-            /** Error Code */
-            error_code?: string | null;
-            /** Ok */
-            ok: boolean;
-        };
-        /**
-         * OAuthStartResponse
-         * @description Куда отправить браузер сотрудника. state внутри адреса подписан
-         *     и привязан к сотруднику и подключению.
-         */
-        OAuthStartResponse: {
-            /** Authorize Url */
-            authorize_url: string;
-        };
-        /** PasswordResetResponse */
-        PasswordResetResponse: {
-            /** Temporary Password */
-            temporary_password: string;
-        };
-        /**
-         * Retriever
-         * @description Как искать выдержки (M1, BH-12).
-         *
-         *     VECTOR — только векторный поиск, порог на каждой выдержке.
-         *     HYBRID — вектор + полнотекст, слияние RRF; порог — на лучшем
-         *     векторном кандидате (скор RRF зависит только от рангов).
-         * @enum {string}
-         */
-        Retriever: "vector" | "hybrid";
-        /** SyncRequestedResponse */
-        SyncRequestedResponse: {
-            /**
-             * Connector Id
-             * Format: uuid
-             */
-            connector_id: string;
-            /** Queued */
-            queued: boolean;
-        };
-        /** SyncRunResponse */
-        SyncRunResponse: {
-            /** Error Code */
-            error_code: string | null;
-            /** Finished At */
-            finished_at: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Started At
-             * Format: date-time
-             */
-            started_at: string;
-            /** Stats */
-            stats: {
-                [key: string]: unknown;
-            };
-            /** Status */
-            status: string;
-            /** Trigger */
-            trigger: string;
-        };
-        /**
-         * Tariff
-         * @enum {string}
-         */
-        Tariff: "base" | "extended" | "enterprise";
-        /**
-         * TariffAllowanceResponse
-         * @description Тариф компании и подключения (решение 30.09, domain/tariffs.py).
-         */
-        TariffAllowanceResponse: {
-            /** Connector Limit */
-            connector_limit: number;
-            /** Connectors */
-            connectors: number;
-            /** Limited By Tariff */
-            limited_by_tariff: boolean;
-            tariff: components["schemas"]["Tariff"];
-            /** Title */
-            title: string;
-        };
-        /**
-         * TokenResponse
-         * @description Access-токен для заголовка Authorization. Refresh-токен в тело не
-         *     попадает: он уходит в httpOnly-cookie (api/v1/session_cookie.py).
-         */
-        TokenResponse: {
-            /** Access Token */
-            access_token: string;
-            /** Expires In */
-            expires_in: number;
-            /**
-             * Token Type
-             * @default bearer
-             */
-            token_type: string;
-        };
-        /**
-         * UsageResponse
-         * @description Расход пула кредитов компании за текущий месяц.
-         */
-        UsageResponse: {
-            /** Credits Per Seat */
-            credits_per_seat: number;
-            /** Exhausted */
-            exhausted: boolean;
-            /**
-             * Period End
-             * Format: date-time
-             */
-            period_end: string;
-            /**
-             * Period Start
-             * Format: date-time
-             */
-            period_start: string;
-            /** Pool */
-            pool: number;
-            /** Remaining */
-            remaining: number;
-            /** Seats */
-            seats: number;
-            /** Used */
-            used: number;
-            /** Warn At Percent */
-            warn_at_percent: number;
-            /** Warning */
-            warning: boolean;
-        };
-        /**
-         * UserCreateRequest
-         * @description Новый сотрудник. Без password система сгенерирует временный.
-         */
-        UserCreateRequest: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Full Name */
-            full_name?: string | null;
-            /** Password */
-            password?: string | null;
-            /** @default employee */
-            role: components["schemas"]["UserRole"];
-        };
-        /** UserCreatedResponse */
-        UserCreatedResponse: {
-            /** Temporary Password */
-            temporary_password: string | null;
-            user: components["schemas"]["UserResponse"];
-        };
-        /**
-         * UserResponse
-         * @description Пользователь без пароля, хеша и версии токенов.
-         */
-        UserResponse: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Full Name */
-            full_name: string | null;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Is Active */
-            is_active: boolean;
-            /** Last Login At */
-            last_login_at: string | null;
-            /** Must Change Password */
-            must_change_password: boolean;
-            role: components["schemas"]["UserRole"];
-        };
-        /**
-         * UserRole
-         * @description Роль сотрудника внутри своей компании.
-         *
-         *     ADMIN — управляет документами и пользователями компании, видит
-         *     отладку поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы.
-         *     Заводить компании (тенанты) не может ни одна роль: это делает
-         *     команда Kronto через CLI на сервере (см. corp_ed.cli).
-         * @enum {string}
-         */
-        UserRole: "admin" | "employee";
-        /** UserUpdateRequest */
-        UserUpdateRequest: {
-            /** Full Name */
-            full_name?: string | null;
-            /** Is Active */
-            is_active?: boolean | null;
-            role?: components["schemas"]["UserRole"] | null;
-        };
-        /** ValidationError */
-        ValidationError: {
-            /** Context */
-            ctx?: Record<string, never>;
-            /** Input */
-            input?: unknown;
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-        };
+  schemas: {
+    /**
+     * AnswerDiagnosticsResponse
+     * @description Только для ADMIN: модель, версия промпта, токены — для eval (E5).
+     */
+    AnswerDiagnosticsResponse: {
+      /** Credits */
+      credits: number;
+      /**
+       * History Turns
+       * @default 0
+       */
+      history_turns: number;
+      /** Input Tokens */
+      input_tokens: number;
+      /** Model */
+      model: string | null;
+      /** Model Version */
+      model_version: string | null;
+      /** Nearest Distance */
+      nearest_distance: number | null;
+      /** Output Tokens */
+      output_tokens: number;
+      /** Prompt Version */
+      prompt_version: string;
+      /** Rerank Model */
+      rerank_model?: string | null;
+      /** Rerank Ms */
+      rerank_ms?: number | null;
+      /** Standalone Question */
+      standalone_question?: string | null;
     };
-    responses: never;
-    parameters: never;
-    requestBodies: never;
-    headers: never;
-    pathItems: never;
+    /**
+     * AnswerOrigin
+     * @description Откуда взят ответ.
+     *
+     *     DOCUMENTS — из выдержек документов компании, со ссылками.
+     *     GENERAL_KNOWLEDGE — в документах ответа не нашлось, модель ответила
+     *     из общих знаний. Такой ответ всегда помечен: первой строкой текста
+     *     (GENERAL_ANSWER_PREFIX) и этим полем — фронт показывает предупреждение
+     *     по полю, не разбирая текст.
+     *     NONE — в документах ответа нет, а компания выбрала строгий режим:
+     *     честный отказ (REFUSAL_ANSWER: NOT_FOUND_ANSWER и совет уточнить) без
+     *     ответа из общих знаний.
+     * @enum {string}
+     */
+    AnswerOrigin: "documents" | "general_knowledge" | "none";
+    /** AuditEventResponse */
+    AuditEventResponse: {
+      /** Action */
+      action: string;
+      /** Actor User Id */
+      actor_user_id: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Details */
+      details: {
+        [key: string]: unknown;
+      };
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Ip */
+      ip: string | null;
+      /** Request Id */
+      request_id: string | null;
+      /** Target Id */
+      target_id: string | null;
+      /** Target Type */
+      target_type: string | null;
+    };
+    /** BackupCodesResponse */
+    BackupCodesResponse: {
+      /** Backup Codes */
+      backup_codes: string[] | null;
+    };
+    /** Body_upload_material_api_v1_materials_upload_post */
+    Body_upload_material_api_v1_materials_upload_post: {
+      /**
+       * File
+       * @description docx, doc, xlsx, pptx, pdf, txt или md
+       */
+      file: string;
+      /** Title */
+      title: string;
+    };
+    /** ChangePasswordRequest */
+    ChangePasswordRequest: {
+      /** Current Password */
+      current_password: string;
+      /** New Password */
+      new_password: string;
+    };
+    /** CompanyRequestCreate */
+    CompanyRequestCreate: {
+      /** Comment */
+      comment?: string | null;
+      /** Company Name */
+      company_name: string;
+      /** Seats */
+      seats?: number | null;
+    };
+    /** CompanyRequestResponse */
+    CompanyRequestResponse: {
+      /** Comment */
+      comment: string | null;
+      /** Company Name */
+      company_name: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Decided At */
+      decided_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Seats */
+      seats: number | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "new" | "approved" | "rejected" | "cancelled";
+    };
+    /** ConnectorCreateRequest */
+    ConnectorCreateRequest: {
+      /** Config */
+      config?: {
+        [key: string]: string;
+      };
+      /** Kind */
+      kind: string;
+      /** Modules */
+      modules: string[];
+      /** Name */
+      name: string;
+      /** Sync Interval Minutes */
+      sync_interval_minutes?: number | null;
+    };
+    /**
+     * ConnectorKindResponse
+     * @description Вид коннектора из каталога — для формы подключения на фронте.
+     *
+     *     credential_fields — что вводит админ (organization) или сотрудник
+     *     (per_user без OAuth); app_credential_fields — секреты приложения,
+     *     которые в режиме per_user задаёт админ; oauth — сотрудник
+     *     авторизуется редиректом (POST /connectors/{id}/oauth/start), а
+     *     oauth_callback_url админ вписывает в карточку приложения.
+     */
+    ConnectorKindResponse: {
+      /** App Credential Fields */
+      app_credential_fields?: components["schemas"]["FieldSpecResponse"][];
+      /**
+       * Available
+       * @default true
+       */
+      available: boolean;
+      /**
+       * Base
+       * @default true
+       */
+      base: boolean;
+      /** Config Fields */
+      config_fields: components["schemas"]["FieldSpecResponse"][];
+      /** Credential Fields */
+      credential_fields: components["schemas"]["FieldSpecResponse"][];
+      /** Extra */
+      extra?: {
+        [key: string]: string;
+      };
+      /** Kind */
+      kind: string;
+      mode: components["schemas"]["ConnectorMode"];
+      /** Modules */
+      modules: components["schemas"]["ModuleSpecResponse"][];
+      /**
+       * Oauth
+       * @default false
+       */
+      oauth: boolean;
+      /** Oauth Callback Url */
+      oauth_callback_url?: string | null;
+      /** Title */
+      title: string;
+    };
+    /**
+     * ConnectorMode
+     * @description Как коннектор получает документы и права (DECISIONS «Коннекторы»).
+     *
+     *     ORGANIZATION — админ подключает одну учётную запись на компанию,
+     *     адаптер выгружает документы и их ACL (Confluence). PER_USER — админ
+     *     ставит приложение, каждый сотрудник авторизует его сам; документ
+     *     виден сотруднику, если есть в ЕГО листинге (Битрикс24, Яндекс).
+     * @enum {string}
+     */
+    ConnectorMode: "organization" | "per_user";
+    /** ConnectorResponse */
+    ConnectorResponse: {
+      /** Config */
+      config: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Credentials Set At */
+      credentials_set_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Kind */
+      kind: string;
+      /** Last Error Code */
+      last_error_code: string | null;
+      /** Last Sync At */
+      last_sync_at: string | null;
+      mode: components["schemas"]["ConnectorMode"];
+      /** Modules */
+      modules: string[];
+      /** Name */
+      name: string;
+      status: components["schemas"]["ConnectorStatus"];
+      /** Sync Interval Minutes */
+      sync_interval_minutes: number;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /**
+     * ConnectorStatus
+     * @enum {string}
+     */
+    ConnectorStatus: "active" | "paused" | "error";
+    /** ConnectorTestResponse */
+    ConnectorTestResponse: {
+      /** Error Code */
+      error_code?: string | null;
+      /** Ok */
+      ok: boolean;
+    };
+    /** ConnectorUpdateRequest */
+    ConnectorUpdateRequest: {
+      /** Config */
+      config?: {
+        [key: string]: string;
+      } | null;
+      /** Modules */
+      modules?: string[] | null;
+      /** Name */
+      name?: string | null;
+      status?: components["schemas"]["ConnectorStatus"] | null;
+      /** Sync Interval Minutes */
+      sync_interval_minutes?: number | null;
+    };
+    /**
+     * CredentialsRequest
+     * @description Учётные данные — только на запись: в ответах их нет.
+     */
+    CredentialsRequest: {
+      /** Credentials */
+      credentials: {
+        [key: string]: string;
+      };
+    };
+    /** CurrentCompany */
+    CurrentCompany: {
+      /**
+       * Member Id
+       * Format: uuid
+       */
+      member_id: string;
+      /** Name */
+      name: string;
+      role: components["schemas"]["UserRole"];
+      /**
+       * Tenant Id
+       * Format: uuid
+       */
+      tenant_id: string;
+    };
+    /** EmailChangeRequest */
+    EmailChangeRequest: {
+      /**
+       * New Email
+       * Format: email
+       */
+      new_email: string;
+      /** Password */
+      password: string;
+    };
+    /** EmailRequest */
+    EmailRequest: {
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+    };
+    /**
+     * EmailSentResponse
+     * @description Ответ один и тот же, есть учётка или нет (по нему не перебрать адреса).
+     */
+    EmailSentResponse: {
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+    };
+    /**
+     * FaqAnswerResponse
+     * @description Ответ ассистента.
+     *
+     *     origin:
+     *     - documents — ответ по документам компании, sources — выдержки;
+     *     - general_knowledge — в документах ответа нет, ответ из общих
+     *       знаний: content начинается с GENERAL_ANSWER_PREFIX («В документах
+     *       компании ответа нет. Ниже — общая информация, не из документов
+     *       компании:»), sources пуст. Фронт обязан показать это явно
+     *       (плашка), а не только текстом;
+     *     - none — в документах ответа нет, компания в строгом режиме, или
+     *       провайдер отфильтровал ответ: content начинается с
+     *       NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —
+     *       совет уточнить у руководителя или в профильном отделе; sources пуст.
+     *
+     *     answer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).
+     *     conversation_id — диалог (BH-28): прислать со следующим вопросом,
+     *     чтобы уточняющий вопрос понимался в контексте; «Новый диалог» — не
+     *     присылать. Номера [n] относятся только к sources этого ответа.
+     */
+    FaqAnswerResponse: {
+      /** Answer Given */
+      answer_given: boolean;
+      /** Answer Id */
+      answer_id: string | null;
+      /** Content */
+      content: string;
+      /** Conversation Id */
+      conversation_id?: string | null;
+      diagnostics?: components["schemas"]["AnswerDiagnosticsResponse"] | null;
+      origin: components["schemas"]["AnswerOrigin"];
+      /** Sources */
+      sources: components["schemas"]["FaqSourceResponse"][];
+    };
+    /** FaqQuestionRequest */
+    FaqQuestionRequest: {
+      /** Conversation Id */
+      conversation_id?: string | null;
+      /** Question */
+      question: string;
+    };
+    /**
+     * FaqSearchMatch
+     * @description Форма ответа согласована с клиентом eval (ml-backend-contracts, 3).
+     */
+    FaqSearchMatch: {
+      /**
+       * Chunk Id
+       * Format: uuid
+       */
+      chunk_id: string;
+      /** Content */
+      content: string;
+      /** Distance */
+      distance: number;
+      /** Fulltext Rank */
+      fulltext_rank: number | null;
+      /** Heading Path */
+      heading_path: string[];
+      /**
+       * Material Id
+       * Format: uuid
+       */
+      material_id: string;
+      /** Material Title */
+      material_title: string;
+      /** Position */
+      position: number;
+      /** Rerank Score */
+      rerank_score?: number | null;
+    };
+    /** FaqSearchRequest */
+    FaqSearchRequest: {
+      /**
+       * Limit
+       * @default 10
+       */
+      limit: number;
+      /** Question */
+      question: string;
+      /**
+       * Rerank
+       * @default false
+       */
+      rerank: boolean;
+      retriever?: components["schemas"]["Retriever"] | null;
+    };
+    /** FaqSearchResponse */
+    FaqSearchResponse: {
+      /** Matches */
+      matches: components["schemas"]["FaqSearchMatch"][];
+    };
+    /** FaqSourceResponse */
+    FaqSourceResponse: {
+      /** Content */
+      content: string;
+      /** Heading Path */
+      heading_path: string[];
+      /**
+       * Material Id
+       * Format: uuid
+       */
+      material_id: string;
+      /** Position */
+      position: number;
+      /** Source Url */
+      source_url?: string | null;
+      /** Title */
+      title: string;
+    };
+    /** FeedbackRequest */
+    FeedbackRequest: {
+      /**
+       * Value
+       * @enum {integer}
+       */
+      value: -1 | 1;
+    };
+    /** FieldSpecResponse */
+    FieldSpecResponse: {
+      /** Name */
+      name: string;
+      /** Required */
+      required: boolean;
+      /** Secret */
+      secret: boolean;
+      /** Title */
+      title: string;
+    };
+    /**
+     * GapClusterResponse
+     * @description Пробел: тема, чего не хватает, насколько это важно.
+     *
+     *     sample_questions — последние вопросы группы после mask_pii. Это текст
+     *     сотрудников: фронт выводит его как текст, не как разметку.
+     */
+    GapClusterResponse: {
+      /**
+       * First Seen
+       * Format: date-time
+       */
+      first_seen: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Last Seen
+       * Format: date-time
+       */
+      last_seen: string;
+      /** Missing */
+      missing: string;
+      /** Priority */
+      priority: number;
+      /** Question Count */
+      question_count: number;
+      /** Sample Questions */
+      sample_questions: string[];
+      status: components["schemas"]["GapStatus"];
+      /** Title */
+      title: string;
+      /** User Count */
+      user_count: number;
+    };
+    /** GapReportResponse */
+    GapReportResponse: {
+      /** Clusters */
+      clusters: components["schemas"]["GapClusterResponse"][];
+    };
+    /**
+     * GapStatus
+     * @description Что админ сделал с пробелом в отчёте (BH-22).
+     * @enum {string}
+     */
+    GapStatus: "new" | "in_progress" | "resolved" | "dismissed";
+    /** GapStatusRequest */
+    GapStatusRequest: {
+      status: components["schemas"]["GapStatus"];
+    };
+    /**
+     * GlossaryTermCreateRequest
+     * @description «ДМС» → «добровольное медицинское страхование».
+     */
+    GlossaryTermCreateRequest: {
+      /** Expansion */
+      expansion: string;
+      /** Term */
+      term: string;
+    };
+    /** GlossaryTermResponse */
+    GlossaryTermResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Expansion */
+      expansion: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Term */
+      term: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** GlossaryTermUpdateRequest */
+    GlossaryTermUpdateRequest: {
+      /** Expansion */
+      expansion?: string | null;
+      /** Term */
+      term?: string | null;
+    };
+    /**
+     * GrantStatus
+     * @description Состояние авторизации сотрудника в коннекторе per_user.
+     * @enum {string}
+     */
+    GrantStatus: "active" | "expired" | "revoked";
+    /** HTTPValidationError */
+    HTTPValidationError: {
+      /** Detail */
+      detail?: components["schemas"]["ValidationError"][];
+    };
+    /** IngestResponse */
+    IngestResponse: {
+      /**
+       * Material Id
+       * Format: uuid
+       */
+      material_id: string;
+      status: components["schemas"]["MaterialStatus"];
+    };
+    /** InviteCreateRequest */
+    InviteCreateRequest: {
+      /** Email Domain */
+      email_domain?: string | null;
+      /** Max Uses */
+      max_uses?: number | null;
+      /**
+       * Requires Approval
+       * @default false
+       */
+      requires_approval: boolean;
+      /**
+       * Ttl Days
+       * @default 7
+       */
+      ttl_days: number;
+    };
+    /** InviteCreatedResponse */
+    InviteCreatedResponse: {
+      /** Code */
+      code: string;
+      invite: components["schemas"]["InviteResponse"];
+      /** Token */
+      token: string;
+    };
+    /** InvitePreviewResponse */
+    InvitePreviewResponse: {
+      /** Company Name */
+      company_name: string;
+      /** Email Domain */
+      email_domain: string | null;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Requires Approval */
+      requires_approval: boolean;
+    };
+    /** InviteResponse */
+    InviteResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Email Domain */
+      email_domain: string | null;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Max Uses */
+      max_uses: number;
+      /** Requires Approval */
+      requires_approval: boolean;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "active" | "expired" | "revoked" | "used_up";
+      /** Uses */
+      uses: number;
+    };
+    /** InviteSecretRequest */
+    InviteSecretRequest: {
+      /** Secret */
+      secret: string;
+    };
+    /** JoinResponse */
+    JoinResponse: {
+      /** Company Name */
+      company_name: string;
+      /**
+       * Outcome
+       * @enum {string}
+       */
+      outcome: "joined" | "pending" | "already_member";
+      session: components["schemas"]["TokenResponse"] | null;
+    };
+    /**
+     * LeadFormResponse
+     * @description Что нужно форме записи: открыта ли она, политика, даты и окна.
+     */
+    LeadFormResponse: {
+      /** Enabled */
+      enabled: boolean;
+      /**
+       * First Date
+       * Format: date
+       */
+      first_date: string;
+      /**
+       * Last Date
+       * Format: date
+       */
+      last_date: string;
+      /** Policy Url */
+      policy_url: string | null;
+      /** Policy Version */
+      policy_version: string | null;
+      /** Slots */
+      slots: string[];
+      /** Timezone */
+      timezone: string;
+    };
+    /** LeadReceivedResponse */
+    LeadReceivedResponse: {
+      /**
+       * Status
+       * @default received
+       * @constant
+       */
+      status: "received";
+    };
+    /** LeadRequest */
+    LeadRequest: {
+      /** Comment */
+      comment?: string | null;
+      /** Company Name */
+      company_name: string;
+      /** Consent */
+      consent: boolean;
+      /** Contact Name */
+      contact_name: string;
+      /** Email */
+      email?: string | null;
+      /** Phone */
+      phone: string;
+      /** Policy Version */
+      policy_version: string;
+      /**
+       * Preferred Date
+       * Format: date
+       */
+      preferred_date: string;
+      /** Preferred Slot */
+      preferred_slot: string;
+      /** Seats */
+      seats: number;
+      /** @default base */
+      tariff: components["schemas"]["Tariff"];
+      /**
+       * Website
+       * @default
+       */
+      website: string;
+    };
+    /** LeaveCompanyRequest */
+    LeaveCompanyRequest: {
+      /**
+       * Tenant Id
+       * Format: uuid
+       */
+      tenant_id: string;
+    };
+    /** LoginRequest */
+    LoginRequest: {
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+      /** Password */
+      password: string;
+      /**
+       * Remember
+       * @default true
+       */
+      remember: boolean;
+    };
+    /**
+     * LoginResponse
+     * @description Вход: сразу сессия (доверенное устройство) или второй фактор.
+     */
+    LoginResponse: {
+      /** Access Token */
+      access_token?: string | null;
+      /** Expires In */
+      expires_in?: number | null;
+      mfa?: components["schemas"]["MfaChallenge"] | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "ok" | "mfa_required";
+      /**
+       * Token Type
+       * @default bearer
+       */
+      token_type: string;
+    };
+    /**
+     * MaterialCreateRequest
+     * @description Документ компании в виде текста (Markdown или простой текст).
+     *
+     *     title — человеческое название («Положение об отпусках»), а не имя
+     *     файла: оно уходит в крошки эмбеддинга и в подписи источников.
+     */
+    MaterialCreateRequest: {
+      /** Content */
+      content: string;
+      /** Title */
+      title: string;
+    };
+    /**
+     * MaterialResponse
+     * @description Материал без содержимого: клиенту нужен статус, а не текст.
+     */
+    MaterialResponse: {
+      /** Connector Id */
+      connector_id?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Indexed At */
+      indexed_at: string | null;
+      /** Source Filename */
+      source_filename: string | null;
+      /** Source Format */
+      source_format: string | null;
+      /** Source Size */
+      source_size: number | null;
+      /** Source Url */
+      source_url?: string | null;
+      status: components["schemas"]["MaterialStatus"];
+      /** Status Error */
+      status_error: string | null;
+      /** Synced At */
+      synced_at?: string | null;
+      /** Title */
+      title: string;
+      /**
+       * Visibility
+       * @default tenant
+       */
+      visibility: string;
+    };
+    /**
+     * MaterialStatus
+     * @description Где материал на пути к поиску.
+     *
+     *     PENDING — поставлен в очередь, PROCESSING — воркер нарезает и считает
+     *     эмбеддинги, READY — чанки на месте, FAILED — не получилось (причина —
+     *     кодом в status_error, подробности только в логе).
+     * @enum {string}
+     */
+    MaterialStatus: "pending" | "processing" | "ready" | "failed";
+    /** MaterialUpdateRequest */
+    MaterialUpdateRequest: {
+      /** Title */
+      title: string;
+    };
+    /** MeResponse */
+    MeResponse: {
+      /** Companies */
+      companies: components["schemas"]["MembershipItem"][];
+      company: components["schemas"]["CurrentCompany"] | null;
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+      /** First Name */
+      first_name: string | null;
+      /** Full Name */
+      full_name: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Last Login At */
+      last_login_at: string | null;
+      /** Last Name */
+      last_name: string | null;
+      mfa: components["schemas"]["MfaState"];
+      /** Must Change Password */
+      must_change_password: boolean;
+    };
+    /**
+     * MemberStatus
+     * @description Состояние членства в компании.
+     *
+     *     ACTIVE — работает и занимает место; BLOCKED — заблокирован админом,
+     *     место не занимает; PENDING — вступил по приглашению с одобрением и
+     *     ждёт админа; LEFT — ушёл сам или убран админом: учётка жива, доступа
+     *     к компании нет, вернуться можно по новому приглашению.
+     * @enum {string}
+     */
+    MemberStatus: "active" | "blocked" | "pending" | "left";
+    /** MembershipItem */
+    MembershipItem: {
+      /** Company Name */
+      company_name: string;
+      role: components["schemas"]["UserRole"];
+      status: components["schemas"]["MemberStatus"];
+      /**
+       * Tenant Id
+       * Format: uuid
+       */
+      tenant_id: string;
+    };
+    /** MfaChallenge */
+    MfaChallenge: {
+      /** Email Hint */
+      email_hint: string | null;
+      /** Methods */
+      methods: ("email" | "totp" | "passkey" | "backup")[];
+      /** Token */
+      token: string;
+    };
+    /** MfaState */
+    MfaState: {
+      /** Strong */
+      strong: boolean;
+      /** Strong Required */
+      strong_required: boolean;
+    };
+    /** MfaTokenRequest */
+    MfaTokenRequest: {
+      /** Token */
+      token: string;
+    };
+    /** MfaVerifyRequest */
+    MfaVerifyRequest: {
+      /** Code */
+      code?: string | null;
+      /** Credential */
+      credential?: {
+        [key: string]: unknown;
+      } | null;
+      /**
+       * Method
+       * @enum {string}
+       */
+      method: "email" | "totp" | "passkey" | "backup";
+      /** Token */
+      token: string;
+    };
+    /** ModuleSpecResponse */
+    ModuleSpecResponse: {
+      /** Name */
+      name: string;
+      /** Title */
+      title: string;
+    };
+    /**
+     * MyConnectorResponse
+     * @description Коннектор режима per_user глазами сотрудника: подключён ли он сам.
+     */
+    MyConnectorResponse: {
+      /** Grant Error Code */
+      grant_error_code: string | null;
+      grant_status: components["schemas"]["GrantStatus"] | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Kind */
+      kind: string;
+      /** Name */
+      name: string;
+      /**
+       * Oauth
+       * @default false
+       */
+      oauth: boolean;
+    };
+    /** NameUpdateRequest */
+    NameUpdateRequest: {
+      /** First Name */
+      first_name: string;
+      /** Last Name */
+      last_name: string;
+    };
+    /**
+     * OAuthCallbackResponse
+     * @description Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.
+     */
+    OAuthCallbackResponse: {
+      /** Connector Id */
+      connector_id: string | null;
+      /** Error Code */
+      error_code?: string | null;
+      /** Ok */
+      ok: boolean;
+    };
+    /**
+     * OAuthStartResponse
+     * @description Куда отправить браузер сотрудника. state внутри адреса подписан
+     *     и привязан к сотруднику и подключению.
+     */
+    OAuthStartResponse: {
+      /** Authorize Url */
+      authorize_url: string;
+    };
+    /** PasskeyCreatedResponse */
+    PasskeyCreatedResponse: {
+      /** Backup Codes */
+      backup_codes: string[] | null;
+      passkey: components["schemas"]["PasskeyResponse"];
+    };
+    /** PasskeyOptionsResponse */
+    PasskeyOptionsResponse: {
+      /** Options */
+      options: {
+        [key: string]: unknown;
+      };
+    };
+    /** PasskeyRegisterRequest */
+    PasskeyRegisterRequest: {
+      /** Credential */
+      credential: {
+        [key: string]: unknown;
+      };
+      /**
+       * Name
+       * @default Ключ доступа
+       */
+      name: string;
+      /** Setup Token */
+      setup_token: string;
+    };
+    /** PasskeyResponse */
+    PasskeyResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Last Used At */
+      last_used_at: string | null;
+      /** Name */
+      name: string;
+    };
+    /** PasskeySetupResponse */
+    PasskeySetupResponse: {
+      /** Options */
+      options: {
+        [key: string]: unknown;
+      };
+      /** Setup Token */
+      setup_token: string;
+    };
+    /** PasswordConfirmRequest */
+    PasswordConfirmRequest: {
+      /** Password */
+      password: string;
+    };
+    /** RegisterRequest */
+    RegisterRequest: {
+      /**
+       * Consent
+       * @constant
+       */
+      consent: true;
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+      /** First Name */
+      first_name: string;
+      /** Invite */
+      invite?: string | null;
+      /** Last Name */
+      last_name: string;
+      /** Password */
+      password: string;
+    };
+    /** ResetPasswordRequest */
+    ResetPasswordRequest: {
+      /** New Password */
+      new_password: string;
+      /** Second Factor */
+      second_factor?: string | null;
+      /** Token */
+      token: string;
+    };
+    /**
+     * Retriever
+     * @description Как искать выдержки (M1, BH-12).
+     *
+     *     VECTOR — только векторный поиск, порог на каждой выдержке.
+     *     HYBRID — вектор + полнотекст, слияние RRF; порог — на лучшем
+     *     векторном кандидате (скор RRF зависит только от рангов).
+     * @enum {string}
+     */
+    Retriever: "vector" | "hybrid";
+    /** SecondFactorConfirmRequest */
+    SecondFactorConfirmRequest: {
+      /** Code */
+      code: string;
+      /** Password */
+      password: string;
+    };
+    /** SecurityResponse */
+    SecurityResponse: {
+      /** Backup Codes Left */
+      backup_codes_left: number;
+      /** Passkeys */
+      passkeys: components["schemas"]["PasskeyResponse"][];
+      /** Strong Required */
+      strong_required: boolean;
+      /** Totp Enabled */
+      totp_enabled: boolean;
+    };
+    /** SessionResponse */
+    SessionResponse: {
+      /** Current */
+      current: boolean;
+      /** Device */
+      device: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Ip */
+      ip: string | null;
+      /**
+       * Last Active At
+       * Format: date-time
+       */
+      last_active_at: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+    };
+    /** SwitchCompanyRequest */
+    SwitchCompanyRequest: {
+      /** Tenant Id */
+      tenant_id: string | null;
+    };
+    /** SyncRequestedResponse */
+    SyncRequestedResponse: {
+      /**
+       * Connector Id
+       * Format: uuid
+       */
+      connector_id: string;
+      /** Queued */
+      queued: boolean;
+    };
+    /** SyncRunResponse */
+    SyncRunResponse: {
+      /** Error Code */
+      error_code: string | null;
+      /** Finished At */
+      finished_at: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /** Stats */
+      stats: {
+        [key: string]: unknown;
+      };
+      /** Status */
+      status: string;
+      /** Trigger */
+      trigger: string;
+    };
+    /**
+     * Tariff
+     * @enum {string}
+     */
+    Tariff: "base" | "extended" | "enterprise";
+    /**
+     * TariffAllowanceResponse
+     * @description Тариф компании и подключения (решение 30.09, domain/tariffs.py).
+     */
+    TariffAllowanceResponse: {
+      /** Connector Limit */
+      connector_limit: number;
+      /** Connectors */
+      connectors: number;
+      /** Limited By Tariff */
+      limited_by_tariff: boolean;
+      tariff: components["schemas"]["Tariff"];
+      /** Title */
+      title: string;
+    };
+    /** TokenRequest */
+    TokenRequest: {
+      /** Token */
+      token: string;
+    };
+    /**
+     * TokenResponse
+     * @description Access-токен для заголовка Authorization. Refresh-токен в тело не
+     *     попадает: он уходит в httpOnly-cookie (api/v1/session_cookie.py).
+     */
+    TokenResponse: {
+      /** Access Token */
+      access_token: string;
+      /** Expires In */
+      expires_in: number;
+      /**
+       * Token Type
+       * @default bearer
+       */
+      token_type: string;
+    };
+    /** TotpEnableRequest */
+    TotpEnableRequest: {
+      /** Code */
+      code: string;
+      /** Setup Token */
+      setup_token: string;
+    };
+    /** TotpSetupResponse */
+    TotpSetupResponse: {
+      /** Otpauth Uri */
+      otpauth_uri: string;
+      /** Secret */
+      secret: string;
+      /** Setup Token */
+      setup_token: string;
+    };
+    /**
+     * UsageResponse
+     * @description Расход пула кредитов компании за текущий месяц.
+     */
+    UsageResponse: {
+      /** Credits Per Seat */
+      credits_per_seat: number;
+      /** Exhausted */
+      exhausted: boolean;
+      /**
+       * Period End
+       * Format: date-time
+       */
+      period_end: string;
+      /**
+       * Period Start
+       * Format: date-time
+       */
+      period_start: string;
+      /** Pool */
+      pool: number;
+      /** Remaining */
+      remaining: number;
+      /** Seats */
+      seats: number;
+      /** Used */
+      used: number;
+      /** Warn At Percent */
+      warn_at_percent: number;
+      /** Warning */
+      warning: boolean;
+    };
+    /**
+     * UserResponse
+     * @description Человек в компании: членство и имя с почтой из учётки.
+     */
+    UserResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Email */
+      email: string | null;
+      /** Full Name */
+      full_name: string | null;
+      /**
+       * Id
+       * Format: uuid
+       */
+      id: string;
+      /** Last Login At */
+      last_login_at: string | null;
+      role: components["schemas"]["UserRole"];
+      status: components["schemas"]["MemberStatus"];
+    };
+    /**
+     * UserRole
+     * @description Роль человека в компании — свойство членства, а не учётки (ТЗ §2):
+     *     в одной компании он администратор, в другой — сотрудник.
+     *
+     *     ADMIN — управляет документами и людьми компании, видит отладку
+     *     поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы. Отдельных
+     *     «владельца» и «редактора» нет (решение владельца продукта 03.10).
+     *     Заводить компании не может ни одна роль: заявку одобряет команда
+     *     Kronto (corp_ed.cli, позже — наша панель).
+     * @enum {string}
+     */
+    UserRole: "admin" | "employee";
+    /** UserUpdateRequest */
+    UserUpdateRequest: {
+      /** Blocked */
+      blocked?: boolean | null;
+      role?: components["schemas"]["UserRole"] | null;
+    };
+    /** ValidationError */
+    ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
+      /** Location */
+      loc: (string | number)[];
+      /** Message */
+      msg: string;
+      /** Error Type */
+      type: string;
+    };
+    /** VerifyCodeRequest */
+    VerifyCodeRequest: {
+      /** Code */
+      code: string;
+      /**
+       * Email
+       * Format: email
+       */
+      email: string;
+    };
+  };
+  responses: never;
+  parameters: never;
+  requestBodies: never;
+  headers: never;
+  pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    read_root__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-        };
+  read_root__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    list_audit_events_api_v1_audit_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                before?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AuditEventResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": {
+            [key: string]: string;
+          };
         };
+      };
     };
-    change_password_api_v1_auth_change_password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChangePasswordRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  update_name_api_v1_account_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    login_api_v1_auth_login_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoginRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NameUpdateRequest"];
+      };
     };
-    logout_api_v1_auth_logout_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    logout_everywhere_api_v1_auth_logout_all_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
+  };
+  regenerate_backup_codes_api_v1_account_backup_codes_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    read_me_api_v1_auth_me_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MeResponse"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordConfirmRequest"];
+      };
     };
-    refresh_api_v1_auth_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["BackupCodesResponse"];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    list_connectors_api_v1_connectors_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorResponse"][];
-                };
-            };
-        };
+  };
+  list_company_requests_api_v1_account_company_requests_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    create_connector_api_v1_connectors_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnectorCreateRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["CompanyRequestResponse"][];
         };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    list_kinds_api_v1_connectors_kinds_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorKindResponse"][];
-                };
-            };
-        };
+  };
+  create_company_request_api_v1_account_company_requests_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    my_connectors_api_v1_connectors_mine_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MyConnectorResponse"][];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CompanyRequestCreate"];
+      };
     };
-    oauth_callback_api_v1_connectors_oauth_callback_get: {
-        parameters: {
-            query: {
-                state: string;
-                code?: string | null;
-                error?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OAuthCallbackResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["CompanyRequestResponse"];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    tariff_allowance_api_v1_connectors_tariff_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TariffAllowanceResponse"];
-                };
-            };
-        };
+  };
+  cancel_company_request_api_v1_account_company_requests__request_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        request_id: string;
+      };
+      cookie?: never;
     };
-    get_connector_api_v1_connectors__connector_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["CompanyRequestResponse"];
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    delete_connector_api_v1_connectors__connector_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  delete_account_api_v1_account_delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    update_connector_api_v1_connectors__connector_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConnectorUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordConfirmRequest"];
+      };
     };
-    set_credentials_api_v1_connectors__connector_id__credentials_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CredentialsRequest"];
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
+      };
     };
-    set_my_credentials_api_v1_connectors__connector_id__mine_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CredentialsRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  request_email_change_api_v1_account_email_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    revoke_my_credentials_api_v1_connectors__connector_id__mine_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EmailChangeRequest"];
+      };
     };
-    oauth_start_api_v1_connectors__connector_id__oauth_start_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OAuthStartResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": unknown;
         };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    list_runs_api_v1_connectors__connector_id__runs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncRunResponse"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  confirm_email_change_api_v1_account_email_confirm_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    sync_now_api_v1_connectors__connector_id__sync_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncRequestedResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TokenRequest"];
+      };
     };
-    test_connector_api_v1_connectors__connector_id__test_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                connector_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConnectorTestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    rate_answer_api_v1_faq_answers__answer_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                answer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FeedbackRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  revert_email_change_api_v1_account_email_revert_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    ask_faq_api_v1_faq_ask_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FaqQuestionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FaqAnswerResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TokenRequest"];
+      };
     };
-    search_faq_api_v1_faq_search_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FaqSearchRequest"];
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FaqSearchResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
         };
+      };
     };
-    list_gaps_api_v1_gaps_get: {
-        parameters: {
-            query?: {
-                status?: components["schemas"]["GapStatus"] | null;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GapReportResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  leave_company_api_v1_account_leave_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    set_gap_status_api_v1_gaps__cluster_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                cluster_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GapStatusRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GapClusterResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LeaveCompanyRequest"];
+      };
     };
-    list_terms_api_v1_glossary_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GlossaryTermResponse"][];
-                };
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    create_term_api_v1_glossary_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GlossaryTermCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GlossaryTermResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  register_passkey_api_v1_account_passkeys_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    delete_term_api_v1_glossary__term_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                term_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasskeyRegisterRequest"];
+      };
     };
-    update_term_api_v1_glossary__term_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                term_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GlossaryTermUpdateRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["PasskeyCreatedResponse"];
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GlossaryTermResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    list_invites_api_v1_invites_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InviteResponse"][];
-                };
-            };
-        };
+  };
+  passkey_options_api_v1_account_passkeys_options_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    create_invite_api_v1_invites_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InviteCreateRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["PasskeySetupResponse"];
         };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InviteCreatedResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    accept_invite_api_v1_invites_accept_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InviteAcceptRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  delete_passkey_api_v1_account_passkeys__passkey_id__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        passkey_id: string;
+      };
+      cookie?: never;
     };
-    preview_invite_api_v1_invites_preview_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["InviteTokenRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["InvitePreviewResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordConfirmRequest"];
+      };
     };
-    revoke_invite_api_v1_invites__invite_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                invite_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    submit_lead_api_v1_leads_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LeadRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeadReceivedResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  read_security_api_v1_account_security_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    lead_form_api_v1_leads_form_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LeadFormResponse"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["SecurityResponse"];
         };
+      };
     };
-    list_materials_api_v1_materials_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MaterialResponse"][];
-                };
-            };
-        };
+  };
+  list_sessions_api_v1_account_sessions_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    create_material_api_v1_materials_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MaterialCreateRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["SessionResponse"][];
         };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MaterialResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+      };
     };
-    upload_material_api_v1_materials_upload_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_upload_material_api_v1_materials_upload_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MaterialResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  end_session_api_v1_account_sessions__session_id__end_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
     };
-    get_material_api_v1_materials__material_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                material_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MaterialResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    delete_material_api_v1_materials__material_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                material_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  disable_totp_api_v1_account_totp_disable_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    update_material_api_v1_materials__material_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                material_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MaterialUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MaterialResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SecondFactorConfirmRequest"];
+      };
     };
-    ingest_material_api_v1_materials__material_id__ingest_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                material_id: string;
-            };
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["IngestResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    get_usage_api_v1_usage_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UsageResponse"];
-                };
-            };
-        };
+  };
+  enable_totp_api_v1_account_totp_enable_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    list_users_api_v1_users_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserResponse"][];
-                };
-            };
-        };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TotpEnableRequest"];
+      };
     };
-    create_user_api_v1_users_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserCreateRequest"];
-            };
+        content: {
+          "application/json": components["schemas"]["BackupCodesResponse"];
         };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserCreatedResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
         };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
     };
-    update_user_api_v1_users__user_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
+  };
+  start_totp_setup_api_v1_account_totp_setup_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
     };
-    reset_password_api_v1_users__user_id__reset_password_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                user_id: string;
-            };
-            cookie?: never;
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
         };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PasswordResetResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
+        content: {
+          "application/json": components["schemas"]["TotpSetupResponse"];
         };
+      };
     };
+  };
+  list_audit_events_api_v1_audit_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        before?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuditEventResponse"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  change_password_api_v1_auth_change_password_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChangePasswordRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  forgot_password_api_v1_auth_forgot_password_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EmailRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EmailSentResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  login_api_v1_auth_login_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LoginRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LoginResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  logout_api_v1_auth_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  logout_everywhere_api_v1_auth_logout_all_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  read_me_api_v1_auth_me_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MeResponse"];
+        };
+      };
+    };
+  };
+  passkey_login_options_api_v1_auth_mfa_passkey_options_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MfaTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PasskeyOptionsResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  resend_login_code_api_v1_auth_mfa_resend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MfaTokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  verify_second_factor_api_v1_auth_mfa_verify_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MfaVerifyRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  refresh_api_v1_auth_refresh_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+    };
+  };
+  register_api_v1_auth_register_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RegisterRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EmailSentResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  reset_password_api_v1_auth_reset_password_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ResetPasswordRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  switch_company_api_v1_auth_switch_company_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SwitchCompanyRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  verify_email_code_api_v1_auth_verify_email_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["VerifyCodeRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  verify_email_link_api_v1_auth_verify_email_link_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TokenRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TokenResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  resend_verification_api_v1_auth_verify_email_resend_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EmailRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EmailSentResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_connectors_api_v1_connectors_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorResponse"][];
+        };
+      };
+    };
+  };
+  create_connector_api_v1_connectors_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectorCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_kinds_api_v1_connectors_kinds_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorKindResponse"][];
+        };
+      };
+    };
+  };
+  my_connectors_api_v1_connectors_mine_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MyConnectorResponse"][];
+        };
+      };
+    };
+  };
+  oauth_callback_api_v1_connectors_oauth_callback_get: {
+    parameters: {
+      query: {
+        state: string;
+        code?: string | null;
+        error?: string | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OAuthCallbackResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  tariff_allowance_api_v1_connectors_tariff_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TariffAllowanceResponse"];
+        };
+      };
+    };
+  };
+  get_connector_api_v1_connectors__connector_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_connector_api_v1_connectors__connector_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_connector_api_v1_connectors__connector_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectorUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  set_credentials_api_v1_connectors__connector_id__credentials_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CredentialsRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  set_my_credentials_api_v1_connectors__connector_id__mine_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CredentialsRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  revoke_my_credentials_api_v1_connectors__connector_id__mine_delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  oauth_start_api_v1_connectors__connector_id__oauth_start_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OAuthStartResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_runs_api_v1_connectors__connector_id__runs_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SyncRunResponse"][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  sync_now_api_v1_connectors__connector_id__sync_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SyncRequestedResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  test_connector_api_v1_connectors__connector_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        connector_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorTestResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  rate_answer_api_v1_faq_answers__answer_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        answer_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FeedbackRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  ask_faq_api_v1_faq_ask_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FaqQuestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FaqAnswerResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  search_faq_api_v1_faq_search_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FaqSearchRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FaqSearchResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_gaps_api_v1_gaps_get: {
+    parameters: {
+      query?: {
+        status?: components["schemas"]["GapStatus"] | null;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GapReportResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  set_gap_status_api_v1_gaps__cluster_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        cluster_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GapStatusRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GapClusterResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_terms_api_v1_glossary_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GlossaryTermResponse"][];
+        };
+      };
+    };
+  };
+  create_term_api_v1_glossary_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GlossaryTermCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GlossaryTermResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_term_api_v1_glossary__term_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        term_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_term_api_v1_glossary__term_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        term_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["GlossaryTermUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["GlossaryTermResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  list_invites_api_v1_invites_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InviteResponse"][];
+        };
+      };
+    };
+  };
+  create_invite_api_v1_invites_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InviteCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InviteCreatedResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  accept_invite_api_v1_invites_accept_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InviteSecretRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["JoinResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  preview_invite_api_v1_invites_preview_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InviteSecretRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InvitePreviewResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  revoke_invite_api_v1_invites__invite_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        invite_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  submit_lead_api_v1_leads_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LeadRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LeadReceivedResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  lead_form_api_v1_leads_form_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LeadFormResponse"];
+        };
+      };
+    };
+  };
+  list_materials_api_v1_materials_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaterialResponse"][];
+        };
+      };
+    };
+  };
+  create_material_api_v1_materials_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MaterialCreateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaterialResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  upload_material_api_v1_materials_upload_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": components["schemas"]["Body_upload_material_api_v1_materials_upload_post"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaterialResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_material_api_v1_materials__material_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        material_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaterialResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  delete_material_api_v1_materials__material_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        material_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_material_api_v1_materials__material_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        material_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MaterialUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MaterialResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  ingest_material_api_v1_materials__material_id__ingest_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        material_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["IngestResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  get_usage_api_v1_usage_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UsageResponse"];
+        };
+      };
+    };
+  };
+  list_users_api_v1_users_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UserResponse"][];
+        };
+      };
+    };
+  };
+  remove_user_api_v1_users__user_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  update_user_api_v1_users__user_id__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UserUpdateRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UserResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  approve_user_api_v1_users__user_id__approve_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UserResponse"];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  reject_user_api_v1_users__user_id__reject_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
 }
