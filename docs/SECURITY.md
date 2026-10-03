@@ -273,12 +273,14 @@ RLS не видит строк.
 - CI (`.github/workflows/`): ruff с правилами bandit, mypy strict,
   1 500+ тестов с Redis и Postgres, порог покрытия 85 %, миграции на
   пустой базе под владельцем без суперпользователя, проверка роли
-  приложения, сборка и запуск образа не под root; отдельно и
-  еженедельно — `pip-audit` по закреплённым боевым зависимостям,
-  `npm audit --omit=dev` фронтенда, gitleaks, CodeQL
+  приложения, сборка и запуск образа не под root; отдельно —
+  `pip-audit` по закреплённым боевым зависимостям,
+  `npm audit --omit=dev` фронтенда, gitleaks (на каждом PR, в том числе
+  с одной документацией), а на `main` и еженедельно — ещё CodeQL
   (`security-extended`, Python и JavaScript/TypeScript отдельными
   заданиями), Trivy по образам API и `web` и по конфигурации, SBOM
-  CycloneDX. Dependabot для Python, actions и Docker. С 30.09 задания
+  CycloneDX. Коммиты только с документацией CI не запускают (экономия
+  минут Actions, 03.10). Dependabot для Python, actions и Docker. С 30.09 задания
   CodeQL падают на каждом коммите: репозиторий стал приватным, а
   сканированию кода в приватном репозитории нужен платный GitHub Code
   Security; решение владельца ждёт (оплатить, заменить на Semgrep или

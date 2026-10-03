@@ -1,9 +1,20 @@
 name: CI
 
 on:
+  # push — только main: ветку PR проверяет pull_request. С push на
+  # любую ветку каждый пуш в PR запускал прогон дважды, а минуты Actions
+  # у приватного репозитория ограничены (02.10 выкатка #56 не получила исполнителя).
+  #
+  # Только документация (docs/, *.md) — без прогона: ни код, ни тесты её
+  # не читают. Слияние одной документации в main не запускает и выкатку.
+  # Для pull_request фильтр смотрит на весь PR; коммит с одной
+  # документацией в PR с кодом пропускает задание changes.
   push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   pull_request:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
 
 # Токен workflow — только чтение. Ни одному шагу здесь не нужно писать в
 # репозиторий; утёкший токен с правом записи — это подмена кода.
@@ -19,10 +30,63 @@ env:
   UV_VERSION: "0.8.17"
   NODE_VERSION: "22"
 
+# Исполнитель — переменная репозитория RUNS_ON: ["self-hosted","kronto"] —
+# свой runner (docs/CI-RUNNER.md), не задана — машины GitHub. На своём
+# runner задания делят одну машину и один Docker: порты сервисов на хосте
+# случайные, теги образов — с номером прогона.
 jobs:
+  # Новый коммит в PR меняет только документацию, а предыдущий коммит PR
+  # прошёл CI целиком (или сам был таким же коммитом) — остальные задания
+  # пропускаются. Прогон предыдущего коммита отменён (concurrency), упал
+  # или его нет — проверяется всё: иначе код из отменённого прогона
+  # остался бы непроверенным.
+  changes:
+    name: Code changed
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read   # прогоны CI предыдущего коммита
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          API: ${{ github.api_url }}/repos/${{ github.repository }}
+        run: |
+          code=true
+          if [ "$ACTION" = synchronize ] && [ -n "$BEFORE" ] \
+            && git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" "$AFTER")
+            echo "Изменено с $BEFORE:"
+            printf '%s\n' "$changed"
+            # here-string, не конвейер: с pipefail ранний выход grep -q
+            # (SIGPIPE у printf) читался бы как «только документация».
+            if [ -n "$changed" ] && ! grep -qvE '^docs/|\.md$' <<<"$changed"; then
+              ok=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" \
+                "$API/actions/workflows/ci.yaml/runs?head_sha=$BEFORE&event=pull_request&per_page=20" \
+                | jq '[.workflow_runs[] | select(.conclusion == "success")] | length' || echo 0)
+              if [ "$ok" -gt 0 ]; then
+                code=false
+              else
+                echo "Прогон CI для $BEFORE не прошёл целиком — проверяется всё."
+              fi
+            fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Lint, types, tests
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
 
     services:
@@ -32,8 +96,10 @@ jobs:
           POSTGRES_USER: corp_ed
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: corp_ed_test
+        # Порт хоста — случайный: 5432:5432 у второго задания на той же
+        # машине не поднимется.
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -44,7 +110,7 @@ jobs:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -77,8 +143,8 @@ jobs:
 
       - name: Run pytest with coverage threshold
         env:
-          TEST_DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:5432/corp_ed_test
-          TEST_REDIS_URL: redis://localhost:6379/15
+          TEST_DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/corp_ed_test
+          TEST_REDIS_URL: redis://localhost:${{ job.services.redis.ports['6379'] }}/15
         run: uv run pytest -q --cov --cov-report=term --cov-report=xml
 
       - name: Upload coverage report
@@ -89,8 +155,10 @@ jobs:
           retention-days: 14
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Frontend lint, types, tests, build
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
     defaults:
       run:
@@ -137,8 +205,10 @@ jobs:
         run: npm run build
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: End-to-end (browser against the API, fake LLM)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
 
     services:
@@ -149,7 +219,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: corp_ed
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -158,7 +228,7 @@ jobs:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
+          - 6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -167,10 +237,9 @@ jobs:
 
     # Режим разработки без ключей Yandex Cloud: ответ — из первой выдержки,
     # эмбеддинги — «мешок слов» (llm/fake.py). Порог расстояния для них
-    # мягче боевого (.env.example).
+    # мягче боевого (.env.example). Адреса базы, Redis, API и фронта — шаг
+    # Ports: порты на хосте у каждого задания свои.
     env:
-      DATABASE_URL: postgresql+asyncpg://corp_ed:postgres@localhost:5432/corp_ed
-      REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-only-e2e-secret-key-0123456789abcdef
       LLM_PROVIDER: fake
       EMBEDDING_DIM: "768"
@@ -186,9 +255,11 @@ jobs:
       LEADS_ENABLED: "true"
       LEADS_POLICY_URL: https://kronto.example/privacy
       LEADS_POLICY_VERSION: e2e
-      E2E_BASE_URL: http://localhost:4173
       E2E_COMPANY: e2e
       E2E_ADMIN_EMAIL: admin@kronto-e2e.ru
+      # Метрики воркера — на постоянном порту 9101; на своём runner второе
+      # задание e2e на той же машине упало бы на нём. Здесь не нужны.
+      WORKER_METRICS_PORT: "0"
 
     steps:
       - name: Checkout code
@@ -205,11 +276,34 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # Библиотеки Chromium (--with-deps) ставятся через sudo; на своём runner
+      # sudo нет — их поставил deploy/ci-runner/setup.sh, здесь только браузер.
       - name: Install dependencies
         run: |
           uv python install 3.12 && uv sync --frozen --dev
           cd frontend && npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} chromium
+
+      # Порты API и фронта — свободные, а не 8000/4173: на своём runner
+      # второе задание e2e может идти на той же машине.
+      - name: Ports
+        env:
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
+          REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
+        run: |
+          read -r api_port web_port < <(python3 -c 'import socket
+          s = [socket.socket() for _ in range(2)]
+          for x in s: x.bind(("127.0.0.1", 0))
+          print(*(x.getsockname()[1] for x in s))')
+          {
+            echo "DATABASE_URL=postgresql+asyncpg://corp_ed:postgres@localhost:$PG_PORT/corp_ed"
+            echo "REDIS_URL=redis://localhost:$REDIS_PORT/0"
+            echo "API_PORT=$api_port"
+            # Прокси /api у vite preview (frontend/vite.config.ts).
+            echo "KRONTO_BACKEND=http://127.0.0.1:$api_port"
+            echo "WEB_PORT=$web_port"
+            echo "E2E_BASE_URL=http://localhost:$web_port"
+          } >> "$GITHUB_ENV"
 
       - name: Migrate and create a company
         run: |
@@ -224,11 +318,11 @@ jobs:
 
       - name: Start API, worker and the built frontend
         run: |
-          nohup uv run uvicorn corp_ed.main:app --port 8000 > api.log 2>&1 &
+          nohup uv run uvicorn corp_ed.main:app --port "$API_PORT" > api.log 2>&1 &
           nohup uv run python -m corp_ed.worker > worker.log 2>&1 &
-          (cd frontend && npm run build && nohup npx vite preview --port 4173 --strictPort > ../web.log 2>&1 &)
-          for i in $(seq 1 60); do
-            curl -sf localhost:8000/health >/dev/null && curl -sf localhost:4173/ >/dev/null && exit 0
+          (cd frontend && npm run build && nohup npx vite preview --port "$WEB_PORT" --strictPort > ../web.log 2>&1 &)
+          for _ in $(seq 1 60); do
+            curl -sf "localhost:$API_PORT/health" >/dev/null && curl -sf "$E2E_BASE_URL/" >/dev/null && exit 0
             sleep 1
           done
           echo "::error::stand did not start"; tail -50 api.log worker.log web.log; exit 1
@@ -255,8 +349,10 @@ jobs:
           retention-days: 7
 
   migrations:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Migrations on a fresh database
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
 
     services:
@@ -267,7 +363,7 @@ jobs:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: corp_ed
         ports:
-          - 5432:5432
+          - 5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -278,11 +374,6 @@ jobs:
       PGHOST: localhost
       PGUSER: corp_ed
       PGPASSWORD: postgres
-      # Миграции идут под владельцем схемы БЕЗ суперпользователя — как в
-      # бою. Под суперпользователем FORCE RLS не действует, и миграция,
-      # которая под ним проходит, может молча не увидеть ни одной строки
-      # у настоящего владельца (docs/DECISIONS.md, ловушка RLS).
-      MIGRATIONS_DATABASE_URL: postgresql+asyncpg://corp_ed_owner:owner@localhost:5432/corp_ed_migrations
 
     steps:
       - name: Checkout code
@@ -295,6 +386,21 @@ jobs:
 
       - name: Install dependencies
         run: uv python install 3.12 && uv sync --frozen --dev
+
+      # Порт базы на хосте — случайный (см. checks): контекст job в env
+      # задания недоступен, поэтому — через GITHUB_ENV.
+      - name: Database port
+        env:
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
+        run: |
+          {
+            echo "PGPORT=$PG_PORT"
+            # Миграции идут под владельцем схемы БЕЗ суперпользователя — как в
+            # бою. Под суперпользователем FORCE RLS не действует, и миграция,
+            # которая под ним проходит, может молча не увидеть ни одной строки
+            # у настоящего владельца (docs/DECISIONS.md, ловушка RLS).
+            echo "MIGRATIONS_DATABASE_URL=postgresql+asyncpg://corp_ed_owner:owner@localhost:$PG_PORT/corp_ed_migrations"
+          } >> "$GITHUB_ENV"
 
       - name: Create a non-superuser schema owner
         run: |
@@ -333,39 +439,54 @@ jobs:
           test "$(psql -tAc "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")" = "f"
 
   image:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Docker image builds and runs unprivileged
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
+    # Тег — свой у прогона: на своём runner Docker общий, и kronto-api:ci
+    # параллельного прогона подменил бы проверяемый образ.
+    env:
+      TAG: ci-${{ github.run_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Build image
-        run: docker build -t kronto-api:ci .
+        run: docker build -t "kronto-api:$TAG" .
 
       - name: Image smoke test
         run: |
           # Не root.
-          test "$(docker run --rm kronto-api:ci id -u)" != "0"
+          test "$(docker run --rm "kronto-api:$TAG" id -u)" != "0"
           # Приложение импортируется, CLI и alembic на месте.
           docker run --rm -e SECRET_KEY=ci-only-secret-key-0123456789abcdef -e DATABASE_URL=postgresql+asyncpg://x:x@db/x \
-            kronto-api:ci python -c "import corp_ed.main, corp_ed.worker, corp_ed.cli"
-          docker run --rm kronto-api:ci python -m corp_ed.cli --help >/dev/null
-          docker run --rm kronto-api:ci alembic --help >/dev/null
+            "kronto-api:$TAG" python -c "import corp_ed.main, corp_ed.worker, corp_ed.cli"
+          docker run --rm "kronto-api:$TAG" python -m corp_ed.cli --help >/dev/null
+          docker run --rm "kronto-api:$TAG" alembic --help >/dev/null
           # Песочница парсера: rlimits ставятся в дочернем процессе.
-          docker run --rm kronto-api:ci python -c "import resource, corp_ed.ingest.extract_worker"
+          docker run --rm "kronto-api:$TAG" python -c "import resource, corp_ed.ingest.extract_worker"
 
       - name: Build web image
-        run: docker build -t kronto-web:ci frontend
+        run: docker build -t "kronto-web:$TAG" frontend
 
       - name: Web image smoke test
         run: |
-          docker run -d --name web -p 8080:8080 kronto-web:ci
-          for i in $(seq 1 20); do curl -sf localhost:8080/healthz >/dev/null && break; sleep 1; done
+          # Порт хоста — случайный, контейнер удаляется на выходе: на своём
+          # runner машина после задания остаётся.
+          web=$(docker run -d -p 127.0.0.1::8080 "kronto-web:$TAG")
+          trap 'docker rm -f "$web" >/dev/null' EXIT
+          port=$(docker port "$web" 8080/tcp | head -1)
+          base="http://localhost:${port##*:}"
+          for _ in $(seq 1 20); do curl -sf "$base/healthz" >/dev/null && break; sleep 1; done
           # Не root.
-          test "$(docker exec web id -u)" != "0"
+          test "$(docker exec "$web" id -u)" != "0"
           # Маршрут приложения отдаёт index.html, с CSP.
-          curl -sf localhost:8080/admin/users | grep -q '<div id="root">'
-          curl -sI localhost:8080/ | grep -qi "content-security-policy: default-src 'self'"
+          curl -sf "$base/admin/users" | grep -q '<div id="root">'
+          curl -sI "$base/" | grep -qi "content-security-policy: default-src 'self'"
           # Карты исходников наружу не отдаются.
-          map=$(docker exec web sh -c 'ls /usr/share/nginx/html/assets/*.map | head -1 | xargs basename')
-          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:8080/assets/$map")" = "404"
+          map=$(docker exec "$web" sh -c 'ls /usr/share/nginx/html/assets/*.map | head -1 | xargs basename')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/$map")" = "404"
+
+      - name: Remove images
+        if: always()
+        run: docker image rm -f "kronto-api:$TAG" "kronto-web:$TAG" >/dev/null 2>&1 || true

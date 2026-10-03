@@ -3,7 +3,16 @@ name: Security
 # Проверки, которые ловят проблемы без изменения кода: новые CVE в
 # зависимостях и в базовом образе. Поэтому — ещё и по расписанию.
 on:
+  # push — только main: ветку PR проверяет pull_request. С push на
+  # любую ветку каждый пуш в PR запускал прогон дважды, а минуты Actions
+  # у приватного репозитория ограничены (02.10 выкатка #56 не получила исполнителя).
+  #
+  # На PR — быстрые проверки (зависимости, секреты), в том числе для
+  # коммитов с одной документацией: ключ легко вставить в инструкцию.
+  # CodeQL и Trivy (4 и 2 минуты) — на main и по расписанию.
   push:
+    branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]   # документацию уже проверил PR
   pull_request:
     branches: [main]
   schedule:
@@ -20,10 +29,11 @@ env:
   UV_VERSION: "0.8.17"
   NODE_VERSION: "22"
 
+# Исполнитель — переменная репозитория RUNS_ON (docs/CI-RUNNER.md, как в ci.yaml).
 jobs:
   dependencies:
     name: Known vulnerabilities in dependencies (pip-audit)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -40,7 +50,7 @@ jobs:
 
   frontend-dependencies:
     name: Known vulnerabilities in frontend dependencies (npm audit)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
     defaults:
       run:
@@ -58,7 +68,7 @@ jobs:
 
   secrets:
     name: Secrets in history (gitleaks)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -75,7 +85,8 @@ jobs:
 
   codeql:
     name: Static analysis (CodeQL)
-    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -97,7 +108,8 @@ jobs:
   # Python-анализа остаются прежними.
   codeql-frontend:
     name: Static analysis of the frontend (CodeQL)
-    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -115,12 +127,19 @@ jobs:
 
   image:
     name: Image vulnerabilities and SBOM (Trivy)
-    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
+    # Тег — свой у прогона: на своём runner Docker общий у параллельных
+    # заданий. Кэш Trivy — свой у каждого runner ($RUNNER_NAME): Trivy держит
+    # блокировку кэша, пока работает, и второе сканирование на той же
+    # машине упало бы («cache may be in use by another process»).
+    env:
+      TAG: scan-${{ github.run_id }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Build image
-        run: docker build -t kronto-api:scan .
+        run: docker build -t "kronto-api:$TAG" .
       # Сканер — официальный образ с ghcr (без лимитов Docker Hub); tag
       # latest осознанно: устаревший сканер пропускает новые проверки, а
       # его результат не входит в поставку. Закрепить по digest — RISKS №18.
@@ -132,25 +151,25 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME/.cache/trivy:/root/.cache/" \
+            -v "$HOME/.cache/trivy/$RUNNER_NAME:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest image \
             --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
-            --pkg-types os,library kronto-api:scan
+            --pkg-types os,library "kronto-api:$TAG"
       # Образ фронтенда (nginx со статикой) — тот же порог.
       - name: Build web image
-        run: docker build -t kronto-web:scan frontend
+        run: docker build -t "kronto-web:$TAG" frontend
       - name: Scan web image
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$HOME/.cache/trivy:/root/.cache/" \
+            -v "$HOME/.cache/trivy/$RUNNER_NAME:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest image \
             --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
-            --pkg-types os,library kronto-web:scan
+            --pkg-types os,library "kronto-web:$TAG"
       - name: Scan Dockerfile and compose for misconfiguration
         run: |
           docker run --rm \
-            -v "$PWD:/work:ro" -v "$HOME/.cache/trivy:/root/.cache/" \
+            -v "$PWD:/work:ro" -v "$HOME/.cache/trivy/$RUNNER_NAME:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest config \
             --exit-code 1 --severity HIGH,CRITICAL /work
       # Состав образа (CycloneDX) — для сертификации и разбора инцидентов:
@@ -159,11 +178,14 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD:/work" -v "$HOME/.cache/trivy:/root/.cache/" \
+            -v "$PWD:/work" -v "$HOME/.cache/trivy/$RUNNER_NAME:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest image \
-            --format cyclonedx --output /work/sbom.cdx.json kronto-api:scan
+            --format cyclonedx --output /work/sbom.cdx.json "kronto-api:$TAG"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
           retention-days: 90
+      - name: Remove images
+        if: always()
+        run: docker image rm -f "kronto-api:$TAG" "kronto-web:$TAG" >/dev/null 2>&1 || true

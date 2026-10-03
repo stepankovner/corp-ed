@@ -12,8 +12,8 @@ nginx по `deploy/nginx/kronto.conf`, cron, бэкап, настоящая мо
   клиенты.
 - Работает с 02.10 (`ru-7a`, шаги 4.1–4.7 пройдены): выкатка из CI,
   сквозная проверка — 10 из 10. Не сделаны 4.8 (автовозобновление —
-  решение Б) и 4.9 (Ping-Admin). На нём отлаживаем деплой, CI/CD,
-  pgvector, миграции и коннекторы.
+  после своего runner, `CI-RUNNER.md`) и 4.9 (Ping-Admin). На нём
+  отлаживаем деплой, CI/CD, pgvector, миграции и коннекторы.
 - Когда появится боевой сервер, стенд останется местом, где проверяют
   каждое обновление.
 
@@ -116,7 +116,7 @@ GitHub Actions «Stage resume», раз в 10 минут: Selectel остано�
 ## 4. Первый запуск
 
 Порядок: 1 → 2 → (ждать DNS) → 3 → 4 → 5 → 6 → 7. Шаги 8
-(автовозобновление — тратит минуты Actions, решение Б) и 9 (Ping-Admin)
+(автовозобновление — со своим runner, `CI-RUNNER.md`) и 9 (Ping-Admin)
 можно отложить: на время короткой проверки остановленный сервер
 возобновляют кнопкой «Возобновить» в панели Selectel. 4.10 — при
 переезде на обычный сервер.
@@ -427,9 +427,10 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
 > раз в 10 минут — около 4 300 минут в месяц, больше бесплатного объёма
 > приватного репозитория (2 000 минут на тарифе Free). Пока
 > `STAGE_RESUME_ENABLED` не задана, задание пропускается и минут не
-> тратит. Как включать — решение Б владельца: свой runner на маленькой
-> постоянной ВМ (его минуты бесплатны) или реже, например раз в 30
-> минут (~1 450 минут, стенд лежит после прерывания дольше).
+> тратит. Как быть с минутами — вопрос Б (`OPEN-QUESTIONS.md`); один из
+> вариантов — свой runner на отдельной ВМ, его минуты бесплатны
+> (`CI-RUNNER.md`). С ним включать, когда задания уже идут на нём
+> (переменная `RUNS_ON`, `CI-RUNNER.md` §3.5).
 
 1. **Сервисный пользователь Selectel.** `my.selectel.ru` → **Управление
    доступом** → **Сервисные пользователи** → **Добавить пользователя**:
@@ -521,6 +522,21 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
   пункт).
 - **Проверка без выкатки** (на сервере):
   `sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy`.
+- **Выкатка без Actions** (кончились минуты, GitHub недоступен) — образы
+  собираются на сервере, 5–10 минут:
+
+  ```bash
+  cd /opt/kronto
+  sudo -u deploy git fetch --prune origin
+  sudo -u deploy git checkout --force --detach origin/main
+  sudo -u deploy docker compose -f compose.yaml build api web
+  sudo -u deploy docker compose -f compose.yaml up -d --no-build --remove-orphans
+  sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy
+  ```
+
+  Признак, что минуты кончились: задание в Actions падает за несколько
+  секунд без шагов и лога; расход — GitHub → Settings → Billing → Usage.
+  Свой runner, которому минуты не нужны, — `CI-RUNNER.md`.
 - **Мониторинг:** `https://stage.krontoai.ru/grafana/` — дашборд
   «Kronto — стенд»: доступность и SLO, время ответа, ответы по источнику,
   деградации, очереди воркера, процессор, память, диск, ночные задачи,
