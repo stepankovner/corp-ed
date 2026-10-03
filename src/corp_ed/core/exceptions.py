@@ -37,6 +37,14 @@ class ConflictError(DomainError):
     """Конфликт состояния (например, дубликат)."""
 
 
+class CodedConflictError(ConflictError):
+    """Конфликт с машинным кодом для фронта (answer_in_progress…). HTTP 409."""
+
+    def __init__(self, message: str, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class PermissionError(DomainError):
     """Недостаточно прав."""
 

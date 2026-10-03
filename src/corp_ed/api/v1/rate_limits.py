@@ -86,6 +86,17 @@ PASSWORD_CHANGE_PER_USER = RatePolicy(
 )
 FAQ_PER_USER = RatePolicy("faq-user", limit=30, window=60, fail_open=True)
 SEARCH_PER_USER = RatePolicy("search-user", limit=60, window=60, fail_open=True)
+# Чат (ТЗ §6): вложения разбираются в песочнице и считают эмбеддинги;
+# правки диалогов (переименовать, закрепить, оценить) — дешёвые.
+ATTACHMENT_PER_USER = RatePolicy(
+    "attachment-user", limit=30, window=3600, fail_open=True
+)
+CHAT_EDIT_PER_USER = RatePolicy(
+    "chat-edit-user", limit=240, window=3600, fail_open=True
+)
+SUGGESTION_EDIT_PER_TENANT = RatePolicy(
+    "suggestion-edit", limit=120, window=3600, fail_open=True
+)
 UPLOAD_PER_TENANT = RatePolicy("upload-tenant", limit=60, window=3600, fail_open=True)
 # Создание и переиндексация материалов: каждый запрос — пачка платных
 # эмбеддингов в воркере.

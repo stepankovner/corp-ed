@@ -935,6 +935,13 @@ class QaLog(TenantMixin, Base):
     output_tokens: Mapped[int] = mapped_column(default=0, server_default="0")
     credits: Mapped[int] = mapped_column(default=0, server_default="0")
     feedback: Mapped[int | None] = mapped_column(SmallInteger)
+    # Что не так с ответом (ТЗ §6): причина из списка и комментарий —
+    # после mask_pii, как вопрос. Видны только обезличенно.
+    feedback_reason: Mapped[str | None] = mapped_column(String(32))
+    feedback_comment: Mapped[str | None] = mapped_column(Text)
+    # Сколько выдержек из вложения сотрудника ушло в промпт (ТЗ §6): такие
+    # ответы — не по базе компании, eval и отчёт о пробелах их различают.
+    attachment_chunks: Mapped[int] = mapped_column(default=0, server_default="0")
     # Заполняет ночная задача отчёта о пробелах (classify_miss).
     miss_kind: Mapped[str | None] = mapped_column(String(32))
     # Память диалога (BH-28). Сами реплики — в Redis, не здесь
@@ -1215,4 +1222,167 @@ class ConnectorSyncJob(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# --- Чат (ТЗ §6) ------------------------------------------------------------
+
+
+class Conversation(TenantMixin, Base):
+    """Диалог сотрудника с ассистентом (ТЗ §6): список слева, как в Claude.
+
+    Видит только сам человек (user_id — его членство в компании) и те, с
+    кем он поделился ссылкой внутри компании (share_token). Администратор
+    чужих диалогов не видит: у него только обезличенная статистика.
+
+    Сообщения — дерево (parent_id): правка вопроса и «Ответить заново»
+    добавляют ветку, прежняя остаётся и переключается стрелками.
+    current_message_id — лист показанной ветки; без внешнего ключа:
+    сообщения ссылаются на диалог, и круговая зависимость таблиц мешала
+    бы вставке и удалению.
+    """
+
+    __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_owner_updated", "user_id", "updated_at"),
+        UniqueConstraint("share_token", name="uq_conversations_share_token"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(120))
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_message_id: Mapped[UUID | None] = mapped_column(Uuid)
+    # Ссылка «поделиться»: случайный токен; снимок — ветка до
+    # shared_message_id на момент, когда поделились (как в ChatGPT).
+    share_token: Mapped[str | None] = mapped_column(String(64))
+    shared_message_id: Mapped[UUID | None] = mapped_column(Uuid)
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChatMessage(TenantMixin, Base):
+    """Вопрос (role=user) или ответ (role=assistant) в диалоге.
+
+    Текст ответа хранится — иначе диалог не открыть снова; это решение
+    ТЗ от 03.10 вместо реплик только в Redis (BH-28). Журнал qa_log
+    по-прежнему без ответа: в нём обезличенная статистика.
+
+    sources — снимок выдержек ответа: при показе фрагмент документа
+    открывается, только если документ жив и доступен смотрящему.
+    """
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_chat_messages_role"),
+        CheckConstraint(
+            "status IN ('complete', 'generating', 'stopped', 'failed')",
+            name="ck_chat_messages_status",
+        ),
+        CheckConstraint(
+            "origin IS NULL OR origin IN ('documents', 'general_knowledge', 'none')",
+            name="ck_chat_messages_origin",
+        ),
+        CheckConstraint("feedback IN (-1, 1)", name="ck_chat_messages_feedback"),
+        Index("ix_chat_messages_conversation", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    conversation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    parent_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    status: Mapped[str] = mapped_column(
+        String(16), default="complete", server_default="complete"
+    )
+    origin: Mapped[str | None] = mapped_column(String(32))
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]"
+    )
+    # Вложения вопроса (chat_attachments.id); правка вопроса их наследует.
+    attachment_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, server_default="{}"
+    )
+    qa_log_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("qa_log.id", ondelete="SET NULL")
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    feedback: Mapped[int | None] = mapped_column(SmallInteger)
+    feedback_reason: Mapped[str | None] = mapped_column(String(32))
+    feedback_comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChatAttachment(TenantMixin, Base):
+    """Файл к вопросу («спроси по этому договору», ТЗ §6).
+
+    В базу компании не попадает: ни в поиск коллег, ни в документы.
+    Хранится только извлечённый текст по фрагментам — исходный файл нет.
+    conversation_id пуст, пока вопрос с файлом не отправлен; такие
+    вложения удаляет purge через сутки. Удаление диалога удаляет и их.
+    """
+
+    __tablename__ = "chat_attachments"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    source_format: Mapped[str] = mapped_column(String(16))
+    size: Mapped[int]
+    tokens: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChatAttachmentChunk(TenantMixin, Base):
+    """Фрагмент вложения. Эмбеддинг — только у файлов больше бюджета
+    выдержек: маленький файл целиком уходит в промпт."""
+
+    __tablename__ = "chat_attachment_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "attachment_id", "position", name="uq_chat_attachment_chunk_position"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    attachment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("chat_attachments.id", ondelete="CASCADE")
+    )
+    position: Mapped[int]
+    heading_path: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
+    embed_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+
+
+class ChatSuggestion(TenantMixin, Base):
+    """Подсказка вопроса на пустом экране чата, заданная админом (ТЗ §6)."""
+
+    __tablename__ = "chat_suggestions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    text: Mapped[str] = mapped_column(String(200))
+    position: Mapped[int] = mapped_column(default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
