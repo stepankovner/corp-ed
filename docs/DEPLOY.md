@@ -410,7 +410,13 @@ Confluence — обычный пользователь, который чита�
       до решения по GitHub Code Security, RISKS №13).
 - [ ] `python -m corp_ed.stand check` против стенда — все шаги прошли.
 - [ ] `https://<имя>/` открывает вход; `curl -I https://<имя>/` —
-      `Content-Security-Policy: default-src 'self'`; `/assets/*.map` — 404.
+      `Content-Security-Policy: default-src 'self'; script-src 'self'
+      'sha256-…'` (хеш встроенного скрипта темы из `index.html`: правите
+      скрипт — обновите хеш в `nginx.conf`, иначе тема мигнёт при загрузке;
+      сверяет `frontend/src/lib/csp.test.ts`); `/assets/*.map` — 404.
+- [ ] Ключ доступа добавляется в «Настройки → Безопасность» по https
+      (WebAuthn работает только на https или localhost; сайт ключа — имя
+      хоста, `AUTH_WEBAUTHN_RP_ID` — если сайт и API на разных именах).
 - [ ] Вход администратора в браузере, загрузка документа, ответ со
       ссылкой на него (то же, что `stand check`, глазами).
 - [ ] Запись на созвон: либо `LEADS_ENABLED=false` (форма показывает

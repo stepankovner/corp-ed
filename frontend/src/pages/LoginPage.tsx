@@ -56,6 +56,9 @@ export function LoginPage() {
       <p className={`muted ${authStyles.alt}`}>
         Нет учётной записи? <Link to={`/register${suffix}`}>Зарегистрироваться</Link>
       </p>
+      <p className={`muted ${authStyles.alt}`}>
+        Компания ещё не подключена? <Link to="/pricing">Тарифы и запись на созвон</Link>
+      </p>
     </AuthLayout>
   );
 }
