@@ -52,3 +52,11 @@
   object-fit: cover;
   display: block;
 }
+/* Логотип компании: вписан в квадрат с прозрачным фоном — подложка светлая
+   в обеих темах, как у логотипов в Slack и Notion. */
+.square.photo {
+  background: #fff;
+}
+.square.photo img {
+  object-fit: contain;
+}

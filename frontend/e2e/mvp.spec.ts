@@ -197,7 +197,7 @@ test.describe.serial("путь компании", () => {
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#1c1b19");
 
     await page.getByRole("link", { name: "Управление" }).click();
-    await expect(page).toHaveTitle("Документы — kronto");
+    await expect(page).toHaveTitle("Обзор — kronto");
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("button", { name: "Открыть меню" }).click();
@@ -216,7 +216,13 @@ test.describe.serial("путь компании", () => {
   test("загруженный документ индексируется", async ({ page, context }) => {
     await loginAdmin(page, context);
     await page.getByRole("link", { name: "Управление" }).click();
-    await expect(page.getByRole("heading", { name: "Документы" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Обзор" })).toBeVisible();
+    await page.getByRole("link", { name: "Источники", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Источники" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Файлы", exact: true })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     await page.locator("input[type=file]").setInputFiles({
       name: "komandirovki.md",
       mimeType: "text/markdown",
@@ -310,8 +316,10 @@ test.describe.serial("путь компании", () => {
       page.getByRole("button", { name: /Источник 1: dogovor\.txt/ }).last(),
     ).toBeVisible();
 
+    // Старый адрес раздела ведёт в «Источники → Файлы».
     await page.goto("/admin/documents");
-    await expect(page.getByRole("heading", { name: "Документы" })).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/sources\/files$/);
+    await expect(page.getByRole("row").filter({ hasText: "komandirovki" })).toBeVisible();
     await expect(page.getByText("dogovor")).toHaveCount(0);
   });
 

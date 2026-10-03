@@ -33,7 +33,21 @@ const GapsPage = lazy(() => import("./admin/GapsPage").then((m) => ({ default: m
 const GlossaryPage = lazy(() =>
   import("./admin/GlossaryPage").then((m) => ({ default: m.GlossaryPage })),
 );
-const UsagePage = lazy(() => import("./admin/UsagePage").then((m) => ({ default: m.UsagePage })));
+const OverviewPage = lazy(() =>
+  import("./admin/OverviewPage").then((m) => ({ default: m.OverviewPage })),
+);
+const SourcesPage = lazy(() =>
+  import("./admin/SourcesPage").then((m) => ({ default: m.SourcesPage })),
+);
+const ConnectorRedirect = lazy(() =>
+  import("./admin/SourcesPage").then((m) => ({ default: m.ConnectorRedirect })),
+);
+const TariffPage = lazy(() =>
+  import("./admin/TariffPage").then((m) => ({ default: m.TariffPage })),
+);
+const CompanySettingsPage = lazy(() =>
+  import("./admin/CompanySettingsPage").then((m) => ({ default: m.CompanySettingsPage })),
+);
 const AuditPage = lazy(() => import("./admin/AuditPage").then((m) => ({ default: m.AuditPage })));
 // Публичные страницы тарифов и записи — отдельным чанком.
 const PricingPage = lazy(() =>
@@ -111,16 +125,37 @@ export const routes: RouteObject[] = [
                 path: "/admin",
                 element: <RequireAdmin />,
                 children: [
-                  { index: true, element: <Navigate to="documents" replace /> },
+                  { index: true, element: <Navigate to="overview" replace /> },
+                  { path: "overview", element: lazyPage(<OverviewPage />) },
+                  // «Источники» в одном месте (ТЗ §5): файлы и подключения — вкладками.
+                  {
+                    path: "sources",
+                    element: lazyPage(<SourcesPage />),
+                    children: [
+                      { index: true, element: <Navigate to="files" replace /> },
+                      { path: "files", element: lazyPage(<DocumentsPage />) },
+                      { path: "connections", element: lazyPage(<ConnectorsPage />) },
+                    ],
+                  },
+                  {
+                    path: "sources/connections/:connectorId",
+                    element: lazyPage(<ConnectorPage />),
+                  },
+                  // Прежние адреса — из закладок и писем.
+                  { path: "documents", element: <Navigate to="/admin/sources/files" replace /> },
+                  {
+                    path: "connectors",
+                    element: <Navigate to="/admin/sources/connections" replace />,
+                  },
+                  { path: "connectors/:connectorId", element: lazyPage(<ConnectorRedirect />) },
+                  { path: "usage", element: <Navigate to="/admin/tariff" replace /> },
+                  { path: "users", element: lazyPage(<UsersPage />) },
                   { path: "departments", element: lazyPage(<DepartmentsPage />) },
                   { path: "suggestions", element: lazyPage(<SuggestionsPage />) },
-                  { path: "documents", element: lazyPage(<DocumentsPage />) },
-                  { path: "connectors", element: lazyPage(<ConnectorsPage />) },
-                  { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },
-                  { path: "users", element: lazyPage(<UsersPage />) },
                   { path: "gaps", element: lazyPage(<GapsPage />) },
                   { path: "glossary", element: lazyPage(<GlossaryPage />) },
-                  { path: "usage", element: lazyPage(<UsagePage />) },
+                  { path: "tariff", element: lazyPage(<TariffPage />) },
+                  { path: "settings", element: lazyPage(<CompanySettingsPage />) },
                   { path: "audit", element: lazyPage(<AuditPage />) },
                 ],
               },

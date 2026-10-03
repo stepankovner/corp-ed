@@ -28,11 +28,11 @@ export function UsageBanner() {
       {exhausted ? (
         <Notice kind="error" title="Лимит вопросов исчерпан">
           Сотрудники не смогут задавать вопросы до {formatCalendarDate(period_end)}.{" "}
-          <Link to="/admin/usage">Подробнее о лимите</Link>
+          <Link to="/admin/tariff">Подробнее о лимите</Link>
         </Notice>
       ) : (
         <Notice kind="warn" title="Лимит вопросов скоро закончится">
-          Израсходовано {share} % лимита на месяц. <Link to="/admin/usage">Подробнее</Link>
+          Израсходовано {share} % лимита на месяц. <Link to="/admin/tariff">Подробнее</Link>
         </Notice>
       )}
     </div>

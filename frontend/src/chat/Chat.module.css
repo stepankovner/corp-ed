@@ -76,6 +76,28 @@
   color: var(--muted);
 }
 
+/* Предложение подключить свой аккаунт (Битрикс24, Яндекс 360). */
+.connect {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  max-width: 560px;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  text-align: left;
+  font-size: var(--fs-small);
+}
+.connectIcon {
+  flex: none;
+  color: var(--accent);
+}
+.connectText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* ——— реплики ——— */
 .msg {
   max-width: 100%;

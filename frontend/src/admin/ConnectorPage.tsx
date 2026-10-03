@@ -174,7 +174,7 @@ function ConnectorView({
   return (
     <Page>
       <Link
-        to="/admin/connectors"
+        to="/admin/sources/connections"
         style={{
           display: "inline-flex",
           gap: 6,
@@ -354,7 +354,7 @@ function ConnectorView({
           await unwrap(api.DELETE("/api/v1/connectors/{connector_id}", path));
           await queryClient.invalidateQueries({ queryKey: ["connectors"] });
           await queryClient.invalidateQueries({ queryKey: ["materials"] });
-          void navigate("/admin/connectors", { replace: true });
+          void navigate("/admin/sources/connections", { replace: true });
         }}
       />
     </Page>

@@ -138,6 +138,7 @@ function companyOptions(me: Me): CompanyOption[] {
             ? "доступ закрыт"
             : ROLE_CAPTION[item.role],
       disabled: item.status !== "active",
+      logoUrl: item.logo_url,
     }));
 }
 
