@@ -94,11 +94,6 @@
   gap: var(--s-2);
   margin-bottom: var(--s-5);
 }
-@media (max-width: 640px) {
-  .folders {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 .folder {
   position: relative;
   min-width: 0;
@@ -190,6 +185,42 @@
   position: absolute;
   top: 6px;
   right: 6px;
+}
+/* Телефон: в две колонки названия папок не помещаются — списком, где
+   название и счётчик в одной строке, доступ под ними, меню справа. */
+@media (max-width: 640px) {
+  .folders {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .folderPick {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--s-3);
+    padding: 10px 14px;
+  }
+  .folderName {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .folderCount {
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: 2px;
+  }
+  .folderMeta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .folderPickMenu {
+    padding-right: 48px;
+  }
+  .folderPickMenu .folderName {
+    padding-right: 0;
+  }
+  .folderMenu {
+    top: 50%;
+    transform: translateY(-50%);
+  }
 }
 /* Папка документа в строке таблицы: значок, название и замок закрытой. */
 .docFolder {
