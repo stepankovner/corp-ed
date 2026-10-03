@@ -293,6 +293,34 @@ describe("источники", () => {
     await waitFor(() => expect(tile(/^Кадры/)).toHaveTextContent("1 документ"));
   });
 
+  it("текст создаётся сразу в открытой папке — одним запросом", async () => {
+    const user = userEvent.setup();
+    const { bodies } = mockSources({ folders: [folder()] });
+    server.use(
+      http.post("/api/v1/materials", async ({ request }) => {
+        const body = await request.json();
+        bodies.push({ method: "POST", path: "/materials", body });
+        return HttpResponse.json(material({ id: "m-9", folder_id: "f-hr" }), { status: 201 });
+      }),
+    );
+    renderApp("/admin/sources/files?folder=f-hr");
+
+    await user.click(await screen.findByRole("button", { name: /Добавить текст/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Добавить текст" });
+    await user.type(within(dialog).getByLabelText(/^Название/), "Больничные");
+    await user.type(within(dialog).getByLabelText(/^Текст/), "Больничный — по ЭЛН.");
+    await user.click(within(dialog).getByRole("button", { name: "Добавить" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(bodies).toEqual([
+      {
+        method: "POST",
+        path: "/materials",
+        body: { title: "Больничные", content: "Больничный — по ЭЛН.", folder_id: "f-hr" },
+      },
+    ]);
+  });
+
   it("создаёт закрытую папку для отделов и сразу её открывает", async () => {
     const user = userEvent.setup();
     const { bodies } = mockSources({ materials: [material()] });

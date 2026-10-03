@@ -43,10 +43,16 @@ class MaterialService:
         *,
         title: str,
         content: str,
+        folder_id: UUID | None = None,
     ) -> Material:
+        # Сразу в папку: создать в общих и потом перенести — значит на
+        # время (или, при сбое переноса, навсегда) открыть документ всем.
+        if folder_id is not None:
+            await self._folder(folder_id)
         material = Material(
             title=title,
             content=content,
+            folder_id=folder_id,
         )
 
         await self.material_repo.create(material)

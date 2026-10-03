@@ -24,6 +24,14 @@ const invitedEmail = `invited-${run}@kronto-e2e.ru`;
 const coderEmail = `coder-${run}@kronto-e2e.ru`;
 const codeWord = `пароль-${Math.random().toString(36).slice(2, 8)}`;
 const leadCompany = `E2E Лид ${run}`;
+/** Папка с доступом только для отдела «Продажи» (ТЗ §5) и её документ. */
+const salesFolder = "Отдел продаж";
+const salesWord = `скидка-${Math.random().toString(36).slice(2, 8)}`;
+const SALES_DOCUMENT = `# Прайс отдела продаж
+
+Скидка для оптовых клиентов — 7 процентов.
+Кодовое слово отдела продаж: ${salesWord}.
+`;
 
 const DOCUMENT = `# Положение о командировках
 
@@ -465,6 +473,96 @@ test.describe.serial("путь компании", () => {
     await page.getByRole("button", { name: "Вступить" }).click();
     await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Компания: E2E/ })).toBeVisible();
+  });
+
+  test("администратор: обзор, папка для отдела, логотип, заявка на тариф", async ({
+    page,
+    context,
+  }) => {
+    await loginAdmin(page, context);
+    await page.goto("/admin/overview");
+    await expect(page.getByRole("heading", { name: "Обзор" })).toBeVisible();
+    // Вопросы уже задавали — график по дням есть.
+    await expect(page.getByRole("region", { name: "Вопросы по дням" })).toBeVisible();
+
+    // Папка только для отдела «Продажи» — туда же сразу и загрузка.
+    await page.goto("/admin/sources/files");
+    await page.getByRole("button", { name: "Новая папка" }).click();
+    const create = page.getByRole("dialog", { name: "Новая папка" });
+    await create.getByLabel("Название").fill(salesFolder);
+    await create.getByLabel("Только отделы").check();
+    await create.getByRole("group", { name: "Отделы" }).getByLabel("Продажи").check();
+    await create.getByRole("button", { name: "Создать папку" }).click();
+    await expect(create).toHaveCount(0);
+    await expect(page).toHaveURL(/folder=/);
+    await page.locator("input[type=file]").setInputFiles({
+      name: "prodazhi.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from(SALES_DOCUMENT, "utf8"),
+    });
+    const row = page.getByRole("row").filter({ hasText: "prodazhi" });
+    await expect(row.getByText("готов", { exact: true })).toBeVisible({ timeout: 60_000 });
+    await expect(row.getByRole("img", { name: "доступ ограничен" })).toBeVisible();
+
+    // Логотип: сервер впишет картинку в квадрат 256×256, переключатель покажет её.
+    await page.goto("/admin/settings");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "logo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(PIXEL_PNG, "base64"),
+    });
+    await expect(page.getByText("Логотип обновлён")).toBeVisible();
+    const switcher = page.getByRole("button", { name: /^Компания: / });
+    await expect
+      .poll(() =>
+        switcher.locator("img").evaluate((img) => (img as { naturalWidth: number }).naturalWidth),
+      )
+      .toBe(256);
+
+    await page.goto("/admin/tariff");
+    await page.getByRole("button", { name: "Сменить тариф" }).click();
+    const request = page.getByRole("dialog", { name: "Сменить тариф" });
+    await request.getByRole("radio", { name: /^Расширенный/ }).check();
+    await request.getByLabel(/Сколько мест нужно/).fill("40");
+    await request.getByRole("button", { name: "Отправить заявку" }).click();
+    await expect(page.getByRole("dialog", { name: "Заявка отправлена" })).toBeVisible();
+    await page.getByRole("button", { name: "Готово" }).click();
+
+    await page.goto("/admin/audit");
+    await expect(page.getByText("Запрошена смена тарифа").first()).toBeVisible();
+    await expect(page.getByText("Папка создана").first()).toBeVisible();
+  });
+
+  test("папку отдела видит только отдел: «Где ищет ассистент» и ответ", async ({ page }) => {
+    // Инна — в отделе «Продажи» (профиль выше).
+    await loginByMail(page, invitedEmail, employeePassword);
+    // Логотип компании видит и сотрудник.
+    await expect
+      .poll(() =>
+        page
+          .getByRole("button", { name: /^Компания: / })
+          .locator("img")
+          .evaluate((img) => (img as { naturalWidth: number }).naturalWidth),
+      )
+      .toBe(256);
+    await page.goto("/settings/connections");
+    let where = page.getByRole("region", { name: "Где ищет ассистент" });
+    await expect(where.getByText(salesFolder)).toBeVisible();
+    await expect(where.getByText("для вашего отдела")).toBeVisible();
+    await page.getByRole("button", { name: "Новый диалог" }).click();
+    await ask(page, `Какое кодовое слово отдела продаж? ${salesWord}`);
+    await expect(
+      page.getByRole("button", { name: /^Источник \d+: .*prodazhi/ }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+
+    // Кирилл — без отдела: папки не видит.
+    await page.getByRole("button", { name: /^Профиль/ }).click();
+    await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await loginByMail(page, coderEmail, employeePassword);
+    await page.goto("/settings/connections");
+    where = page.getByRole("region", { name: "Где ищет ассистент" });
+    await expect(where.getByText("Общие документы")).toBeVisible();
+    await expect(where.getByText(salesFolder)).toHaveCount(0);
   });
 
   test("пароль восстанавливается по ссылке, вход с нового устройства — код из письма", async ({

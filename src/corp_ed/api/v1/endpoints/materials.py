@@ -48,7 +48,7 @@ async def create_material(
 ) -> MaterialResponse:
     """Создать материал и сразу поставить его в очередь на индексацию."""
     material = await service.create(
-        current_user, title=data.title, content=data.content
+        current_user, title=data.title, content=data.content, folder_id=data.folder_id
     )
     return MaterialResponse.model_validate(material)
 

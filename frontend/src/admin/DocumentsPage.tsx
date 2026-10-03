@@ -31,7 +31,6 @@ import { SkeletonList } from "../ui/Skeleton";
 import { Spinner } from "../ui/Spinner";
 import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
-import { useToast } from "../ui/useToast";
 import styles from "./Admin.module.css";
 import { ConfirmDialog } from "./common";
 import {
@@ -611,39 +610,22 @@ function TextMaterialDialog({
   folder: Folder | null;
 }) {
   const queryClient = useQueryClient();
-  const toast = useToast();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const create = useMutation({
-    mutationFn: async () => {
-      const material = await unwrap(
-        api.POST("/api/v1/materials", { body: { title: title.trim(), content } }),
-      );
-      if (!folder) return null;
-      // Текст сервер создаёт в общих документах — в папку переносим сразу
-      // следом: до индексации документ в ответы не попадает.
-      try {
-        await unwrap(
-          api.PATCH("/api/v1/materials/{material_id}", {
-            params: { path: { material_id: material.id } },
-            body: { folder_id: folder.id },
-          }),
-        );
-        return null;
-      } catch (error) {
-        return errorMessage(error);
-      }
-    },
-    onSuccess: async (moveError) => {
+    // Сразу в папку: создать в общих и потом перенести — значит на время
+    // открыть документ всем.
+    mutationFn: () =>
+      unwrap(
+        api.POST("/api/v1/materials", {
+          body: { title: title.trim(), content, folder_id: folder?.id ?? null },
+        }),
+      ),
+    onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["materials"] }),
         queryClient.invalidateQueries({ queryKey: FOLDERS_KEY }),
       ]);
-      if (moveError) {
-        toast.show(`Текст добавлен в «${ROOT_NAME}», а в папку не перенёсся: ${moveError}`, {
-          tone: "error",
-        });
-      }
       setTitle("");
       setContent("");
       onOpenChange(false);

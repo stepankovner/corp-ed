@@ -3213,6 +3213,8 @@ export interface components {
         MaterialCreateRequest: {
             /** Content */
             content: string;
+            /** Folder Id */
+            folder_id?: string | null;
             /** Title */
             title: string;
         };

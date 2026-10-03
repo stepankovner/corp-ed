@@ -2948,6 +2948,18 @@
             "title": "Content",
             "type": "string"
           },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
+          },
           "title": {
             "maxLength": 200,
             "minLength": 1,

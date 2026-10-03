@@ -29,6 +29,8 @@ class MaterialCreateRequest(RequestModel):
 
     title: Title
     content: str = Field(min_length=1, max_length=MAX_MATERIAL_LENGTH)
+    folder_id: UUID | None = None
+    """Папка (ТЗ §5); нет — «Общие документы»."""
 
     @field_validator("content")
     @classmethod

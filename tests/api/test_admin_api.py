@@ -492,6 +492,25 @@ async def test_upload_into_folder(
     )
     assert unknown.status_code == 404
 
+    # Текстом — тоже сразу в папку, без промежуточного «общего» состояния.
+    text = await api.post(
+        "/api/v1/materials",
+        json={
+            "title": "Больничные",
+            "content": "Больничный — по ЭЛН.",
+            "folder_id": folder["id"],
+        },
+        headers=bearer(admin),
+    )
+    assert text.status_code == 201, text.text
+    assert text.json()["folder_id"] == folder["id"]
+    lost = await api.post(
+        "/api/v1/materials",
+        json={"title": "Ещё", "content": "Текст.", "folder_id": str(uuid4())},
+        headers=bearer(admin),
+    )
+    assert lost.status_code == 404
+
 
 async def test_user_role_admin_sees_restricted_folder_without_department(
     api: httpx.AsyncClient, session: AsyncSession, tenant_ctx: Tenant, admin: User
