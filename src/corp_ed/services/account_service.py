@@ -12,7 +12,7 @@
 import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import structlog
@@ -27,6 +27,7 @@ from corp_ed.core.exceptions import (
     PermissionError,
 )
 from corp_ed.core.password_policy import validate_password
+from corp_ed.core.profile import normalize_phone, normalize_telegram
 from corp_ed.core.security import (
     hash_password,
     hash_refresh_token,
@@ -493,11 +494,23 @@ class AccountService:
 
     # --- профиль, компании, удаление ------------------------------------------
 
-    async def update_name(
-        self, account: Account, *, first_name: str, last_name: str
+    async def update_profile(
+        self, account: Account, changes: dict[str, Any]
     ) -> Account:
-        account.first_name = _clean(first_name)
-        account.last_name = _clean(last_name)
+        """Личное в профиле (ТЗ §4): имя и фамилия обязательны, остальное —
+        по желанию; пришедшее null — очистить, не пришедшее — не трогать.
+        Телефон и Telegram — в одном виде (core/profile.py)."""
+        if "first_name" in changes:
+            account.first_name = _clean(changes["first_name"])
+        if "last_name" in changes:
+            account.last_name = _clean(changes["last_name"])
+        if "patronymic" in changes:
+            value = changes["patronymic"]
+            account.patronymic = _clean(value) if value else None
+        if "phone" in changes:
+            account.phone = normalize_phone(changes["phone"])
+        if "telegram" in changes:
+            account.telegram = normalize_telegram(changes["telegram"])
         await self.session.commit()
         return account
 

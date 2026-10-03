@@ -34,8 +34,33 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Update Name */
-        patch: operations["update_name_api_v1_account_patch"];
+        /**
+         * Update Profile
+         * @description Имя, отчество, телефон, Telegram (ТЗ §4). Пришедшее null — очистить.
+         */
+        patch: operations["update_profile_api_v1_account_patch"];
+        trace?: never;
+    };
+    "/api/v1/account/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload Avatar
+         * @description Фото профиля: сервер вырезает квадрат 256×256 и убирает метаданные
+         *     снимка. Формат определяется по содержимому, а не по имени файла.
+         */
+        put: operations["upload_avatar_api_v1_account_avatar_put"];
+        post?: never;
+        /** Delete Avatar */
+        delete: operations["delete_avatar_api_v1_account_avatar_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/account/backup-codes": {
@@ -727,6 +752,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/avatars/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Avatar */
+        get: operations["read_avatar_api_v1_avatars__account_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/connectors": {
         parameters: {
             query?: never;
@@ -979,6 +1021,49 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/departments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Departments
+         * @description Отделы компании — всем её людям: выбрать свой в профиле, отобрать
+         *     коллег в справочнике (ТЗ §4).
+         */
+        get: operations["list_departments_api_v1_departments_get"];
+        put?: never;
+        /** Create Department */
+        post: operations["create_department_api_v1_departments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/departments/{department_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Department
+         * @description Удалить отдел. Люди остаются, у них просто нет отдела.
+         */
+        delete: operations["delete_department_api_v1_departments__department_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Department */
+        patch: operations["rename_department_api_v1_departments__department_id__patch"];
         trace?: never;
     };
     "/api/v1/faq/answers/{answer_id}": {
@@ -1346,6 +1431,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List People
+         * @description Работающие люди компании по алфавиту. Видят только её люди.
+         */
+        get: operations["list_people_api_v1_people_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/people/{member_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Person */
+        get: operations["read_person_api_v1_people__member_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Person
+         * @description Должность и отдел: свои — сам человек, чужие — администратор.
+         */
+        patch: operations["update_person_api_v1_people__member_id__patch"];
+        trace?: never;
+    };
     "/api/v1/usage": {
         parameters: {
             query?: never;
@@ -1527,10 +1653,23 @@ export interface components {
             /** Target Type */
             target_type: string | null;
         };
+        /** AvatarResponse */
+        AvatarResponse: {
+            /** Avatar Url */
+            avatar_url: string;
+        };
         /** BackupCodesResponse */
         BackupCodesResponse: {
             /** Backup Codes */
             backup_codes: string[] | null;
+        };
+        /** Body_upload_avatar_api_v1_account_avatar_put */
+        Body_upload_avatar_api_v1_account_avatar_put: {
+            /**
+             * File
+             * @description JPEG, PNG или WebP до 5 МБ
+             */
+            file: string;
         };
         /** Body_upload_material_api_v1_materials_upload_post */
         Body_upload_material_api_v1_materials_upload_post: {
@@ -1732,6 +1871,7 @@ export interface components {
         };
         /** CurrentCompany */
         CurrentCompany: {
+            department: components["schemas"]["DepartmentRef"] | null;
             /**
              * Member Id
              * Format: uuid
@@ -1739,12 +1879,41 @@ export interface components {
             member_id: string;
             /** Name */
             name: string;
+            /** Position */
+            position: string | null;
             role: components["schemas"]["UserRole"];
             /**
              * Tenant Id
              * Format: uuid
              */
             tenant_id: string;
+        };
+        /** DepartmentRef */
+        DepartmentRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** DepartmentRequest */
+        DepartmentRequest: {
+            /** Name */
+            name: string;
+        };
+        /** DepartmentResponse */
+        DepartmentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Members */
+            members: number;
+            /** Name */
+            name: string;
         };
         /** EmailChangeRequest */
         EmailChangeRequest: {
@@ -2296,6 +2465,8 @@ export interface components {
         };
         /** MeResponse */
         MeResponse: {
+            /** Avatar Url */
+            avatar_url: string | null;
             /** Companies */
             companies: components["schemas"]["MembershipItem"][];
             company: components["schemas"]["CurrentCompany"] | null;
@@ -2320,6 +2491,12 @@ export interface components {
             mfa: components["schemas"]["MfaState"];
             /** Must Change Password */
             must_change_password: boolean;
+            /** Patronymic */
+            patronymic: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Telegram */
+            telegram: string | null;
         };
         /**
          * MemberStatus
@@ -2411,13 +2588,6 @@ export interface components {
              */
             oauth: boolean;
         };
-        /** NameUpdateRequest */
-        NameUpdateRequest: {
-            /** First Name */
-            first_name: string;
-            /** Last Name */
-            last_name: string;
-        };
         /**
          * OAuthCallbackResponse
          * @description Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.
@@ -2496,6 +2666,64 @@ export interface components {
         PasswordConfirmRequest: {
             /** Password */
             password: string;
+        };
+        /**
+         * PersonResponse
+         * @description Коллега в справочнике компании (ТЗ §4).
+         */
+        PersonResponse: {
+            /** Avatar Url */
+            avatar_url: string | null;
+            department: components["schemas"]["DepartmentRef"] | null;
+            /** Email */
+            email: string;
+            /** First Name */
+            first_name: string | null;
+            /** Full Name */
+            full_name: string | null;
+            /** Last Name */
+            last_name: string | null;
+            /**
+             * Member Id
+             * Format: uuid
+             */
+            member_id: string;
+            /** Patronymic */
+            patronymic: string | null;
+            /** Phone */
+            phone: string | null;
+            /** Position */
+            position: string | null;
+            role: components["schemas"]["UserRole"];
+            /** Telegram */
+            telegram: string | null;
+        };
+        /**
+         * PersonUpdateRequest
+         * @description Должность и отдел в компании. Пришедшее null — очистить.
+         */
+        PersonUpdateRequest: {
+            /** Department Id */
+            department_id?: string | null;
+            /** Position */
+            position?: string | null;
+        };
+        /**
+         * ProfileUpdateRequest
+         * @description Личное в профиле (ТЗ §4). Пришедшее null — очистить, не пришедшее —
+         *     не трогать. Имя и фамилия, если пришли, не пустые.
+         */
+        ProfileUpdateRequest: {
+            /** First Name */
+            first_name?: string | null;
+            /** Last Name */
+            last_name?: string | null;
+            /** Patronymic */
+            patronymic?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Telegram */
+            telegram?: string | null;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -2718,6 +2946,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Department Id */
+            department_id: string | null;
             /** Email */
             email: string | null;
             /** Full Name */
@@ -2729,6 +2959,8 @@ export interface components {
             id: string;
             /** Last Login At */
             last_login_at: string | null;
+            /** Position */
+            position: string | null;
             role: components["schemas"]["UserRole"];
             status: components["schemas"]["MemberStatus"];
         };
@@ -2805,7 +3037,7 @@ export interface operations {
             };
         };
     };
-    update_name_api_v1_account_patch: {
+    update_profile_api_v1_account_patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -2814,7 +3046,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["NameUpdateRequest"];
+                "application/json": components["schemas"]["ProfileUpdateRequest"];
             };
         };
         responses: {
@@ -2833,6 +3065,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    upload_avatar_api_v1_account_avatar_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_avatar_api_v1_account_avatar_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvatarResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_avatar_api_v1_account_avatar_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3853,6 +4136,41 @@ export interface operations {
             };
         };
     };
+    read_avatar_api_v1_avatars__account_id__get: {
+        parameters: {
+            query: {
+                v: string;
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/webp": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_connectors_api_v1_connectors_get: {
         parameters: {
             query?: never;
@@ -4302,6 +4620,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectorTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_departments_api_v1_departments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResponse"][];
+                };
+            };
+        };
+    };
+    create_department_api_v1_departments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_department_api_v1_departments__department_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_department_api_v1_departments__department_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                department_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepartmentResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4998,6 +5433,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_api_v1_people_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"][];
+                };
+            };
+        };
+    };
+    read_person_api_v1_people__member_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_person_api_v1_people__member_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonResponse"];
                 };
             };
             /** @description Validation Error */

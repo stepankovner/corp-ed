@@ -89,6 +89,21 @@ class UserRepository:
         )
         return list(result)
 
+    async def list_people(self) -> list[User]:
+        """Справочник коллег (ТЗ §4): работающие, с учёткой, по алфавиту.
+        Заблокированных, ждущих одобрения и удаливших учётку в нём нет."""
+        result = await self.session.scalars(
+            select(User)
+            .join(Account, User.account_id == Account.id)
+            .where(User.status == MemberStatus.ACTIVE)
+            .order_by(
+                func.lower(func.coalesce(Account.last_name, "")),
+                func.lower(func.coalesce(Account.first_name, "")),
+                Account.email,
+            )
+        )
+        return list(result)
+
     async def count_active_admins(self) -> int:
         # count() — колоночный select: хук изоляции его тоже фильтрует,
         # потому что в запросе участвует тенант-модель User (all_mappers).

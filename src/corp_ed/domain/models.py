@@ -165,6 +165,12 @@ class Account(Base):
     # попросит его при входе. Новые без имени не регистрируются.
     first_name: Mapped[str | None] = mapped_column(String(100))
     last_name: Mapped[str | None] = mapped_column(String(100))
+    # Профиль (ТЗ §4): видят коллеги по компаниям человека, вне их — никто.
+    patronymic: Mapped[str | None] = mapped_column(String(100))
+    # +79991234567: только цифры после «+», без пробелов (core/profile.py).
+    phone: Mapped[str | None] = mapped_column(String(16))
+    # Имя пользователя Telegram без «@».
+    telegram: Mapped[str | None] = mapped_column(String(32))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Согласие на обработку персональных данных при регистрации (152-ФЗ):
     # когда и с какой редакцией политики. NULL — учётка до 03.10.
@@ -196,6 +202,51 @@ class Account(Base):
     def full_name(self) -> str | None:
         name = " ".join(p for p in (self.first_name, self.last_name) if p)
         return name or None
+
+
+class AccountAvatar(Base):
+    """Фото профиля (ТЗ §4): квадрат 256×256 в WebP, перекодированный на
+    сервере — без метаданных исходного снимка (геометка, модель телефона).
+
+    Отдельно от accounts: учётку читают на каждом запросе, а фото — только
+    по своей ссылке. Не под RLS, как и учётка; выдаётся по подписанной
+    ссылке, которую получают только коллеги (services/avatar_service.py).
+    """
+
+    __tablename__ = "account_avatars"
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    # Меняется с каждым новым фото: ссылка с прежней версией не отдаёт
+    # новое фото из кэша браузера.
+    version: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Department(TenantMixin, Base):
+    """Отдел компании (ТЗ §7): заводит администратор, человек выбирает свой
+    в профиле. Дальше к отделам привязывается доступ к папкам (§5)."""
+
+    __tablename__ = "departments"
+    __table_args__ = (
+        # «Продажи» и «продажи» — один отдел.
+        Index(
+            "uq_departments_tenant_name",
+            "tenant_id",
+            text("lower(name)"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class User(TenantMixin, Base):
@@ -236,6 +287,12 @@ class User(TenantMixin, Base):
     # Версия членства: смена роли, блокировка и удаление из компании
     # увеличивают её — access-токены этой компании отвергаются сразу.
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Должность и отдел — свои в каждой компании (ТЗ §4): заполняет сам
+    # человек, администратор может поправить.
+    position: Mapped[str | None] = mapped_column(String(100))
+    department_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"), index=True
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

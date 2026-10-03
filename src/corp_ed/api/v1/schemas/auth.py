@@ -18,6 +18,11 @@ PersonName = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NAME_LENGTH),
 ]
+# Необязательное поле профиля: отчество, должность. Пустое — очистить.
+ProfileText = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, max_length=MAX_NAME_LENGTH),
+]
 
 
 class LoginRequest(RequestModel):
@@ -130,11 +135,19 @@ class MembershipItem(BaseModel):
     status: MemberStatus
 
 
+class DepartmentRef(BaseModel):
+    id: UUID
+    name: str
+
+
 class CurrentCompany(BaseModel):
     tenant_id: UUID
     member_id: UUID
     name: str
     role: UserRole
+    position: str | None
+    """Должность в этой компании (ТЗ §4)."""
+    department: DepartmentRef | None
 
 
 class MeResponse(BaseModel):
@@ -143,7 +156,14 @@ class MeResponse(BaseModel):
     email: EmailStr
     first_name: str | None
     last_name: str | None
+    patronymic: str | None
     full_name: str | None
+    phone: str | None
+    """+79991234567."""
+    telegram: str | None
+    """Имя пользователя без «@»."""
+    avatar_url: str | None
+    """Подписанная ссылка на фото, действует до конца следующих суток."""
     must_change_password: bool
     last_login_at: datetime | None
     company: CurrentCompany | None

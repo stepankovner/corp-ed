@@ -55,6 +55,7 @@ from corp_ed.repositories.connector_repository import (
 from corp_ed.repositories.connector_sync_job_repository import (
     ConnectorSyncJobRepository,
 )
+from corp_ed.repositories.department_repository import DepartmentRepository
 from corp_ed.repositories.gap_repository import GapRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
@@ -67,9 +68,11 @@ from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.account_service import AccountService
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.avatar_service import AvatarService
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_service import CreditService
+from corp_ed.services.department_service import DepartmentService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.gap_service import GapService
 from corp_ed.services.general_answer import ModelKnowledgeSource
@@ -78,6 +81,7 @@ from corp_ed.services.invite_service import InviteService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
+from corp_ed.services.people_service import PeopleService
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 from corp_ed.services.user_service import UserService
 
@@ -535,6 +539,36 @@ def get_mfa_service(
     # Секрет TOTP шифруется тем же ключом, что учётные данные подключений
     # (CONNECTOR_SECRETS_KEYS): одно кольцо ключей на сервис.
     return MfaService(session, secrets, audit)
+
+
+def get_avatar_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AvatarService:
+    return AvatarService(session)
+
+
+def get_department_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DepartmentRepository:
+    return DepartmentRepository(session)
+
+
+def get_department_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    repository: Annotated[DepartmentRepository, Depends(get_department_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> DepartmentService:
+    return DepartmentService(repository, audit, session)
+
+
+def get_people_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> PeopleService:
+    return PeopleService(
+        user_repo, DepartmentRepository(session), AvatarService(session), audit, session
+    )
 
 
 def get_account_service(

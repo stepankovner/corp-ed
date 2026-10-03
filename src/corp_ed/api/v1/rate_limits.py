@@ -65,6 +65,14 @@ VERIFY_PER_IP = RatePolicy("verify-ip", limit=30, window=900, fail_open=False)
 EMAIL_CHANGE_PER_ACCOUNT = RatePolicy(
     "email-change", limit=10, window=3600, fail_open=False
 )
+# Фото профиля: перекодирование занимает CPU — не чаще пары раз в минуту.
+AVATAR_PER_ACCOUNT = RatePolicy("avatar", limit=20, window=3600, fail_open=False)
+# Отдача фото по подписанной ссылке: списки коллег грузят десятки сразу.
+AVATAR_FETCH_PER_IP = RatePolicy("avatar-ip", limit=600, window=60, fail_open=True)
+# Отделы и должности: правит человек или админ, сотни в час — уже не люди.
+PEOPLE_EDIT_PER_TENANT = RatePolicy(
+    "people-edit", limit=300, window=3600, fail_open=False
+)
 COMPANY_REQUEST_PER_ACCOUNT = RatePolicy(
     "company-request", limit=5, window=86400, fail_open=False
 )
