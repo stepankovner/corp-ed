@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import undefer
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Connector, ConnectorSyncRun, ConnectorUserGrant
+from corp_ed.domain.models import (
+    Connector,
+    ConnectorSyncRun,
+    ConnectorUserGrant,
+    MemberStatus,
+    User,
+)
 from corp_ed.domain.types import ConnectorMode, ConnectorStatus, GrantStatus
 
 
@@ -147,6 +153,21 @@ class GrantRepository:
             .order_by(ConnectorUserGrant.created_at)
         )
         return list(result)
+
+    async def active_counts(self) -> dict[UUID, int]:
+        """Сколько сотрудников подключилось к каждому коннектору per_user
+        («5 из 12», ТЗ §5). Только работающие члены компании."""
+        result = await self.session.execute(
+            select(ConnectorUserGrant.connector_id, func.count())
+            .join(User, User.id == ConnectorUserGrant.user_id)
+            .where(
+                ConnectorUserGrant.tenant_id == require_tenant(),
+                ConnectorUserGrant.status == GrantStatus.ACTIVE.value,
+                User.status == MemberStatus.ACTIVE,
+            )
+            .group_by(ConnectorUserGrant.connector_id)
+        )
+        return {connector_id: int(count) for connector_id, count in result}
 
     async def credentials_of(self, grant_id: UUID) -> str | None:
         """Текущий шифротекст гранта — колоночный select, без загрузки

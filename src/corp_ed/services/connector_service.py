@@ -14,6 +14,7 @@ from uuid import UUID
 
 import jwt
 import structlog
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.schemas.connector import MAX_FIELD_VALUE_LENGTH
@@ -53,6 +54,7 @@ from corp_ed.domain.models import (
     Connector,
     ConnectorSyncRun,
     ConnectorUserGrant,
+    MemberStatus,
     Tenant,
     User,
 )
@@ -146,6 +148,16 @@ class ConnectorService:
 
     async def list_all(self) -> list[Connector]:
         return await self.connectors.list_all()
+
+    async def grant_counts(self) -> tuple[dict[UUID, int], int]:
+        """Сколько сотрудников подключилось к каждому коннектору per_user и
+        сколько людей работает в компании."""
+        members = await self.session.scalar(
+            select(func.count()).where(
+                User.tenant_id == require_tenant(), User.status == MemberStatus.ACTIVE
+            )
+        )
+        return await self.grants.active_counts(), int(members or 0)
 
     async def get(self, connector_id: UUID) -> Connector:
         connector = await self.connectors.get_by_id(connector_id)

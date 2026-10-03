@@ -8,6 +8,7 @@ from corp_ed.api.v1.dependencies import (
     get_account_service,
     get_auth_service,
     get_avatar_service,
+    get_company_service,
     get_department_repository,
     get_invite_service,
     get_mfa_service,
@@ -74,6 +75,7 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.account_service import AccountService
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.avatar_service import AvatarService
+from corp_ed.services.company_service import CompanyService
 from corp_ed.services.invite_service import InviteService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 
@@ -88,6 +90,7 @@ async def read_me(
     mfa: Annotated[MfaService, Depends(get_mfa_service)],
     avatars: Annotated[AvatarService, Depends(get_avatar_service)],
     departments: Annotated[DepartmentRepository, Depends(get_department_repository)],
+    company_service: Annotated[CompanyService, Depends(get_company_service)],
 ) -> MeResponse:
     """Кто вошёл: учётка, выбранная компания и все компании человека.
     Доступна и до смены временного пароля: фронту нужно знать
@@ -95,6 +98,7 @@ async def read_me(
     account, member = principal.account, principal.member
     with account_scope(account.id):
         memberships = await user_repo.memberships_of_account(account.id)
+    logos = await company_service.logo_urls([m.tenant_id for m in memberships])
     companies: list[MembershipItem] = []
     for membership in memberships:
         tenant = await tenant_repo.get_by_id(membership.tenant_id)
@@ -106,6 +110,7 @@ async def read_me(
                 company_name=tenant.name,
                 role=membership.role,
                 status=membership.status,
+                logo_url=logos.get(tenant.id),
             )
         )
     company = None
@@ -126,6 +131,7 @@ async def read_me(
             department=DepartmentRef(id=department.id, name=department.name)
             if department
             else None,
+            logo_url=logos.get(member.tenant_id),
         )
     return MeResponse(
         id=account.id,

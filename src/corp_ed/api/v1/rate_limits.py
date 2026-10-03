@@ -94,6 +94,17 @@ ATTACHMENT_PER_USER = RatePolicy(
 CHAT_EDIT_PER_USER = RatePolicy(
     "chat-edit-user", limit=240, window=3600, fail_open=True
 )
+# Админка (ТЗ §7): настройки и папки — редкие правки; заявка на тариф
+# уходит людям в Telegram — несколько в сутки.
+COMPANY_EDIT_PER_TENANT = RatePolicy(
+    "company-edit", limit=60, window=3600, fail_open=True
+)
+FOLDER_EDIT_PER_TENANT = RatePolicy(
+    "folder-edit", limit=120, window=3600, fail_open=True
+)
+TARIFF_REQUEST_PER_TENANT = RatePolicy(
+    "tariff-request", limit=5, window=86400, fail_open=False
+)
 SUGGESTION_EDIT_PER_TENANT = RatePolicy(
     "suggestion-edit", limit=120, window=3600, fail_open=True
 )

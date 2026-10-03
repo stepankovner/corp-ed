@@ -68,8 +68,9 @@ async def upload_material(
     ],
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,
+    folder_id: Annotated[UUID | None, Form()] = None,
 ) -> MaterialResponse:
-    """Загрузить документ файлом.
+    """Загрузить документ файлом (folder_id — сразу в папку, ТЗ §5).
 
     title — человеческое название («Правила отбора в акселератор»), а не
     имя файла: оно уходит в крошки эмбеддинга и в подписи источников.
@@ -87,6 +88,7 @@ async def upload_material(
         title=title.strip(),
         filename=file.filename or "file",
         data=data,
+        folder_id=folder_id,
     )
     return MaterialResponse.model_validate(material)
 
@@ -126,8 +128,14 @@ async def update_material(
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,
 ) -> MaterialResponse:
-    """Переименовать. Материал встаёт в очередь на переиндексацию."""
-    material = await service.rename(current_user, material_id, data.title)
+    """Переименовать (материал встаёт в очередь на переиндексацию) или
+    перенести в папку."""
+    fields = data.model_dump(exclude_unset=True)
+    material = await service.get(material_id)
+    if data.title is not None:
+        material = await service.rename(current_user, material_id, data.title)
+    if "folder_id" in fields:
+        material = await service.move(current_user, material_id, data.folder_id)
     return MaterialResponse.model_validate(material)
 
 

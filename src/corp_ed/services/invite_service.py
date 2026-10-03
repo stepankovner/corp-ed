@@ -235,6 +235,10 @@ class InviteService:
                 account.email, invite.email_domain
             ):
                 raise InviteEmailDomainError(invite.email_domain)
+            # Домены почты компании (ТЗ §7) — для любого приглашения.
+            domains = list(tenant.email_domains or [])
+            if domains and not any(email_in_domain(account.email, d) for d in domains):
+                raise InviteEmailDomainError(", @".join(domains), company=True)
 
             member = await self.users.get_by_account(account.id)
             if member is not None and member.status is MemberStatus.ACTIVE:

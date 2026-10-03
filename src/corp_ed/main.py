@@ -16,20 +16,25 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from corp_ed.api.v1.endpoints import (
     account,
+    analytics,
     attachments,
     audit,
     auth,
     avatars,
     chat,
+    company,
     connectors,
     departments,
     faq,
+    folders,
     gaps,
     glossary,
     invites,
     leads,
+    logos,
     materials,
     people,
+    sources,
     suggestions,
     usage,
     users,
@@ -109,7 +114,12 @@ from corp_ed.services.team_notify import drain as drain_team_notifier
 logger = structlog.get_logger()
 
 # Пути, где тело — файл, а не JSON: у них свой лимит размера.
-UPLOAD_PATH_SUFFIXES = ("/materials/upload", "/attachments")
+UPLOAD_PATH_SUFFIXES = (
+    "/materials/upload",
+    "/attachments",
+    "/account/avatar",
+    "/company/logo",
+)
 
 
 @asynccontextmanager
@@ -258,6 +268,11 @@ app.include_router(faq.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(attachments.router, prefix="/api/v1")
 app.include_router(suggestions.router, prefix="/api/v1")
+app.include_router(company.router, prefix="/api/v1")
+app.include_router(logos.router, prefix="/api/v1")
+app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(folders.router, prefix="/api/v1")
+app.include_router(sources.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")

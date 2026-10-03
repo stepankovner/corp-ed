@@ -133,6 +133,8 @@ class MembershipItem(BaseModel):
     company_name: str
     role: UserRole
     status: MemberStatus
+    logo_url: str | None = None
+    """Логотип компании (ТЗ §7) — подписанная ссылка до конца суток."""
 
 
 class DepartmentRef(BaseModel):
@@ -148,6 +150,7 @@ class CurrentCompany(BaseModel):
     position: str | None
     """Должность в этой компании (ТЗ §4)."""
     department: DepartmentRef | None
+    logo_url: str | None = None
 
 
 class MeResponse(BaseModel):
