@@ -5,12 +5,14 @@ import { useState } from "react";
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { formatDate, formatRelative, plural } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Badge, type Tone } from "../ui/Badge";
+import { Select } from "../ui/Field";
 import { Notice } from "../ui/Notice";
 import { EmptyState, Page, PageHeader } from "../ui/Page";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { PageSpinner } from "../ui/Spinner";
 import styles from "./Admin.module.css";
-import { Segmented } from "./common";
 
 type Gap = Schemas["GapClusterResponse"];
 type Status = Schemas["GapStatus"];
@@ -24,6 +26,7 @@ const STATUS: Record<Status, { label: string; tone: Tone }> = {
 };
 
 export function GapsPage() {
+  useDocumentTitle("Пробелы в документах");
   const [filter, setFilter] = useState<Filter>("open");
   const gaps = useQuery({
     queryKey: ["gaps", filter],
@@ -46,7 +49,7 @@ export function GapsPage() {
         description="Вопросы сотрудников, на которые в документах не нашлось ответа, сгруппированные по темам. Сверху — самые частые: с них стоит начать дописывать регламенты."
       />
       <div className={styles.toolbar}>
-        <Segmented<Filter>
+        <SegmentedControl<Filter>
           label="Статус"
           value={filter}
           onChange={setFilter}
@@ -122,28 +125,21 @@ function GapCard({ gap }: { gap: Gap }) {
           ))}
         </ul>
       ) : null}
-      <div className={styles.meta} style={{ marginTop: 6 }}>
-        <label>
-          <span className="visually-hidden">Статус темы</span>
-          <select
-            value={gap.status}
-            disabled={change.isPending}
-            onChange={(e) => change.mutate(e.target.value as Status)}
-            style={{
-              padding: "6px 10px",
-              borderRadius: 8,
-              border: "1px solid var(--line-strong)",
-              background: "var(--bg)",
-            }}
-          >
-            <option value="new">Новый</option>
-            <option value="in_progress">В работе — дописываем документ</option>
-            <option value="resolved">Закрыт — документ дополнен</option>
-            <option value="dismissed">Не нужен</option>
-          </select>
-        </label>
+      <div className={styles.cardFoot}>
+        <Select
+          compact
+          aria-label="Статус темы"
+          value={gap.status}
+          disabled={change.isPending}
+          onChange={(e) => change.mutate(e.target.value as Status)}
+        >
+          <option value="new">Новый</option>
+          <option value="in_progress">В работе — дописываем документ</option>
+          <option value="resolved">Закрыт — документ дополнен</option>
+          <option value="dismissed">Не нужен</option>
+        </Select>
         {change.isError ? (
-          <span style={{ color: "var(--error)" }}>{errorMessage(change.error)}</span>
+          <span className={styles.errorText}>{errorMessage(change.error)}</span>
         ) : null}
       </div>
     </li>

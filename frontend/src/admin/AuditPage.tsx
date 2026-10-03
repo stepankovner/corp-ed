@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { formatDateTime } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { Notice } from "../ui/Notice";
 import { EmptyState, Page, PageHeader } from "../ui/Page";
@@ -73,6 +74,7 @@ function details(event: Event): string {
 }
 
 export function AuditPage() {
+  useDocumentTitle("Журнал действий");
   const users = useQuery({ queryKey: ["users"], queryFn: () => unwrap(api.GET("/api/v1/users")) });
   const events = useInfiniteQuery({
     queryKey: ["audit"],
@@ -125,7 +127,7 @@ export function AuditPage() {
                     {ACTIONS[event.action] ?? event.action}
                     {event.ip ? <span className={tableStyles.sub}>IP {event.ip}</span> : null}
                   </td>
-                  <td>
+                  <td className={tableStyles.nowrap}>
                     {event.actor_user_id
                       ? (emails.get(event.actor_user_id) ?? "сотрудник удалён")
                       : "система"}

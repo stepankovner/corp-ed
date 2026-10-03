@@ -7,6 +7,7 @@ import { errorMessage } from "../api/errors";
 import { useAuth } from "../auth/context";
 import { passwordProblem } from "../auth/password";
 import { formatDate } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
@@ -20,6 +21,7 @@ import { AuthLayout } from "./AuthLayout";
  * передаётся телом запроса.
  */
 export function JoinPage() {
+  useDocumentTitle("Приглашение");
   const { companyCode = "" } = useParams();
   const token = useLocation().hash.replace(/^#/, "");
   const { state, logout } = useAuth();

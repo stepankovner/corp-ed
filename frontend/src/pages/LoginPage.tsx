@@ -3,6 +3,7 @@ import { Link } from "react-router";
 
 import { errorMessage } from "../api/errors";
 import { rememberedCompany, useAuth } from "../auth/context";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
@@ -10,6 +11,7 @@ import authStyles from "./AuthLayout.module.css";
 import { AuthLayout } from "./AuthLayout";
 
 export function LoginPage() {
+  useDocumentTitle("Вход");
   const { login } = useAuth();
   const [company, setCompany] = useState(rememberedCompany);
   const [email, setEmail] = useState("");

@@ -61,6 +61,7 @@ describe("боковая панель", () => {
     signedInAs({ role: "admin" });
     renderApp("/admin/users");
     expect(await screen.findByRole("heading", { name: "Сотрудники" })).toBeInTheDocument();
+    expect(document.title).toBe("Сотрудники — kronto");
 
     const sections = screen.getByRole("list", { name: "Управление" });
     expect(within(sections).getByRole("link", { name: "Сотрудники" })).toHaveAttribute(
@@ -216,5 +217,20 @@ describe("телефон", () => {
     expect(document.activeElement).not.toBe(close);
     await user.tab();
     expect(close).toHaveFocus();
+  });
+});
+
+describe("заголовок вкладки", () => {
+  it("на входе и на несуществующей странице", async () => {
+    renderApp("/login", { signedIn: false });
+    await screen.findByLabelText("Код компании");
+    expect(document.title).toBe("Вход — kronto");
+  });
+
+  it("на странице, которой нет", async () => {
+    signedInAs();
+    renderApp("/no-such-page");
+    expect(await screen.findByRole("heading", { name: "Такой страницы нет" })).toBeVisible();
+    expect(document.title).toBe("Страница не найдена — kronto");
   });
 });

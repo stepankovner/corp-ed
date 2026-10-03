@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { ThemeMenu } from "../layout/ThemeOptions";
 import { Logo, WindowMark } from "../ui/Logo";
 import styles from "./AuthLayout.module.css";
 
@@ -17,14 +18,15 @@ export function AuthLayout({
   return (
     <div className={styles.screen}>
       <header className={styles.top}>
-        <Logo height={24} />
+        <Logo height={22} />
+        <ThemeMenu />
       </header>
       <main className={styles.center}>
         <div className={styles.glass}>
           <section className={styles.window} aria-labelledby="auth-title">
             <div className={styles.bar}>
               <WindowMark />
-              {bar}
+              <span className={styles.barText}>{bar}</span>
             </div>
             <div className={styles.body}>
               <div>

@@ -7,6 +7,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { describeCode } from "../lib/codes";
 import { formatDateTime, formatRelative } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Badge, type Tone } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
@@ -102,6 +103,7 @@ export function ConnectorPage() {
   });
   const kinds = useKinds();
   const kind = kinds.data?.find((item) => item.kind === connector.data?.kind);
+  useDocumentTitle(connector.data?.name ?? "Подключение");
 
   if (connector.isPending || kinds.isPending) return <PageSpinner />;
   if (connector.isError) {
@@ -262,7 +264,7 @@ function ConnectorView({
                 поддерживаемом формате: .docx, .xlsx, .pptx или PDF.
               </Notice>
             ) : null}
-            <Table label="История синхронизаций">
+            <Table label="История синхронизаций" rowTitle={false}>
               <thead>
                 <tr>
                   <th>Начало</th>

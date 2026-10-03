@@ -6,6 +6,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { useMe } from "../auth/context";
 import { formatDateTime, formatRelative } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Checkbox, SelectField, TextField } from "../ui/Field";
@@ -27,6 +28,7 @@ type Role = Schemas["UserRole"];
 const ROLE_LABEL: Record<Role, string> = { admin: "администратор", employee: "сотрудник" };
 
 export function UsersPage() {
+  useDocumentTitle("Сотрудники");
   const me = useMe();
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: () => unwrap(api.GET("/api/v1/users")) });
@@ -97,14 +99,16 @@ export function UsersPage() {
       ) : (
         <>
           <div className={styles.toolbar}>
-            <input
-              className={styles.search}
-              type="search"
-              placeholder="Поиск по имени или почте"
-              aria-label="Поиск по имени или почте"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <span className={styles.searchWrap}>
+              <input
+                className={styles.search}
+                type="search"
+                placeholder="Поиск по имени или почте"
+                aria-label="Поиск по имени или почте"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </span>
           </div>
           <Table label="Сотрудники">
             <thead>
