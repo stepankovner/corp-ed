@@ -1,0 +1,286 @@
+/* Вкладки настроек — ссылки: у каждой свой адрес, «Назад» в браузере работает. */
+.tabs {
+  display: flex;
+  gap: var(--s-5);
+  margin-bottom: var(--s-5);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+.tab {
+  position: relative;
+  flex: none;
+  padding: 10px 2px 12px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.15s var(--ease);
+}
+.tab:hover {
+  color: var(--ink);
+}
+.tab[aria-current="page"] {
+  color: var(--ink);
+}
+.tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.stack {
+  display: grid;
+  gap: var(--s-5);
+}
+.lead {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  max-width: 70ch;
+}
+
+/* Раздел вкладки — карточка с заголовком, как карточки лендинга. */
+.section {
+  display: grid;
+  gap: var(--s-4);
+  min-width: 0;
+  padding: clamp(16px, 2.5vw, 28px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+}
+.danger {
+  border-color: var(--error-line);
+}
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.sectionHead > :first-child {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.sectionTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 1.1875rem;
+}
+.sectionText {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  margin-top: 6px;
+  max-width: 70ch;
+}
+
+.form {
+  display: grid;
+  gap: var(--s-4);
+  max-width: 560px;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-4);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+.small {
+  font-size: var(--fs-small);
+}
+.bullets {
+  display: grid;
+  gap: 4px;
+  padding-left: 1.25em;
+  list-style: disc;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.alert {
+  color: var(--error);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* Почта в профиле — значение, а не поле: менять её — отдельным действием. */
+.value {
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-small);
+}
+.valueLabel {
+  font-weight: 500;
+}
+.valueText {
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+/* Списки: ключи, компании, заявки. */
+.list {
+  display: grid;
+}
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+}
+.item:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.item:last-child {
+  padding-bottom: 0;
+}
+.itemMain {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+.itemText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.itemTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.itemActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+/* Подключение приложения: шаги, QR-код, ключ для ручного ввода. */
+.steps {
+  display: grid;
+  gap: var(--s-4);
+  counter-reset: step;
+}
+.step {
+  display: grid;
+  gap: var(--s-3);
+  font-size: var(--fs-small);
+}
+.step > p:first-child::before {
+  counter-increment: step;
+  content: counter(step) ". ";
+  font-weight: 500;
+}
+.qr {
+  display: grid;
+  justify-items: center;
+}
+.qrImage {
+  width: 200px;
+  height: 200px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.qrBg {
+  fill: var(--qr-bg);
+}
+.qrInk {
+  fill: var(--qr-ink);
+}
+.secret {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.secret code {
+  flex: 1;
+  min-width: 0;
+  word-spacing: 0.25em;
+  overflow-wrap: anywhere;
+}
+/* Поле кода: моноширинные цифры вразрядку, как на втором шаге входа. */
+.code input {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  letter-spacing: 0.2em;
+}
+
+/* Резервные коды — сеткой, чтобы их было удобно переписать. */
+.codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+  .tabs {
+    gap: var(--s-4);
+  }
+  .actions > button,
+  .actions > a {
+    flex: 1 1 auto;
+  }
+}
