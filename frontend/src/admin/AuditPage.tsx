@@ -47,6 +47,9 @@ const ACTIONS: Record<string, string> = {
   "department.created": "Отдел добавлен",
   "department.updated": "Отдел переименован",
   "department.deleted": "Отдел удалён",
+  "folder.created": "Папка создана",
+  "folder.updated": "Папка изменена",
+  "folder.deleted": "Папка удалена",
   "invite.created": "Создано приглашение",
   "invite.revoked": "Приглашение отозвано",
   "company_request.created": "Заявка на подключение компании",
@@ -80,6 +83,9 @@ const ACTIONS: Record<string, string> = {
   "tenant.resumed": "Доступ компании возобновлён",
   "tenant.not_found_mode_changed": "Изменён режим ответов без документов",
   "tenant.tariff_changed": "Изменён тариф",
+  "tenant.settings_updated": "Настройки компании изменены",
+  "tenant.logo_updated": "Логотип изменён",
+  "tenant.tariff_change_requested": "Запрошена смена тарифа",
 };
 
 function details(event: Event): string {
