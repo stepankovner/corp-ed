@@ -22,8 +22,9 @@ from sqlalchemy import (
     text,
     true,
 )
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
-from sqlalchemy.orm import Mapped, deferred, mapped_column
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
@@ -33,16 +34,33 @@ from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE
 
 
 class UserRole(enum.Enum):
-    """Роль сотрудника внутри своей компании.
+    """Роль человека в компании — свойство членства, а не учётки (ТЗ §2):
+    в одной компании он администратор, в другой — сотрудник.
 
-    ADMIN — управляет документами и пользователями компании, видит
-    отладку поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы.
-    Заводить компании (тенанты) не может ни одна роль: это делает
-    команда Kronto через CLI на сервере (см. corp_ed.cli).
+    ADMIN — управляет документами и людьми компании, видит отладку
+    поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы. Отдельных
+    «владельца» и «редактора» нет (решение владельца продукта 03.10).
+    Заводить компании не может ни одна роль: заявку одобряет команда
+    Kronto (corp_ed.cli, позже — наша панель).
     """
 
     ADMIN = "admin"
     EMPLOYEE = "employee"
+
+
+class MemberStatus(enum.Enum):
+    """Состояние членства в компании.
+
+    ACTIVE — работает и занимает место; BLOCKED — заблокирован админом,
+    место не занимает; PENDING — вступил по приглашению с одобрением и
+    ждёт админа; LEFT — ушёл сам или убран админом: учётка жива, доступа
+    к компании нет, вернуться можно по новому приглашению.
+    """
+
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    PENDING = "pending"
+    LEFT = "left"
 
 
 class MaterialStatus(enum.Enum):
@@ -111,39 +129,123 @@ class Tenant(Base):
     connector_limit: Mapped[int | None]
 
 
-class User(TenantMixin, Base):
-    __tablename__ = "users"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "email", name="uq_user_tenant_email"),
-    )
+class Account(Base):
+    """Учётная запись человека в kronto (ТЗ §2, решение 03.10).
+
+    Не зависит от компании: почта, пароль, имя и подтверждение почты
+    живут здесь, а роль и доступ — в членстве (User). Ушёл из компании —
+    учётка остаётся и ждёт следующего приглашения.
+
+    Не тенантская и не под RLS: вход ищет учётку по почте до того, как
+    известна компания. Данных компаний здесь нет.
+    """
+
+    __tablename__ = "accounts"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    email: Mapped[str]
+    # В casefold: Anna@Acme.ru и anna@acme.ru — одна учётка.
+    email: Mapped[str] = mapped_column(String(254), unique=True)
     hashed_password: Mapped[str]
-    full_name: Mapped[str | None]
-    role: Mapped[UserRole]
-    is_active: Mapped[bool] = mapped_column(default=True)
-    # Версия токенов: увеличивается при смене пароля, роли, блокировке и
-    # выходе со всех устройств. Access-токен со старой версией отвергается.
+    # У перенесённых со старой схемы учёток имени может не быть: фронт
+    # попросит его при входе. Новые без имени не регистрируются.
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Согласие на обработку персональных данных при регистрации (152-ФЗ):
+    # когда и с какой редакцией политики. NULL — учётка до 03.10.
+    consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consent_policy_version: Mapped[str | None] = mapped_column(String(64))
+    # Версия сессий учётки: смена пароля и «выйти везде» увеличивают её,
+    # и все выданные access-токены перестают приниматься.
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
-    # Пароль выдан администратором: до смены доступ только к смене пароля.
+    # Пароль выдала команда (cli reset-password): до смены — только смена.
     must_change_password: Mapped[bool] = mapped_column(
         default=False, server_default=false()
+    )
+    # Компания, в которой человек был последней: после входа — она.
+    last_tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
+    @property
+    def full_name(self) -> str | None:
+        name = " ".join(p for p in (self.first_name, self.last_name) if p)
+        return name or None
+
+
+class User(TenantMixin, Base):
+    """Членство учётки в компании (ТЗ §2).
+
+    Таблица и класс называются по-старому: на users.id ссылаются журнал
+    вопросов, доступы к документам, подключения сотрудников — для них
+    «пользователь» и был человеком внутри одной компании. Личное (почта,
+    пароль, имя) — в Account.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "account_id", name="uq_user_tenant_account"),
+        CheckConstraint(
+            "status IN ('active', 'blocked', 'pending', 'left')",
+            name="ck_users_status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    # NULL — учётку удалили: членство остаётся ради ссылок журнала
+    # вопросов и показывается как «удалённый пользователь».
+    account_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), index=True
+    )
+    role: Mapped[UserRole]
+    status: Mapped[MemberStatus] = mapped_column(
+        SAEnum(
+            MemberStatus,
+            native_enum=False,
+            length=16,
+            values_callable=lambda members: [m.value for m in members],
+        ),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    # Версия членства: смена роли, блокировка и удаление из компании
+    # увеличивают её — access-токены этой компании отвергаются сразу.
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # joined: имя и почта нужны почти везде, где есть членство; accounts
+    # не тенантская, фильтр по тенанту на соединение не влияет.
+    account: Mapped[Account | None] = relationship(lazy="joined", innerjoin=False)
+
+    @property
+    def is_active(self) -> bool:
+        return self.status is MemberStatus.ACTIVE
+
+    @property
+    def email(self) -> str | None:
+        return self.account.email if self.account else None
+
+    @property
+    def full_name(self) -> str | None:
+        return self.account.full_name if self.account else None
+
 
 class Invite(TenantMixin, Base):
-    """Ссылка-приглашение в компанию (решение 28.09).
+    """Приглашение в компанию: ссылка и код (решения 28.09 и 03.10).
 
-    Админ отправляет ссылку куда угодно (мессенджер, почта); по ней человек
-    сам заводит учётку сотрудника в этой компании. Хранится только sha256
-    токена, как у refresh-токенов: утечка таблицы не даёт действующих
-    ссылок. Под RLS: ссылка ищется в контексте компании из адреса
-    (/join/<код>#<токен>).
+    Админ отправляет ссылку или код куда угодно (рабочий чат, почта); по
+    ним человек со своей учёткой kronto вступает в компанию. Хранятся
+    только sha256 токена ссылки и кода, как у refresh-токенов: утечка
+    таблицы не даёт действующих приглашений. Под RLS; компания по хешу
+    находится через InviteLookup.
     """
 
     __tablename__ = "invites"
@@ -158,12 +260,151 @@ class Invite(TenantMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # sha256 кода приглашения (K7QM-4XPA) — той же ссылки в короткой
+    # форме, чтобы продиктовать (ТЗ §2). NULL у ссылок до 03.10.
+    code_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     max_uses: Mapped[int]
     uses: Mapped[int] = mapped_column(default=0, server_default="0")
     # Почта присоединяющегося — только в этом домене (и его поддоменах);
     # пусто — любая. Хранится в нижнем регистре, без «@».
     email_domain: Mapped[str | None] = mapped_column(String(253))
+    # Вступивший ждёт одобрения администратора (по умолчанию — нет).
+    requires_approval: Mapped[bool] = mapped_column(
+        default=False, server_default=false()
+    )
+    # Роль вступающего. ADMIN — только у приглашения первого
+    # администратора, которое выдаёт команда Kronto (cli); админ компании
+    # создаёт приглашения сотрудников.
+    role: Mapped[UserRole] = mapped_column(
+        default=UserRole.EMPLOYEE, server_default=UserRole.EMPLOYEE.name
+    )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class InviteLookup(Base):
+    """Хеш ссылки или кода приглашения → компания.
+
+    Приглашения под RLS, а человек со ссылкой или кодом компанию ещё не
+    знает (в ссылке с 03.10 её нет, код — 8 символов). Эта таблица —
+    только хеши и идентификаторы, без данных компании; по найденному
+    tenant_id приглашение читается уже в его контексте.
+    """
+
+    __tablename__ = "invite_lookups"
+
+    hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    invite_id: Mapped[UUID] = mapped_column(
+        ForeignKey("invites.id", ondelete="CASCADE"), index=True
+    )
+
+
+class CompanyRequest(Base):
+    """Заявка «Подключить компанию» от учётки без компании (ТЗ §2).
+
+    Одобряет команда Kronto: создаётся компания, заявитель становится
+    её администратором. Не тенантская: компании ещё нет.
+    """
+
+    __tablename__ = "company_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('new', 'approved', 'rejected', 'cancelled')",
+            name="ck_company_requests_status",
+        ),
+        CheckConstraint(
+            "seats IS NULL OR seats > 0", name="ck_company_requests_seats_positive"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    company_name: Mapped[str] = mapped_column(String(200))
+    seats: Mapped[int | None]
+    comment: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailTokenPurpose(enum.Enum):
+    VERIFY_EMAIL = "verify_email"
+    RESET_PASSWORD = "reset_password"  # noqa: S105 — назначение, не пароль
+    CHANGE_EMAIL = "change_email"
+    REVERT_EMAIL = "revert_email"
+
+
+class EmailToken(Base):
+    """Одноразовая ссылка или код из письма (ТЗ §3).
+
+    Хранятся только sha256 ссылки и кода. Код из 6 цифр — для
+    подтверждения почты с телефона; его перебор ограничен попытками на
+    сам токен и частотой запросов.
+    """
+
+    __tablename__ = "email_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('verify_email', 'reset_password', 'change_email', "
+            "'revert_email')",
+            name="ck_email_tokens_purpose",
+        ),
+        Index("ix_email_tokens_account_purpose", "account_id", "purpose"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE")
+    )
+    purpose: Mapped[str] = mapped_column(String(32))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    code_hash: Mapped[str | None] = mapped_column(String(64))
+    # Смена почты: новый адрес (change_email) или прежний (revert_email).
+    email: Mapped[str | None] = mapped_column(String(254))
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class OutboxEmail(Base):
+    """Письмо в очереди на отправку (ТЗ §3).
+
+    Запрос только кладёт письмо сюда в своей транзакции, отправляет
+    воркер: сбой почты не ломает регистрацию, письмо уйдёт повторной
+    попыткой. Текст после отправки стирается — в нём ссылки и коды.
+    """
+
+    __tablename__ = "outbox_emails"
+    __table_args__ = (Index("ix_outbox_emails_pending", "sent_at", "next_attempt_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    to_email: Mapped[str] = mapped_column(String(254))
+    kind: Mapped[str] = mapped_column(String(32))
+    subject: Mapped[str] = mapped_column(String(200))
+    text_body: Mapped[str] = mapped_column(Text)
+    html_body: Mapped[str] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -215,9 +456,13 @@ class Lead(Base):
 class RefreshToken(Base):
     """Выданный refresh-токен (хранится только sha256).
 
+    Принадлежит учётке, не компании: вход — один на человека. tenant_id
+    и user_id — компания, выбранная в этой сессии, и членство в ней
+    (NULL — человек без компании или ещё не выбрал). Переключение
+    компании выдаёт новую пару с другим tenant_id.
+
     Не TenantMixin намеренно: токен предъявляют до того, как известен
-    тенант, — поиск идёт по хешу, и уже из найденной строки берутся
-    пользователь и тенант. tenant_id хранится для аудита и каскадов.
+    тенант, — поиск идёт по хешу.
 
     family_id объединяет цепочку ротаций одного входа. Повторное
     предъявление уже использованного токена — признак кражи: отзывается
@@ -227,14 +472,20 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    tenant_id: Mapped[UUID] = mapped_column(
+    tenant_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("tenants.id", ondelete="CASCADE"), index=True
     )
     family_id: Mapped[UUID] = mapped_column(index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # «Запомнить это устройство» не отмечено: cookie без срока, сессия
+    # кончается с браузером (ТЗ §3).
+    remember: Mapped[bool] = mapped_column(default=True, server_default=true())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

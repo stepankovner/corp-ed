@@ -72,6 +72,9 @@ TENANT_SETTING = "app.tenant_id"
 через set_config(..., is_local => true): значение живёт до конца
 транзакции и не переезжает с соединением пула в чужой запрос."""
 
+ACCOUNT_SETTING = "app.account_id"
+"""Параметр сессии с учёткой из токена — для правила own_membership."""
+
 TENANT_TABLES = (
     "users",
     "materials",
@@ -131,8 +134,34 @@ def rls_statements(tables: tuple[str, ...] = TENANT_TABLES) -> list[str]:
     return statements
 
 
+_CURRENT_ACCOUNT = f"NULLIF(current_setting('{ACCOUNT_SETTING}', true), '')::uuid"
+
+
+def own_membership_statements() -> list[str]:
+    """Свои членства видны во всех компаниях (ТЗ §2, решение 03.10).
+
+    Учётка не привязана к компании: на входе и в переключателе нужен
+    список компаний человека. Политики RLS складываются через OR, поэтому
+    это правило добавляет к tenant_isolation только чтение строк users с
+    account_id из токена. Писать в чужую компанию оно не даёт (только
+    SELECT), данные компаний (документы, вопросы) не открывает — у них
+    своя tenant_isolation.
+    """
+    return [
+        "DROP POLICY IF EXISTS own_membership ON users",
+        f"""
+        CREATE POLICY own_membership ON users FOR SELECT
+        USING (account_id = {_CURRENT_ACCOUNT})
+        """,
+    ]
+
+
 def all_statements() -> list[str]:
-    return [*audit_append_only_statements(), *rls_statements()]
+    return [
+        *audit_append_only_statements(),
+        *rls_statements(),
+        *own_membership_statements(),
+    ]
 
 
 def apply_all(connection: Connection) -> None:

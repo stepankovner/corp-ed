@@ -1,4 +1,15 @@
-from dataclasses import dataclass
+"""Люди компании — для администратора (ТЗ §2, §7).
+
+Компания (тенант) берётся из контекста запроса — из подписанного токена
+администратора. Параметра tenant_id нет ни в одном методе: тронуть
+человека в чужой компании нельзя даже по ошибке.
+
+Учёток админ не заводит и паролей не выдаёт (решение 03.10): люди
+приходят по приглашению со своей учёткой kronto, пароль восстанавливают
+по почте. Админ меняет роль, блокирует, одобряет вступивших и убирает из
+компании.
+"""
+
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -6,100 +17,32 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import (
-    EmailAlreadyExistsError,
+    ConflictError,
     LastAdminError,
     NotFoundError,
     SelfModificationError,
-    SelfPasswordResetError,
 )
-from corp_ed.core.password_policy import validate_password
-from corp_ed.core.security import generate_temporary_password, hash_password
-from corp_ed.domain.models import User, UserRole
+from corp_ed.domain.models import MemberStatus, User, UserRole
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
-from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.seats import ensure_free_seat
 
 logger = structlog.get_logger()
 
 
-@dataclass(frozen=True)
-class CreatedUser:
-    user: User
-    temporary_password: str | None
-    """Сгенерированный пароль — показывается один раз и нигде не хранится."""
-
-
 class UserService:
-    """Управление пользователями компании. Вызывает только ADMIN.
-
-    Компания (тенант) берётся из контекста запроса — из подписанного
-    токена администратора. Параметра tenant_id нет ни в одном методе:
-    завести пользователя в чужой компании нельзя даже по ошибке.
-    """
-
     def __init__(
         self,
         repository: UserRepository,
-        refresh_repo: RefreshTokenRepository,
         audit: AuditRepository,
         session: AsyncSession,
     ) -> None:
         self.repository = repository
-        self.refresh_repo = refresh_repo
         self.audit = audit
         self.session = session
 
     async def list_users(self) -> list[User]:
-        return await self.repository.list_all()
-
-    async def create_user(
-        self,
-        actor: User,
-        *,
-        email: str,
-        full_name: str | None,
-        role: UserRole,
-        password: str | None,
-    ) -> CreatedUser:
-        """Завести сотрудника.
-
-        Пароль задаёт администратор или генерирует система. В обоих
-        случаях его знает не только владелец, поэтому при первом входе
-        его обязательно сменить (must_change_password).
-        """
-        email = email.casefold()
-        if await self.repository.get_by_email(email) is not None:
-            raise EmailAlreadyExistsError(email)
-        await ensure_free_seat(self.session, actor.tenant_id)
-
-        temporary = None
-        if password is None:
-            temporary = password = generate_temporary_password()
-        else:
-            validate_password(password, email=email)
-
-        user = await self.repository.create(
-            User(
-                email=email,
-                full_name=_name(full_name),
-                role=role,
-                hashed_password=hash_password(password),
-                must_change_password=True,
-            )
-        )
-        self.audit.record(
-            AuditAction.USER_CREATED,
-            tenant_id=user.tenant_id,
-            actor_id=actor.id,
-            target_type="user",
-            target_id=user.id,
-            details={"role": role.value},
-        )
-        await self.session.commit()
-
-        logger.info("user_created", user_id=str(user.id), role=role.value)
-        return CreatedUser(user=user, temporary_password=temporary)
+        return await self.repository.list_members()
 
     async def update_user(
         self,
@@ -107,44 +50,43 @@ class UserService:
         user_id: UUID,
         *,
         role: UserRole | None = None,
-        is_active: bool | None = None,
-        full_name: str | None = None,
+        blocked: bool | None = None,
     ) -> User:
-        """Сменить роль, заблокировать или переименовать сотрудника.
+        """Сменить роль или заблокировать (разблокировать).
 
-        Смена роли и блокировка закрывают все сессии пользователя сразу,
-        не дожидаясь истечения access-токена.
+        Смена роли и блокировка отзывают токены этой компании у человека
+        сразу (версия членства), его вход в другие компании не трогается.
         """
         user = await self._get(user_id)
-        before = {"role": user.role.value, "is_active": user.is_active}
+        before = {"role": user.role.value, "status": user.status.value}
 
+        new_status = user.status
+        if blocked is True and user.status is MemberStatus.ACTIVE:
+            new_status = MemberStatus.BLOCKED
+        elif blocked is False and user.status is MemberStatus.BLOCKED:
+            new_status = MemberStatus.ACTIVE
         changes_access = (role is not None and role is not user.role) or (
-            is_active is not None and is_active is not user.is_active
+            new_status is not user.status
         )
         if changes_access and user.id == actor.id:
             raise SelfModificationError()
 
-        loses_admin = user.role is UserRole.ADMIN and user.is_active
+        loses_admin = user.role is UserRole.ADMIN and user.status is MemberStatus.ACTIVE
         loses_admin = loses_admin and (
-            (role is not None and role is not UserRole.ADMIN) or is_active is False
+            (role is not None and role is not UserRole.ADMIN)
+            or new_status is not MemberStatus.ACTIVE
         )
         if loses_admin and await self.repository.count_active_admins() <= 1:
             raise LastAdminError()
-        if is_active is True and not user.is_active:
-            # Разблокировка занимает место так же, как новая учётка.
+        if new_status is MemberStatus.ACTIVE and user.status is MemberStatus.BLOCKED:
+            # Разблокировка занимает место так же, как новый сотрудник.
             await ensure_free_seat(self.session, actor.tenant_id)
 
         if role is not None:
             user.role = role
-        if is_active is not None:
-            user.is_active = is_active
-        if full_name is not None:
-            # Пустая строка — стереть имя; None — не трогать.
-            user.full_name = _name(full_name)
-
+        user.status = new_status
         if changes_access:
             user.token_version += 1
-            await self.refresh_repo.revoke_user(user.id, datetime.now(UTC))
 
         self.audit.record(
             AuditAction.USER_UPDATED,
@@ -154,8 +96,7 @@ class UserService:
             target_id=user.id,
             details={
                 "before": before,
-                "after": {"role": user.role.value, "is_active": user.is_active},
-                "full_name_changed": full_name is not None,
+                "after": {"role": user.role.value, "status": user.status.value},
             },
         )
         await self.session.commit()
@@ -164,27 +105,35 @@ class UserService:
             user_id=str(user.id),
             actor_id=str(actor.id),
             role=user.role.value,
-            is_active=user.is_active,
+            status=user.status.value,
         )
         return user
 
-    async def reset_password(self, actor: User, user_id: UUID) -> str:
-        """Выдать новый временный пароль и закрыть все сессии пользователя.
-
-        Пароль генерирует система: администратор не придумывает его сам,
-        а значит, не использует один и тот же для всех.
-        """
+    async def approve(self, actor: User, user_id: UUID) -> User:
+        """Пустить вступившего по приглашению с одобрением."""
         user = await self._get(user_id)
-        if user.id == actor.id:
-            raise SelfPasswordResetError()
-        temporary = generate_temporary_password()
-
-        user.hashed_password = hash_password(temporary)
-        user.must_change_password = True
+        if user.status is not MemberStatus.PENDING:
+            raise ConflictError("Заявка уже рассмотрена")
+        await ensure_free_seat(self.session, actor.tenant_id)
+        user.status = MemberStatus.ACTIVE
         user.token_version += 1
-        await self.refresh_repo.revoke_user(user.id, datetime.now(UTC))
         self.audit.record(
-            AuditAction.USER_PASSWORD_RESET,
+            AuditAction.USER_APPROVED,
+            tenant_id=user.tenant_id,
+            actor_id=actor.id,
+            target_type="user",
+            target_id=user.id,
+        )
+        await self.session.commit()
+        return user
+
+    async def reject(self, actor: User, user_id: UUID) -> None:
+        user = await self._get(user_id)
+        if user.status is not MemberStatus.PENDING:
+            raise ConflictError("Заявка уже рассмотрена")
+        _mark_left(user)
+        self.audit.record(
+            AuditAction.USER_REJECTED,
             tenant_id=user.tenant_id,
             actor_id=actor.id,
             target_type="user",
@@ -192,21 +141,40 @@ class UserService:
         )
         await self.session.commit()
 
-        logger.info("password_reset", user_id=str(user.id), actor_id=str(actor.id))
-        return temporary
+    async def remove(self, actor: User, user_id: UUID) -> None:
+        """Убрать из компании: учётка человека остаётся, доступа к
+        компании больше нет, его диалоги здесь скрываются (ТЗ §2)."""
+        user = await self._get(user_id)
+        if user.id == actor.id:
+            raise SelfModificationError()
+        if (
+            user.role is UserRole.ADMIN
+            and user.status is MemberStatus.ACTIVE
+            and await self.repository.count_active_admins() <= 1
+        ):
+            raise LastAdminError()
+        _mark_left(user)
+        self.audit.record(
+            AuditAction.USER_REMOVED,
+            tenant_id=user.tenant_id,
+            actor_id=actor.id,
+            target_type="user",
+            target_id=user.id,
+        )
+        await self.session.commit()
+        logger.info("user_removed", user_id=str(user.id), actor_id=str(actor.id))
 
     async def _get(self, user_id: UUID) -> User:
         # Чужой пользователь не загрузится: хук изоляции добавит фильтр
         # по тенанту из контекста. Ответ — 404, а не 403, чтобы не
         # подтверждать, что такой id существует в другой компании.
         user = await self.repository.get_by_id(user_id)
-        if user is None:
+        if user is None or user.status is MemberStatus.LEFT:
             raise NotFoundError("Пользователь не найден")
         return user
 
 
-def _name(full_name: str | None) -> str | None:
-    """Имя без пробелов по краям; из одних пробелов — нет имени."""
-    if full_name is None:
-        return None
-    return full_name.strip() or None
+def _mark_left(user: User) -> None:
+    user.status = MemberStatus.LEFT
+    user.left_at = datetime.now(UTC)
+    user.token_version += 1

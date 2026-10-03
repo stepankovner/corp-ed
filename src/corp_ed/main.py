@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from corp_ed.api.v1.endpoints import (
+    account,
     audit,
     auth,
     connectors,
@@ -212,6 +213,7 @@ app = FastAPI(
 )
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(account.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(invites.router, prefix="/api/v1")
 app.include_router(leads.router, prefix="/api/v1")

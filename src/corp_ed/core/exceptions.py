@@ -75,8 +75,12 @@ class PasswordChangeRequiredError(PermissionError):
 class LastAdminError(ConflictError):
     """Операция оставила бы компанию без активного администратора."""
 
-    def __init__(self) -> None:
-        super().__init__("В компании должен остаться хотя бы один администратор")
+    code = "last_admin"
+
+    def __init__(
+        self, message: str = "В компании должен остаться хотя бы один администратор"
+    ) -> None:
+        super().__init__(message)
 
 
 class SelfModificationError(ConflictError):
@@ -203,15 +207,17 @@ class ConnectorStateError(ConflictError):
 
 
 class InvalidInviteError(NotFoundError):
-    """Ссылка-приглашение не найдена, отозвана, истекла или исчерпана.
+    """Приглашение не найдено, отозвано, истекло или исчерпано.
 
     Одно сообщение на все причины: держателю ссылки незачем знать, какая.
     """
 
+    code = "invalid_invite"
+
     def __init__(self) -> None:
         super().__init__(
-            "Ссылка-приглашение недействительна или истекла. Попросите новую "
-            "у администратора компании."
+            "Приглашение недействительно или истекло. Попросите новую ссылку "
+            "или код у администратора компании."
         )
 
 
@@ -224,14 +230,67 @@ class InviteEmailDomainError(DomainError):
         )
 
 
-class InviteEmailTakenError(ConflictError):
-    """Учётка с такой почтой в компании уже есть — нужно войти, а не
-    заводить вторую."""
+class EmailNotVerifiedError(PermissionError):
+    """Пароль верный, но почта не подтверждена (ТЗ §3). HTTP 403."""
+
+    code = "email_not_verified"
+
+    def __init__(self) -> None:
+        super().__init__("Почта не подтверждена — введите код из письма")
+
+
+class NoCompanyError(PermissionError):
+    """Учётка без выбранной компании обращается к данным компании (ТЗ §2).
+
+    Фронт по коду показывает экран «Вы ещё не в компании». HTTP 403.
+    """
+
+    code = "no_company"
+
+    def __init__(self) -> None:
+        super().__init__("Вы ещё не состоите в компании")
+
+
+class MembershipBlockedError(PermissionError):
+    """Администратор заблокировал человека в этой компании. HTTP 403."""
+
+    code = "membership_blocked"
 
     def __init__(self) -> None:
         super().__init__(
-            "Сотрудник с этой почтой уже есть в компании — войдите со своим паролем"
+            "Администратор компании закрыл вам доступ. Если это ошибка — "
+            "напишите ему."
         )
+
+
+class InvalidEmailCodeError(DomainError):
+    """Код или ссылка из письма неверны, истекли или использованы.
+
+    Одно сообщение на все причины. HTTP 400.
+    """
+
+    code = "invalid_code"
+
+    def __init__(self) -> None:
+        super().__init__("Код или ссылка недействительны — запросите новое письмо")
+
+
+class EmailTakenError(ConflictError):
+    """Новая почта уже занята другой учёткой (смена почты). HTTP 409."""
+
+    code = "email_taken"
+
+    def __init__(self) -> None:
+        super().__init__("Эта почта уже используется другой учётной записью")
+
+
+class CompanyRequestExistsError(ConflictError):
+    """У учётки уже есть заявка на рассмотрении. HTTP 409."""
+
+    code = "company_request_exists"
+
+    def __init__(self) -> None:
+        super().__init__("Ваша заявка уже на рассмотрении — мы скоро ответим")
 
 
 class InvalidLeadError(DomainError):

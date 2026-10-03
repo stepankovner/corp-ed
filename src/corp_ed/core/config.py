@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     # здесь есть: короткий access ограничивает окно украденного токена,
     # refresh ротируется при каждом использовании (см. DECISIONS.md).
     access_token_ttl_minutes: int = Field(default=15, gt=0, le=60)
-    refresh_token_ttl_days: int = Field(default=14, gt=0, le=90)
+    # «Запомнить это устройство» (ТЗ §3): 30 дней. Без галочки — сессия
+    # до закрытия браузера, но не дольше короткого срока ниже.
+    refresh_token_ttl_days: int = Field(default=30, gt=0, le=90)
+    session_refresh_ttl_hours: int = Field(default=12, gt=0, le=72)
 
     # База данных
     database_url: str
@@ -390,6 +393,84 @@ class TeamNotifySettings(BaseSettings):
 @lru_cache
 def get_team_notify_settings() -> TeamNotifySettings:
     return TeamNotifySettings()
+
+
+class MailSettings(BaseSettings):
+    """Отправка писем (ТЗ §3, решение 03.10).
+
+    backend:
+    - smtp — настоящая отправка; на старте — ящик Яндекс 360 на
+      krontoai.ru (smtp.yandex.ru:465, пароль приложения; лимит Яндекса —
+      300 писем в сутки с ящика);
+    - console — письмо в лог вместо отправки (разработка);
+    - memory — в список в памяти процесса (тесты).
+
+    Стенд шлёт на перехватчик писем (Mailpit, `deploy/`): наружу ничего
+    не уходит. Пароль — секрет: в логи не пишется.
+    """
+
+    backend: Literal["smtp", "console", "memory"] = "console"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=465, gt=0, lt=65536)
+    smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    from_address: str = "noreply@krontoai.ru"
+    from_name: str = "kronto"
+    # Адрес сайта для ссылок в письмах, без «/» в конце.
+    site_url: str = "http://localhost:5173"
+
+    model_config = SettingsConfigDict(
+        env_prefix="MAIL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("site_url")
+    @classmethod
+    def strip_slash(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def validate_smtp(self) -> Self:
+        # Без хоста smtp молча не отправит ни одного письма — регистрация
+        # встанет на подтверждении почты. Лучше не стартовать.
+        if self.backend == "smtp" and not self.smtp_host:
+            raise ValueError("MAIL_SMTP_HOST is required for MAIL_BACKEND=smtp")
+        return self
+
+
+@lru_cache
+def get_mail_settings() -> MailSettings:
+    return MailSettings()
+
+
+class RegistrationSettings(BaseSettings):
+    """Самостоятельная регистрация (ТЗ §2, §11).
+
+    enabled=false — регистрироваться можно только по приглашению: так
+    на боевом домене, пока нет юридических текстов от ИП. policy_version
+    — редакция политики обработки ПДн, на которую человек дал согласие
+    (пишется в учётку).
+    """
+
+    enabled: bool = True
+    policy_url: str = "/privacy"
+    policy_version: str = Field(default="draft-2026-10-03", max_length=64)
+
+    model_config = SettingsConfigDict(
+        env_prefix="REGISTRATION_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_registration_settings() -> RegistrationSettings:
+    return RegistrationSettings()
 
 
 class HttpSettings(BaseSettings):

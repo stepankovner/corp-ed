@@ -2,7 +2,12 @@
 
     python -m corp_ed.cli create-tenant --code acme --name "ACME" --seats 50 \\
         --admin-email admin@acme.ru [--admin-name "Иван Петров"] \\
-        [--admin-password-stdin]   # иначе пароль спросят в терминале
+        [--admin-password-stdin]   # пароль — только если учётки ещё нет
+    python -m corp_ed.cli requests list [--status new|all]   # «Подключить компанию»
+    python -m corp_ed.cli requests approve --id <uuid> [--seats 30] \\
+        [--tariff extended] [--code acme]
+    python -m corp_ed.cli requests reject --id <uuid>
+    python -m corp_ed.cli reset-password --email admin@acme.ru [--password-stdin]
     python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
     python -m corp_ed.cli set-not-found-mode --code acme --mode general
     python -m corp_ed.cli set-tariff --code acme --tariff extended \
@@ -26,10 +31,12 @@
 была бы самой ценной целью для атаки на весь сервис, а CLI доступен
 только тому, у кого уже есть доступ к серверу и к DATABASE_URL.
 
-Временный пароль администратора задаёт оператор (скрытый ввод или
+Учётка kronto не зависит от компании (ТЗ §2): если у администратора она
+уже есть, create-tenant просто делает её администратором новой компании.
+Если нет — временный пароль задаёт оператор (скрытый ввод или
 --admin-password-stdin); CLI его не генерирует и не печатает (RISKS
-№42). Передавать его клиенту — отдельным каналом от кода компании; при
-первом входе система потребует сменить пароль.
+№42). Передавать его клиенту — отдельным каналом от почты; при первом
+входе система потребует сменить пароль.
 """
 
 import argparse
@@ -68,10 +75,12 @@ from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
+from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
 from corp_ed.services.gap_report_service import GapReportService
@@ -87,7 +96,9 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     create = commands.add_parser("create-tenant", help="завести компанию и админа")
-    create.add_argument("--code", required=True, help="код компании для входа")
+    create.add_argument(
+        "--code", required=True, help="внутренний код компании (для cli и логов)"
+    )
     create.add_argument("--name", required=True, help="название компании")
     create.add_argument(
         "--seats", required=True, type=int, help="оплаченные места (пул кредитов)"
@@ -97,8 +108,8 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--admin-password-stdin",
         action="store_true",
-        help="временный пароль администратора — первой строкой stdin; "
-        "без флага — скрытый ввод в терминале",
+        help="временный пароль администратора, если учётки ещё нет, — первой "
+        "строкой stdin; без флага — скрытый ввод в терминале",
     )
     create.add_argument(
         "--not-found-mode",
@@ -116,10 +127,8 @@ def _parser() -> argparse.ArgumentParser:
 
     reset = commands.add_parser(
         "reset-password",
-        help="временный пароль сотруднику — например, администратору, "
-        "который забыл свой",
+        help="временный пароль учётке, когда письмо восстановления не доходит",
     )
-    reset.add_argument("--code", required=True)
     reset.add_argument("--email", required=True)
     reset.add_argument(
         "--password-stdin",
@@ -179,6 +188,32 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     commands.add_parser("purge", help="удалить данные старше срока хранения")
+
+    requests = commands.add_parser(
+        "requests", help="заявки «Подключить компанию» от учёток без компании"
+    )
+    requests_commands = requests.add_subparsers(dest="requests_command", required=True)
+    requests_list = requests_commands.add_parser("list", help="заявки")
+    requests_list.add_argument(
+        "--status",
+        choices=["all", "new", "approved", "rejected", "cancelled"],
+        default="new",
+    )
+    requests_approve = requests_commands.add_parser(
+        "approve", help="создать компанию, заявитель — администратор"
+    )
+    requests_approve.add_argument("--id", required=True, type=UUID)
+    requests_approve.add_argument("--seats", type=int, default=None)
+    requests_approve.add_argument(
+        "--tariff",
+        choices=[tariff.value for tariff in Tariff],
+        default=DEFAULT_TARIFF.value,
+    )
+    requests_approve.add_argument(
+        "--code", default=None, help="код компании; без него — из названия"
+    )
+    requests_reject = requests_commands.add_parser("reject", help="отклонить")
+    requests_reject.add_argument("--id", required=True, type=UUID)
 
     leads = commands.add_parser("leads", help="заявки на созвон со страницы тарифов")
     leads_commands = leads.add_subparsers(dest="leads_command", required=True)
@@ -274,6 +309,9 @@ async def _run(args: argparse.Namespace) -> int:
     if args.command == "leads":
         return await _leads(args)
 
+    if args.command == "requests":
+        return await _requests(args)
+
     if args.command == "gaps":
         return await _gaps(None if args.all else args.code)
 
@@ -304,14 +342,15 @@ async def _run(args: argparse.Namespace) -> int:
             session,
         )
         if args.command == "create-tenant":
+            existing = await AccountRepository(session).get_by_email(args.admin_email)
             result = await service.provision(
                 company_code=args.code,
                 name=args.name,
                 admin_email=args.admin_email,
                 admin_full_name=args.admin_name,
-                admin_password=_read_admin_password(
-                    from_stdin=args.admin_password_stdin
-                ),
+                admin_password=None
+                if existing is not None
+                else _read_admin_password(from_stdin=args.admin_password_stdin),
                 seats=args.seats,
                 not_found_mode=NotFoundMode(args.not_found_mode),
                 tariff=Tariff(args.tariff),
@@ -321,17 +360,19 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"seats:              {result.tenant.seats}")
             print(f"not_found_mode:     {result.tenant.not_found_mode}")
             print(f"tariff:             {result.tenant.tariff}")
-            print(f"admin_email:        {result.admin.email}")
-            print(
-                "Временный пароль задан. Передайте его клиенту отдельным от "
-                "кода компании каналом; при первом входе система потребует "
-                "сменить его."
-            )
+            print(f"admin_email:        {result.account.email}")
+            if result.account_created:
+                print(
+                    "Учётка заведена, временный пароль задан. Передайте его "
+                    "клиенту отдельным каналом; при первом входе система "
+                    "потребует сменить его."
+                )
+            else:
+                print("Учётка уже была — она стала администратором компании.")
             return 0
 
         if args.command == "reset-password":
-            user = await service.reset_password(
-                args.code,
+            account = await service.reset_password(
                 args.email,
                 _read_admin_password(
                     from_stdin=args.password_stdin,
@@ -339,7 +380,7 @@ async def _run(args: argparse.Namespace) -> int:
                     stdin_flag="--password-stdin",
                 ),
             )
-            print(f"{user.email}: временный пароль задан, сессии закрыты.")
+            print(f"{account.email}: временный пароль задан, сессии закрыты.")
             print(
                 "Передайте пароль отдельным каналом; при входе система "
                 "потребует сменить его."
@@ -423,6 +464,41 @@ async def _leads(args: argparse.Namespace) -> int:
             print(f"    созвон: {lead.preferred_date:%d.%m} {lead.preferred_slot} МСК")
             if lead.comment:
                 print(f"    {lead.comment[:300]}")
+        print(f"Заявок: {len(found)}")
+        return 0
+
+
+async def _requests(args: argparse.Namespace) -> int:
+    async with get_session_maker()() as session:
+        service = CompanyRequestService(session, AuditRepository(session))
+        if args.requests_command == "approve":
+            tenant = await service.approve(
+                args.id,
+                seats=args.seats,
+                tariff=Tariff(args.tariff),
+                company_code=args.code,
+            )
+            print(
+                f"Компания создана: {tenant.name} (код {tenant.company_code}, "
+                f"мест {tenant.seats}, тариф {tenant.tariff}). Заявителю ушло письмо."
+            )
+            return 0
+        if args.requests_command == "reject":
+            await service.reject(args.id)
+            print("Заявка отклонена, заявителю ушло письмо.")
+            return 0
+        found = await service.list(None if args.status == "all" else args.status)
+        accounts = AccountRepository(session)
+        for request in found:
+            account = await accounts.get(request.account_id)
+            who = account.email if account else "учётка удалена"
+            print(
+                f"{request.id}  {request.created_at:%d.%m.%Y %H:%M}  "
+                f"[{request.status}]  {request.company_name}  "
+                f"мест: {request.seats or '—'}  {who}"
+            )
+            if request.comment:
+                print(f"    {request.comment[:300]}")
         print(f"Заявок: {len(found)}")
         return 0
 
