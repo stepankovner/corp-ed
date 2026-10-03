@@ -1,4 +1,4 @@
-/* Поля формы лендинга (.field). */
+/* Поля формы лендинга (.field). Рамка поля — 3:1 к фону в обеих темах. */
 .field {
   display: grid;
   gap: 6px;
@@ -14,15 +14,19 @@
 }
 .control {
   width: 100%;
-  min-height: 48px;
+  min-height: var(--control-lg);
   padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-control);
   background: var(--bg);
+  color: var(--ink);
   font-size: 1rem;
   transition:
     border-color 0.15s var(--ease),
     box-shadow 0.15s var(--ease);
+}
+.control:hover:not(:disabled):not(:focus) {
+  border-color: var(--muted);
 }
 textarea.control {
   padding: 12px 14px;
@@ -30,32 +34,61 @@ textarea.control {
   min-height: 120px;
   line-height: 1.5;
 }
-select.control {
-  appearance: none;
-  padding-right: 40px;
-  cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235e5e66' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
-}
 .control::placeholder {
-  color: #6b6b73;
+  color: var(--placeholder);
+  opacity: 1;
 }
 .control:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--ring);
 }
 .control[aria-invalid="true"] {
   border-color: var(--error);
 }
 .control[aria-invalid="true"]:focus {
-  box-shadow: 0 0 0 3px #fde4e1;
+  box-shadow: var(--error-ring);
 }
 .control:disabled {
   background: var(--surface-2);
   color: var(--muted);
+  cursor: not-allowed;
 }
+
+/* Список выбора: стрелка — маской цвета текста, чтобы следовать теме. */
+.select {
+  position: relative;
+  display: grid;
+}
+.select select {
+  appearance: none;
+  padding-right: 40px;
+  cursor: pointer;
+}
+.select::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  pointer-events: none;
+  background: var(--muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+/* Компактный список выбора — в строке таблицы или карточки. */
+.compact select {
+  min-height: var(--control-sm);
+  padding: 0 34px 0 10px;
+  border-radius: var(--r-sm);
+  font-size: 0.875rem;
+}
+.compact::after {
+  right: 10px;
+}
+
 .hint {
   color: var(--muted);
   font-size: 0.875rem;

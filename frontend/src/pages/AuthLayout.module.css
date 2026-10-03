@@ -1,15 +1,33 @@
+/* Вход и приглашение: окно лендинга на кремовом фоне с мягким свечением. */
 .screen {
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   min-height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr auto;
   background: var(--surface);
-  padding: 16px var(--gutter);
+  padding: 12px var(--gutter);
+  overflow-x: clip;
+}
+.screen::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(40rem 28rem at 18% 12%, var(--glow-2), transparent 70%),
+    radial-gradient(44rem 30rem at 85% 90%, var(--glow-1), transparent 70%);
+  pointer-events: none;
 }
 .top {
   display: flex;
   align-items: center;
-  height: 52px;
+  justify-content: space-between;
+  width: 100%;
+  max-width: var(--container);
+  height: 56px;
+  margin-inline: auto;
   color: var(--ink);
 }
 .center {
@@ -20,24 +38,32 @@
 .glass {
   width: min(460px, 100%);
   padding: 10px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.42);
-  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 24px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-line);
   box-shadow: var(--shadow-window);
+  backdrop-filter: blur(8px);
 }
 .window {
-  background: var(--bg);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 16px;
 }
 .bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 18px;
+  min-height: 46px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--line);
   font-size: var(--fs-small);
   font-weight: 500;
+}
+.barText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .body {
   padding: clamp(20px, 4vw, 32px);
@@ -45,8 +71,8 @@
   gap: var(--s-5);
 }
 .title {
-  font-size: 1.625rem;
-  letter-spacing: -0.025em;
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
 }
 .lead {
   color: var(--muted);
@@ -62,4 +88,19 @@
   color: var(--muted);
   font-size: 0.8125rem;
   padding: var(--s-3) 0;
+}
+@media (max-width: 480px) {
+  .glass {
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  .window {
+    box-shadow: var(--shadow-window);
+  }
+  .center {
+    padding: var(--s-4) 0;
+  }
 }

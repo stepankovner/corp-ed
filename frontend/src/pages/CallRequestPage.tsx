@@ -6,6 +6,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { formatCalendarDate } from "../lib/format";
 import { priceLabel, tariffByCode, TARIFFS, type TariffCode } from "../lib/tariffs";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { Checkbox, SelectField, TextAreaField, TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
@@ -20,6 +21,7 @@ import styles from "./PricingPage.module.css";
  * только когда на сервере заданы политика обработки данных и её версия.
  */
 export function CallRequestPage() {
+  useDocumentTitle("Запись на созвон");
   const form = useQuery({
     queryKey: ["lead-form"],
     queryFn: () => unwrap(api.GET("/api/v1/leads/form")),

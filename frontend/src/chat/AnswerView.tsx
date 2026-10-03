@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
+import { useToast } from "../ui/useToast";
 import styles from "./Chat.module.css";
 import { stripGeneralPrefix } from "./citations";
 import { Markdown } from "./Markdown";
@@ -126,25 +127,25 @@ function AnswerActions({
   onVote: (value: Vote) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const toast = useToast();
   const canVote = Boolean(turn.answer.answer_id);
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(content);
       setCopied(true);
+      toast.show("Ответ скопирован");
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      // Буфер обмена недоступен (нет разрешения) — молча.
+      toast.show("Не удалось скопировать: браузер не дал доступа к буферу обмена", {
+        tone: "error",
+      });
     }
   }
 
   return (
     <div className={styles.actions}>
-      <IconButton
-        size="sm"
-        label={copied ? "Скопировано" : "Скопировать ответ"}
-        onClick={() => void copy()}
-      >
+      <IconButton size="sm" label="Скопировать ответ" onClick={() => void copy()}>
         {copied ? <Check size={16} aria-hidden /> : <Copy size={16} aria-hidden />}
       </IconButton>
       {canVote ? (

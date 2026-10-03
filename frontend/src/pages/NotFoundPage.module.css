@@ -1,0 +1,32 @@
+.screen {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--s-3);
+  padding: var(--s-8) var(--gutter);
+  text-align: center;
+}
+.mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--s-2);
+  border-radius: 20px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-window);
+}
+.code {
+  color: var(--muted);
+}
+.title {
+  font-size: var(--fs-h3);
+  letter-spacing: -0.025em;
+}
+.text {
+  max-width: 44ch;
+  margin-bottom: var(--s-3);
+  color: var(--muted);
+}

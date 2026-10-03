@@ -1,0 +1,71 @@
+/* Сверху по центру: снизу их закрыло бы поле вопроса. */
+.region {
+  position: fixed;
+  z-index: 110;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+  animation: toast-in 0.24s var(--ease);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+.icon {
+  flex: none;
+}
+.message {
+  flex: 1;
+  min-width: 0;
+}
+.close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  flex: none;
+}
+.close:hover {
+  opacity: 1;
+}
+.close:focus-visible {
+  outline-color: var(--on-primary);
+  outline-offset: 0;
+}
+/* Ошибка — тем же цветом, что и плашки ошибок. */
+.error {
+  background: var(--error-bg);
+  color: var(--error);
+  box-shadow:
+    inset 0 0 0 1px var(--error-line),
+    var(--shadow-pop);
+}
+.success,
+.info {
+  /* Как подсказки: --primary с --on-primary (18:1 и 15.5:1). */
+  background: var(--primary);
+}

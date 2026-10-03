@@ -1,4 +1,15 @@
-/* Дизайн-токены Kronto. Меняйте значения здесь — остальные стили ссылаются на них. */
+/*
+ * Дизайн-токены kronto. Меняйте значения здесь — остальные стили ссылаются
+ * на них и не знают ни одного цвета.
+ *
+ * Темы: светлая — :root; тёмная — :root[data-theme="dark"] и системная
+ * тёмная, если тема не выбрана явно (атрибут ставит lib/theme.ts и скрипт
+ * в index.html до первой отрисовки). Набор тёмной темы повторён дважды:
+ * без препроцессора иначе не связать атрибут и медиазапрос.
+ *
+ * Контраст (WCAG 2.2) — в комментариях: текст ≥ 4.5:1, крупный текст и
+ * границы полей ≥ 3:1. Пересчитывать при любой правке цвета.
+ */
 
 @font-face {
   font-family: "Onest";
@@ -16,23 +27,8 @@
   font-display: swap;
 }
 
+/* ——— Общее для обеих тем: шрифты, шкала, отступы, радиусы ——— */
 :root {
-  /* Цвет */
-  --bg: #ffffff;
-  --surface: #f5f1e8; /* кремовая панель */
-  --surface-2: #faf8f3; /* светлее кремовой, для вложенных блоков */
-  --ink: #16161a; /* основной текст, 18:1 на белом */
-  --muted: #5e5e66; /* вторичный текст, 6.4:1 на белом, 5.7:1 на креме */
-  --accent: #3b34d6; /* ссылки, маркеры источников, фокус, 7.9:1 */
-  --accent-soft: #ecebfd;
-  --line: #e4e1da;
-  --line-strong: #cfcac0;
-  --highlight: #fff1c7; /* подсветка фрагмента в источнике */
-  --warn-bg: #fff6e0;
-  --warn-ink: #7a4f00;
-  --error: #b42318;
-  --grad: linear-gradient(90deg, #f9ddf3 0%, #e6e3fb 50%, #d8eefb 100%);
-
   /* Шрифты */
   --font-sans: "Onest", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -64,27 +60,243 @@
 
   /* Сетка */
   --container: 1200px;
-  --gutter: clamp(16px, 3vw, 24px);
+  --gutter: clamp(16px, 3vw, 32px);
   --frame: 1344px; /* ширина «рамки» с вертикальными линиями */
 
   /* Радиусы */
+  --r-xs: 6px;
   --r-sm: 8px;
+  --r-control: 12px; /* поля ввода, списки выбора */
   --r-md: 12px;
   --r-lg: 20px;
+  --r-xl: 28px;
   --r-pill: 999px;
 
-  --shadow-window: 0 1px 2px rgba(22, 22, 26, 0.04), 0 12px 40px -12px rgba(22, 22, 26, 0.18);
+  /* Высоты элементов управления: кнопки и поля одного размера стоят в ряд ровно. */
+  --control-lg: 48px;
+  --control-md: 40px;
+  --control-sm: 32px;
+
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --header-h: 68px;
+
+  /* Приложение: боковая панель, верхняя полоса телефона, ширины рабочих областей. */
+  --sidebar-w: 264px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 56px;
+  --content-max: 1120px;
+  --chat-max: 760px;
+
+  /* Плитки с инициалами компании и людей: белые буквы, контраст ≥ 5.8:1. */
+  --tile-1: #3b34d6; /* 7.9:1 */
+  --tile-2: #1c6b45; /* 6.5:1 */
+  --tile-3: #b42318; /* 6.6:1 */
+  --tile-4: #8a5a00; /* 5.9:1 */
+  --tile-5: #0b6e7f; /* 5.9:1 */
+  --tile-6: #8e2f74; /* 7.5:1 */
+  --tile-7: #475467; /* 7.7:1 */
+  --tile-8: #6b3fb3; /* 7.0:1 */
+  --on-tile: #ffffff;
 }
 
-/* Приложение: высота шапки и ширины рабочих областей. */
+/* ——— Светлая тема ——— */
 :root {
-  --app-header-h: 60px;
-  --sidebar-w: 248px;
-  --content-max: 1120px;
-  --shadow-pop: 0 1px 2px rgba(22, 22, 26, 0.06), 0 16px 48px -16px rgba(22, 22, 26, 0.28);
-  --ok-bg: #e7f5ec;
-  --ok-ink: #1c6b45;
+  color-scheme: light;
+
+  /* Поверхности */
+  --bg: #ffffff; /* рабочая область, карточки */
+  --surface: #f5f1e8; /* кремовая панель лендинга */
+  --surface-2: #faf8f3; /* светлее кремовой, для вложенных блоков */
+  --surface-raised: #ffffff; /* меню, окна, поле вопроса */
+  --sidebar-bg: #f5f1e8;
+  --sidebar-hover: #ebe5d8;
+  --sidebar-active: #e7e3f6;
+  --fill-hover: #f3efe6; /* наведение на кнопки-иконки, пункты меню, строки */
+  --fill-active: #ebe5d8;
+  --bar-bg: rgba(255, 255, 255, 0.88); /* липкие полосы с размытием */
+  --glass-bg: rgba(255, 255, 255, 0.42);
+  --glass-line: rgba(255, 255, 255, 0.85);
+  --overlay: rgba(22, 22, 26, 0.4);
+
+  /* Текст */
+  --ink: #16161a; /* 18:1 на белом, 16:1 на креме */
+  --muted: #5e5e66; /* 6.4:1 на белом, 5.7:1 на креме, 5.1:1 на наведении в панели */
+  --placeholder: #6b6b73; /* 5.3:1 на белом */
+
+  /* Акцент */
+  --accent: #3b34d6; /* ссылки, маркеры, фокус: 7.9:1 на белом, 7.0:1 на креме */
+  --accent-hover: #2a24b8;
+  --accent-soft: #ecebfd; /* акцент на нём — 6.8:1 */
+  --on-accent: #ffffff; /* 7.9:1 на акценте */
+
+  /* Главная кнопка: тёмная, как на лендинге */
+  --primary: #16161a;
+  --primary-hover: #2c2c33;
+  --on-primary: #ffffff; /* 18:1 */
+
+  /* Линии */
+  --line: #e4e1da; /* разделители, рамки карточек */
+  --line-strong: #cfcac0;
+  --line-control: #8f8a80; /* рамки полей: 3.4:1 на белом, 3.05:1 на креме */
+  --focus-ring: var(--accent);
+  --ring: 0 0 0 3px var(--accent-soft);
+
+  /* Состояния */
+  --highlight: #fff1c7; /* подсветка фрагмента в источнике; текст 16:1 */
+  --warn-bg: #fff6e0;
+  --warn-ink: #7a4f00; /* 6.6:1 на warn-bg */
+  --error: #b42318; /* 6.6:1 на белом, 5.8:1 на error-bg */
   --error-bg: #fdecea;
+  --error-line: #efc6c1;
+  --error-ring: 0 0 0 3px #fde4e1;
+  --success: #1c6b45; /* 6.5:1 на белом, 5.8:1 на success-bg */
+  --success-bg: #e7f5ec;
+
+  /* Значки форматов документов */
+  --doc-pdf: #a3261b; /* 7.4:1 */
+  --doc-word: var(--accent);
+  --doc-sheet: #1c6b45; /* 6.5:1 */
+  --doc-slides: #b5541c; /* 4.9:1 */
+
+  /* Тени */
+  --shadow-xs: 0 1px 2px rgba(22, 22, 26, 0.06);
+  --shadow-window: 0 1px 2px rgba(22, 22, 26, 0.04), 0 12px 40px -12px rgba(22, 22, 26, 0.18);
+  --shadow-pop: 0 1px 2px rgba(22, 22, 26, 0.06), 0 16px 48px -16px rgba(22, 22, 26, 0.28);
+  --shadow-panel: -24px 0 48px -32px rgba(22, 22, 26, 0.35);
+  --shadow-composer: 0 1px 2px rgba(22, 22, 26, 0.04), 0 8px 28px -10px rgba(22, 22, 26, 0.16);
+
+  --grad: linear-gradient(90deg, #f9ddf3 0%, #e6e3fb 50%, #d8eefb 100%);
+  --glow-1: rgba(59, 52, 214, 0.1);
+  --glow-2: rgba(232, 160, 210, 0.22);
+}
+
+/* ——— Тёмная тема: тёплая, не чёрная ——— */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #1c1b19;
+  --surface: #262522;
+  --surface-2: #211f1d;
+  --surface-raised: #252421;
+  --sidebar-bg: #141413;
+  --sidebar-hover: #22211e;
+  --sidebar-active: #2a2747;
+  --fill-hover: #2b2a27;
+  --fill-active: #33322e;
+  --bar-bg: rgba(28, 27, 25, 0.88);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-line: rgba(255, 255, 255, 0.08);
+  --overlay: rgba(0, 0, 0, 0.6);
+
+  --ink: #ecebe7; /* 14.4:1 на фоне, 15.5:1 в панели, 12.9:1 на surface */
+  --muted: #a3a29b; /* 6.7:1 на фоне, 7.2:1 в панели, 6.0:1 на surface */
+  --placeholder: #8f8e87; /* 5.2:1 на фоне */
+
+  --accent: #8f89ff; /* 5.9:1 на фоне, 6.3:1 в панели, 5.3:1 на surface */
+  --accent-hover: #a7a2ff;
+  --accent-soft: #2a2747; /* акцент на нём — 4.9:1, текст — 11.9:1 */
+  --on-accent: #141413; /* 6.3:1 на акценте */
+
+  --primary: #ecebe7;
+  --primary-hover: #ffffff;
+  --on-primary: #141413; /* 15.5:1 */
+
+  --line: #33322e;
+  --line-strong: #46443f;
+  --line-control: #6f6d66; /* 3.3:1 на фоне, 3.6:1 в панели */
+  --focus-ring: var(--accent);
+  --ring: 0 0 0 3px rgba(143, 137, 255, 0.28);
+
+  --highlight: #3a3216; /* текст 10.7:1 */
+  --warn-bg: #2f2610;
+  --warn-ink: #f2c46b; /* 9.2:1 */
+  --error: #ff8f80; /* 7.8:1 на фоне, 7.0:1 на error-bg */
+  --error-bg: #3a1c19;
+  --error-line: #6b2f29;
+  --error-ring: 0 0 0 3px rgba(255, 143, 128, 0.22);
+  --success: #7bd3a0; /* 9.6:1 на фоне, 8.5:1 на success-bg */
+  --success-bg: #16291f;
+
+  --doc-pdf: #ff8f80; /* 7.8:1 */
+  --doc-word: var(--accent);
+  --doc-sheet: #7bd3a0; /* 9.6:1 */
+  --doc-slides: #f0a067; /* 8.1:1 */
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-window: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px -12px rgba(0, 0, 0, 0.7);
+  --shadow-pop:
+    0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 16px 48px -16px rgba(0, 0, 0, 0.8);
+  --shadow-panel: -24px 0 48px -32px rgba(0, 0, 0, 0.8);
+  --shadow-composer: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 8px 28px -10px rgba(0, 0, 0, 0.6);
+
+  --grad: linear-gradient(90deg, #3a2440 0%, #2a2747 50%, #1d3340 100%);
+  --glow-1: rgba(143, 137, 255, 0.12);
+  --glow-2: rgba(200, 110, 180, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --bg: #1c1b19;
+    --surface: #262522;
+    --surface-2: #211f1d;
+    --surface-raised: #252421;
+    --sidebar-bg: #141413;
+    --sidebar-hover: #22211e;
+    --sidebar-active: #2a2747;
+    --fill-hover: #2b2a27;
+    --fill-active: #33322e;
+    --bar-bg: rgba(28, 27, 25, 0.88);
+    --glass-bg: rgba(255, 255, 255, 0.03);
+    --glass-line: rgba(255, 255, 255, 0.08);
+    --overlay: rgba(0, 0, 0, 0.6);
+
+    --ink: #ecebe7;
+    --muted: #a3a29b;
+    --placeholder: #8f8e87;
+
+    --accent: #8f89ff;
+    --accent-hover: #a7a2ff;
+    --accent-soft: #2a2747;
+    --on-accent: #141413;
+
+    --primary: #ecebe7;
+    --primary-hover: #ffffff;
+    --on-primary: #141413;
+
+    --line: #33322e;
+    --line-strong: #46443f;
+    --line-control: #6f6d66;
+    --focus-ring: var(--accent);
+    --ring: 0 0 0 3px rgba(143, 137, 255, 0.28);
+
+    --highlight: #3a3216;
+    --warn-bg: #2f2610;
+    --warn-ink: #f2c46b;
+    --error: #ff8f80;
+    --error-bg: #3a1c19;
+    --error-line: #6b2f29;
+    --error-ring: 0 0 0 3px rgba(255, 143, 128, 0.22);
+    --success: #7bd3a0;
+    --success-bg: #16291f;
+
+    --doc-pdf: #ff8f80;
+    --doc-word: var(--accent);
+    --doc-sheet: #7bd3a0;
+    --doc-slides: #f0a067;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-window: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px -12px rgba(0, 0, 0, 0.7);
+    --shadow-pop:
+      0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.4),
+      0 16px 48px -16px rgba(0, 0, 0, 0.8);
+    --shadow-panel: -24px 0 48px -32px rgba(0, 0, 0, 0.8);
+    --shadow-composer: 0 0 0 1px rgba(255, 255, 255, 0.03), 0 8px 28px -10px rgba(0, 0, 0, 0.6);
+
+    --grad: linear-gradient(90deg, #3a2440 0%, #2a2747 50%, #1d3340 100%);
+    --glow-1: rgba(143, 137, 255, 0.12);
+    --glow-2: rgba(200, 110, 180, 0.08);
+  }
 }

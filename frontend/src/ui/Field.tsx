@@ -110,16 +110,28 @@ export function SelectField({
   const fieldId = id ?? auto;
   return (
     <Frame id={fieldId} label={label} hint={hint} error={error} optional={optional}>
-      <select
+      <Select
         id={fieldId}
-        className={styles.control}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(fieldId, hint, error)}
         {...rest}
       >
         {children}
-      </select>
+      </Select>
     </Frame>
+  );
+}
+
+/** Список выбора без подписи-рамки: подпись даёт вызывающий (label или aria-label). */
+export function Select({
+  compact = false,
+  className,
+  ...rest
+}: { compact?: boolean } & SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span className={[styles.select, compact ? styles.compact : "", className].join(" ")}>
+      <select className={styles.control} {...rest} />
+    </span>
   );
 }
 

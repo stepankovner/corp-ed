@@ -104,6 +104,38 @@ test.describe.serial("MVP", () => {
     await expect(page.getByLabel("Код компании")).toBeVisible();
   });
 
+  test("оболочка: тема переживает перезагрузку, заголовки вкладок, меню на телефоне", async ({
+    page,
+  }) => {
+    await login(page, adminEmail, adminPassword);
+    await expect(page).toHaveTitle("Вопросы — kronto");
+
+    await page.getByRole("button", { name: "Профиль" }).click();
+    await page.getByRole("menuitemradio", { name: "Тёмная" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.keyboard.press("Escape");
+    // Тему ставит скрипт в index.html до загрузки приложения.
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#1c1b19");
+
+    await page.getByRole("link", { name: "Управление" }).click();
+    await expect(page).toHaveTitle("Документы — kronto");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Открыть меню" }).click();
+    const drawer = page.getByRole("dialog", { name: "Меню" });
+    await drawer.getByRole("link", { name: "Сотрудники" }).click();
+    await expect(page.getByRole("heading", { name: "Сотрудники" })).toBeVisible();
+    await expect(drawer).toHaveCount(0);
+    await expect(page).toHaveTitle("Сотрудники — kronto");
+    // Горизонтальной прокрутки страницы на телефоне нет.
+    const overflow = await page.evaluate<number>(
+      "document.documentElement.scrollWidth - document.documentElement.clientWidth",
+    );
+    expect(overflow).toBe(0);
+  });
+
   test("загруженный документ индексируется", async ({ page }) => {
     await login(page, adminEmail, adminPassword);
     await page.getByRole("link", { name: "Управление" }).click();

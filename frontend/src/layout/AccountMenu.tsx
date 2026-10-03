@@ -1,0 +1,69 @@
+import { ChevronsUpDown, KeyRound, LogOut } from "lucide-react";
+import { Link } from "react-router";
+
+import { useAuth, useMe } from "../auth/context";
+import { personInitials } from "../lib/initials";
+import { Avatar } from "../ui/Avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/DropdownMenu";
+import { Tooltip } from "../ui/Tooltip";
+import styles from "./Sidebar.module.css";
+import { ThemeOptions } from "./ThemeOptions";
+
+/** Учётная запись внизу боковой панели: пароль, тема, выход. */
+export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
+  const me = useMe();
+  const { logout } = useAuth();
+  const name = me.full_name || me.email;
+  const role = me.role === "admin" ? "администратор" : "сотрудник";
+  return (
+    <DropdownMenu>
+      <Tooltip content={name} side="right" disabled={!collapsed}>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={styles.account}
+            aria-label={`Профиль: ${name}${me.full_name ? `, ${me.email}` : ""}`}
+          >
+            <Avatar name={name} initials={personInitials(me.full_name, me.email)} />
+            <span className={styles.accountText}>
+              <span className={styles.accountName}>{name}</span>
+              {me.full_name ? <span className={styles.accountEmail}>{me.email}</span> : null}
+            </span>
+            <ChevronsUpDown size={16} aria-hidden className={styles.chevron} />
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent
+        side={collapsed ? "right" : "top"}
+        align={collapsed ? "end" : "start"}
+        className={styles.accountMenu}
+      >
+        <div className={styles.menuHead}>
+          <span className={styles.menuName}>{name}</span>
+          {me.full_name ? <span className={styles.menuEmail}>{me.email}</span> : null}
+          <span className={`mono ${styles.menuMeta}`}>
+            {me.company_name} · {role}
+          </span>
+        </div>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/change-password">
+            <KeyRound size={16} aria-hidden /> Сменить пароль
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <ThemeOptions />
+        <DropdownMenuSeparator />
+        <DropdownMenuItem icon={<LogOut size={16} aria-hidden />} onSelect={() => void logout()}>
+          Выйти
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

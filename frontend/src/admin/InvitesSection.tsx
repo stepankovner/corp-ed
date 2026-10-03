@@ -56,7 +56,7 @@ export function InvitesSection() {
       </p>
       {invites.isError ? <Notice kind="error">{errorMessage(invites.error)}</Notice> : null}
       {invites.data && invites.data.length > 0 ? (
-        <Table label="Ссылки-приглашения">
+        <Table label="Ссылки-приглашения" rowTitle={false}>
           <thead>
             <tr>
               <th>Создана</th>

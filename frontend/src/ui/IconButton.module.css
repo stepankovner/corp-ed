@@ -1,26 +1,37 @@
+/* Кнопка-иконка: скруглённый квадрат, высоты — как у кнопок и полей. */
 .iconBtn {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: var(--control-md);
+  height: var(--control-md);
+  padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--r-control);
   background: transparent;
   color: var(--ink);
   flex: none;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
 }
-.iconBtn:hover:not(:disabled) {
-  background: var(--surface);
+.iconBtn:hover:not(:disabled),
+.iconBtn[data-state="open"] {
+  background: var(--fill-hover);
+}
+.iconBtn:active:not(:disabled) {
+  background: var(--fill-active);
 }
 .iconBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 .sm {
-  width: 32px;
-  height: 32px;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border-radius: var(--r-sm);
 }
-.active {
+.active,
+.active:hover:not(:disabled) {
   background: var(--accent-soft);
   color: var(--accent);
 }

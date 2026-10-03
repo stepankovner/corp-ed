@@ -1,0 +1,38 @@
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.tile {
+  color: var(--on-tile);
+}
+.circle {
+  border-radius: 50%;
+}
+.square {
+  border-radius: var(--r-sm);
+}
+.sm {
+  width: 24px;
+  height: 24px;
+  font-size: 0.625rem;
+}
+.md {
+  width: 32px;
+  height: 32px;
+  font-size: 0.75rem;
+}
+.lg {
+  width: 40px;
+  height: 40px;
+  font-size: 0.875rem;
+}
+.square.sm {
+  border-radius: var(--r-xs);
+}

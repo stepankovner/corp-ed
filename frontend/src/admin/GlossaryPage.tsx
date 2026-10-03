@@ -4,6 +4,7 @@ import { useState, type SubmitEvent } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
 import { IconButton } from "../ui/IconButton";
@@ -20,6 +21,7 @@ import { ConfirmDialog } from "./common";
 type Term = Schemas["GlossaryTermResponse"];
 
 export function GlossaryPage() {
+  useDocumentTitle("Глоссарий");
   const queryClient = useQueryClient();
   const terms = useQuery({
     queryKey: ["glossary"],
