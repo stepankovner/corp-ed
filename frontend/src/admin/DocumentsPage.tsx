@@ -1,7 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileUp, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
+import {
+  FileUp,
+  Folder as FolderIcon,
+  FolderInput,
+  FolderPlus,
+  Lock,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent, type SubmitEvent } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
@@ -14,7 +24,7 @@ import { TextAreaField, TextField } from "../ui/Field";
 import { IconButton } from "../ui/IconButton";
 import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
-import { EmptyState, Page, PageHeader } from "../ui/Page";
+import { EmptyState } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { SkeletonList } from "../ui/Skeleton";
@@ -23,6 +33,17 @@ import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
 import styles from "./Admin.module.css";
 import { ConfirmDialog } from "./common";
+import {
+  ALL,
+  audience,
+  CONNECTORS,
+  FOLDERS_KEY,
+  ROOT,
+  ROOT_NAME,
+  useFolders,
+  type Folder,
+} from "./folderModel";
+import { FolderBar, FolderDialog, MoveDialog, type FolderCounts } from "./folders";
 
 type Material = Schemas["MaterialResponse"];
 type Filter = "all" | "ready" | "processing" | "failed";
@@ -81,8 +102,28 @@ interface QueueItem {
   message?: string;
 }
 
+/** ?folder= из адреса; неизвестная папка (удалили, старая ссылка) — все файлы. */
+function placeFrom(raw: string | null, folders: Folder[] | undefined): string {
+  if (!raw) return ALL;
+  if (raw === ROOT || raw === CONNECTORS) return raw;
+  if (folders && !folders.some((folder) => folder.id === raw)) return ALL;
+  return raw;
+}
+
+function inPlace(material: Material, place: string): boolean {
+  if (place === ALL) return true;
+  if (place === CONNECTORS) return Boolean(material.connector_id);
+  if (place === ROOT) return !material.connector_id && !material.folder_id;
+  return material.folder_id === place;
+}
+
+/**
+ * Вкладка «Файлы» в «Источниках» (ТЗ §5): загруженные документы по папкам
+ * с доступом по отделам и документы из подключений. Открытая папка — в
+ * адресе (?folder=), новые файлы ложатся в неё.
+ */
 export function DocumentsPage() {
-  useDocumentTitle("Документы");
+  useDocumentTitle("Файлы");
   const queryClient = useQueryClient();
   const materials = useQuery({
     queryKey: ["materials"],
@@ -90,26 +131,59 @@ export function DocumentsPage() {
     // Пока воркер индексирует — опрашиваем.
     refetchInterval: (query) => (query.state.data?.some(inProgress) ? 3000 : false),
   });
+  const folders = useFolders();
+  const [params, setParams] = useSearchParams();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const [textOpen, setTextOpen] = useState(false);
   const [renaming, setRenaming] = useState<Material | null>(null);
+  const [moving, setMoving] = useState<Material | null>(null);
   const [deleting, setDeleting] = useState<Material | null>(null);
+  const [editingFolder, setEditingFolder] = useState<Folder | "new" | null>(null);
+  const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const folderList = useMemo(() => folders.data ?? [], [folders.data]);
+  const folderById = useMemo(
+    () => new Map(folderList.map((folder) => [folder.id, folder])),
+    [folderList],
+  );
+  const place = placeFrom(params.get("folder"), folders.data);
+  // Куда лягут новые файлы: в открытую папку, иначе — в общие документы.
+  const target = folderById.get(place) ?? null;
+
   const list = useMemo(() => materials.data ?? [], [materials.data]);
+  const here = useMemo(() => list.filter((m) => inPlace(m, place)), [list, place]);
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return list.filter(
+    return here.filter(
       (m) =>
         matches(m, filter) &&
         (!needle ||
           m.title.toLowerCase().includes(needle) ||
           (m.source_filename ?? "").toLowerCase().includes(needle)),
     );
-  }, [list, filter, search]);
+  }, [here, filter, search]);
+
+  function select(next: string) {
+    setParams(
+      (current) => {
+        const updated = new URLSearchParams(current);
+        if (next === ALL) updated.delete("folder");
+        else updated.set("folder", next);
+        return updated;
+      },
+      { replace: true },
+    );
+  }
+
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["materials"] }),
+      queryClient.invalidateQueries({ queryKey: FOLDERS_KEY }),
+    ]);
 
   const reingest = useMutation({
     mutationFn: (id: string) =>
@@ -122,6 +196,8 @@ export function DocumentsPage() {
   });
 
   async function upload(files: File[]) {
+    // Папку запоминаем на старте: переключение во время загрузки очередь не разбрасывает.
+    const folderId = target?.id ?? null;
     const items: QueueItem[] = files.map((file, index) => ({
       id: `${Date.now()}-${index}-${file.name}`,
       name: file.name,
@@ -149,11 +225,16 @@ export function DocumentsPage() {
       try {
         await unwrap(
           api.POST("/api/v1/materials/upload", {
-            body: { file: file as unknown as string, title: titleFromFile(file.name) },
+            body: {
+              file: file as unknown as string,
+              title: titleFromFile(file.name),
+              folder_id: folderId,
+            },
             bodySerializer: (body) => {
               const form = new FormData();
               form.append("file", file);
               form.append("title", body.title);
+              if (body.folder_id) form.append("folder_id", body.folder_id);
               return form;
             },
           }),
@@ -166,7 +247,7 @@ export function DocumentsPage() {
             : errorMessage(error);
         update(item.id, { state: "error", message });
       }
-      await queryClient.invalidateQueries({ queryKey: ["materials"] });
+      await refresh();
     }
   }
 
@@ -178,29 +259,38 @@ export function DocumentsPage() {
   }
 
   const counts = {
-    all: list.length,
-    ready: list.filter((m) => m.status === "ready").length,
-    processing: list.filter(inProgress).length,
-    failed: list.filter((m) => m.status === "failed").length,
+    all: here.length,
+    ready: here.filter((m) => m.status === "ready").length,
+    processing: here.filter(inProgress).length,
+    failed: here.filter((m) => m.status === "failed").length,
   };
+  const folderCounts: FolderCounts | null = materials.data
+    ? {
+        all: list.length,
+        root: list.filter((m) => inPlace(m, ROOT)).length,
+        connectors: list.filter((m) => inPlace(m, CONNECTORS)).length,
+      }
+    : null;
 
   return (
-    <Page>
-      <PageHeader
-        label="управление"
-        title="Документы"
-        description="По этим документам Kronto отвечает сотрудникам. Файлы из подключений появляются здесь сами после синхронизации."
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={() => setTextOpen(true)}>
-              <Pencil size={16} aria-hidden /> Добавить текст
-            </Button>
-            <Button size="sm" onClick={() => fileInput.current?.click()}>
-              <Upload size={16} aria-hidden /> Загрузить файлы
-            </Button>
-          </>
-        }
-      />
+    <>
+      <div className={styles.tabHead}>
+        <p className={styles.tabIntro}>
+          По этим документам kronto отвечает сотрудникам. Папка решает, кому они видны, а файлы из
+          подключений появляются здесь сами после синхронизации.
+        </p>
+        <div className={styles.tabActions}>
+          <Button variant="ghost" size="sm" onClick={() => setEditingFolder("new")}>
+            <FolderPlus size={16} aria-hidden /> Новая папка
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setTextOpen(true)}>
+            <Pencil size={16} aria-hidden /> Добавить текст
+          </Button>
+          <Button size="sm" onClick={() => fileInput.current?.click()}>
+            <Upload size={16} aria-hidden /> Загрузить файлы
+          </Button>
+        </div>
+      </div>
       <input
         ref={fileInput}
         type="file"
@@ -214,6 +304,20 @@ export function DocumentsPage() {
         }}
       />
 
+      {folders.isError ? (
+        <div className={styles.block}>
+          <Notice kind="error">Папки не загрузились: {errorMessage(folders.error)}</Notice>
+        </div>
+      ) : null}
+      <FolderBar
+        place={place}
+        folders={folderList}
+        counts={folderCounts}
+        onSelect={select}
+        onEdit={setEditingFolder}
+        onDelete={setDeletingFolder}
+      />
+
       <div
         className={`${styles.drop} ${dragging ? styles.dropActive : ""}`}
         onDragOver={(event) => {
@@ -223,15 +327,23 @@ export function DocumentsPage() {
         onDragLeave={() => setDragging(false)}
         onDrop={onDrop}
       >
-        <FileUp size={28} aria-hidden />
+        <FileUp size={28} aria-hidden className={styles.dropIcon} />
         <div className={styles.dropText}>
-          <span>Перетащите файлы сюда</span>
-          <span className="muted">
-            PDF, Word (DOCX, DOC), Excel (XLSX), PowerPoint (PPTX), TXT или MD, до 25 МБ каждый.
-            Сканы без текстового слоя не читаются.
+          <span className={styles.dropTarget}>
+            {target ? `Загрузка в папку «${target.name}»` : `Загрузка в «${ROOT_NAME}»`}
+          </span>
+          <span className="muted">Документы увидят {audience(target)}.</span>
+          <span className={`muted ${styles.dropFormats}`}>
+            Перетащите файлы сюда: PDF, Word (DOCX, DOC), Excel (XLSX), PowerPoint (PPTX), TXT или
+            MD, до 25 МБ каждый. Сканы без текстового слоя не читаются.
           </span>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => fileInput.current?.click()}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className={styles.dropPick}
+          onClick={() => fileInput.current?.click()}
+        >
           Выбрать
         </Button>
       </div>
@@ -254,11 +366,22 @@ export function DocumentsPage() {
         <SkeletonList label="Загрузка документов" />
       ) : materials.isError ? (
         <Notice kind="error">{errorMessage(materials.error)}</Notice>
-      ) : list.length === 0 ? (
+      ) : list.length === 0 && place === ALL ? (
         <EmptyState title="Документов пока нет">
           <p>Загрузите регламенты и инструкции или настройте подключение к Диску или порталу.</p>
-          <Link to="/admin/connectors">Настроить подключение</Link>
+          <Link to="/admin/sources/connections">Настроить подключение</Link>
         </EmptyState>
+      ) : here.length === 0 ? (
+        place === CONNECTORS ? (
+          <EmptyState title="Документов из подключений пока нет">
+            <p>Они появятся здесь после первой синхронизации.</p>
+            <Link to="/admin/sources/connections">К подключениям</Link>
+          </EmptyState>
+        ) : (
+          <EmptyState title={target ? `В папке «${target.name}» пока пусто` : "Здесь пока пусто"}>
+            <p>Перетащите файлы или нажмите «Загрузить файлы» — они попадут сюда.</p>
+          </EmptyState>
+        )
       ) : (
         <>
           <div className={styles.toolbar}>
@@ -300,6 +423,7 @@ export function DocumentsPage() {
               {visible.map((material) => {
                 const status = STATUS[material.status];
                 const fromConnector = Boolean(material.connector_id);
+                const folder = material.folder_id ? folderById.get(material.folder_id) : undefined;
                 return (
                   <tr key={material.id}>
                     <td>
@@ -308,8 +432,22 @@ export function DocumentsPage() {
                         <div>
                           <span className={styles.docTitle}>{material.title}</span>
                           <span className={tableStyles.sub}>
+                            {folder ? (
+                              <>
+                                <span className={styles.docFolder}>
+                                  <FolderIcon size={12} aria-hidden />
+                                  {folder.name}
+                                  {folder.restricted ? (
+                                    <Lock size={12} role="img" aria-label="доступ ограничен" />
+                                  ) : null}
+                                </span>
+                                {" · "}
+                              </>
+                            ) : null}
                             {fromConnector ? (
-                              <Link to={`/admin/connectors/${material.connector_id ?? ""}`}>
+                              <Link
+                                to={`/admin/sources/connections/${material.connector_id ?? ""}`}
+                              >
                                 из подключения
                               </Link>
                             ) : (
@@ -354,8 +492,18 @@ export function DocumentsPage() {
                         >
                           <RefreshCw size={16} aria-hidden />
                         </IconButton>
+                        {/* Документы из подключений правят в источнике: здесь только переиндексация. */}
                         {!fromConnector ? (
                           <>
+                            {folderList.length ? (
+                              <IconButton
+                                size="sm"
+                                label="Переместить"
+                                onClick={() => setMoving(material)}
+                              >
+                                <FolderInput size={16} aria-hidden />
+                              </IconButton>
+                            ) : null}
                             <IconButton
                               size="sm"
                               label="Переименовать"
@@ -391,8 +539,19 @@ export function DocumentsPage() {
         </>
       )}
 
-      <TextMaterialDialog open={textOpen} onOpenChange={setTextOpen} />
+      <TextMaterialDialog open={textOpen} onOpenChange={setTextOpen} folder={target} />
       {renaming ? <RenameDialog material={renaming} onClose={() => setRenaming(null)} /> : null}
+      {moving ? (
+        <MoveDialog material={moving} folders={folderList} onClose={() => setMoving(null)} />
+      ) : null}
+      {editingFolder ? (
+        <FolderDialog
+          folder={editingFolder === "new" ? null : editingFolder}
+          onClose={() => setEditingFolder(null)}
+          // Новую папку сразу открываем: следующий шаг — загрузить в неё файлы.
+          onSaved={editingFolder === "new" ? (saved) => select(saved.id) : undefined}
+        />
+      ) : null}
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
@@ -410,28 +569,63 @@ export function DocumentsPage() {
               params: { path: { material_id: deleting.id } },
             }),
           );
-          await queryClient.invalidateQueries({ queryKey: ["materials"] });
+          await refresh();
         }}
       />
-    </Page>
+      <ConfirmDialog
+        open={deletingFolder !== null}
+        onOpenChange={(open) => !open && setDeletingFolder(null)}
+        title="Удалить папку?"
+        description={
+          deletingFolder
+            ? deletingFolder.documents
+              ? `В «${deletingFolder.name}» ${deletingFolder.documents} ${plural(deletingFolder.documents, "документ", "документа", "документов")}. Удалить можно только пустую папку — сначала перенесите или удалите их.`
+              : `«${deletingFolder.name}» пустая — удалится только сама папка.`
+            : undefined
+        }
+        confirmLabel="Удалить"
+        onConfirm={async () => {
+          if (!deletingFolder) return;
+          await unwrap(
+            api.DELETE("/api/v1/folders/{folder_id}", {
+              params: { path: { folder_id: deletingFolder.id } },
+            }),
+          );
+          if (place === deletingFolder.id) select(ALL);
+          await queryClient.invalidateQueries({ queryKey: FOLDERS_KEY });
+        }}
+      />
+    </>
   );
 }
 
 function TextMaterialDialog({
   open,
   onOpenChange,
+  folder,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Открытая папка; null — общие документы. */
+  folder: Folder | null;
 }) {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const create = useMutation({
+    // Сразу в папку: создать в общих и потом перенести — значит на время
+    // открыть документ всем.
     mutationFn: () =>
-      unwrap(api.POST("/api/v1/materials", { body: { title: title.trim(), content } })),
+      unwrap(
+        api.POST("/api/v1/materials", {
+          body: { title: title.trim(), content, folder_id: folder?.id ?? null },
+        }),
+      ),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["materials"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["materials"] }),
+        queryClient.invalidateQueries({ queryKey: FOLDERS_KEY }),
+      ]);
       setTitle("");
       setContent("");
       onOpenChange(false);
@@ -448,7 +642,7 @@ function TextMaterialDialog({
       open={open}
       onOpenChange={onOpenChange}
       title="Добавить текст"
-      description="Для коротких правил и ответов, которых нет в файлах. Поддерживается Markdown."
+      description={`Для коротких правил и ответов, которых нет в файлах. Поддерживается Markdown. Текст попадёт ${folder ? `в папку «${folder.name}»` : `в «${ROOT_NAME}»`}.`}
     >
       <form className={pageStyles.form} onSubmit={submit}>
         {create.isError ? <Notice kind="error">{errorMessage(create.error)}</Notice> : null}

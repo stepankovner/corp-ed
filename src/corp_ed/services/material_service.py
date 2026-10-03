@@ -2,14 +2,16 @@ import hashlib
 from uuid import UUID
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import (
+    CodedConflictError,
     DuplicateMaterialError,
     NotFoundError,
     UnacceptableFileError,
 )
-from corp_ed.domain.models import Material, MaterialStatus, User
+from corp_ed.domain.models import Folder, Material, MaterialStatus, User
 from corp_ed.ingest.extract import ExtractionError, detect_format, error_message
 from corp_ed.ingest.sandbox import extract_isolated
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
@@ -41,10 +43,16 @@ class MaterialService:
         *,
         title: str,
         content: str,
+        folder_id: UUID | None = None,
     ) -> Material:
+        # Сразу в папку: создать в общих и потом перенести — значит на
+        # время (или, при сбое переноса, навсегда) открыть документ всем.
+        if folder_id is not None:
+            await self._folder(folder_id)
         material = Material(
             title=title,
             content=content,
+            folder_id=folder_id,
         )
 
         await self.material_repo.create(material)
@@ -91,7 +99,13 @@ class MaterialService:
         return material
 
     async def upload(
-        self, actor: User, *, title: str, filename: str, data: bytes
+        self,
+        actor: User,
+        *,
+        title: str,
+        filename: str,
+        data: bytes,
+        folder_id: UUID | None = None,
     ) -> Material:
         """Принять файл: проверить, извлечь текст в песочнице, поставить в очередь.
 
@@ -113,6 +127,8 @@ class MaterialService:
         existing = await self.material_repo.get_by_sha256(sha256)
         if existing is not None:
             raise DuplicateMaterialError(existing.id)
+        if folder_id is not None:
+            await self._folder(folder_id)
 
         material = Material(
             title=title,
@@ -121,6 +137,7 @@ class MaterialService:
             source_format=detected.format.value,
             source_sha256=sha256,
             source_size=len(data),
+            folder_id=folder_id,
         )
         await self.material_repo.create(material)
         await self.job_repo.enqueue(material.tenant_id, material.id)
@@ -165,6 +182,48 @@ class MaterialService:
         )
         await self.session.commit()
         return material
+
+    async def move(
+        self, actor: User, material_id: UUID, folder_id: UUID | None
+    ) -> Material:
+        """Перенести загруженный документ в папку (None — в общие).
+
+        Переиндексации не нужно: кто видит документ, поиск решает при
+        каждом вопросе по папке. Документ из источника в папку не
+        положить — его видимость задают права источника.
+        """
+        material = await self.get(material_id)
+        if material.connector_id is not None:
+            raise CodedConflictError(
+                "Документ из подключённого источника: "
+                "доступ к нему задаёт сам источник",
+                "connector_material",
+            )
+        if folder_id is not None:
+            await self._folder(folder_id)
+        old_folder = material.folder_id
+        material.folder_id = folder_id
+        self.audit.record(
+            AuditAction.MATERIAL_UPDATED,
+            tenant_id=material.tenant_id,
+            actor_id=actor.id,
+            target_type="material",
+            target_id=material.id,
+            details={
+                "old_folder_id": str(old_folder) if old_folder else None,
+                "new_folder_id": str(folder_id) if folder_id else None,
+            },
+        )
+        await self.session.commit()
+        return material
+
+    async def _folder(self, folder_id: UUID) -> Folder:
+        folder = (
+            await self.session.scalars(select(Folder).where(Folder.id == folder_id))
+        ).first()
+        if folder is None:
+            raise NotFoundError("Папка не найдена")
+        return folder
 
     async def delete(self, actor: User, material_id: UUID) -> None:
         """Удалить документ вместе с чанками: ответы по нему прекращаются

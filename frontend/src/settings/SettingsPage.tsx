@@ -1,14 +1,13 @@
-import { useEffect, useRef } from "react";
-import { Link, Navigate, Route, Routes, useLocation } from "react-router";
+import { Navigate, Route, Routes } from "react-router";
 
 import { needsStrongFactor, useMe, type Me } from "../auth/context";
+import { LinkTabs } from "../ui/LinkTabs";
 import { Page, PageHeader } from "../ui/Page";
 import { AccountTab } from "./AccountTab";
 import { CompaniesTab } from "./CompaniesTab";
 import { ConnectionsTab } from "./ConnectionsTab";
 import { ProfileTab } from "./ProfileTab";
 import { SecurityTab } from "./SecurityTab";
-import styles from "./Settings.module.css";
 
 // Уведомления (ТЗ §4) — этапом 9.
 interface Tab {
@@ -40,7 +39,10 @@ export function SettingsPage() {
   return (
     <Page>
       <PageHeader title="Настройки" />
-      <TabBar tabs={tabs} />
+      <LinkTabs
+        label="Разделы настроек"
+        tabs={tabs.map((tab) => ({ to: `/settings/${tab.path}`, label: tab.label }))}
+      />
       <Routes>
         <Route index element={<Navigate to="/settings/profile" replace />} />
         <Route path="profile" element={<ProfileTab />} />
@@ -51,35 +53,5 @@ export function SettingsPage() {
         <Route path="*" element={<Navigate to="/settings/profile" replace />} />
       </Routes>
     </Page>
-  );
-}
-
-function TabBar({ tabs }: { tabs: Tab[] }) {
-  const { pathname } = useLocation();
-  const active = useRef<HTMLAnchorElement>(null);
-
-  // На телефоне лента вкладок шире экрана: открытая вкладка — в поле зрения.
-  useEffect(() => {
-    active.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [pathname]);
-
-  return (
-    <nav className={styles.tabs} aria-label="Разделы настроек">
-      {tabs.map((tab) => {
-        const to = `/settings/${tab.path}`;
-        const current = pathname === to;
-        return (
-          <Link
-            key={tab.path}
-            ref={current ? active : undefined}
-            to={to}
-            className={styles.tab}
-            aria-current={current ? "page" : undefined}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
-    </nav>
   );
 }

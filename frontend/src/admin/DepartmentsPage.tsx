@@ -20,6 +20,7 @@ import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
 import styles from "./Admin.module.css";
 import { ConfirmDialog } from "./common";
+import { FOLDERS_KEY } from "./folderModel";
 
 type Department = Schemas["DepartmentResponse"];
 
@@ -123,6 +124,8 @@ export function DepartmentsPage() {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: DEPARTMENTS_KEY }),
             queryClient.invalidateQueries({ queryKey: PEOPLE_KEY }),
+            // Отдел пропадает и из доступа к папкам.
+            queryClient.invalidateQueries({ queryKey: FOLDERS_KEY }),
           ]);
         }}
       />
@@ -154,6 +157,8 @@ function DepartmentDialog({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: DEPARTMENTS_KEY }),
         queryClient.invalidateQueries({ queryKey: PEOPLE_KEY }),
+        // Название отдела показывают и папки с доступом по нему.
+        queryClient.invalidateQueries({ queryKey: FOLDERS_KEY }),
       ]);
       onClose();
     },

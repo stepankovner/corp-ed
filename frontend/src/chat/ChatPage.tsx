@@ -1,13 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Share2 } from "lucide-react";
+import { Plug, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { isAdmin, useCompany, useMe } from "../auth/context";
 import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 import { WindowMark } from "../ui/Logo";
 import { Notice } from "../ui/Notice";
 import { EmptyState } from "../ui/Page";
@@ -104,6 +105,7 @@ function NewConversation() {
                 Я отвечаю по документам «{company.name}» и к каждому ответу прикладываю источник.
                 Если в документах ответа нет — скажу об этом прямо.
               </p>
+              <ConnectBanner />
               <Suggestions onPick={(question) => void ask({ question, attachments: [] })} />
             </div>
           )}
@@ -142,6 +144,61 @@ function PendingAnswer({ live }: { live: LiveAnswer }) {
       openSource={null}
       onOpenSource={() => undefined}
     />
+  );
+}
+
+const HIDDEN_KEY = "kronto:connect-banner-hidden";
+
+function readHidden(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]");
+    return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Источник, который сотрудник подключает своим аккаунтом (ТЗ §5), ещё не
+ * подключён — предложить на пустом экране. «Скрыть» запоминается в
+ * браузере для этого источника.
+ */
+function ConnectBanner() {
+  const [hidden, setHidden] = useState(readHidden);
+  const mine = useQuery({
+    queryKey: ["connectors", "mine"],
+    queryFn: () => unwrap(api.GET("/api/v1/connectors/mine")),
+    staleTime: 5 * 60_000,
+  });
+  const item = mine.data?.find(
+    (connector) =>
+      connector.oauth && connector.grant_status !== "active" && !hidden.includes(connector.id),
+  );
+  if (!item) return null;
+
+  function hide(id: string) {
+    const next = [...hidden, id];
+    setHidden(next);
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
+    } catch {
+      // Хранилище недоступно (приватный режим) — скрываем до перезагрузки.
+    }
+  }
+
+  return (
+    <div className={styles.connect} role="note">
+      <Plug size={18} aria-hidden className={styles.connectIcon} />
+      <p className={styles.connectText}>
+        {item.grant_status
+          ? `Доступ к вашему аккаунту ${item.name} больше не действует — подключите его заново, чтобы ассистент искал и по вашим файлам.`
+          : `Подключите свой ${item.name}, чтобы ассистент искал и по вашим файлам.`}{" "}
+        <Link to="/settings/connections">Подключить</Link>
+      </p>
+      <IconButton size="sm" label="Скрыть" onClick={() => hide(item.id)}>
+        <X size={16} aria-hidden />
+      </IconButton>
+    </div>
   );
 }
 

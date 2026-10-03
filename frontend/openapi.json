@@ -1,6 +1,109 @@
 {
   "components": {
     "schemas": {
+      "AnalyticsResponse": {
+        "description": "Обезличенная статистика за период (ТЗ §6–7): ни имён, ни почты.\n\nanswered — ответы по документам; general — общий ответ с пометкой;\nrefused — честный отказ. frequent — вопросы, которые задали не меньше\nтрёх разных людей; comments — последние комментарии к 👎, без автора.",
+        "properties": {
+          "active_people": {
+            "title": "Active People",
+            "type": "integer"
+          },
+          "answered": {
+            "title": "Answered",
+            "type": "integer"
+          },
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackCommentResponse"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/DayStatsResponse"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "dislikes": {
+            "title": "Dislikes",
+            "type": "integer"
+          },
+          "frequent": {
+            "items": {
+              "$ref": "#/components/schemas/FrequentQuestionResponse"
+            },
+            "title": "Frequent",
+            "type": "array"
+          },
+          "general": {
+            "title": "General",
+            "type": "integer"
+          },
+          "likes": {
+            "title": "Likes",
+            "type": "integer"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "open_gaps": {
+            "title": "Open Gaps",
+            "type": "integer"
+          },
+          "questions": {
+            "title": "Questions",
+            "type": "integer"
+          },
+          "reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Reasons",
+            "type": "object"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "integer"
+          },
+          "since": {
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "questions",
+          "answered",
+          "general",
+          "refused",
+          "likes",
+          "dislikes",
+          "reasons",
+          "active_people",
+          "members",
+          "credits",
+          "days",
+          "frequent",
+          "comments",
+          "open_gaps"
+        ],
+        "title": "AnalyticsResponse",
+        "type": "object"
+      },
       "AnswerDiagnosticsResponse": {
         "description": "Только для ADMIN: модель, версия промпта, токены — для eval (E5).",
         "properties": {
@@ -326,6 +429,21 @@
         "title": "Body_upload_avatar_api_v1_account_avatar_put",
         "type": "object"
       },
+      "Body_upload_logo_api_v1_company_logo_put": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "PNG, JPEG или WebP до 5 МБ",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_logo_api_v1_company_logo_put",
+        "type": "object"
+      },
       "Body_upload_material_api_v1_materials_upload_post": {
         "properties": {
           "file": {
@@ -333,6 +451,18 @@
             "description": "docx, doc, xlsx, pptx, pdf, txt или md",
             "title": "File",
             "type": "string"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
           },
           "title": {
             "maxLength": 200,
@@ -525,6 +655,156 @@
         "title": "CompanyRequestResponse",
         "type": "object"
       },
+      "CompanySettingsRequest": {
+        "additionalProperties": false,
+        "description": "Что прислано, то и меняется.",
+        "properties": {
+          "allow_remember_device": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Remember Device"
+          },
+          "email_domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Domains"
+          },
+          "mfa_policy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "any",
+                  "strong"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Policy"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "not_found_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotFoundMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "CompanySettingsRequest",
+        "type": "object"
+      },
+      "CompanySettingsResponse": {
+        "description": "Настройки компании.\n\nnot_found_mode: general — общий ответ с пометкой, strict — честный\nотказ. mfa_policy: any — код на почту, strong — всем приложение или\nключ доступа (администраторам — всегда). email_domains пусто — по\nприглашению вступает почта любого домена.",
+        "properties": {
+          "allow_remember_device": {
+            "title": "Allow Remember Device",
+            "type": "boolean"
+          },
+          "company_code": {
+            "title": "Company Code",
+            "type": "string"
+          },
+          "email_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Email Domains",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "mfa_policy": {
+            "enum": [
+              "any",
+              "strong"
+            ],
+            "title": "Mfa Policy",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "not_found_mode": {
+            "$ref": "#/components/schemas/NotFoundMode"
+          },
+          "seats": {
+            "title": "Seats",
+            "type": "integer"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/Tariff"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "company_code",
+          "logo_url",
+          "not_found_mode",
+          "mfa_policy",
+          "allow_remember_device",
+          "email_domains",
+          "tariff",
+          "seats",
+          "members"
+        ],
+        "title": "CompanySettingsResponse",
+        "type": "object"
+      },
       "ConnectorCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -698,6 +978,17 @@
             ],
             "title": "Credentials Set At"
           },
+          "grants_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grants Active"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -729,6 +1020,17 @@
               }
             ],
             "title": "Last Sync At"
+          },
+          "members_active": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Members Active"
           },
           "mode": {
             "$ref": "#/components/schemas/ConnectorMode"
@@ -773,6 +1075,52 @@
           "updated_at"
         ],
         "title": "ConnectorResponse",
+        "type": "object"
+      },
+      "ConnectorSourceResponse": {
+        "properties": {
+          "grant_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Status"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "working": {
+            "title": "Working",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "mode",
+          "working",
+          "grant_status"
+        ],
+        "title": "ConnectorSourceResponse",
         "type": "object"
       },
       "ConnectorStatus": {
@@ -1089,6 +1437,17 @@
               }
             ]
           },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
           "member_id": {
             "format": "uuid",
             "title": "Member Id",
@@ -1127,6 +1486,49 @@
           "department"
         ],
         "title": "CurrentCompany",
+        "type": "object"
+      },
+      "DayStatsResponse": {
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "questions": {
+            "title": "Questions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "questions",
+          "answered"
+        ],
+        "title": "DayStatsResponse",
+        "type": "object"
+      },
+      "DepartmentBrief": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DepartmentBrief",
         "type": "object"
       },
       "DepartmentRef": {
@@ -1551,6 +1953,42 @@
         "title": "FaqSourceResponse",
         "type": "object"
       },
+      "FeedbackCommentResponse": {
+        "properties": {
+          "comment": {
+            "title": "Comment",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "created_at",
+          "question",
+          "reason",
+          "comment"
+        ],
+        "title": "FeedbackCommentResponse",
+        "type": "object"
+      },
       "FieldSpecResponse": {
         "properties": {
           "name": {
@@ -1577,6 +2015,192 @@
           "secret"
         ],
         "title": "FieldSpecResponse",
+        "type": "object"
+      },
+      "FileGroupResponse": {
+        "properties": {
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "restricted": {
+            "title": "Restricted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "folder_id",
+          "name",
+          "restricted",
+          "documents"
+        ],
+        "title": "FileGroupResponse",
+        "type": "object"
+      },
+      "FolderCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "department_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Department Ids",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          },
+          "restricted": {
+            "default": false,
+            "title": "Restricted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FolderCreateRequest",
+        "type": "object"
+      },
+      "FolderResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "departments": {
+            "items": {
+              "$ref": "#/components/schemas/DepartmentBrief"
+            },
+            "title": "Departments",
+            "type": "array"
+          },
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "restricted": {
+            "title": "Restricted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "restricted",
+          "departments",
+          "documents",
+          "created_at"
+        ],
+        "title": "FolderResponse",
+        "type": "object"
+      },
+      "FolderUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "department_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Ids"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "restricted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restricted"
+          }
+        },
+        "title": "FolderUpdateRequest",
+        "type": "object"
+      },
+      "FrequentQuestionResponse": {
+        "properties": {
+          "answered": {
+            "title": "Answered",
+            "type": "integer"
+          },
+          "asked": {
+            "title": "Asked",
+            "type": "integer"
+          },
+          "people": {
+            "title": "People",
+            "type": "integer"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "asked",
+          "people",
+          "answered"
+        ],
+        "title": "FrequentQuestionResponse",
         "type": "object"
       },
       "GapClusterResponse": {
@@ -2301,6 +2925,19 @@
         "title": "LoginResponse",
         "type": "object"
       },
+      "LogoResponse": {
+        "properties": {
+          "logo_url": {
+            "title": "Logo Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logo_url"
+        ],
+        "title": "LogoResponse",
+        "type": "object"
+      },
       "MaterialCreateRequest": {
         "additionalProperties": false,
         "description": "Документ компании в виде текста (Markdown или простой текст).\n\ntitle — человеческое название («Положение об отпусках»), а не имя\nфайла: оно уходит в крошки эмбеддинга и в подписи источников.",
@@ -2310,6 +2947,18 @@
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
           },
           "title": {
             "maxLength": 200,
@@ -2344,6 +2993,18 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
           },
           "id": {
             "format": "uuid",
@@ -2469,17 +3130,34 @@
       },
       "MaterialUpdateRequest": {
         "additionalProperties": false,
+        "description": "Что прислано, то и меняется: название (с переиндексацией) и папка\n(null — общие документы; только у загруженных).",
         "properties": {
+          "folder_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Id"
+          },
           "title": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
-        "required": [
-          "title"
-        ],
         "title": "MaterialUpdateRequest",
         "type": "object"
       },
@@ -2644,6 +3322,17 @@
           "company_name": {
             "title": "Company Name",
             "type": "string"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
           },
           "role": {
             "$ref": "#/components/schemas/UserRole"
@@ -3139,6 +3828,40 @@
         ],
         "title": "MyConnectorResponse",
         "type": "object"
+      },
+      "MySourcesResponse": {
+        "description": "Где ищет ассистент для этого сотрудника (ТЗ §5).",
+        "properties": {
+          "connectors": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorSourceResponse"
+            },
+            "title": "Connectors",
+            "type": "array"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileGroupResponse"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files",
+          "connectors"
+        ],
+        "title": "MySourcesResponse",
+        "type": "object"
+      },
+      "NotFoundMode": {
+        "description": "Что делать, когда в документах ответа нет (Р1, BH-24).\n\nGENERAL — ответ со строгой пометкой «В документах компании ответа\nнет» и советом уточнить (services/general_answer.py); у новой\nкомпании по умолчанию (решение Артёма 29.09, BH-29,\nDEFAULT_NOT_FOUND_MODE). STRICT — честный отказ; включает команда\nчерез `cli set-not-found-mode`. Новый режим — новое значение здесь, в\nCHECK-ограничении таблицы tenants (миграцией) и ветка в\nFaqService._not_found.",
+        "enum": [
+          "general",
+          "strict"
+        ],
+        "title": "NotFoundMode",
+        "type": "string"
       },
       "OAuthCallbackResponse": {
         "description": "Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.",
@@ -4229,6 +4952,44 @@
           "limited_by_tariff"
         ],
         "title": "TariffAllowanceResponse",
+        "type": "object"
+      },
+      "TariffRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/Tariff"
+          }
+        },
+        "required": [
+          "tariff"
+        ],
+        "title": "TariffRequest",
         "type": "object"
       },
       "TokenRequest": {
@@ -5485,6 +6246,57 @@
         ]
       }
     },
+    "/api/v1/analytics": {
+      "get": {
+        "description": "Вопросы по дням, доля без ответа, оценки, активные сотрудники,\nчастые вопросы — за последние days дней по времени компании.",
+        "operationId": "overview_api_v1_analytics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 90,
+              "minimum": 7,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Overview",
+        "tags": [
+          "company"
+        ]
+      }
+    },
     "/api/v1/attachments": {
       "post": {
         "description": "Файл к следующему вопросу: id передать в attachment_ids вопроса.\n\nХранится только текст файла и только вместе с диалогом; не\nотправленный с вопросом удаляется через сутки.",
@@ -6316,8 +7128,189 @@
         ]
       }
     },
+    "/api/v1/company": {
+      "get": {
+        "operationId": "read_settings_api_v1_company_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Settings",
+        "tags": [
+          "company"
+        ]
+      },
+      "patch": {
+        "description": "Название, режим «ответа нет», второй фактор, «запомнить устройство»,\nдомены почты. Каждое изменение — в журнал действий.",
+        "operationId": "update_settings_api_v1_company_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanySettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Settings",
+        "tags": [
+          "company"
+        ]
+      }
+    },
+    "/api/v1/company/logo": {
+      "delete": {
+        "operationId": "delete_logo_api_v1_company_logo_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Logo",
+        "tags": [
+          "company"
+        ]
+      },
+      "put": {
+        "description": "Логотип: вписывается в квадрат 256×256 без обрезки, метаданные\nфайла не сохраняются.",
+        "operationId": "upload_logo_api_v1_company_logo_put",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_logo_api_v1_company_logo_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Logo",
+        "tags": [
+          "company"
+        ]
+      }
+    },
+    "/api/v1/company/tariff-request": {
+      "post": {
+        "description": "«Сменить тариф»: заявка команде kronto; тариф меняет команда,\nоплата — после оформления ИП (ТЗ §10).",
+        "operationId": "request_tariff_api_v1_company_tariff_request_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TariffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Tariff",
+        "tags": [
+          "company"
+        ]
+      }
+    },
     "/api/v1/connectors": {
       "get": {
+        "description": "Подключения компании; у тех, что сотрудники подключают сами, —\nсколько уже подключилось из скольких (ТЗ §5).",
         "operationId": "list_connectors_api_v1_connectors_get",
         "responses": {
           "200": {
@@ -8078,6 +9071,179 @@
         ]
       }
     },
+    "/api/v1/folders": {
+      "get": {
+        "operationId": "list_folders_api_v1_folders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolderResponse"
+                  },
+                  "title": "Response List Folders Api V1 Folders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Folders",
+        "tags": [
+          "materials"
+        ]
+      },
+      "post": {
+        "description": "restricted — только отделы department_ids и администраторы.",
+        "operationId": "create_folder_api_v1_folders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Folder",
+        "tags": [
+          "materials"
+        ]
+      }
+    },
+    "/api/v1/folders/{folder_id}": {
+      "delete": {
+        "description": "Только пустую: иначе документы закрытой папки стали бы видны всем.",
+        "operationId": "delete_folder_api_v1_folders__folder_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Folder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Folder",
+        "tags": [
+          "materials"
+        ]
+      },
+      "patch": {
+        "operationId": "update_folder_api_v1_folders__folder_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Folder Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Folder",
+        "tags": [
+          "materials"
+        ]
+      }
+    },
     "/api/v1/gaps": {
       "get": {
         "description": "Чего не хватает в документах компании — важное сверху (BH-23).\n\nТолько пробелы (gap) и отказы модели при найденных выдержках\n(model_refusal); остальные промахи — внутренний мониторинг. Отчёт\nобновляется раз в сутки ночной задачей. Компания — из токена.",
@@ -8647,6 +9813,77 @@
         ]
       }
     },
+    "/api/v1/logos/{tenant_id}": {
+      "get": {
+        "operationId": "read_logo_api_v1_logos__tenant_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "v",
+            "required": true,
+            "schema": {
+              "maxLength": 16,
+              "minLength": 1,
+              "title": "V",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Exp",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 32,
+              "title": "Sig",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/webp": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Logo",
+        "tags": [
+          "company"
+        ]
+      }
+    },
     "/api/v1/materials": {
       "get": {
         "operationId": "list_materials_api_v1_materials_get",
@@ -8724,7 +9961,7 @@
     },
     "/api/v1/materials/upload": {
       "post": {
-        "description": "Загрузить документ файлом.\n\ntitle — человеческое название («Правила отбора в акселератор»), а не\nимя файла: оно уходит в крошки эмбеддинга и в подписи источников.\nФормат определяется по содержимому, а не по расширению и не по\nContent-Type, который присылает клиент.",
+        "description": "Загрузить документ файлом (folder_id — сразу в папку, ТЗ §5).\n\ntitle — человеческое название («Правила отбора в акселератор»), а не\nимя файла: оно уходит в крошки эмбеддинга и в подписи источников.\nФормат определяется по содержимому, а не по расширению и не по\nContent-Type, который присылает клиент.",
         "operationId": "upload_material_api_v1_materials_upload_post",
         "requestBody": {
           "content": {
@@ -8856,7 +10093,7 @@
         ]
       },
       "patch": {
-        "description": "Переименовать. Материал встаёт в очередь на переиндексацию.",
+        "description": "Переименовать (материал встаёт в очередь на переиндексацию) или\nперенести в папку.",
         "operationId": "update_material_api_v1_materials__material_id__patch",
         "parameters": [
           {
@@ -9095,6 +10332,33 @@
         "summary": "Update Person",
         "tags": [
           "people"
+        ]
+      }
+    },
+    "/api/v1/sources/mine": {
+      "get": {
+        "description": "Загруженные документы, которые видит сотрудник (по папкам), и\nисточники компании с его личным подключением, где оно нужно.",
+        "operationId": "my_sources_api_v1_sources_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySourcesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Sources",
+        "tags": [
+          "connectors"
         ]
       }
     },

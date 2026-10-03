@@ -28,6 +28,7 @@ import {
 import {
   CONNECTOR_STATUS,
   filled,
+  grantsLabel,
   intervalLabel,
   MODE_LABEL,
   secretFields,
@@ -174,7 +175,7 @@ function ConnectorView({
   return (
     <Page>
       <Link
-        to="/admin/connectors"
+        to="/admin/sources/connections"
         style={{
           display: "inline-flex",
           gap: 6,
@@ -192,7 +193,13 @@ function ConnectorView({
             {connector.name} <Badge tone={status.tone}>{status.label}</Badge>
           </span>
         }
-        description={`${MODE_LABEL[connector.mode]} · ${intervalLabel(connector.sync_interval_minutes)}`}
+        description={[
+          MODE_LABEL[connector.mode],
+          intervalLabel(connector.sync_interval_minutes),
+          grantsLabel(connector)?.toLowerCase(),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           <>
             <Button variant="ghost" size="sm" busy={test.isPending} onClick={() => test.mutate()}>
@@ -231,7 +238,7 @@ function ConnectorView({
                 <>
                   {" "}
                   — проверка идёт от вашего имени: сначала подключите свой аккаунт в{" "}
-                  <Link to="/sources">«Моих источниках»</Link>.
+                  <Link to="/settings/connections">«Настройки → Мои подключения»</Link>.
                 </>
               ) : null}
             </Notice>
@@ -354,7 +361,7 @@ function ConnectorView({
           await unwrap(api.DELETE("/api/v1/connectors/{connector_id}", path));
           await queryClient.invalidateQueries({ queryKey: ["connectors"] });
           await queryClient.invalidateQueries({ queryKey: ["materials"] });
-          void navigate("/admin/connectors", { replace: true });
+          void navigate("/admin/sources/connections", { replace: true });
         }}
       />
     </Page>

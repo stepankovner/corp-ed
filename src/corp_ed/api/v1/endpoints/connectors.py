@@ -38,7 +38,7 @@ from corp_ed.api.v1.schemas.connector import (
 )
 from corp_ed.connectors.registry import FieldSpec, KindSpec, UnknownKindError
 from corp_ed.domain.models import User, UserRole
-from corp_ed.domain.types import GrantStatus
+from corp_ed.domain.types import ConnectorMode, GrantStatus
 from corp_ed.services.connector_service import ConnectorService
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
@@ -123,7 +123,17 @@ async def tariff_allowance(
 async def list_connectors(
     service: Service, current_user: AdminUser
 ) -> list[ConnectorResponse]:
-    return [ConnectorResponse.model_validate(c) for c in await service.list_all()]
+    """Подключения компании; у тех, что сотрудники подключают сами, —
+    сколько уже подключилось из скольких (ТЗ §5)."""
+    grants, members = await service.grant_counts()
+    return [
+        ConnectorResponse.model_validate(c).model_copy(
+            update={"grants_active": grants.get(c.id, 0), "members_active": members}
+            if c.mode == ConnectorMode.PER_USER.value
+            else {}
+        )
+        for c in await service.list_all()
+    ]
 
 
 @router.post(

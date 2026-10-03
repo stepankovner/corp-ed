@@ -1,47 +1,4 @@
-/* Вкладки настроек — ссылки: у каждой свой адрес, «Назад» в браузере работает. */
-.tabs {
-  display: flex;
-  gap: var(--s-5);
-  margin-bottom: var(--s-5);
-  border-bottom: 1px solid var(--line);
-  overflow-x: auto;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
-}
-.tabs::-webkit-scrollbar {
-  display: none;
-}
-.tab {
-  position: relative;
-  flex: none;
-  padding: 10px 2px 12px;
-  color: var(--muted);
-  font-size: var(--fs-small);
-  font-weight: 500;
-  white-space: nowrap;
-  text-decoration: none;
-  transition: color 0.15s var(--ease);
-}
-.tab:hover {
-  color: var(--ink);
-}
-.tab[aria-current="page"] {
-  color: var(--ink);
-}
-.tab[aria-current="page"]::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-.tab:focus-visible {
-  outline-offset: -2px;
-}
-
+/* Настройки учётки: секции, формы, строки значений. */
 .stack {
   display: grid;
   gap: var(--s-5);

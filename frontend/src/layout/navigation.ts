@@ -1,10 +1,11 @@
 import {
   BookA,
-  ChartColumn,
-  FileText,
+  Building2,
+  CreditCard,
+  FolderOpen,
+  LayoutDashboard,
   Lightbulb,
   Network,
-  Plug,
   ScrollText,
   SearchX,
   Users,
@@ -19,13 +20,14 @@ export interface NavSection {
 
 /** Разделы управления — в боковой панели под «Управлением», только администратору. */
 export const ADMIN_SECTIONS: NavSection[] = [
-  { to: "/admin/documents", label: "Документы", icon: FileText },
-  { to: "/admin/connectors", label: "Подключения", icon: Plug },
+  { to: "/admin/overview", label: "Обзор", icon: LayoutDashboard },
+  { to: "/admin/sources", label: "Источники", icon: FolderOpen },
   { to: "/admin/users", label: "Сотрудники", icon: Users },
   { to: "/admin/departments", label: "Отделы", icon: Network },
   { to: "/admin/gaps", label: "Пробелы в документах", icon: SearchX },
   { to: "/admin/glossary", label: "Глоссарий", icon: BookA },
   { to: "/admin/suggestions", label: "Подсказки", icon: Lightbulb },
-  { to: "/admin/usage", label: "Лимит вопросов", icon: ChartColumn },
+  { to: "/admin/tariff", label: "Тариф", icon: CreditCard },
+  { to: "/admin/settings", label: "Настройки компании", icon: Building2 },
   { to: "/admin/audit", label: "Журнал действий", icon: ScrollText },
 ];

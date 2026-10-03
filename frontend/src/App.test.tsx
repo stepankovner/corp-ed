@@ -276,7 +276,10 @@ describe("плашка лимита вопросов", () => {
 
     expect(await screen.findByText("Лимит вопросов скоро закончится")).toBeInTheDocument();
     expect(screen.getByText(/Израсходовано 81 %/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute("href", "/admin/usage");
+    expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute(
+      "href",
+      "/admin/tariff",
+    );
   });
 
   it("администратор видит исчерпанный лимит", async () => {

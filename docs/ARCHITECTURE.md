@@ -309,6 +309,25 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 коллеги (в `/people`). Справочник — работающие люди компании из токена
 под RLS; отделы заводит администратор.
 
+**Админка** (`/company`, `/analytics`, `/folders`, `/sources/mine`,
+`/logos`; ТЗ §5, §7, этап 7): настройки компании, которые раньше меняла
+команда через CLI, — название, логотип, режим «ответа нет», правило
+второго фактора, «запомнить устройство», домены почты
+(`services/company_service.py`; каждое изменение — в журнал со «было /
+стало»). Тариф и места по-прежнему задаёт команда: администратор
+оставляет заявку, она приходит в Telegram команды (`TeamNotifier`).
+Аналитика (`services/analytics_service.py`) считается из `qa_log` по дням
+пояса биллинга, обезличенно; частые вопросы — от трёх разных людей.
+Папки (`folders`, `folder_departments`) группируют загруженные документы
+(`materials.folder_id`); папка с `restricted` открыта только своим
+отделам и администраторам — правило в `ChunkRepository.visible_to`,
+одном для поиска, «Где ищет ассистент» и ссылок «поделиться».
+`/sources/mine` (`services/sources_service.py`) — что видит сотрудник:
+папки с числом документов и источники компании с его подключением.
+Интерфейс: «Обзор» — главная админки; «Источники» — вкладки «Файлы»
+(папки и документы) и «Подключения» (коннекторы, «N из M» подключили
+свой аккаунт); «Тариф» (бывший «Лимит вопросов») и «Настройки компании».
+
 **Вопрос сотрудника** (`POST /faq/ask`):
 токен → тенант в контекст → лимит частоты → `CreditService.ensure_available`
 (402 до платных вызовов) → режим компании → история диалога из Redis
@@ -419,10 +438,14 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 Тенантские таблицы (все под RLS): `users`, `materials`, `chunks`,
 `qa_log`, `glossary_terms`, `gap_clusters`, `gap_cluster_questions`,
 `connectors`, `connector_user_grants`, `connector_sync_runs`,
-`material_access`, `invites`, `departments`. Очереди без RLS:
+`material_access`, `invites`, `departments`, `conversations`,
+`chat_messages`, `chat_attachments`, `chat_attachment_chunks`,
+`chat_suggestions`, `folders`, `folder_departments`. Очереди без RLS:
 `ingest_jobs`, `connector_sync_jobs`; без RLS и `leads` — заявки на
 созвон, клиента ещё нет, читает только команда из CLI; `accounts` и
-`account_avatars` — учётка человека вне компаний.
+`account_avatars` — учётка человека вне компаний; `tenant_logos` —
+логотип, переключатель показывает логотипы всех компаний человека
+(наружу — только подписанной ссылкой).
 
 Ловушки, закреплённые в коде: `postgresql.ENUM(...).create(checkfirst=True)`
 для новых enum (и `create_type=False` при переиспользовании существующего); FORCE RLS и массовые правки; генерируемая колонка `fts`;

@@ -56,6 +56,26 @@ describe("боковая панель", () => {
     expect(document.title).toBe("Вопросы — kronto");
   });
 
+  it("показывает логотип компании вместо инициалов", async () => {
+    const logo = "/api/v1/logos/t-1?v=abc&exp=1&sig=def";
+    signedInAs(
+      me({
+        companies: [
+          {
+            tenant_id: "t-1",
+            company_name: "ООО «Меридиан Строй»",
+            role: "employee",
+            status: "active",
+            logo_url: logo,
+          },
+        ],
+      }),
+    );
+    renderApp("/");
+    const switcher = await screen.findByRole("button", { name: /^Компания: ООО «Меридиан Строй»/ });
+    expect(switcher.querySelector("img")).toHaveAttribute("src", logo);
+  });
+
   it("у администратора разделы управления раскрыты в панели, второй панели нет", async () => {
     const user = userEvent.setup();
     signedInAs(adminMe());
@@ -68,7 +88,7 @@ describe("боковая панель", () => {
       "aria-current",
       "page",
     );
-    expect(within(sections).getAllByRole("link")).toHaveLength(9);
+    expect(within(sections).getAllByRole("link")).toHaveLength(10);
     expect(screen.getAllByRole("navigation")).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "Свернуть разделы управления" }));

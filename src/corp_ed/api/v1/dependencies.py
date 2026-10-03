@@ -67,6 +67,7 @@ from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.account_service import AccountService
+from corp_ed.services.analytics_service import AnalyticsService
 from corp_ed.services.attachment_service import AttachmentService
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.avatar_service import AvatarService
@@ -78,10 +79,12 @@ from corp_ed.services.chat_generation import (
 )
 from corp_ed.services.chat_service import ChatService
 from corp_ed.services.company_request_service import CompanyRequestService
+from corp_ed.services.company_service import CompanyService
 from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.department_service import DepartmentService
 from corp_ed.services.faq_service import FaqService
+from corp_ed.services.folder_service import FolderService
 from corp_ed.services.gap_service import GapService
 from corp_ed.services.general_answer import ModelKnowledgeSource
 from corp_ed.services.glossary_service import GlossaryService
@@ -90,6 +93,7 @@ from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 from corp_ed.services.people_service import PeopleService
+from corp_ed.services.sources_service import SourcesService
 from corp_ed.services.suggestion_service import SuggestionService
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 from corp_ed.services.user_service import UserService
@@ -622,6 +626,35 @@ def get_attachment_service(
         chunk_tokens=settings.chunk_tokens,
         overlap_tokens=settings.overlap_tokens,
     )
+
+
+def get_company_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
+) -> CompanyService:
+    return CompanyService(session, audit, notifier)
+
+
+def get_analytics_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    billing: Annotated[BillingSettings, Depends(get_billing_settings)],
+) -> AnalyticsService:
+    # Сутки — по тому же поясу, что и месяц расхода (московское время).
+    return AnalyticsService(session, zone=billing.billing_timezone)
+
+
+def get_folder_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> FolderService:
+    return FolderService(session, audit)
+
+
+def get_sources_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SourcesService:
+    return SourcesService(session)
 
 
 def get_suggestion_service(

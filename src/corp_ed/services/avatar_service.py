@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import io
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -79,19 +80,19 @@ def check_signature(
     return hmac.compare_digest(_signature(account_id, version, expires), sig)
 
 
-def _process(raw: bytes) -> bytes:
-    """Файл → квадрат 256×256 WebP без метаданных. Блокирующая работа:
-    вызывается в отдельном потоке."""
+def open_image(raw: bytes, invalid: Callable[[str | None], DomainError]) -> Image.Image:
+    """Открыть присланную картинку: только JPEG, PNG, WebP, не больше
+    MAX_PIXELS, с поворотом по EXIF. Любая неудача — invalid(текст)."""
     try:
         # open читает только заголовок: размер проверяем до распаковки.
         # Глобальный Image.MAX_IMAGE_PIXELS не трогаем — им пользуются и
         # разборщики документов.
         with Image.open(io.BytesIO(raw)) as source:
             if source.format not in ACCEPTED_FORMATS:
-                raise InvalidAvatarError()
+                raise invalid(None)
             width, height = source.size
             if width * height > MAX_PIXELS:
-                raise InvalidAvatarError("Фото слишком большое — до 40 мегапикселей")
+                raise invalid("Картинка слишком большая — до 40 мегапикселей")
             image = ImageOps.exif_transpose(source)
             image.load()
     except (
@@ -100,7 +101,18 @@ def _process(raw: bytes) -> bytes:
         OSError,
         SyntaxError,
     ) as exc:
-        raise InvalidAvatarError() from exc
+        raise invalid(None) from exc
+    return image
+
+
+def _invalid_avatar(message: str | None) -> DomainError:
+    return InvalidAvatarError(message) if message else InvalidAvatarError()
+
+
+def _process(raw: bytes) -> bytes:
+    """Файл → квадрат 256×256 WebP без метаданных. Блокирующая работа:
+    вызывается в отдельном потоке."""
+    image = open_image(raw, _invalid_avatar)
     # Прозрачность — на белый фон: в списке коллег фото на любой теме
     # должно читаться одинаково.
     if image.mode in ("RGBA", "LA", "P"):

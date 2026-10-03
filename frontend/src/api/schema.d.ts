@@ -392,6 +392,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description Вопросы по дням, доля без ответа, оценки, активные сотрудники,
+         *     частые вопросы — за последние days дней по времени компании.
+         */
+        get: operations["overview_api_v1_analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/attachments": {
         parameters: {
             query?: never;
@@ -812,6 +833,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Settings */
+        get: operations["read_settings_api_v1_company_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Settings
+         * @description Название, режим «ответа нет», второй фактор, «запомнить устройство»,
+         *     домены почты. Каждое изменение — в журнал действий.
+         */
+        patch: operations["update_settings_api_v1_company_patch"];
+        trace?: never;
+    };
+    "/api/v1/company/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload Logo
+         * @description Логотип: вписывается в квадрат 256×256 без обрезки, метаданные
+         *     файла не сохраняются.
+         */
+        put: operations["upload_logo_api_v1_company_logo_put"];
+        post?: never;
+        /** Delete Logo */
+        delete: operations["delete_logo_api_v1_company_logo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/company/tariff-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Tariff
+         * @description «Сменить тариф»: заявка команде kronto; тариф меняет команда,
+         *     оплата — после оформления ИП (ТЗ §10).
+         */
+        post: operations["request_tariff_api_v1_company_tariff_request_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/connectors": {
         parameters: {
             query?: never;
@@ -819,7 +905,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Connectors */
+        /**
+         * List Connectors
+         * @description Подключения компании; у тех, что сотрудники подключают сами, —
+         *     сколько уже подключилось из скольких (ТЗ §5).
+         */
         get: operations["list_connectors_api_v1_connectors_get"];
         put?: never;
         /**
@@ -1365,6 +1455,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Folders */
+        get: operations["list_folders_api_v1_folders_get"];
+        put?: never;
+        /**
+         * Create Folder
+         * @description restricted — только отделы department_ids и администраторы.
+         */
+        post: operations["create_folder_api_v1_folders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/folders/{folder_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Folder
+         * @description Только пустую: иначе документы закрытой папки стали бы видны всем.
+         */
+        delete: operations["delete_folder_api_v1_folders__folder_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Folder */
+        patch: operations["update_folder_api_v1_folders__folder_id__patch"];
+        trace?: never;
+    };
     "/api/v1/gaps": {
         parameters: {
             query?: never;
@@ -1580,6 +1712,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/logos/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Logo */
+        get: operations["read_logo_api_v1_logos__tenant_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/materials": {
         parameters: {
             query?: never;
@@ -1612,7 +1761,7 @@ export interface paths {
         put?: never;
         /**
          * Upload Material
-         * @description Загрузить документ файлом.
+         * @description Загрузить документ файлом (folder_id — сразу в папку, ТЗ §5).
          *
          *     title — человеческое название («Правила отбора в акселератор»), а не
          *     имя файла: оно уходит в крошки эмбеддинга и в подписи источников.
@@ -1643,7 +1792,8 @@ export interface paths {
         head?: never;
         /**
          * Update Material
-         * @description Переименовать. Материал встаёт в очередь на переиндексацию.
+         * @description Переименовать (материал встаёт в очередь на переиндексацию) или
+         *     перенести в папку.
          */
         patch: operations["update_material_api_v1_materials__material_id__patch"];
         trace?: never;
@@ -1709,6 +1859,27 @@ export interface paths {
          * @description Должность и отдел: свои — сам человек, чужие — администратор.
          */
         patch: operations["update_person_api_v1_people__member_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/sources/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My Sources
+         * @description Загруженные документы, которые видит сотрудник (по папкам), и
+         *     источники компании с его личным подключением, где оно нужно.
+         */
+        get: operations["my_sources_api_v1_sources_mine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/suggestions": {
@@ -1875,6 +2046,56 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AnalyticsResponse
+         * @description Обезличенная статистика за период (ТЗ §6–7): ни имён, ни почты.
+         *
+         *     answered — ответы по документам; general — общий ответ с пометкой;
+         *     refused — честный отказ. frequent — вопросы, которые задали не меньше
+         *     трёх разных людей; comments — последние комментарии к 👎, без автора.
+         */
+        AnalyticsResponse: {
+            /** Active People */
+            active_people: number;
+            /** Answered */
+            answered: number;
+            /** Comments */
+            comments: components["schemas"]["FeedbackCommentResponse"][];
+            /** Credits */
+            credits: number;
+            /** Days */
+            days: components["schemas"]["DayStatsResponse"][];
+            /** Dislikes */
+            dislikes: number;
+            /** Frequent */
+            frequent: components["schemas"]["FrequentQuestionResponse"][];
+            /** General */
+            general: number;
+            /** Likes */
+            likes: number;
+            /** Members */
+            members: number;
+            /** Open Gaps */
+            open_gaps: number;
+            /** Questions */
+            questions: number;
+            /** Reasons */
+            reasons: {
+                [key: string]: number;
+            };
+            /** Refused */
+            refused: number;
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date
+             */
+            until: string;
+        };
+        /**
          * AnswerDiagnosticsResponse
          * @description Только для ADMIN: модель, версия промпта, токены — для eval (E5).
          */
@@ -1996,6 +2217,14 @@ export interface components {
              */
             file: string;
         };
+        /** Body_upload_logo_api_v1_company_logo_put */
+        Body_upload_logo_api_v1_company_logo_put: {
+            /**
+             * File
+             * @description PNG, JPEG или WebP до 5 МБ
+             */
+            file: string;
+        };
         /** Body_upload_material_api_v1_materials_upload_post */
         Body_upload_material_api_v1_materials_upload_post: {
             /**
@@ -2003,6 +2232,8 @@ export interface components {
              * @description docx, doc, xlsx, pptx, pdf, txt или md
              */
             file: string;
+            /** Folder Id */
+            folder_id?: string | null;
             /** Title */
             title: string;
         };
@@ -2052,6 +2283,58 @@ export interface components {
              * @enum {string}
              */
             status: "new" | "approved" | "rejected" | "cancelled";
+        };
+        /**
+         * CompanySettingsRequest
+         * @description Что прислано, то и меняется.
+         */
+        CompanySettingsRequest: {
+            /** Allow Remember Device */
+            allow_remember_device?: boolean | null;
+            /** Email Domains */
+            email_domains?: string[] | null;
+            /** Mfa Policy */
+            mfa_policy?: ("any" | "strong") | null;
+            /** Name */
+            name?: string | null;
+            not_found_mode?: components["schemas"]["NotFoundMode"] | null;
+        };
+        /**
+         * CompanySettingsResponse
+         * @description Настройки компании.
+         *
+         *     not_found_mode: general — общий ответ с пометкой, strict — честный
+         *     отказ. mfa_policy: any — код на почту, strong — всем приложение или
+         *     ключ доступа (администраторам — всегда). email_domains пусто — по
+         *     приглашению вступает почта любого домена.
+         */
+        CompanySettingsResponse: {
+            /** Allow Remember Device */
+            allow_remember_device: boolean;
+            /** Company Code */
+            company_code: string;
+            /** Email Domains */
+            email_domains: string[];
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Logo Url */
+            logo_url: string | null;
+            /** Members */
+            members: number;
+            /**
+             * Mfa Policy
+             * @enum {string}
+             */
+            mfa_policy: "any" | "strong";
+            /** Name */
+            name: string;
+            not_found_mode: components["schemas"]["NotFoundMode"];
+            /** Seats */
+            seats: number;
+            tariff: components["schemas"]["Tariff"];
         };
         /** ConnectorCreateRequest */
         ConnectorCreateRequest: {
@@ -2138,6 +2421,8 @@ export interface components {
             created_at: string;
             /** Credentials Set At */
             credentials_set_at: string | null;
+            /** Grants Active */
+            grants_active?: number | null;
             /**
              * Id
              * Format: uuid
@@ -2149,6 +2434,8 @@ export interface components {
             last_error_code: string | null;
             /** Last Sync At */
             last_sync_at: string | null;
+            /** Members Active */
+            members_active?: number | null;
             mode: components["schemas"]["ConnectorMode"];
             /** Modules */
             modules: string[];
@@ -2162,6 +2449,24 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** ConnectorSourceResponse */
+        ConnectorSourceResponse: {
+            /** Grant Status */
+            grant_status: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Mode */
+            mode: string;
+            /** Name */
+            name: string;
+            /** Working */
+            working: boolean;
         };
         /**
          * ConnectorStatus
@@ -2276,6 +2581,8 @@ export interface components {
         /** CurrentCompany */
         CurrentCompany: {
             department: components["schemas"]["DepartmentRef"] | null;
+            /** Logo Url */
+            logo_url?: string | null;
             /**
              * Member Id
              * Format: uuid
@@ -2291,6 +2598,28 @@ export interface components {
              * Format: uuid
              */
             tenant_id: string;
+        };
+        /** DayStatsResponse */
+        DayStatsResponse: {
+            /** Answered */
+            answered: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Questions */
+            questions: number;
+        };
+        /** DepartmentBrief */
+        DepartmentBrief: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** DepartmentRef */
         DepartmentRef: {
@@ -2471,6 +2800,20 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** FeedbackCommentResponse */
+        FeedbackCommentResponse: {
+            /** Comment */
+            comment: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Question */
+            question: string;
+            /** Reason */
+            reason: string | null;
+        };
         /** FieldSpecResponse */
         FieldSpecResponse: {
             /** Name */
@@ -2481,6 +2824,70 @@ export interface components {
             secret: boolean;
             /** Title */
             title: string;
+        };
+        /** FileGroupResponse */
+        FileGroupResponse: {
+            /** Documents */
+            documents: number;
+            /** Folder Id */
+            folder_id: string | null;
+            /** Name */
+            name: string;
+            /** Restricted */
+            restricted: boolean;
+        };
+        /** FolderCreateRequest */
+        FolderCreateRequest: {
+            /** Department Ids */
+            department_ids?: string[];
+            /** Name */
+            name: string;
+            /**
+             * Restricted
+             * @default false
+             */
+            restricted: boolean;
+        };
+        /** FolderResponse */
+        FolderResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Departments */
+            departments: components["schemas"]["DepartmentBrief"][];
+            /** Documents */
+            documents: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Restricted */
+            restricted: boolean;
+        };
+        /** FolderUpdateRequest */
+        FolderUpdateRequest: {
+            /** Department Ids */
+            department_ids?: string[] | null;
+            /** Name */
+            name?: string | null;
+            /** Restricted */
+            restricted?: boolean | null;
+        };
+        /** FrequentQuestionResponse */
+        FrequentQuestionResponse: {
+            /** Answered */
+            answered: number;
+            /** Asked */
+            asked: number;
+            /** People */
+            people: number;
+            /** Question */
+            question: string;
         };
         /**
          * GapClusterResponse
@@ -2791,6 +3198,11 @@ export interface components {
              */
             token_type: string;
         };
+        /** LogoResponse */
+        LogoResponse: {
+            /** Logo Url */
+            logo_url: string;
+        };
         /**
          * MaterialCreateRequest
          * @description Документ компании в виде текста (Markdown или простой текст).
@@ -2801,6 +3213,8 @@ export interface components {
         MaterialCreateRequest: {
             /** Content */
             content: string;
+            /** Folder Id */
+            folder_id?: string | null;
             /** Title */
             title: string;
         };
@@ -2816,6 +3230,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Folder Id */
+            folder_id?: string | null;
             /**
              * Id
              * Format: uuid
@@ -2854,10 +3270,16 @@ export interface components {
          * @enum {string}
          */
         MaterialStatus: "pending" | "processing" | "ready" | "failed";
-        /** MaterialUpdateRequest */
+        /**
+         * MaterialUpdateRequest
+         * @description Что прислано, то и меняется: название (с переиндексацией) и папка
+         *     (null — общие документы; только у загруженных).
+         */
         MaterialUpdateRequest: {
+            /** Folder Id */
+            folder_id?: string | null;
             /** Title */
-            title: string;
+            title?: string | null;
         };
         /** MeResponse */
         MeResponse: {
@@ -2909,6 +3331,8 @@ export interface components {
         MembershipItem: {
             /** Company Name */
             company_name: string;
+            /** Logo Url */
+            logo_url?: string | null;
             role: components["schemas"]["UserRole"];
             status: components["schemas"]["MemberStatus"];
             /**
@@ -3077,6 +3501,30 @@ export interface components {
              */
             oauth: boolean;
         };
+        /**
+         * MySourcesResponse
+         * @description Где ищет ассистент для этого сотрудника (ТЗ §5).
+         */
+        MySourcesResponse: {
+            /** Connectors */
+            connectors: components["schemas"]["ConnectorSourceResponse"][];
+            /** Files */
+            files: components["schemas"]["FileGroupResponse"][];
+        };
+        /**
+         * NotFoundMode
+         * @description Что делать, когда в документах ответа нет (Р1, BH-24).
+         *
+         *     GENERAL — ответ со строгой пометкой «В документах компании ответа
+         *     нет» и советом уточнить (services/general_answer.py); у новой
+         *     компании по умолчанию (решение Артёма 29.09, BH-29,
+         *     DEFAULT_NOT_FOUND_MODE). STRICT — честный отказ; включает команда
+         *     через `cli set-not-found-mode`. Новый режим — новое значение здесь, в
+         *     CHECK-ограничении таблицы tenants (миграцией) и ветка в
+         *     FaqService._not_found.
+         * @enum {string}
+         */
+        NotFoundMode: "general" | "strict";
         /**
          * OAuthCallbackResponse
          * @description Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.
@@ -3509,6 +3957,14 @@ export interface components {
             tariff: components["schemas"]["Tariff"];
             /** Title */
             title: string;
+        };
+        /** TariffRequest */
+        TariffRequest: {
+            /** Comment */
+            comment?: string | null;
+            /** Seats */
+            seats?: number | null;
+            tariff: components["schemas"]["Tariff"];
         };
         /** TokenRequest */
         TokenRequest: {
@@ -4295,6 +4751,37 @@ export interface operations {
             };
         };
     };
+    overview_api_v1_analytics_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_attachment_api_v1_attachments_post: {
         parameters: {
             query?: never;
@@ -4883,6 +5370,143 @@ export interface operations {
                 };
                 content: {
                     "image/webp": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_company_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanySettingsResponse"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_company_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanySettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanySettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_logo_api_v1_company_logo_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_logo_api_v1_company_logo_put"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_logo_api_v1_company_logo_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    request_tariff_api_v1_company_tariff_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TariffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -5995,6 +6619,123 @@ export interface operations {
             };
         };
     };
+    list_folders_api_v1_folders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderResponse"][];
+                };
+            };
+        };
+    };
+    create_folder_api_v1_folders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_folder_api_v1_folders__folder_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                folder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_folder_api_v1_folders__folder_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                folder_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FolderUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_gaps_api_v1_gaps_get: {
         parameters: {
             query?: {
@@ -6380,6 +7121,41 @@ export interface operations {
             };
         };
     };
+    read_logo_api_v1_logos__tenant_id__get: {
+        parameters: {
+            query: {
+                v: string;
+                exp: number;
+                sig: string;
+            };
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/webp": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_materials_api_v1_materials_get: {
         parameters: {
             query?: never;
@@ -6674,6 +7450,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_sources_api_v1_sources_mine_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MySourcesResponse"];
                 };
             };
         };

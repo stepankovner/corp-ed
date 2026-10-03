@@ -22,6 +22,7 @@ import { IconButton } from "../ui/IconButton";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/useToast";
 import type { Conversation, FeedbackReason, Message, Source } from "./api";
+import { FEEDBACK_REASONS } from "./feedbackReasons";
 import styles from "./Chat.module.css";
 import { stripGeneralPrefix } from "./citations";
 import { conversationKey } from "./keys";
@@ -196,7 +197,7 @@ function FailedBody({ message, isAdmin }: { message: Message; isAdmin: boolean }
           {isAdmin ? (
             <>
               Расход и дату обновления лимита видно в разделе{" "}
-              <Link to="/admin/usage">«Лимит вопросов»</Link>.
+              <Link to="/admin/tariff">«Тариф»</Link>.
             </>
           ) : (
             "Новые вопросы станут доступны в следующем месяце. Если ответ нужен срочно — напишите администратору."
@@ -274,14 +275,6 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     </IconButton>
   );
 }
-
-const REASONS: { value: FeedbackReason; label: string }[] = [
-  { value: "inaccurate", label: "Неточно или неверно" },
-  { value: "incomplete", label: "Неполный ответ" },
-  { value: "outdated", label: "Устаревшие сведения" },
-  { value: "wrong_source", label: "Не тот документ" },
-  { value: "other", label: "Другое" },
-];
 
 interface FeedbackValue {
   value: 1 | -1 | null;
@@ -448,7 +441,7 @@ function FeedbackForm({
         </IconButton>
       </div>
       <div className={styles.reasons} role="group" aria-label="Причина">
-        {REASONS.map((item) => (
+        {FEEDBACK_REASONS.map((item) => (
           <button
             key={item.value}
             type="button"

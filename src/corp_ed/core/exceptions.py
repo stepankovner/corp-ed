@@ -232,9 +232,11 @@ class InvalidInviteError(NotFoundError):
 class InviteEmailDomainError(DomainError):
     """Почта не из домена, которым админ ограничил ссылку. HTTP 422."""
 
-    def __init__(self, domain: str) -> None:
+    def __init__(self, domain: str, *, company: bool = False) -> None:
         super().__init__(
-            f"По этой ссылке можно присоединиться только с почтой @{domain}"
+            f"В эту компанию можно вступить только с почтой @{domain}"
+            if company
+            else f"По этой ссылке можно присоединиться только с почтой @{domain}"
         )
 
 

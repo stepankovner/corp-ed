@@ -142,6 +142,11 @@ class Tenant(Base):
     allow_remember_device: Mapped[bool] = mapped_column(
         default=True, server_default=true()
     )
+    # Домены почты компании (ТЗ §7): если заданы, вступить по любому
+    # приглашению можно только с почтой этих доменов (и поддоменов).
+    email_domains: Mapped[list[str]] = mapped_column(
+        ARRAY(String(253)), default=list, server_default="{}"
+    )
 
 
 class Account(Base):
@@ -227,6 +232,28 @@ class AccountAvatar(Base):
     )
 
 
+class TenantLogo(Base):
+    """Логотип компании (ТЗ §7): вписан в квадрат 256×256, WebP с
+    прозрачностью — в переключателе компаний и в шапке.
+
+    Как фото профиля — вне RLS: переключатель показывает логотипы всех
+    компаний человека, а <img> не шлёт токен. Выдаётся по подписанной
+    ссылке, которую получают только участники компании
+    (services/company_service.py).
+    """
+
+    __tablename__ = "tenant_logos"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    version: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Department(TenantMixin, Base):
     """Отдел компании (ТЗ §7): заводит администратор, человек выбирает свой
     в профиле. Дальше к отделам привязывается доступ к папкам (§5)."""
@@ -246,6 +273,43 @@ class Department(TenantMixin, Base):
     name: Mapped[str] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Folder(TenantMixin, Base):
+    """Папка загруженных документов (ТЗ §5, §7) с доступом по отделам.
+
+    restricted=False — документы видят все сотрудники; True — только
+    отделы из folder_departments и администраторы компании. Документы
+    из источников (коннекторы) в папки не кладутся: у них права источника.
+    Непустую папку удалить нельзя (RESTRICT): иначе документы закрытой
+    папки стали бы видны всем.
+    """
+
+    __tablename__ = "folders"
+    __table_args__ = (
+        Index("uq_folders_tenant_name", "tenant_id", text("lower(name)"), unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    restricted: Mapped[bool] = mapped_column(default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FolderDepartment(TenantMixin, Base):
+    """Отдел, которому открыта закрытая папка. Удалили отдел — пропал и
+    доступ (CASCADE)."""
+
+    __tablename__ = "folder_departments"
+
+    folder_id: Mapped[UUID] = mapped_column(
+        ForeignKey("folders.id", ondelete="CASCADE"), primary_key=True
+    )
+    department_id: Mapped[UUID] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"), primary_key=True, index=True
     )
 
 
@@ -735,6 +799,11 @@ class Material(TenantMixin, Base):
     # (MaterialVisibility). Проверяется в поиске чанков.
     visibility: Mapped[str] = mapped_column(
         String(16), default="tenant", server_default="tenant"
+    )
+    # Папка загруженного документа (ТЗ §5): закрытая папка сужает круг
+    # тех, кто видит документ, до своих отделов и администраторов.
+    folder_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("folders.id", ondelete="RESTRICT"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -23,6 +23,8 @@ export interface CompanyOption {
   caption?: string;
   /** Перейти нельзя: заявка ждёт одобрения или доступ закрыт. */
   disabled?: boolean;
+  /** Логотип (подписанная ссылка API); нет — плитка с инициалами. */
+  logoUrl?: string | null;
 }
 
 /**
@@ -58,6 +60,7 @@ export function CompanySwitcher({
                 shape="square"
                 colorful
                 name={current.name}
+                src={current.logoUrl}
                 initials={companyInitials(current.name)}
               />
             ) : (
@@ -98,6 +101,7 @@ export function CompanySwitcher({
                       size="sm"
                       colorful
                       name={company.name}
+                      src={company.logoUrl}
                       initials={companyInitials(company.name)}
                     />
                   }
