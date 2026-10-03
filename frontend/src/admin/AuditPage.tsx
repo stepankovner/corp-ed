@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { formatDateTime } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { Notice } from "../ui/Notice";
 import { EmptyState, Page, PageHeader } from "../ui/Page";
@@ -23,12 +24,30 @@ const ACTIONS: Record<string, string> = {
   "auth.logout_everywhere": "Выход на всех устройствах",
   "auth.password.changed": "Смена пароля",
   "auth.refresh.reuse_detected": "Повторное использование токена — сеансы отозваны",
+  "auth.password.reset_requested": "Запрошена ссылка для нового пароля",
+  "auth.password.reset_done": "Пароль задан по ссылке из письма",
+  "account.registered": "Регистрация",
+  "account.email_verified": "Почта подтверждена",
+  "account.email_changed": "Почта изменена",
+  "account.email_reverted": "Смена почты отменена владельцем",
+  "account.deleted": "Учётная запись удалена",
+  "account.mfa_enabled": "Включена защита входа",
+  "account.mfa_disabled": "Отключена защита входа",
+  // Прежние записи журнала: до 03.10 сотрудников заводил администратор.
   "user.created": "Сотрудник добавлен",
-  "user.joined_by_invite": "Сотрудник присоединился по ссылке",
-  "invite.created": "Создана ссылка-приглашение",
-  "invite.revoked": "Ссылка-приглашение отозвана",
-  "user.updated": "Сотрудник изменён",
   "user.password_reset": "Выдан временный пароль",
+  "user.joined_by_invite": "Сотрудник вступил по приглашению",
+  "user.join_requested": "Заявка на вступление",
+  "user.approved": "Вступление одобрено",
+  "user.rejected": "Вступление отклонено",
+  "user.removed": "Сотрудник убран из компании",
+  "user.left": "Сотрудник вышел из компании",
+  "user.updated": "Сотрудник изменён",
+  "invite.created": "Создано приглашение",
+  "invite.revoked": "Приглашение отозвано",
+  "company_request.created": "Заявка на подключение компании",
+  "company_request.approved": "Заявка на подключение одобрена",
+  "company_request.rejected": "Заявка на подключение отклонена",
   "material.created": "Документ добавлен",
   "material.updated": "Документ изменён",
   "material.deleted": "Документ удалён",
@@ -73,6 +92,7 @@ function details(event: Event): string {
 }
 
 export function AuditPage() {
+  useDocumentTitle("Журнал действий");
   const users = useQuery({ queryKey: ["users"], queryFn: () => unwrap(api.GET("/api/v1/users")) });
   const events = useInfiniteQuery({
     queryKey: ["audit"],
@@ -125,7 +145,7 @@ export function AuditPage() {
                     {ACTIONS[event.action] ?? event.action}
                     {event.ip ? <span className={tableStyles.sub}>IP {event.ip}</span> : null}
                   </td>
-                  <td>
+                  <td className={tableStyles.nowrap}>
                     {event.actor_user_id
                       ? (emails.get(event.actor_user_id) ?? "сотрудник удалён")
                       : "система"}

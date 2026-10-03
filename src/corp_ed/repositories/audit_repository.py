@@ -24,6 +24,24 @@ class AuditAction(StrEnum):
     USER_UPDATED = "user.updated"
     USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105 — имя события
     USER_JOINED_BY_INVITE = "user.joined_by_invite"
+    # Учётки (ТЗ §2–3, 03.10). Без компании: tenant_id пуст, учётка — в details.
+    ACCOUNT_REGISTERED = "account.registered"
+    ACCOUNT_EMAIL_VERIFIED = "account.email_verified"
+    ACCOUNT_EMAIL_CHANGED = "account.email_changed"
+    ACCOUNT_EMAIL_REVERTED = "account.email_reverted"
+    ACCOUNT_DELETED = "account.deleted"
+    MFA_ENABLED = "account.mfa_enabled"
+    MFA_DISABLED = "account.mfa_disabled"
+    PASSWORD_RESET_REQUESTED = "auth.password.reset_requested"  # noqa: S105 — имя события
+    PASSWORD_RESET_DONE = "auth.password.reset_done"  # noqa: S105 — имя события
+    USER_JOIN_REQUESTED = "user.join_requested"
+    USER_APPROVED = "user.approved"
+    USER_REJECTED = "user.rejected"
+    USER_REMOVED = "user.removed"
+    USER_LEFT = "user.left"
+    COMPANY_REQUESTED = "company_request.created"
+    COMPANY_REQUEST_APPROVED = "company_request.approved"
+    COMPANY_REQUEST_REJECTED = "company_request.rejected"
     INVITE_CREATED = "invite.created"
     INVITE_REVOKED = "invite.revoked"
     TENANT_CREATED = "tenant.created"
@@ -74,7 +92,7 @@ class AuditRepository:
         self,
         action: AuditAction,
         *,
-        tenant_id: UUID | None,
+        tenant_id: UUID | None = None,
         actor_id: UUID | None = None,
         target_type: str | None = None,
         target_id: UUID | str | None = None,

@@ -1,0 +1,30 @@
+.notice {
+  margin-bottom: var(--s-5);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--s-5);
+}
+.card {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: var(--s-3);
+}
+.icon {
+  color: var(--accent);
+}
+.title {
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+.form {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-3);
+  width: 100%;
+}
+.form > :first-child {
+  width: 100%;
+}

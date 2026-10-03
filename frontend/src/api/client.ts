@@ -9,7 +9,26 @@ export type Schemas = components["schemas"];
 const BASE = "/api/v1";
 // Обновляем чуть раньше истечения: часы клиента и сервера расходятся.
 const EXPIRY_MARGIN_MS = 30_000;
-const PUBLIC_PATHS = new Set([`${BASE}/auth/login`, `${BASE}/auth/refresh`]);
+// Ручки без входа: токен к ним не прикладываем, а их 401 (неверный пароль)
+// не повод обновлять сессию.
+const PUBLIC_PATHS = new Set(
+  [
+    "/auth/login",
+    "/auth/refresh",
+    "/auth/mfa/verify",
+    "/auth/mfa/resend",
+    "/auth/mfa/passkey-options",
+    "/auth/register",
+    "/auth/verify-email",
+    "/auth/verify-email/link",
+    "/auth/verify-email/resend",
+    "/auth/forgot-password",
+    "/auth/reset-password",
+    "/account/email/confirm",
+    "/account/email/revert",
+    "/invites/preview",
+  ].map((path) => `${BASE}${path}`),
+);
 
 /**
  * Новый access-токен по refresh-cookie. failedToken — токен, с которым

@@ -1,9 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.domain.models import Invite
+from corp_ed.domain.models import Invite, InviteLookup
 
 
 class InviteRepository:
@@ -23,22 +23,32 @@ class InviteRepository:
         )
         return result.first()
 
-    async def get_by_hash_for_update(self, token_hash: str) -> Invite | None:
-        """Ссылка по хешу токена с блокировкой строки.
+    async def get_for_update(self, invite_id: UUID) -> Invite | None:
+        """Приглашение с блокировкой строки.
 
         Два человека по одной ссылке одновременно не должны пройти лимит
         использований: второй ждёт, пока первый допишет uses.
         """
         result = await self.session.scalars(
-            select(Invite).where(Invite.token_hash == token_hash).with_for_update()
+            select(Invite).where(Invite.id == invite_id).with_for_update()
         )
         return result.first()
 
-    async def get_by_hash(self, token_hash: str) -> Invite | None:
+    def add_lookup(self, lookup: InviteLookup) -> None:
+        self.session.add(lookup)
+
+    async def find_lookup(self, hash_: str) -> InviteLookup | None:
+        """Компания и приглашение по хешу ссылки или кода — до того, как
+        компания известна (таблица не под RLS, в ней только хеши)."""
         result = await self.session.scalars(
-            select(Invite).where(Invite.token_hash == token_hash)
+            select(InviteLookup).where(InviteLookup.hash == hash_)
         )
         return result.first()
+
+    async def drop_lookups(self, invite_id: UUID) -> None:
+        await self.session.execute(
+            delete(InviteLookup).where(InviteLookup.invite_id == invite_id)
+        )
 
     async def list_recent(self, limit: int = 50) -> list[Invite]:
         result = await self.session.scalars(

@@ -1,6 +1,6 @@
 import styles from "./Button.module.css";
 
-export type ButtonVariant = "dark" | "ghost" | "danger" | "link";
+export type ButtonVariant = "dark" | "accent" | "ghost" | "danger" | "link";
 export type ButtonSize = "md" | "sm" | "xs";
 
 export function buttonClass(

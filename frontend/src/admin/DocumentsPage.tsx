@@ -7,6 +7,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { describeCode } from "../lib/codes";
 import { formatBytes, formatDateTime, formatRelative, plural } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Badge, type Tone } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { TextAreaField, TextField } from "../ui/Field";
@@ -15,11 +16,13 @@ import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
 import { EmptyState, Page, PageHeader } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
-import { PageSpinner, Spinner } from "../ui/Spinner";
+import { SegmentedControl } from "../ui/SegmentedControl";
+import { SkeletonList } from "../ui/Skeleton";
+import { Spinner } from "../ui/Spinner";
 import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
 import styles from "./Admin.module.css";
-import { ConfirmDialog, Segmented } from "./common";
+import { ConfirmDialog } from "./common";
 
 type Material = Schemas["MaterialResponse"];
 type Filter = "all" | "ready" | "processing" | "failed";
@@ -79,6 +82,7 @@ interface QueueItem {
 }
 
 export function DocumentsPage() {
+  useDocumentTitle("Документы");
   const queryClient = useQueryClient();
   const materials = useQuery({
     queryKey: ["materials"],
@@ -247,7 +251,7 @@ export function DocumentsPage() {
       ) : null}
 
       {materials.isPending ? (
-        <PageSpinner />
+        <SkeletonList label="Загрузка документов" />
       ) : materials.isError ? (
         <Notice kind="error">{errorMessage(materials.error)}</Notice>
       ) : list.length === 0 ? (
@@ -258,7 +262,7 @@ export function DocumentsPage() {
       ) : (
         <>
           <div className={styles.toolbar}>
-            <Segmented<Filter>
+            <SegmentedControl<Filter>
               label="Статус"
               value={filter}
               onChange={setFilter}
@@ -269,14 +273,16 @@ export function DocumentsPage() {
                 { value: "failed", label: "Ошибки", count: counts.failed },
               ]}
             />
-            <input
-              className={styles.search}
-              type="search"
-              placeholder="Поиск по названию"
-              aria-label="Поиск по названию"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <span className={styles.searchWrap}>
+              <input
+                className={styles.search}
+                type="search"
+                placeholder="Поиск по названию"
+                aria-label="Поиск по названию"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </span>
           </div>
           <Table label="Документы">
             <thead>

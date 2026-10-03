@@ -1,0 +1,58 @@
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+.text {
+  display: grid;
+  gap: 2px;
+}
+.label {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  cursor: pointer;
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+/* Дорожка выключенного — рамкой --line-control (3:1), включённого — акцентом. */
+.switch {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  transition:
+    background-color 0.18s var(--ease),
+    border-color 0.18s var(--ease);
+}
+.thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition:
+    transform 0.18s var(--ease),
+    background-color 0.18s var(--ease);
+}
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch[aria-checked="true"] .thumb {
+  transform: translateX(16px);
+  background: var(--on-accent);
+}
+.switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

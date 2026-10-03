@@ -133,3 +133,11 @@ def connector_stopped_message(*, company_code: str, kind: str, code: str) -> str
         f"Компания {company_code}: подключение {kind} остановлено, "
         f"ошибка {code}. Нужны новые учётные данные от админа компании."
     )
+
+
+def company_request_message(*, seats: int | None) -> str:
+    places = f", {seats} мест" if seats else ""
+    return (
+        f"Новая заявка на подключение компании{places}. "
+        "Посмотреть и одобрить — cli requests list."
+    )

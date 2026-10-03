@@ -21,6 +21,352 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Name */
+        patch: operations["update_name_api_v1_account_patch"];
+        trace?: never;
+    };
+    "/api/v1/account/backup-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Backup Codes
+         * @description Новые 10 резервных кодов; старые перестают действовать.
+         */
+        post: operations["regenerate_backup_codes_api_v1_account_backup_codes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/company-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Company Requests */
+        get: operations["list_company_requests_api_v1_account_company_requests_get"];
+        put?: never;
+        /**
+         * Create Company Request
+         * @description Заявка «Подключить компанию»: одобряет команда Kronto.
+         */
+        post: operations["create_company_request_api_v1_account_company_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/company-requests/{request_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Company Request */
+        post: operations["cancel_company_request_api_v1_account_company_requests__request_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Account
+         * @description Удалить учётку (152-ФЗ). Пароль — подтверждение, что это владелец.
+         */
+        post: operations["delete_account_api_v1_account_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request Email Change
+         * @description Пароль и второй фактор, затем письмо со ссылкой на новый адрес;
+         *     почта сменится после перехода (ТЗ §3). Без приложения второй фактор
+         *     — код на прежний адрес: первый запрос без кода его отправляет.
+         */
+        post: operations["request_email_change_api_v1_account_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/email/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Email Change
+         * @description Ссылка из письма на новый адрес. Без входа: письмо могут открыть
+         *     на другом устройстве.
+         */
+        post: operations["confirm_email_change_api_v1_account_email_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/email/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Email Change
+         * @description «Это не я» из письма на прежний адрес. Без входа: у владельца,
+         *     скорее всего, его уже нет.
+         */
+        post: operations["revert_email_change_api_v1_account_email_revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave Company
+         * @description Выйти из компании. Учётка остаётся.
+         */
+        post: operations["leave_company_api_v1_account_leave_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register Passkey */
+        post: operations["register_passkey_api_v1_account_passkeys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/passkeys/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Passkey Options
+         * @description Параметры для navigator.credentials.create().
+         */
+        post: operations["passkey_options_api_v1_account_passkeys_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/passkeys/{passkey_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Delete Passkey */
+        post: operations["delete_passkey_api_v1_account_passkeys__passkey_id__delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Security */
+        get: operations["read_security_api_v1_account_security_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Sessions
+         * @description Где открыта учётка: браузер, адрес, когда начат сеанс.
+         */
+        get: operations["list_sessions_api_v1_account_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/sessions/{session_id}/end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End Session
+         * @description Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
+         *     для немедленного выхода везде есть /auth/logout-all.
+         */
+        post: operations["end_session_api_v1_account_sessions__session_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable Totp */
+        post: operations["disable_totp_api_v1_account_totp_disable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/totp/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable Totp */
+        post: operations["enable_totp_api_v1_account_totp_enable_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Totp Setup
+         * @description Секрет для приложения (QR из otpauth_uri). Действует после
+         *     подтверждения кодом — /account/totp/enable.
+         */
+        post: operations["start_totp_setup_api_v1_account_totp_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -72,6 +418,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Forgot Password
+         * @description Ссылка для нового пароля. Ответ одинаковый, есть учётка или нет.
+         */
+        post: operations["forgot_password_api_v1_auth_forgot_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -83,10 +449,13 @@ export interface paths {
         put?: never;
         /**
          * Login
-         * @description Вход. Два лимита против перебора (ASVS 6.3.1):
+         * @description Вход по почте и паролю (ТЗ §2–3). Верный пароль даёт сессию сразу,
+         *     только если браузер — доверенное устройство учётки; иначе — шаг
+         *     второго фактора (/auth/mfa/verify).
          *
+         *     Два лимита против перебора (ASVS 6.3.1):
          *     - на IP — все попытки: один адрес не перебирает много учёток;
-         *     - на учётку — только неудачные: распределённый перебор одной учётки
+         *     - на почту — только неудачные: распределённый перебор одной учётки
          *       с многих адресов. Успешный вход счётчик обнуляет.
          */
         post: operations["login_api_v1_auth_login_post"];
@@ -142,12 +511,75 @@ export interface paths {
         };
         /**
          * Read Me
-         * @description Кто вошёл. Доступна и до смены временного пароля: фронту нужно
-         *     знать must_change_password, чтобы показать форму смены.
+         * @description Кто вошёл: учётка, выбранная компания и все компании человека.
+         *     Доступна и до смены временного пароля: фронту нужно знать
+         *     must_change_password, чтобы показать форму смены.
          */
         get: operations["read_me_api_v1_auth_me_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/passkey-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Passkey Login Options
+         * @description Параметры для navigator.credentials.get() на шаге входа.
+         */
+        post: operations["passkey_login_options_api_v1_auth_mfa_passkey_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend Login Code
+         * @description Новый код на почту для того же шага входа.
+         */
+        post: operations["resend_login_code_api_v1_auth_mfa_resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/mfa/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Second Factor
+         * @description Второй шаг входа: код из письма, приложения, резервный или ключ
+         *     доступа. «Запомнить» — доверенное устройство на 30 дней, если ни одна
+         *     компания человека это не запретила.
+         */
+        post: operations["verify_second_factor_api_v1_auth_mfa_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -170,6 +602,125 @@ export interface paths {
          *     живёт только в памяти вкладки.
          */
         post: operations["refresh_api_v1_auth_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register
+         * @description Регистрация (ТЗ §2): учётка без компании и письмо с кодом. Ответ
+         *     одинаковый, есть ли уже учётка с этой почтой.
+         */
+        post: operations["register_api_v1_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Password
+         * @description Новый пароль по ссылке из письма: прежние сессии закрываются,
+         *     открывается новая.
+         */
+        post: operations["reset_password_api_v1_auth_reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/switch-company": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch Company
+         * @description Перейти в другую свою компанию — новая пара токенов.
+         */
+        post: operations["switch_company_api_v1_auth_switch_company_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Email Code
+         * @description Подтвердить почту кодом из письма и сразу войти.
+         */
+        post: operations["verify_email_code_api_v1_auth_verify_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/verify-email/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Email Link
+         * @description Подтвердить почту по ссылке из письма и сразу войти.
+         */
+        post: operations["verify_email_link_api_v1_auth_verify_email_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/verify-email/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend Verification */
+        post: operations["resend_verification_api_v1_auth_verify_email_resend_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -589,13 +1140,13 @@ export interface paths {
         };
         /**
          * List Invites
-         * @description Последние ссылки компании с их состоянием; токенов в ответе нет.
+         * @description Последние приглашения компании с их состоянием; ссылок и кодов нет.
          */
         get: operations["list_invites_api_v1_invites_get"];
         put?: never;
         /**
          * Create Invite
-         * @description Ссылка-приглашение в свою компанию. Токен — в ответе один раз.
+         * @description Приглашение в свою компанию. Ссылка и код — в ответе один раз.
          */
         post: operations["create_invite_api_v1_invites_post"];
         delete?: never;
@@ -615,7 +1166,8 @@ export interface paths {
         put?: never;
         /**
          * Accept Invite
-         * @description Завести учётку сотрудника по ссылке и сразу войти.
+         * @description Вступить в компанию своей учёткой. Вступил — сессия сразу
+         *     переключается на эту компанию; ждёт одобрения — сессия прежняя.
          */
         post: operations["accept_invite_api_v1_invites_accept_post"];
         delete?: never;
@@ -635,7 +1187,8 @@ export interface paths {
         put?: never;
         /**
          * Preview Invite
-         * @description В какую компанию ведёт ссылка — для карточки «Присоединиться».
+         * @description В какую компанию ведёт приглашение — до входа, для карточки
+         *     «Вступить».
          */
         post: operations["preview_invite_api_v1_invites_preview_post"];
         delete?: never;
@@ -824,11 +1377,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Users */
+        /**
+         * List Users
+         * @description Люди компании: работают, заблокированы, ждут одобрения.
+         */
         get: operations["list_users_api_v1_users_get"];
         put?: never;
-        /** Create User */
-        post: operations["create_user_api_v1_users_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -845,14 +1400,18 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove User
+         * @description Убрать из компании. Учётка человека остаётся.
+         */
+        delete: operations["remove_user_api_v1_users__user_id__delete"];
         options?: never;
         head?: never;
         /** Update User */
         patch: operations["update_user_api_v1_users__user_id__patch"];
         trace?: never;
     };
-    "/api/v1/users/{user_id}/reset-password": {
+    "/api/v1/users/{user_id}/approve": {
         parameters: {
             query?: never;
             header?: never;
@@ -861,8 +1420,28 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reset Password */
-        post: operations["reset_password_api_v1_users__user_id__reset_password_post"];
+        /**
+         * Approve User
+         * @description Пустить вступившего по приглашению с одобрением.
+         */
+        post: operations["approve_user_api_v1_users__user_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{user_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject User */
+        post: operations["reject_user_api_v1_users__user_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -948,6 +1527,11 @@ export interface components {
             /** Target Type */
             target_type: string | null;
         };
+        /** BackupCodesResponse */
+        BackupCodesResponse: {
+            /** Backup Codes */
+            backup_codes: string[] | null;
+        };
         /** Body_upload_material_api_v1_materials_upload_post */
         Body_upload_material_api_v1_materials_upload_post: {
             /**
@@ -964,6 +1548,41 @@ export interface components {
             current_password: string;
             /** New Password */
             new_password: string;
+        };
+        /** CompanyRequestCreate */
+        CompanyRequestCreate: {
+            /** Comment */
+            comment?: string | null;
+            /** Company Name */
+            company_name: string;
+            /** Seats */
+            seats?: number | null;
+        };
+        /** CompanyRequestResponse */
+        CompanyRequestResponse: {
+            /** Comment */
+            comment: string | null;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Seats */
+            seats: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "approved" | "rejected" | "cancelled";
         };
         /** ConnectorCreateRequest */
         ConnectorCreateRequest: {
@@ -1110,6 +1729,63 @@ export interface components {
             credentials: {
                 [key: string]: string;
             };
+        };
+        /** CurrentCompany */
+        CurrentCompany: {
+            /**
+             * Member Id
+             * Format: uuid
+             */
+            member_id: string;
+            /** Name */
+            name: string;
+            role: components["schemas"]["UserRole"];
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
+        /** EmailChangeRequest */
+        EmailChangeRequest: {
+            /** Code */
+            code?: string | null;
+            /**
+             * New Email
+             * Format: email
+             */
+            new_email: string;
+            /** Password */
+            password: string;
+        };
+        /** EmailChangeResponse */
+        EmailChangeResponse: {
+            /** Email Hint */
+            email_hint: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "code_sent" | "link_sent";
+        };
+        /** EmailRequest */
+        EmailRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
+        /**
+         * EmailSentResponse
+         * @description Ответ один и тот же, есть учётка или нет (по нему не перебрать адреса).
+         */
+        EmailSentResponse: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
         };
         /**
          * FaqAnswerResponse
@@ -1352,28 +2028,17 @@ export interface components {
             material_id: string;
             status: components["schemas"]["MaterialStatus"];
         };
-        /** InviteAcceptRequest */
-        InviteAcceptRequest: {
-            /** Company Code */
-            company_code: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Full Name */
-            full_name?: string | null;
-            /** Password */
-            password: string;
-            /** Token */
-            token: string;
-        };
         /** InviteCreateRequest */
         InviteCreateRequest: {
             /** Email Domain */
             email_domain?: string | null;
             /** Max Uses */
             max_uses?: number | null;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
             /**
              * Ttl Days
              * @default 7
@@ -1382,8 +2047,8 @@ export interface components {
         };
         /** InviteCreatedResponse */
         InviteCreatedResponse: {
-            /** Company Code */
-            company_code: string;
+            /** Code */
+            code: string;
             invite: components["schemas"]["InviteResponse"];
             /** Token */
             token: string;
@@ -1399,6 +2064,8 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
+            /** Requires Approval */
+            requires_approval: boolean;
         };
         /** InviteResponse */
         InviteResponse: {
@@ -1421,6 +2088,8 @@ export interface components {
             id: string;
             /** Max Uses */
             max_uses: number;
+            /** Requires Approval */
+            requires_approval: boolean;
             /**
              * Status
              * @enum {string}
@@ -1429,12 +2098,21 @@ export interface components {
             /** Uses */
             uses: number;
         };
-        /** InviteTokenRequest */
-        InviteTokenRequest: {
-            /** Company Code */
-            company_code: string;
-            /** Token */
-            token: string;
+        /** InviteSecretRequest */
+        InviteSecretRequest: {
+            /** Secret */
+            secret: string;
+        };
+        /** JoinResponse */
+        JoinResponse: {
+            /** Company Name */
+            company_name: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "joined" | "pending" | "already_member";
+            session: components["schemas"]["TokenResponse"] | null;
         };
         /**
          * LeadFormResponse
@@ -1504,10 +2182,16 @@ export interface components {
              */
             website: string;
         };
+        /** LeaveCompanyRequest */
+        LeaveCompanyRequest: {
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
         /** LoginRequest */
         LoginRequest: {
-            /** Company Code */
-            company_code: string;
             /**
              * Email
              * Format: email
@@ -1515,6 +2199,32 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+            /**
+             * Remember
+             * @default true
+             */
+            remember: boolean;
+        };
+        /**
+         * LoginResponse
+         * @description Вход: сразу сессия (доверенное устройство) или второй фактор.
+         */
+        LoginResponse: {
+            /** Access Token */
+            access_token?: string | null;
+            /** Expires In */
+            expires_in?: number | null;
+            mfa?: components["schemas"]["MfaChallenge"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "mfa_required";
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
         };
         /**
          * MaterialCreateRequest
@@ -1586,15 +2296,16 @@ export interface components {
         };
         /** MeResponse */
         MeResponse: {
-            /** Company Code */
-            company_code: string;
-            /** Company Name */
-            company_name: string;
+            /** Companies */
+            companies: components["schemas"]["MembershipItem"][];
+            company: components["schemas"]["CurrentCompany"] | null;
             /**
              * Email
              * Format: email
              */
             email: string;
+            /** First Name */
+            first_name: string | null;
             /** Full Name */
             full_name: string | null;
             /**
@@ -1604,14 +2315,71 @@ export interface components {
             id: string;
             /** Last Login At */
             last_login_at: string | null;
+            /** Last Name */
+            last_name: string | null;
+            mfa: components["schemas"]["MfaState"];
             /** Must Change Password */
             must_change_password: boolean;
+        };
+        /**
+         * MemberStatus
+         * @description Состояние членства в компании.
+         *
+         *     ACTIVE — работает и занимает место; BLOCKED — заблокирован админом,
+         *     место не занимает; PENDING — вступил по приглашению с одобрением и
+         *     ждёт админа; LEFT — ушёл сам или убран админом: учётка жива, доступа
+         *     к компании нет, вернуться можно по новому приглашению.
+         * @enum {string}
+         */
+        MemberStatus: "active" | "blocked" | "pending" | "left";
+        /** MembershipItem */
+        MembershipItem: {
+            /** Company Name */
+            company_name: string;
             role: components["schemas"]["UserRole"];
+            status: components["schemas"]["MemberStatus"];
             /**
              * Tenant Id
              * Format: uuid
              */
             tenant_id: string;
+        };
+        /** MfaChallenge */
+        MfaChallenge: {
+            /** Email Hint */
+            email_hint: string | null;
+            /** Methods */
+            methods: ("email" | "totp" | "passkey" | "backup")[];
+            /** Token */
+            token: string;
+        };
+        /** MfaState */
+        MfaState: {
+            /** Strong */
+            strong: boolean;
+            /** Strong Required */
+            strong_required: boolean;
+        };
+        /** MfaTokenRequest */
+        MfaTokenRequest: {
+            /** Token */
+            token: string;
+        };
+        /** MfaVerifyRequest */
+        MfaVerifyRequest: {
+            /** Code */
+            code?: string | null;
+            /** Credential */
+            credential?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "email" | "totp" | "passkey" | "backup";
+            /** Token */
+            token: string;
         };
         /** ModuleSpecResponse */
         ModuleSpecResponse: {
@@ -1643,6 +2411,13 @@ export interface components {
              */
             oauth: boolean;
         };
+        /** NameUpdateRequest */
+        NameUpdateRequest: {
+            /** First Name */
+            first_name: string;
+            /** Last Name */
+            last_name: string;
+        };
         /**
          * OAuthCallbackResponse
          * @description Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.
@@ -1664,10 +2439,93 @@ export interface components {
             /** Authorize Url */
             authorize_url: string;
         };
-        /** PasswordResetResponse */
-        PasswordResetResponse: {
-            /** Temporary Password */
-            temporary_password: string;
+        /** PasskeyCreatedResponse */
+        PasskeyCreatedResponse: {
+            /** Backup Codes */
+            backup_codes: string[] | null;
+            passkey: components["schemas"]["PasskeyResponse"];
+        };
+        /** PasskeyOptionsResponse */
+        PasskeyOptionsResponse: {
+            /** Options */
+            options: {
+                [key: string]: unknown;
+            };
+        };
+        /** PasskeyRegisterRequest */
+        PasskeyRegisterRequest: {
+            /** Credential */
+            credential: {
+                [key: string]: unknown;
+            };
+            /**
+             * Name
+             * @default Ключ доступа
+             */
+            name: string;
+            /** Setup Token */
+            setup_token: string;
+        };
+        /** PasskeyResponse */
+        PasskeyResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Name */
+            name: string;
+        };
+        /** PasskeySetupResponse */
+        PasskeySetupResponse: {
+            /** Options */
+            options: {
+                [key: string]: unknown;
+            };
+            /** Setup Token */
+            setup_token: string;
+        };
+        /** PasswordConfirmRequest */
+        PasswordConfirmRequest: {
+            /** Password */
+            password: string;
+        };
+        /** RegisterRequest */
+        RegisterRequest: {
+            /**
+             * Consent
+             * @constant
+             */
+            consent: true;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** First Name */
+            first_name: string;
+            /** Invite */
+            invite?: string | null;
+            /** Last Name */
+            last_name: string;
+            /** Password */
+            password: string;
+        };
+        /** ResetPasswordRequest */
+        ResetPasswordRequest: {
+            /** New Password */
+            new_password: string;
+            /** Second Factor */
+            second_factor?: string | null;
+            /** Token */
+            token: string;
         };
         /**
          * Retriever
@@ -1679,6 +2537,53 @@ export interface components {
          * @enum {string}
          */
         Retriever: "vector" | "hybrid";
+        /** SecondFactorConfirmRequest */
+        SecondFactorConfirmRequest: {
+            /** Code */
+            code: string;
+            /** Password */
+            password: string;
+        };
+        /** SecurityResponse */
+        SecurityResponse: {
+            /** Backup Codes Left */
+            backup_codes_left: number;
+            /** Passkeys */
+            passkeys: components["schemas"]["PasskeyResponse"][];
+            /** Strong Required */
+            strong_required: boolean;
+            /** Totp Enabled */
+            totp_enabled: boolean;
+        };
+        /** SessionResponse */
+        SessionResponse: {
+            /** Current */
+            current: boolean;
+            /** Device */
+            device: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Ip */
+            ip: string | null;
+            /**
+             * Last Active At
+             * Format: date-time
+             */
+            last_active_at: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+        };
+        /** SwitchCompanyRequest */
+        SwitchCompanyRequest: {
+            /** Tenant Id */
+            tenant_id: string | null;
+        };
         /** SyncRequestedResponse */
         SyncRequestedResponse: {
             /**
@@ -1734,6 +2639,11 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** TokenRequest */
+        TokenRequest: {
+            /** Token */
+            token: string;
+        };
         /**
          * TokenResponse
          * @description Access-токен для заголовка Authorization. Refresh-токен в тело не
@@ -1749,6 +2659,22 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /** TotpEnableRequest */
+        TotpEnableRequest: {
+            /** Code */
+            code: string;
+            /** Setup Token */
+            setup_token: string;
+        };
+        /** TotpSetupResponse */
+        TotpSetupResponse: {
+            /** Otpauth Uri */
+            otpauth_uri: string;
+            /** Secret */
+            secret: string;
+            /** Setup Token */
+            setup_token: string;
         };
         /**
          * UsageResponse
@@ -1783,31 +2709,8 @@ export interface components {
             warning: boolean;
         };
         /**
-         * UserCreateRequest
-         * @description Новый сотрудник. Без password система сгенерирует временный.
-         */
-        UserCreateRequest: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** Full Name */
-            full_name?: string | null;
-            /** Password */
-            password?: string | null;
-            /** @default employee */
-            role: components["schemas"]["UserRole"];
-        };
-        /** UserCreatedResponse */
-        UserCreatedResponse: {
-            /** Temporary Password */
-            temporary_password: string | null;
-            user: components["schemas"]["UserResponse"];
-        };
-        /**
          * UserResponse
-         * @description Пользователь без пароля, хеша и версии токенов.
+         * @description Человек в компании: членство и имя с почтой из учётки.
          */
         UserResponse: {
             /**
@@ -1815,11 +2718,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
+            /** Email */
+            email: string | null;
             /** Full Name */
             full_name: string | null;
             /**
@@ -1827,31 +2727,28 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Is Active */
-            is_active: boolean;
             /** Last Login At */
             last_login_at: string | null;
-            /** Must Change Password */
-            must_change_password: boolean;
             role: components["schemas"]["UserRole"];
+            status: components["schemas"]["MemberStatus"];
         };
         /**
          * UserRole
-         * @description Роль сотрудника внутри своей компании.
+         * @description Роль человека в компании — свойство членства, а не учётки (ТЗ §2):
+         *     в одной компании он администратор, в другой — сотрудник.
          *
-         *     ADMIN — управляет документами и пользователями компании, видит
-         *     отладку поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы.
-         *     Заводить компании (тенанты) не может ни одна роль: это делает
-         *     команда Kronto через CLI на сервере (см. corp_ed.cli).
+         *     ADMIN — управляет документами и людьми компании, видит отладку
+         *     поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы. Отдельных
+         *     «владельца» и «редактора» нет (решение владельца продукта 03.10).
+         *     Заводить компании не может ни одна роль: заявку одобряет команда
+         *     Kronto (corp_ed.cli, позже — наша панель).
          * @enum {string}
          */
         UserRole: "admin" | "employee";
         /** UserUpdateRequest */
         UserUpdateRequest: {
-            /** Full Name */
-            full_name?: string | null;
-            /** Is Active */
-            is_active?: boolean | null;
+            /** Blocked */
+            blocked?: boolean | null;
             role?: components["schemas"]["UserRole"] | null;
         };
         /** ValidationError */
@@ -1866,6 +2763,16 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VerifyCodeRequest */
+        VerifyCodeRequest: {
+            /** Code */
+            code: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
         };
     };
     responses: never;
@@ -1894,6 +2801,550 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    update_name_api_v1_account_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NameUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_backup_codes_api_v1_account_backup_codes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCodesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_company_requests_api_v1_account_company_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequestResponse"][];
+                };
+            };
+        };
+    };
+    create_company_request_api_v1_account_company_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompanyRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_company_request_api_v1_account_company_requests__request_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompanyRequestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_account_api_v1_account_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_email_change_api_v1_account_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailChangeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_email_change_api_v1_account_email_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_email_change_api_v1_account_email_revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leave_company_api_v1_account_leave_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeaveCompanyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_passkey_api_v1_account_passkeys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyCreatedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    passkey_options_api_v1_account_passkeys_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeySetupResponse"];
+                };
+            };
+        };
+    };
+    delete_passkey_api_v1_account_passkeys__passkey_id__delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                passkey_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_security_api_v1_account_security_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityResponse"];
+                };
+            };
+        };
+    };
+    list_sessions_api_v1_account_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponse"][];
+                };
+            };
+        };
+    };
+    end_session_api_v1_account_sessions__session_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disable_totp_api_v1_account_totp_disable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecondFactorConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enable_totp_api_v1_account_totp_enable_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TotpEnableRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupCodesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_totp_setup_api_v1_account_totp_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TotpSetupResponse"];
                 };
             };
         };
@@ -1963,6 +3414,39 @@ export interface operations {
             };
         };
     };
+    forgot_password_api_v1_auth_forgot_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
@@ -1982,7 +3466,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": components["schemas"]["LoginResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2052,6 +3536,105 @@ export interface operations {
             };
         };
     };
+    passkey_login_options_api_v1_auth_mfa_passkey_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyOptionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_login_code_api_v1_auth_mfa_resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_second_factor_api_v1_auth_mfa_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaVerifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     refresh_api_v1_auth_refresh_post: {
         parameters: {
             query?: never;
@@ -2068,6 +3651,204 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+        };
+    };
+    register_api_v1_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_password_api_v1_auth_reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    switch_company_api_v1_auth_switch_company_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwitchCompanyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_email_code_api_v1_auth_verify_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_email_link_api_v1_auth_verify_email_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_verification_api_v1_auth_verify_email_resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailSentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2879,17 +4660,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["InviteAcceptRequest"];
+                "application/json": components["schemas"]["InviteSecretRequest"];
             };
         };
         responses: {
             /** @description Successful Response */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TokenResponse"];
+                    "application/json": components["schemas"]["JoinResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2912,7 +4693,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["InviteTokenRequest"];
+                "application/json": components["schemas"]["InviteSecretRequest"];
             };
         };
         responses: {
@@ -3270,27 +5051,23 @@ export interface operations {
             };
         };
     };
-    create_user_api_v1_users_post: {
+    remove_user_api_v1_users__user_id__delete: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                user_id: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserCreateRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
-            201: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["UserCreatedResponse"];
-                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -3338,7 +5115,7 @@ export interface operations {
             };
         };
     };
-    reset_password_api_v1_users__user_id__reset_password_post: {
+    approve_user_api_v1_users__user_id__approve_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3355,8 +5132,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PasswordResetResponse"];
+                    "application/json": components["schemas"]["UserResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_user_api_v1_users__user_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

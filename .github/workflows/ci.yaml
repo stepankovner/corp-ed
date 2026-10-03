@@ -234,6 +234,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 5
+      # Перехватчик писем: коды подтверждения и ссылки проверка читает из
+      # его API, наружу ничего не уходит.
+      mailpit:
+        image: axllent/mailpit:v1.31.3
+        ports:
+          - 1025
+          - 8025
+        options: >-
+          --health-cmd "/mailpit readyz"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
 
     # Режим разработки без ключей Yandex Cloud: ответ — из первой выдержки,
     # эмбеддинги — «мешок слов» (llm/fake.py). Порог расстояния для них
@@ -257,6 +269,9 @@ jobs:
       LEADS_POLICY_VERSION: e2e
       E2E_COMPANY: e2e
       E2E_ADMIN_EMAIL: admin@kronto-e2e.ru
+      # Письма — через SMTP в Mailpit (адрес и порт — шаг Ports).
+      MAIL_BACKEND: smtp
+      MAIL_SMTP_SECURITY: none
       # Метрики воркера — на постоянном порту 9101; на своём runner второе
       # задание e2e на той же машине упало бы на нём. Здесь не нужны.
       WORKER_METRICS_PORT: "0"
@@ -290,6 +305,8 @@ jobs:
         env:
           PG_PORT: ${{ job.services.postgres.ports['5432'] }}
           REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
+          MAILPIT_SMTP_PORT: ${{ job.services.mailpit.ports['1025'] }}
+          MAILPIT_HTTP_PORT: ${{ job.services.mailpit.ports['8025'] }}
         run: |
           read -r api_port web_port < <(python3 -c 'import socket
           s = [socket.socket() for _ in range(2)]
@@ -303,6 +320,10 @@ jobs:
             echo "KRONTO_BACKEND=http://127.0.0.1:$api_port"
             echo "WEB_PORT=$web_port"
             echo "E2E_BASE_URL=http://localhost:$web_port"
+            echo "MAIL_SMTP_HOST=localhost"
+            echo "MAIL_SMTP_PORT=$MAILPIT_SMTP_PORT"
+            echo "MAIL_SITE_URL=http://localhost:$web_port"
+            echo "MAILPIT_URL=http://localhost:$MAILPIT_HTTP_PORT"
           } >> "$GITHUB_ENV"
 
       - name: Migrate and create a company
@@ -315,6 +336,19 @@ jobs:
             --code "$E2E_COMPANY" --name "E2E" --seats 5 --admin-email "$E2E_ADMIN_EMAIL" \
             --admin-password-stdin
           echo "E2E_ADMIN_PASSWORD=$password" >> "$GITHUB_ENV"
+          # Администратору обязателен второй фактор (ТЗ §3): приложение с
+          # известным проверке секретом. Секрет хранится зашифрованным —
+          # нужен ключ шифрования, общий для CLI и API.
+          key=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')
+          totp=$(python3 -c 'import base64, os; print(base64.b32encode(os.urandom(20)).decode())')
+          echo "::add-mask::$key"
+          echo "::add-mask::$totp"
+          printf '%s\n' "$totp" | CONNECTOR_SECRETS_KEYS="$key" uv run python -m corp_ed.cli \
+            set-totp --email "$E2E_ADMIN_EMAIL" --secret-stdin
+          {
+            echo "CONNECTOR_SECRETS_KEYS=$key"
+            echo "E2E_TOTP_SECRET=$totp"
+          } >> "$GITHUB_ENV"
 
       - name: Start API, worker and the built frontend
         run: |
@@ -344,6 +378,7 @@ jobs:
             frontend/playwright-report
             frontend/test-results
             api.log
+            worker.log
             worker.log
             web.log
           retention-days: 7

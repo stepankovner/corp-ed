@@ -31,15 +31,26 @@ fi
 # shellcheck source=/dev/null
 . "$state"
 
+# Администратору нужен второй фактор (ТЗ §3, 03.10): служебной учётке —
+# приложение-аутентификатор с секретом, который знает только этот файл.
+if [[ -z "${TOTP_SECRET:-}" ]]; then
+    TOTP_SECRET=$(openssl rand 20 | base32 | tr -d '=\n')
+    printf '%s\n' "$TOTP_SECRET" | docker compose -f compose.yaml run --rm --no-deps -T api \
+        python -m corp_ed.cli set-totp --email "$EMAIL" --secret-stdin >/dev/null
+    ( umask 077; printf 'TOTP_SECRET=%s\n' "$TOTP_SECRET" >> "$state" )
+    echo "==> служебной учётке $EMAIL включён второй фактор"
+fi
+
 # Модуль stand не читает настроек и не ходит в базу — только HTTP API,
 # тем же путём, что браузер: https://DOMAIN через nginx. Имя указывает на
 # шлюз Docker, то есть на этот же хост: публичный адрес изнутри облака
 # доступен не везде.
 run_check() {
-    CORP_ED_PASSWORD="$1" CORP_ED_NEW_PASSWORD="${2:-}" \
+    CORP_ED_PASSWORD="$1" CORP_ED_NEW_PASSWORD="${2:-}" CORP_ED_TOTP_SECRET="$TOTP_SECRET" \
     CORP_ED_BASE_URL="https://$DOMAIN" CORP_ED_COMPANY="$COMPANY" CORP_ED_EMAIL="$EMAIL" \
         docker run --rm --add-host "$DOMAIN:host-gateway" \
         -e CORP_ED_BASE_URL -e CORP_ED_COMPANY -e CORP_ED_EMAIL -e CORP_ED_PASSWORD -e CORP_ED_NEW_PASSWORD \
+        -e CORP_ED_TOTP_SECRET \
         kronto-api:local python -m corp_ed.stand check
 }
 
@@ -55,7 +66,7 @@ if [[ -n "${TEMP:-}" ]]; then
         out=$(run_check "$PASSWORD" 2>&1) || status=$?
     fi
     if logged_in "$out"; then
-        ( umask 077; printf 'PASSWORD=%s\n' "$PASSWORD" > "$state" )
+        ( umask 077; printf 'PASSWORD=%s\nTOTP_SECRET=%s\n' "$PASSWORD" "$TOTP_SECRET" > "$state" )
     fi
 else
     out=$(run_check "$PASSWORD" 2>&1) || status=$?

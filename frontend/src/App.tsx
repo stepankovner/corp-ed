@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router";
 import { AuthProvider } from "./auth/AuthProvider";
 import { makeQueryClient } from "./queryClient";
 import { routes } from "./routes";
+import { UiProvider } from "./ui/UiProvider";
 
 export function App() {
   const [queryClient] = useState(makeQueryClient);
@@ -12,7 +13,9 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <UiProvider>
+          <RouterProvider router={router} />
+        </UiProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

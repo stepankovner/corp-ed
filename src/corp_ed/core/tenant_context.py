@@ -7,6 +7,11 @@ from corp_ed.core.exceptions import TenantContextMissingError
 
 current_tenant: ContextVar[UUID | None] = ContextVar("current_tenant", default=None)
 
+# Учётка из подписанного токена. Нужна одному правилу RLS: человек видит
+# свои членства во всех компаниях (список и переключатель компаний), но
+# не данные этих компаний (db_policies.own_membership_statements).
+current_account: ContextVar[UUID | None] = ContextVar("current_account", default=None)
+
 
 def require_tenant() -> UUID:
     """Вернуть тенанта из контекста или упасть.
@@ -35,3 +40,13 @@ def tenant_scope(tenant_id: UUID) -> Iterator[UUID]:
         yield tenant_id
     finally:
         current_tenant.reset(token)
+
+
+@contextmanager
+def account_scope(account_id: UUID) -> Iterator[UUID]:
+    """Выставить учётку на время блока (вход, обновление токена, CLI)."""
+    token = current_account.set(account_id)
+    try:
+        yield account_id
+    finally:
+        current_account.reset(token)

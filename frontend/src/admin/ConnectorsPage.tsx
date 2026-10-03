@@ -7,6 +7,7 @@ import { api, unwrap } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { describeCode } from "../lib/codes";
 import { formatDateTime, formatRelative } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
@@ -33,6 +34,7 @@ import {
 } from "./connectorModel";
 
 export function ConnectorsPage() {
+  useDocumentTitle("Подключения");
   const connectors = useQuery({
     queryKey: ["connectors"],
     queryFn: () => unwrap(api.GET("/api/v1/connectors")),

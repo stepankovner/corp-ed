@@ -1,110 +1,206 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Pencil, UserPlus } from "lucide-react";
-import { useMemo, useState, type SubmitEvent } from "react";
+import { Ban, Ellipsis, LockOpen, ShieldCheck, UserMinus, UserRound } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
-import { useMe } from "../auth/context";
+import { useCompany } from "../auth/context";
 import { formatDateTime, formatRelative } from "../lib/format";
+import { personInitials } from "../lib/initials";
+import { useDocumentTitle } from "../lib/title";
+import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
-import { Checkbox, SelectField, TextField } from "../ui/Field";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/DropdownMenu";
 import { IconButton } from "../ui/IconButton";
-import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
 import { Page, PageHeader } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
-import { PageSpinner } from "../ui/Spinner";
+import { SkeletonList } from "../ui/Skeleton";
 import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
+import { useToast } from "../ui/useToast";
 import styles from "./Admin.module.css";
-import { ConfirmDialog, SecretValue } from "./common";
-import { InvitesSection } from "./InvitesSection";
+import { ConfirmDialog } from "./common";
+import { InviteButton, InvitesSection } from "./InvitesSection";
 
-type User = Schemas["UserResponse"];
+type Member = Schemas["UserResponse"];
 type Role = Schemas["UserRole"];
+type Change = Schemas["UserUpdateRequest"];
 
 const ROLE_LABEL: Record<Role, string> = { admin: "администратор", employee: "сотрудник" };
 
+/** Имя в списке: без имени — почта, без учётки (человек её удалил) — пометка. */
+function memberName(member: Member): string {
+  return member.full_name || member.email || "Учётка удалена";
+}
+
+function changeMessage(member: Member, change: Change): string {
+  const name = memberName(member);
+  if (change.role) return `${name} — теперь ${ROLE_LABEL[change.role]}`;
+  return change.blocked ? `Доступ закрыт: ${name}` : `Доступ открыт: ${name}`;
+}
+
+/**
+ * Люди компании (ТЗ §2, §7). Учёток админ не заводит и паролей не выдаёт
+ * (решение 03.10): люди вступают по приглашению своей учёткой kronto, а
+ * здесь — заявки на вступление, роли, блокировка и удаление из компании.
+ */
 export function UsersPage() {
-  const me = useMe();
+  useDocumentTitle("Сотрудники");
+  const company = useCompany();
+  const toast = useToast();
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: () => unwrap(api.GET("/api/v1/users")) });
-  // Места — из того же ответа, что лимит вопросов: активных учёток не
-  // больше мест (решение 28.09), заблокированные место не занимают.
+  // Места — из того же ответа, что лимит вопросов: место занимают только
+  // работающие, заблокированные и ждущие одобрения — нет (решение 28.09).
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => unwrap(api.GET("/api/v1/usage")) });
-  const active = (users.data ?? []).filter((u) => u.is_active).length;
+  const [search, setSearch] = useState("");
+  const [removing, setRemoving] = useState<Member | null>(null);
+
+  const list = useMemo(() => users.data ?? [], [users.data]);
+  const pending = list.filter((m) => m.status === "pending");
+  const active = list.filter((m) => m.status === "active").length;
   const seats = usage.data?.seats;
   const full = seats !== undefined && active >= seats;
-  const [search, setSearch] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<User | null>(null);
-  const [resetting, setResetting] = useState<User | null>(null);
-  const [secret, setSecret] = useState<{ email: string; password: string } | null>(null);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return (users.data ?? []).filter(
-      (u) =>
-        !needle ||
-        u.email.toLowerCase().includes(needle) ||
-        (u.full_name ?? "").toLowerCase().includes(needle),
+    return list.filter(
+      (m) =>
+        m.status !== "pending" &&
+        (!needle ||
+          (m.email ?? "").toLowerCase().includes(needle) ||
+          (m.full_name ?? "").toLowerCase().includes(needle)),
     );
-  }, [users.data, search]);
+  }, [list, search]);
 
-  const toggleActive = useMutation({
-    mutationFn: (user: User) =>
+  // Меню закрывается сразу, поэтому итог (и отказ сервера: последний
+  // администратор, нет мест) — во всплывающем сообщении.
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["users"] });
+  const fail = (error: Error) => toast.show(errorMessage(error), { tone: "error" });
+  const update = useMutation({
+    mutationFn: ({ member, change }: { member: Member; change: Change }) =>
       unwrap(
         api.PATCH("/api/v1/users/{user_id}", {
-          params: { path: { user_id: user.id } },
-          body: { is_active: !user.is_active },
+          params: { path: { user_id: member.id } },
+          body: change,
         }),
       ),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+    onSuccess: (_, { member, change }) => toast.show(changeMessage(member, change)),
+    onError: fail,
+    onSettled: refresh,
   });
+  const approve = useMutation({
+    mutationFn: (member: Member) =>
+      unwrap(
+        api.POST("/api/v1/users/{user_id}/approve", {
+          params: { path: { user_id: member.id } },
+        }),
+      ),
+    onSuccess: (_, member) => toast.show(`Заявка одобрена: ${memberName(member)}`),
+    onError: fail,
+    onSettled: refresh,
+  });
+  const reject = useMutation({
+    mutationFn: (member: Member) =>
+      unwrap(
+        api.POST("/api/v1/users/{user_id}/reject", {
+          params: { path: { user_id: member.id } },
+        }),
+      ),
+    onSuccess: (_, member) => toast.show(`Заявка отклонена: ${memberName(member)}`),
+    onError: fail,
+    onSettled: refresh,
+  });
+  const deciding = (member: Member) =>
+    (approve.isPending && approve.variables.id === member.id) ||
+    (reject.isPending && reject.variables.id === member.id);
 
   return (
     <Page>
       <PageHeader
         label="управление"
         title="Сотрудники"
-        description="Каждый сотрудник входит по коду компании, почте и паролю. Добавьте сотрудника с временным паролем или отправьте ссылку-приглашение — по ней он сам заведёт учётку."
-        actions={
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <UserPlus size={16} aria-hidden /> Добавить сотрудника
-          </Button>
-        }
+        description="Сотрудники вступают сами — по ссылке или коду приглашения, своей учёткой kronto; пароль восстанавливают по почте. Здесь — заявки на вступление, роли и доступ к компании."
+        actions={<InviteButton />}
       />
-      {toggleActive.isError ? (
-        <Notice kind="error">{errorMessage(toggleActive.error)}</Notice>
-      ) : null}
       {seats !== undefined && users.data ? (
         full ? (
           <Notice kind="warn" title={`Все места заняты: ${active} из ${seats}`}>
-            Новых сотрудников добавить нельзя — ни вручную, ни по ссылке. Заблокируйте тех, кто
-            больше не работает, или напишите нам, чтобы добавить места.
+            Новые сотрудники не смогут вступить, а заявки — получить одобрение. Заблокируйте или
+            уберите из компании тех, кто больше не работает, или напишите нам, чтобы добавить места.
           </Notice>
         ) : (
           <p className="muted" style={{ marginBottom: 12 }}>
-            Активных сотрудников: {active} из {seats} мест. Заблокированные место не занимают.
+            Занято мест: {active} из {seats}. Заблокированные и ждущие одобрения место не занимают.
           </p>
         )
       ) : null}
       {users.isPending ? (
-        <PageSpinner />
+        <SkeletonList label="Загрузка сотрудников" />
       ) : users.isError ? (
         <Notice kind="error">{errorMessage(users.error)}</Notice>
       ) : (
         <>
+          {pending.length > 0 ? (
+            <section aria-labelledby="pending-title" style={{ marginBottom: "var(--s-6)" }}>
+              <h2 className={pageStyles.sectionTitle} id="pending-title">
+                Ждут одобрения
+              </h2>
+              <p className="muted" style={{ marginBottom: 12 }}>
+                Вступили по приглашению с одобрением. Одобренный сразу получит доступ и займёт
+                рабочее место.
+              </p>
+              <ul className={styles.cards} aria-label="Заявки на вступление">
+                {pending.map((member) => (
+                  <li key={member.id} className={styles.card}>
+                    <div className={styles.cardHead}>
+                      <Person member={member}>
+                        <span className={tableStyles.sub} title={formatDateTime(member.created_at)}>
+                          заявка {formatRelative(member.created_at)}
+                        </span>
+                      </Person>
+                      <span className={pageStyles.row} style={{ gap: 8 }}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          disabled={deciding(member)}
+                          onClick={() => reject.mutate(member)}
+                        >
+                          Отклонить
+                        </Button>
+                        <Button
+                          size="xs"
+                          disabled={deciding(member)}
+                          onClick={() => approve.mutate(member)}
+                        >
+                          Одобрить
+                        </Button>
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <div className={styles.toolbar}>
-            <input
-              className={styles.search}
-              type="search"
-              placeholder="Поиск по имени или почте"
-              aria-label="Поиск по имени или почте"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <span className={styles.searchWrap}>
+              <input
+                className={styles.search}
+                type="search"
+                placeholder="Поиск по имени или почте"
+                aria-label="Поиск по имени или почте"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </span>
           </div>
           <Table label="Сотрудники">
             <thead>
@@ -119,254 +215,168 @@ export function UsersPage() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((user) => {
-                const self = user.id === me.id;
+              {visible.map((member) => {
+                // Себе роль не меняют, себя не блокируют и не убирают — сервер
+                // всё равно ответит 409. Сравниваем с членством, а не с учёткой.
+                const self = member.id === company.member_id;
                 return (
-                  <tr key={user.id}>
+                  <tr key={member.id}>
                     <td>
-                      <span style={{ fontWeight: 500 }}>{user.full_name || user.email}</span>
-                      {user.full_name ? (
-                        <span className={tableStyles.sub}>{user.email}</span>
-                      ) : null}
+                      <Person member={member} self={self} />
                     </td>
                     <td>
-                      <Badge tone={user.role === "admin" ? "accent" : "muted"}>
-                        {ROLE_LABEL[user.role]}
+                      <Badge tone={member.role === "admin" ? "accent" : "muted"}>
+                        {ROLE_LABEL[member.role]}
                       </Badge>
                     </td>
                     <td>
-                      {!user.is_active ? (
+                      {member.status === "blocked" ? (
                         <Badge tone="error">заблокирован</Badge>
-                      ) : user.must_change_password ? (
-                        <Badge tone="warn">временный пароль</Badge>
                       ) : (
                         <Badge tone="ok">активен</Badge>
                       )}
                     </td>
-                    <td className={tableStyles.nowrap} title={formatDateTime(user.last_login_at)}>
-                      {user.last_login_at ? formatRelative(user.last_login_at) : "не входил"}
+                    <td className={tableStyles.nowrap} title={formatDateTime(member.last_login_at)}>
+                      {member.last_login_at ? formatRelative(member.last_login_at) : "не входил"}
                     </td>
                     <td className={tableStyles.actions}>
-                      <span className={styles.rowActions}>
-                        <IconButton size="sm" label="Изменить" onClick={() => setEditing(user)}>
-                          <Pencil size={16} aria-hidden />
-                        </IconButton>
-                        <IconButton
-                          size="sm"
-                          label="Выдать временный пароль"
-                          disabled={self}
-                          onClick={() => setResetting(user)}
-                        >
-                          <KeyRound size={16} aria-hidden />
-                        </IconButton>
-                        <Button
-                          variant={user.is_active ? "danger" : "ghost"}
-                          size="xs"
-                          disabled={self || toggleActive.isPending}
-                          onClick={() => toggleActive.mutate(user)}
-                        >
-                          {user.is_active ? "Заблокировать" : "Разблокировать"}
-                        </Button>
-                      </span>
+                      {self ? null : (
+                        <MemberActions
+                          member={member}
+                          busy={update.isPending && update.variables.member.id === member.id}
+                          onChange={(change) => update.mutate({ member, change })}
+                          onRemove={() => setRemoving(member)}
+                        />
+                      )}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </Table>
+          {visible.length === 0 ? (
+            <p className="muted" style={{ marginTop: 16 }}>
+              Никого не найдено.
+            </p>
+          ) : null}
         </>
       )}
       <InvitesSection />
 
-      {creating ? (
-        <CreateUserDialog
-          onClose={() => setCreating(false)}
-          onCreated={(email, password) => {
-            setCreating(false);
-            if (password) setSecret({ email, password });
-          }}
-        />
-      ) : null}
-      {editing ? (
-        <EditUserDialog
-          user={editing}
-          self={editing.id === me.id}
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
       <ConfirmDialog
-        open={resetting !== null}
-        onOpenChange={(open) => !open && setResetting(null)}
-        title="Выдать временный пароль?"
+        open={removing !== null}
+        onOpenChange={(open) => !open && setRemoving(null)}
+        title="Убрать из компании?"
         description={
-          resetting
-            ? `Текущий пароль ${resetting.email} перестанет работать, все его сеансы завершатся.`
+          removing
+            ? `${memberName(removing)} сразу потеряет доступ к компании, диалоги здесь скроются и через 30 дней удалятся. Учётка kronto останется — вернуться можно по новому приглашению. Рабочее место освободится.`
             : undefined
         }
-        confirmLabel="Выдать"
-        danger={false}
+        confirmLabel="Убрать"
         onConfirm={async () => {
-          if (!resetting) return;
-          const result = await unwrap(
-            api.POST("/api/v1/users/{user_id}/reset-password", {
-              params: { path: { user_id: resetting.id } },
+          if (!removing) return;
+          await unwrap(
+            api.DELETE("/api/v1/users/{user_id}", {
+              params: { path: { user_id: removing.id } },
             }),
           );
-          setSecret({ email: resetting.email, password: result.temporary_password });
-          await queryClient.invalidateQueries({ queryKey: ["users"] });
+          toast.show(`${memberName(removing)} больше не в компании`);
+          await refresh();
         }}
       />
-      <Modal
-        open={secret !== null}
-        onOpenChange={(open) => !open && setSecret(null)}
-        title="Временный пароль"
-        description={
-          secret
-            ? `Передайте его ${secret.email} лично или в защищённом канале. Больше он не покажется.`
-            : undefined
-        }
-        footer={
-          <Button size="sm" onClick={() => setSecret(null)}>
-            Готово
-          </Button>
-        }
-      >
-        {secret ? <SecretValue value={secret.password} /> : null}
-      </Modal>
     </Page>
   );
 }
 
-function CreateUserDialog({
-  onClose,
-  onCreated,
+function Person({
+  member,
+  self = false,
+  children,
 }: {
-  onClose: () => void;
-  onCreated: (email: string, password: string | null) => void;
+  member: Member;
+  self?: boolean;
+  children?: ReactNode;
 }) {
-  const queryClient = useQueryClient();
-  const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [admin, setAdmin] = useState(false);
-  const create = useMutation({
-    mutationFn: () =>
-      unwrap(
-        api.POST("/api/v1/users", {
-          body: {
-            email: email.trim(),
-            full_name: fullName.trim() || null,
-            role: admin ? "admin" : "employee",
-          },
-        }),
-      ),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ["users"] });
-      onCreated(result.user.email, result.temporary_password ?? null);
-    },
-  });
-
-  function submit(event: SubmitEvent) {
-    event.preventDefault();
-    create.mutate();
-  }
-
+  const name = memberName(member);
   return (
-    <Modal open onOpenChange={(open) => !open && onClose()} title="Новый сотрудник">
-      <form className={pageStyles.form} onSubmit={submit}>
-        {create.isError ? <Notice kind="error">{errorMessage(create.error)}</Notice> : null}
-        <TextField
-          label="Рабочая почта"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          autoFocus
-        />
-        <TextField
-          label="Имя и фамилия"
-          optional
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <Checkbox
-          label="Администратор — управляет документами, подключениями и сотрудниками"
-          checked={admin}
-          onChange={(e) => setAdmin(e.target.checked)}
-        />
-        <div className={pageStyles.row} style={{ justifyContent: "flex-end" }}>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button type="submit" size="sm" busy={create.isPending} disabled={!email.trim()}>
-            Добавить
-          </Button>
-        </div>
-      </form>
-    </Modal>
+    <div className={styles.person}>
+      <Avatar
+        colorful
+        name={name}
+        initials={member.email ? personInitials(member.full_name, member.email) : "?"}
+      />
+      <div>
+        <span className={styles.personName}>
+          {name}
+          {self ? <Badge>вы</Badge> : null}
+        </span>
+        {member.full_name && member.email ? (
+          <span className={tableStyles.sub}>{member.email}</span>
+        ) : null}
+        {children}
+      </div>
+    </div>
   );
 }
 
-function EditUserDialog({
-  user,
-  self,
-  onClose,
+function MemberActions({
+  member,
+  busy,
+  onChange,
+  onRemove,
 }: {
-  user: User;
-  self: boolean;
-  onClose: () => void;
+  member: Member;
+  busy: boolean;
+  onChange: (change: Change) => void;
+  onRemove: () => void;
 }) {
-  const queryClient = useQueryClient();
-  const [fullName, setFullName] = useState(user.full_name ?? "");
-  const [role, setRole] = useState<Role>(user.role);
-  const save = useMutation({
-    mutationFn: () =>
-      unwrap(
-        api.PATCH("/api/v1/users/{user_id}", {
-          params: { path: { user_id: user.id } },
-          // Пустая строка стирает имя: null сервер понял бы как «не менять».
-          body: { full_name: fullName.trim(), ...(self ? {} : { role }) },
-        }),
-      ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["users"] });
-      onClose();
-    },
-  });
   return (
-    <Modal open onOpenChange={(open) => !open && onClose()} title={user.email}>
-      <form
-        className={pageStyles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-      >
-        {save.isError ? <Notice kind="error">{errorMessage(save.error)}</Notice> : null}
-        <TextField
-          label="Имя и фамилия"
-          optional
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <SelectField
-          label="Роль"
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
-          disabled={self}
-          hint={self ? "Свою роль изменить нельзя." : undefined}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <IconButton size="sm" label={`Действия: ${memberName(member)}`} disabled={busy}>
+          <Ellipsis size={16} aria-hidden />
+        </IconButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {member.role === "admin" ? (
+          <DropdownMenuItem
+            icon={<UserRound size={16} aria-hidden />}
+            onSelect={() => onChange({ role: "employee" })}
+          >
+            Сделать сотрудником
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            icon={<ShieldCheck size={16} aria-hidden />}
+            onSelect={() => onChange({ role: "admin" })}
+          >
+            Сделать администратором
+          </DropdownMenuItem>
+        )}
+        {member.status === "blocked" ? (
+          <DropdownMenuItem
+            icon={<LockOpen size={16} aria-hidden />}
+            onSelect={() => onChange({ blocked: false })}
+          >
+            Разблокировать
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            icon={<Ban size={16} aria-hidden />}
+            onSelect={() => onChange({ blocked: true })}
+          >
+            Заблокировать
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className={styles.menuDanger}
+          icon={<UserMinus size={16} aria-hidden />}
+          onSelect={onRemove}
         >
-          <option value="employee">Сотрудник</option>
-          <option value="admin">Администратор</option>
-        </SelectField>
-        <div className={pageStyles.row} style={{ justifyContent: "flex-end" }}>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button type="submit" size="sm" busy={save.isPending}>
-            Сохранить
-          </Button>
-        </div>
-      </form>
-    </Modal>
+          Убрать из компании
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

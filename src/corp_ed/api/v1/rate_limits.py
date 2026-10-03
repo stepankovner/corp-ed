@@ -42,17 +42,32 @@ class RatePolicy:
 
 
 LOGIN_PER_IP = RatePolicy("login-ip", limit=30, window=900, fail_open=False)
-# Считаются только НЕУДАЧНЫЕ попытки на пару «компания + почта», в том
-# числе несуществующую: блокировка есть для любого адреса, поэтому по
-# ней нельзя узнать, существует ли учётка.
+# Считаются только НЕУДАЧНЫЕ попытки на почту, в том числе несуществующую:
+# блокировка есть для любого адреса, поэтому по ней нельзя узнать,
+# существует ли учётка.
 LOGIN_FAILURES_PER_ACCOUNT = RatePolicy(
     "login-account", limit=10, window=900, fail_open=False
 )
 REFRESH_PER_IP = RatePolicy("refresh-ip", limit=60, window=60, fail_open=False)
-# Ссылка-приглашение: предпросмотр и присоединение без входа. Запас — на
-# офис за одним NAT, где вся команда присоединяется в один час; перебор
-# токена бессмыслен (256 бит), лимит — против засорения учётками.
+# Приглашение: предпросмотр и вступление. Запас — на офис за одним NAT,
+# где вся команда вступает в один час. Перебор токена ссылки бессмыслен
+# (256 бит); код — 40 бит, и 60 попыток за 15 минут с адреса — миллионы
+# лет на одно живое приглашение.
 INVITE_PER_IP = RatePolicy("invite-ip", limit=60, window=900, fail_open=False)
+# Регистрация и письма (ТЗ §3). Письма — ещё и против «почтовой бомбы» на
+# чужой адрес и лимита ящика Яндекс 360 (300 писем в сутки).
+REGISTER_PER_IP = RatePolicy("register-ip", limit=10, window=3600, fail_open=False)
+MAIL_PER_ADDRESS = RatePolicy("mail-address", limit=5, window=3600, fail_open=False)
+MAIL_PER_IP = RatePolicy("mail-ip", limit=20, window=3600, fail_open=False)
+# Ввод кода из письма: у самого кода 5 попыток, лимит по IP — против
+# перебора по многим адресам сразу.
+VERIFY_PER_IP = RatePolicy("verify-ip", limit=30, window=900, fail_open=False)
+EMAIL_CHANGE_PER_ACCOUNT = RatePolicy(
+    "email-change", limit=10, window=3600, fail_open=False
+)
+COMPANY_REQUEST_PER_ACCOUNT = RatePolicy(
+    "company-request", limit=5, window=86400, fail_open=False
+)
 # Заявка на созвон со страницы тарифов: человек отправляет одну-две. Общий
 # суточный потолок — против засорения базы персональными данными с многих
 # адресов.

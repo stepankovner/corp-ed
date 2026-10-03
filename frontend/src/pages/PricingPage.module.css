@@ -1,16 +1,40 @@
 .screen {
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--surface);
-  padding: 16px var(--gutter) var(--s-8);
+  padding: 12px var(--gutter) var(--s-8);
+  overflow-x: clip;
+}
+/* Свечение, как на экране входа и на лендинге. */
+.screen::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: 640px;
+  background:
+    radial-gradient(40rem 26rem at 12% 0%, var(--glow-2), transparent 70%),
+    radial-gradient(44rem 28rem at 88% 20%, var(--glow-1), transparent 70%);
+  pointer-events: none;
 }
 .top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 52px;
+  height: 56px;
   max-width: var(--container);
   margin: 0 auto;
+}
+.brand {
+  display: flex;
+  color: var(--ink);
+}
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
 }
 .main {
   max-width: var(--container);
@@ -30,12 +54,12 @@
 }
 .plans {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: var(--s-5);
   margin-top: var(--s-7);
 }
 .plan {
-  background: var(--bg);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   padding: clamp(20px, 3vw, 32px);
@@ -43,6 +67,13 @@
   gap: var(--s-4);
   align-content: start;
   box-shadow: var(--shadow-window);
+}
+/* Первый тариф выделен акцентной рамкой — его кнопка тоже главная. */
+.plan:first-child {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-window);
 }
 .planName {
   font-size: var(--fs-h3);
@@ -63,15 +94,20 @@
   gap: var(--s-2);
   padding-left: 1.1em;
   margin: 0;
+  list-style: disc;
+}
+.list li::marker {
+  color: var(--accent);
 }
 .notes {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: var(--s-4);
   margin-top: var(--s-6);
 }
 .note {
   background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: var(--r-md);
   padding: var(--s-4) var(--s-5);
   font-size: var(--fs-small);

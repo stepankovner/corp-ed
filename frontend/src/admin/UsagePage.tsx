@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { formatCalendarDate, formatNumber } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Notice } from "../ui/Notice";
 import { Page, PageHeader } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
@@ -10,6 +11,7 @@ import { PageSpinner } from "../ui/Spinner";
 import styles from "./Admin.module.css";
 
 export function UsagePage() {
+  useDocumentTitle("Лимит вопросов");
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => unwrap(api.GET("/api/v1/usage")) });
 
   return (

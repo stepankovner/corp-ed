@@ -5,8 +5,9 @@ import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
-import { useMe } from "../auth/context";
+import { isAdmin, useMe } from "../auth/context";
 import { describeCode } from "../lib/codes";
+import { useDocumentTitle } from "../lib/title";
 import styles from "../admin/Admin.module.css";
 import { ConfirmDialog } from "../admin/common";
 import { Badge } from "../ui/Badge";
@@ -24,6 +25,7 @@ type Mine = Schemas["MyConnectorResponse"];
  * приходит сюда с ?status=ok|error&connector_id=&error_code=.
  */
 export function MySourcesPage() {
+  useDocumentTitle("Мои источники");
   const me = useMe();
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
@@ -81,7 +83,7 @@ export function MySourcesPage() {
         ) : mine.data.length === 0 ? (
           <EmptyState icon={<Link2 size={32} aria-hidden />} title="Подключать пока нечего">
             <p>
-              {me.role === "admin" ? (
+              {isAdmin(me) ? (
                 <>
                   Добавьте Битрикс24 или Яндекс 360 в разделе{" "}
                   <Link to="/admin/connectors">«Подключения»</Link> — тогда сотрудники смогут

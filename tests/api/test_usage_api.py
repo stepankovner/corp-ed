@@ -10,6 +10,7 @@ from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import QaLog, Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
 from tests.api.conftest import bearer
+from tests.factories import make_user
 from tests.test_credits import spend
 
 
@@ -66,7 +67,7 @@ async def test_other_company_exhaustion_does_not_stop_us(
     session.add(other)
     await session.commit()
     with tenant_scope(other.id):
-        stranger = User(
+        stranger = make_user(
             tenant_id=other.id,
             email="s@o.ru",
             role=UserRole.EMPLOYEE,

@@ -1,6 +1,8 @@
 import { Link } from "react-router";
 
+import { ThemeMenu } from "../layout/ThemeOptions";
 import { formatPrice, TARIFFS } from "../lib/tariffs";
+import { useDocumentTitle } from "../lib/title";
 import { buttonClass } from "../ui/buttonClass";
 import { Logo } from "../ui/Logo";
 import styles from "./PricingPage.module.css";
@@ -11,15 +13,19 @@ import styles from "./PricingPage.module.css";
  * 152-ФЗ», ни «запуск за дни», ни выдуманных клиентов.
  */
 export function PricingPage() {
+  useDocumentTitle("Тарифы");
   return (
     <div className={styles.screen}>
       <header className={styles.top}>
-        <Link to="/pricing" aria-label="Kronto — тарифы">
+        <Link to="/pricing" className={styles.brand} aria-label="kronto — тарифы">
           <Logo height={24} />
         </Link>
-        <Link to="/login" className={buttonClass("ghost", "sm")}>
-          Войти
-        </Link>
+        <span className={styles.topActions}>
+          <ThemeMenu />
+          <Link to="/login" className={buttonClass("ghost", "sm")}>
+            Войти
+          </Link>
+        </span>
       </header>
       <main className={styles.main}>
         <h1 className={styles.title}>Тарифы</h1>

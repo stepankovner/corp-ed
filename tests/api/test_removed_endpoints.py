@@ -33,5 +33,9 @@ async def test_removed_endpoint_is_not_routed(
 def test_no_route_mentions_old_concept() -> None:
     paths = [getattr(route, "path", "") for route in app.routes]
 
-    for word in ("program", "brief", "intern", "register"):
+    for word in ("program", "brief", "intern"):
         assert not any(word in path for path in paths), word
+    # Регистрация вернулась одна и намеренно (ТЗ §2, 03.10): учётка без
+    # компании, подтверждение почты, лимит по IP. Старая /users/register
+    # пускала в компанию без проверки — её быть не должно.
+    assert [path for path in paths if "register" in path] == ["/api/v1/auth/register"]

@@ -38,6 +38,7 @@ from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.general_answer import REFUSAL_ANSWER
 from tests.conftest import make_credit_service
+from tests.factories import make_user
 
 FIRST = "Какой максимальный размер гранта в Старт-ИИ-1?"
 FOLLOW_UP = "А для УМНИК?"
@@ -376,7 +377,7 @@ async def test_history_does_not_cross_users(
 ) -> None:
     """Чужой conversation_id не открывает чужую историю — ключ включает
     сотрудника (утечка — ловушка из контракта BH-28)."""
-    other = User(
+    other = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="other@test.com",

@@ -29,6 +29,7 @@ from corp_ed.prompts.gaps import GAP_LABEL_SCHEMA, PROMPT_VERSION
 from corp_ed.services import gap_report_service
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.retention_service import RetentionService
+from tests.factories import make_user
 
 MODEL = "text-embeddings-v2-query@768"
 LABEL = json.dumps({"title": "Командировки", "missing": "Нет положения"})
@@ -74,7 +75,7 @@ def ask(
 
 
 async def colleague(session: AsyncSession, tenant: Tenant, email: str) -> User:
-    user = User(
+    user = make_user(
         tenant_id=tenant.id,
         email=email,
         role=UserRole.EMPLOYEE,
