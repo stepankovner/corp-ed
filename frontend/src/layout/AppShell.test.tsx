@@ -3,15 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Schemas } from "../api/client";
 import { getSession } from "../api/session";
 import { setThemePreference } from "../lib/theme";
-import { me } from "../test/fixtures";
+import { adminMe, me } from "../test/fixtures";
 import { renderApp } from "../test/render";
 import { server } from "../test/server";
 
-function signedInAs(overrides: Parameters<typeof me>[0] = {}) {
+function signedInAs(profile: Schemas["MeResponse"] = me()) {
   server.use(
-    http.get("/api/v1/auth/me", () => HttpResponse.json(me(overrides))),
+    http.get("/api/v1/auth/me", () => HttpResponse.json(profile)),
     http.get("/api/v1/usage", () => HttpResponse.json({ warning: false })),
     http.get("/api/v1/connectors/mine", () => HttpResponse.json([])),
     http.get("/api/v1/materials", () => HttpResponse.json([])),
@@ -39,7 +40,7 @@ afterEach(() => {
 
 describe("боковая панель", () => {
   it("показывает компанию, разделы и учётную запись", async () => {
-    signedInAs({ full_name: "Анна Смирнова" });
+    signedInAs(me({ full_name: "Анна Смирнова" }));
     renderApp("/");
     await screen.findByRole("log", { name: "Переписка" });
 
@@ -58,7 +59,7 @@ describe("боковая панель", () => {
 
   it("у администратора разделы управления раскрыты в панели, второй панели нет", async () => {
     const user = userEvent.setup();
-    signedInAs({ role: "admin" });
+    signedInAs(adminMe());
     renderApp("/admin/users");
     expect(await screen.findByRole("heading", { name: "Сотрудники" })).toBeInTheDocument();
     expect(document.title).toBe("Сотрудники — kronto");
@@ -137,14 +138,14 @@ describe("боковая панель", () => {
 describe("меню учётной записи", () => {
   it("меняет тему и выходит", async () => {
     const user = userEvent.setup();
-    signedInAs({ full_name: "Анна Смирнова" });
+    signedInAs(me({ full_name: "Анна Смирнова" }));
     server.use(http.post("/api/v1/auth/logout", () => new HttpResponse(null, { status: 204 })));
     renderApp("/");
     await user.click(await screen.findByRole("button", { name: /^Профиль/ }));
     const menu = await screen.findByRole("menu");
-    expect(within(menu).getByRole("menuitem", { name: "Сменить пароль" })).toHaveAttribute(
+    expect(within(menu).getByRole("menuitem", { name: "Настройки" })).toHaveAttribute(
       "href",
-      "/change-password",
+      "/settings",
     );
     expect(within(menu).getByRole("group", { name: "Тема" })).toBeInTheDocument();
     expect(within(menu).getByRole("menuitemradio", { name: "Системная" })).toHaveAttribute(
@@ -162,7 +163,7 @@ describe("меню учётной записи", () => {
     );
 
     await user.click(within(menu).getByRole("menuitem", { name: "Выйти" }));
-    expect(await screen.findByLabelText("Код компании")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
     expect(getSession()).toBeNull();
   });
 });
@@ -223,7 +224,7 @@ describe("телефон", () => {
 describe("заголовок вкладки", () => {
   it("на входе и на несуществующей странице", async () => {
     renderApp("/login", { signedIn: false });
-    await screen.findByLabelText("Код компании");
+    await screen.findByLabelText("Почта");
     expect(document.title).toBe("Вход — kronto");
   });
 

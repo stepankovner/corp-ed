@@ -41,7 +41,7 @@ export function AuthLayout({
         </div>
       </main>
       <footer className={styles.foot}>
-        Kronto — ответы по документам компании со ссылкой на источник
+        kronto — ответы по документам компании со ссылкой на источник
       </footer>
     </div>
   );

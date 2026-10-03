@@ -178,7 +178,7 @@ describe("unwrap", () => {
       ),
     );
     const error = await unwrap(
-      api.POST("/api/v1/auth/login", { body: { company_code: "x", email: "x", password: "x" } }),
+      api.POST("/api/v1/auth/login", { body: { email: "x", password: "x", remember: false } }),
     ).catch((e: unknown) => e);
     expect(error).toMatchObject({ status: 422, message: "Проверьте заполнение полей." });
   });

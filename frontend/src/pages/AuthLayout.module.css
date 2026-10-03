@@ -141,3 +141,28 @@
   font-size: 1.25rem;
   letter-spacing: 0.2em;
 }
+/* Имя и фамилия рядом; на телефоне — друг под другом. */
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-4);
+}
+.fieldError {
+  margin-top: 6px;
+  color: var(--error);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+/* Итог по ссылке из письма: значок и текст по центру. */
+.result {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-3);
+  text-align: center;
+}
+.terms {
+  display: grid;
+  gap: 4px;
+  padding-left: 1.1em;
+  font-size: var(--fs-small);
+}

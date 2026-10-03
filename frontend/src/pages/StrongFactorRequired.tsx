@@ -16,6 +16,7 @@ export function StrongFactorRequired() {
   const company = useCompany();
   return (
     <Page>
+      <h1 className="visually-hidden">Защита входа</h1>
       <EmptyState icon={<ShieldCheck size={32} aria-hidden />} title="Сначала защитите вход">
         <p>
           {company.role === "admin"

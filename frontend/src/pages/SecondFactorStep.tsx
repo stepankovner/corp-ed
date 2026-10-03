@@ -1,5 +1,5 @@
 import { KeyRound } from "lucide-react";
-import { useEffect, useState, type SubmitEvent } from "react";
+import { useState, type SubmitEvent } from "react";
 
 import { api, unwrap } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
@@ -11,8 +11,7 @@ import { TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
 import authStyles from "./AuthLayout.module.css";
 import { AuthLayout } from "./AuthLayout";
-
-const RESEND_COOLDOWN_S = 60;
+import { ResendLink } from "./ResendLink";
 
 const TITLES: Record<MfaMethod, string> = {
   email: "Код из письма",
@@ -163,42 +162,20 @@ function CodeForm({
       <Button type="submit" block busy={busy}>
         Подтвердить
       </Button>
-      {method === "email" ? <ResendCode token={token} onError={fail} /> : null}
+      {method === "email" ? (
+        <ResendLink
+          label="Отправить код ещё раз"
+          onResend={() =>
+            unwrap(api.POST("/api/v1/auth/mfa/resend", { body: { token } })).catch(
+              (err: unknown) => {
+                fail(err);
+                throw err;
+              },
+            )
+          }
+        />
+      ) : null}
     </form>
-  );
-}
-
-function ResendCode({ token, onError }: { token: string; onError: (err: unknown) => void }) {
-  const [left, setLeft] = useState(RESEND_COOLDOWN_S);
-  const [sent, setSent] = useState(false);
-
-  useEffect(() => {
-    if (left <= 0) return;
-    const timer = window.setTimeout(() => setLeft((value) => value - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [left]);
-
-  async function resend() {
-    setLeft(RESEND_COOLDOWN_S);
-    try {
-      await unwrap(api.POST("/api/v1/auth/mfa/resend", { body: { token } }));
-      setSent(true);
-    } catch (err) {
-      onError(err);
-    }
-  }
-
-  return (
-    <p className={`muted ${authStyles.alt}`} aria-live="polite">
-      {sent ? "Новый код отправлен. " : null}
-      {left > 0 ? (
-        `Отправить код ещё раз можно через ${left} с`
-      ) : (
-        <button type="button" className={authStyles.linkButton} onClick={() => void resend()}>
-          Отправить код ещё раз
-        </button>
-      )}
-    </p>
   );
 }
 

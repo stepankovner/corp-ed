@@ -10,6 +10,7 @@ import { HomePage } from "./pages/HomePage";
 import { JoinPage } from "./pages/JoinPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
@@ -62,6 +63,7 @@ export const routes: RouteObject[] = [
   { path: "/reset-password", element: <ResetPasswordPage /> },
   { path: "/confirm-email", element: <ConfirmEmailPage /> },
   { path: "/revert-email", element: <RevertEmailPage /> },
+  { path: "/privacy", element: <PrivacyPage /> },
   // Тарифы и запись на созвон — для всех, со входом и без.
   { path: "/pricing", element: lazyPage(<PricingPage />) },
   { path: "/pricing/request", element: lazyPage(<CallRequestPage />) },
