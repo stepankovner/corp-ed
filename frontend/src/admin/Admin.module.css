@@ -363,3 +363,60 @@ a.card svg {
   overflow-wrap: anywhere;
   max-width: 48ch;
 }
+
+/* люди компании */
+.person {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 200px;
+}
+.personName {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+/* «Убрать из компании» — красным, как кнопки необратимых действий. */
+.menuDanger,
+.menuDanger svg {
+  color: var(--error);
+}
+
+/* приглашения */
+/* Подсказка под галочкой — вровень с подписью, а не с флажком. */
+.checkHint {
+  margin: 4px 0 0 28px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+/* Код приглашения крупно и с разрядкой: его диктуют голосом. */
+.inviteCode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.inviteCode code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 1.25rem + 1vw, 1.875rem);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.howTo {
+  display: grid;
+  gap: 6px;
+  padding-left: 1.25em;
+  list-style: disc;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
