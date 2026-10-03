@@ -17,6 +17,15 @@ class NameUpdateRequest(RequestModel):
 class EmailChangeRequest(RequestModel):
     new_email: EmailStr
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    code: str | None = Field(default=None, min_length=1, max_length=16)
+    """Второй фактор: код приложения или резервный; без приложения — код,
+    пришедший на прежний адрес после первого запроса без него."""
+
+
+class EmailChangeResponse(BaseModel):
+    status: Literal["code_sent", "link_sent"]
+    """code_sent — код ушёл на прежний адрес; link_sent — ссылка на новый."""
+    email_hint: str | None
 
 
 class PasswordConfirmRequest(RequestModel):

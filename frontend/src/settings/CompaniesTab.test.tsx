@@ -224,7 +224,8 @@ describe("компании: заявка на подключение", () => {
 
     const section = await screen.findByRole("region", { name: "Подключить свою компанию" });
     expect(within(section).getByText(/команда kronto/)).toBeInTheDocument();
-    expect(within(section).getByText(/тарифа «Расширенный»/)).toBeInTheDocument();
+    // Пробный месяц — только первой пилотной компании (ТЗ §2): на сайте не обещаем.
+    expect(within(section).queryByText(/Расширенный/)).not.toBeInTheDocument();
     await user.type(await within(section).findByLabelText("Название компании"), "  ООО  «Север» ");
     await user.type(within(section).getByLabelText(/Сколько сотрудников/), "25");
     await user.click(within(section).getByRole("button", { name: "Отправить заявку" }));

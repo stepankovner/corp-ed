@@ -63,7 +63,7 @@ MAIL_PER_IP = RatePolicy("mail-ip", limit=20, window=3600, fail_open=False)
 # перебора по многим адресам сразу.
 VERIFY_PER_IP = RatePolicy("verify-ip", limit=30, window=900, fail_open=False)
 EMAIL_CHANGE_PER_ACCOUNT = RatePolicy(
-    "email-change", limit=5, window=3600, fail_open=False
+    "email-change", limit=10, window=3600, fail_open=False
 )
 COMPANY_REQUEST_PER_ACCOUNT = RatePolicy(
     "company-request", limit=5, window=86400, fail_open=False

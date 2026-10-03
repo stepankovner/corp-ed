@@ -189,6 +189,33 @@ def confirm_new_email(
     return RenderedEmail("change_email", subject, text, html)
 
 
+def email_change_code(
+    *, name: str | None, code: str, new_email: str, minutes: int
+) -> RenderedEmail:
+    """Второй фактор смены почты для учётки без приложения (ТЗ §3): код
+    приходит на прежний адрес — сменить почту может только её владелец."""
+    subject = f"Код для смены почты в {BRAND}: {code}"
+    text = (
+        f"{_greeting(name)}\n\n"
+        f"Код для смены почты на {new_email}: {code}\n"
+        f"Действует {minutes} минут.\n\n"
+        "Если вы не меняли почту, смените пароль: его знает кто-то ещё."
+    )
+    html = _layout(
+        subject,
+        [
+            _p(escape(_greeting(name))),
+            _p(f"Код для смены почты на <b>{escape(new_email)}</b>:"),
+            _code(code),
+            _muted(
+                f"Действует {minutes} минут. Если вы не меняли почту, смените "
+                "пароль: его знает кто-то ещё."
+            ),
+        ],
+    )
+    return RenderedEmail("change_email_code", subject, text, html)
+
+
 def email_changed(
     *, name: str | None, new_email: str, revert_url: str, days: int
 ) -> RenderedEmail:

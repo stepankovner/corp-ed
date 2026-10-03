@@ -108,6 +108,16 @@ class LoginExpiredError(DomainError):
         super().__init__("Время на подтверждение вышло — войдите заново")
 
 
+class SetupExpiredError(DomainError):
+    """Настройка приложения или ключа истекла или исчерпала попытки —
+    начать заново. HTTP 400."""
+
+    code = "setup_expired"
+
+    def __init__(self) -> None:
+        super().__init__("Время настройки вышло — начните заново")
+
+
 class InvalidPasswordError(DomainError):
     """Пароль для подтверждения действия неверен. HTTP 400."""
 
@@ -798,7 +808,7 @@ class MfaService:
             or challenge.expires_at <= _now()
             or challenge.attempts >= MAX_ATTEMPTS
         ):
-            raise InvalidSecondFactorError()
+            raise SetupExpiredError()
         return challenge
 
     def _security_notice(self, account: Account, what: str) -> None:

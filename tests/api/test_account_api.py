@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import get_team_notifier
+from corp_ed.core import totp
 from corp_ed.core.config import RegistrationSettings
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import account_scope, current_tenant, tenant_scope
@@ -30,8 +31,10 @@ from corp_ed.main import app
 from corp_ed.repositories.user_repository import UserRepository
 from tests.api.conftest import (
     PASSWORD,
+    TEST_TOTP_SECRET,
     account_bearer,
     bearer,
+    enable_test_totp,
     login,
     refresh_token_of,
     refresh_with,
@@ -73,6 +76,12 @@ async def _last_mail(session: AsyncSession, to: str, kind: str) -> OutboxEmail:
 def _code(mail: OutboxEmail) -> str:
     match = re.search(r"Код для подтверждения почты: (\d{6})", mail.text_body)
     assert match
+    return match.group(1)
+
+
+def _change_code(mail: OutboxEmail) -> str:
+    match = re.search(r"Код для смены почты на \S+: (\d{6})", mail.text_body)
+    assert match, mail.text_body
     return match.group(1)
 
 
@@ -341,6 +350,7 @@ async def test_change_password_sends_a_notice(
 async def test_change_email_confirm_and_revert(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:
+    """Без приложения второй фактор — код на прежний адрес (ТЗ §3)."""
     old_email = account.email
     assert old_email is not None
     headers = bearer(account)
@@ -351,12 +361,35 @@ async def test_change_email_confirm_and_revert(
         headers=headers,
     )
     assert wrong.status_code == 400
+    assert wrong.json()["code"] == "invalid_password"
     asked = await api.post(
         "/api/v1/account/email",
         json={"new_email": "Anna@New.ru", "password": PASSWORD},
         headers=headers,
     )
     assert asked.status_code == 202
+    assert asked.json() == {
+        "status": "code_sent",
+        "email_hint": f"{old_email[0]}***@{old_email.split('@')[1]}",
+    }
+    # Ссылки на новый адрес ещё нет — только код на прежний.
+    assert not await _mails(session, "anna@new.ru")
+    code = _change_code(await _last_mail(session, old_email, "change_email_code"))
+
+    # Код к одному адресу не подтверждает смену на другой.
+    other = await api.post(
+        "/api/v1/account/email",
+        json={"new_email": "evil@new.ru", "password": PASSWORD, "code": code},
+        headers=headers,
+    )
+    assert other.status_code == 400
+    sent = await api.post(
+        "/api/v1/account/email",
+        json={"new_email": "anna@new.ru", "password": PASSWORD, "code": code},
+        headers=headers,
+    )
+    assert sent.status_code == 202
+    assert sent.json() == {"status": "link_sent", "email_hint": None}
     # Почта не меняется, пока новый адрес не подтверждён.
     assert (await _account(session, old_email)).email == old_email
 
@@ -379,6 +412,57 @@ async def test_change_email_confirm_and_revert(
     # Захвативший мог знать пароль: сессии закрыты, ссылка на новый пароль — владельцу.
     assert (await api.get("/api/v1/auth/me", headers=headers)).status_code == 401
     assert await _mails(session, old_email, "reset_password")
+
+
+async def test_change_email_code_attempts_are_limited(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    assert account.email is not None
+    headers = bearer(account)
+    body = {"new_email": "anna@new.ru", "password": PASSWORD}
+    await api.post("/api/v1/account/email", json=body, headers=headers)
+    code = _change_code(await _last_mail(session, account.email, "change_email_code"))
+
+    for _ in range(5):
+        wrong = await api.post(
+            "/api/v1/account/email", json={**body, "code": "000000"}, headers=headers
+        )
+        assert wrong.status_code == 400
+    # Попытки кончились — и верный код уже не сработает.
+    late = await api.post(
+        "/api/v1/account/email", json={**body, "code": code}, headers=headers
+    )
+    assert late.status_code == 400
+    assert not await _mails(session, "anna@new.ru")
+
+
+async def test_change_email_with_app_needs_app_code(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    """С приложением второй фактор — его код или резервный; письма с
+    кодом на прежний адрес нет."""
+    assert account.account is not None and account.email is not None
+    enable_test_totp(account.account)
+    await session.commit()
+    headers = bearer(account)
+    body = {"new_email": "anna@new.ru", "password": PASSWORD}
+
+    missing = await api.post("/api/v1/account/email", json=body, headers=headers)
+    assert missing.status_code == 403
+    assert missing.json()["code"] == "second_factor_required"
+    wrong = await api.post(
+        "/api/v1/account/email", json={**body, "code": "000000"}, headers=headers
+    )
+    assert wrong.status_code == 400
+    assert wrong.json()["code"] == "invalid_second_factor"
+    code = totp.code_at(TEST_TOTP_SECRET, totp.current_step())
+    sent = await api.post(
+        "/api/v1/account/email", json={**body, "code": code}, headers=headers
+    )
+    assert sent.status_code == 202
+    assert sent.json()["status"] == "link_sent"
+    assert not await _mails(session, account.email, "change_email_code")
+    assert await _mails(session, "anna@new.ru", "change_email")
 
 
 async def test_change_email_to_taken_address_is_conflict(

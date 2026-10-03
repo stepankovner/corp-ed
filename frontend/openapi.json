@@ -797,6 +797,19 @@
       "EmailChangeRequest": {
         "additionalProperties": false,
         "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
           "new_email": {
             "format": "email",
             "title": "New Email",
@@ -814,6 +827,35 @@
           "password"
         ],
         "title": "EmailChangeRequest",
+        "type": "object"
+      },
+      "EmailChangeResponse": {
+        "properties": {
+          "email_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Hint"
+          },
+          "status": {
+            "enum": [
+              "code_sent",
+              "link_sent"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "email_hint"
+        ],
+        "title": "EmailChangeResponse",
         "type": "object"
       },
       "EmailRequest": {
@@ -3563,7 +3605,7 @@
     },
     "/api/v1/account/email": {
       "post": {
-        "description": "Письмо со ссылкой на новый адрес; почта сменится после перехода.",
+        "description": "Пароль и второй фактор, затем письмо со ссылкой на новый адрес;\nпочта сменится после перехода (ТЗ §3). Без приложения второй фактор\n— код на прежний адрес: первый запрос без кода его отправляет.",
         "operationId": "request_email_change_api_v1_account_email_post",
         "requestBody": {
           "content": {
@@ -3579,7 +3621,9 @@
           "202": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EmailChangeResponse"
+                }
               }
             },
             "description": "Successful Response"

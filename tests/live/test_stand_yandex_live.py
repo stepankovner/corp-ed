@@ -31,6 +31,7 @@ from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.throttle import InMemoryThrottle
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.stand import run_check
+from tests.api.conftest import TEST_TOTP_SECRET, bearer
 from tests.factories import make_user
 from tests.live.bitrix24_stand import HAVE_PORTAL, Bitrix24Stand
 from tests.stand_harness import (
@@ -82,6 +83,7 @@ async def test_stand_check_with_real_yandex_cloud(
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
+            totp_secret=TEST_TOTP_SECRET,
             before_poll=ingest_hook(session_maker, embeddings, rag),
             poll_interval=0.5,
         )
@@ -107,6 +109,7 @@ async def test_stand_check_with_dialogue_memory(
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
+            totp_secret=TEST_TOTP_SECRET,
             before_poll=ingest_hook(session_maker, embeddings, rag),
             poll_interval=0.5,
         )
@@ -148,15 +151,8 @@ async def test_portal_document_answers_with_a_link_to_the_portal(
         assert outcome.status is SyncRunStatus.SUCCEEDED, outcome
         await ingest_hook(session_maker, embeddings, rag)()
 
-        login = await client.post(
-            "/api/v1/auth/login",
-            json={
-                "company_code": "test",
-                "email": employee.email,
-                "password": PASSWORD,
-            },
-        )
-        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        # Вход сотрудника не проверяем здесь (это test_stand): сразу токен.
+        headers = bearer(employee)
         # Положение о программе «УМНИК» на личном диске тестового портала:
         # «Общий срок выполнения Работ по Договору – 12 месяцев» (п. 3.2).
         response = await client.post(

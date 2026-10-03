@@ -10,7 +10,9 @@
 """
 
 import hmac
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import UUID
 
 import structlog
@@ -50,17 +52,22 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services import email_templates
 from corp_ed.services.auth_service import (
     AuthService,
-    InvalidCurrentPasswordError,
     TokenPair,
 )
 from corp_ed.services.email_service import EmailService
-from corp_ed.services.mfa_service import InvalidSecondFactorError, MfaService
+from corp_ed.services.mfa_service import (
+    InvalidPasswordError,
+    InvalidSecondFactorError,
+    MfaService,
+    mask_email,
+)
 
 logger = structlog.get_logger()
 
 VERIFY_TTL = timedelta(minutes=30)
 RESET_TTL = timedelta(hours=1)
 CHANGE_EMAIL_TTL = timedelta(hours=24)
+CHANGE_EMAIL_CODE_TTL = timedelta(minutes=10)
 REVERT_EMAIL_TTL = timedelta(days=7)
 MAX_CODE_ATTEMPTS = 5
 """Попыток ввести код на одно письмо: 6 цифр — миллион вариантов,
@@ -88,6 +95,15 @@ class SecondFactorRequiredError(PermissionError):
 
     def __init__(self) -> None:
         super().__init__("Введите код из приложения-аутентификатора или резервный код")
+
+
+@dataclass(frozen=True)
+class EmailChangeStep:
+    """code_sent — код ушёл на прежний адрес, ждём его; link_sent —
+    ссылка ушла на новый адрес."""
+
+    status: Literal["code_sent", "link_sent"]
+    email_hint: str | None
 
 
 class AccountService:
@@ -308,18 +324,40 @@ class AccountService:
     # --- смена почты ----------------------------------------------------------
 
     async def request_email_change(
-        self, account: Account, new_email: str, password: str
-    ) -> None:
-        """Письмо с подтверждением на новый адрес. Почта меняется только
-        после перехода по ссылке — опечатка в адресе не отрежет человека
-        от учётки."""
+        self,
+        account: Account,
+        new_email: str,
+        password: str,
+        second_factor: str | None = None,
+    ) -> EmailChangeStep:
+        """Смена почты (ТЗ §3): пароль и второй фактор, затем письмо со
+        ссылкой на новый адрес. Почта меняется только после перехода по
+        ней — опечатка в адресе не отрежет человека от учётки.
+
+        Второй фактор — код приложения или резервный, если они включены;
+        иначе код на прежний адрес: первый вызов без кода его отправляет
+        (code_sent), второй — с кодом — отправляет ссылку (link_sent).
+        """
         if not verify_password(password, account.hashed_password):
-            raise InvalidCurrentPasswordError()
+            raise InvalidPasswordError()
         new_email = normalize_email(new_email)
         if new_email == account.email:
             raise EmailTakenError()
         if await self.accounts.get_by_email(new_email) is not None:
             raise EmailTakenError()
+        if await self.mfa.has_strong(account):
+            if not second_factor:
+                raise SecondFactorRequiredError()
+            if not await self.mfa.verify_code(account, second_factor):
+                await self.session.commit()
+                raise InvalidSecondFactorError()
+        elif not second_factor:
+            await self._send_change_code(account, new_email)
+            return EmailChangeStep(
+                status="code_sent", email_hint=mask_email(account.email)
+            )
+        else:
+            await self._check_change_code(account, new_email, second_factor)
         now = _now()
         await self.tokens.invalidate(
             account.id, EmailTokenPurpose.CHANGE_EMAIL.value, now
@@ -344,6 +382,57 @@ class AccountService:
             ),
         )
         await self.session.commit()
+        return EmailChangeStep(status="link_sent", email_hint=None)
+
+    async def _send_change_code(self, account: Account, new_email: str) -> None:
+        now = _now()
+        await self.tokens.invalidate(
+            account.id, EmailTokenPurpose.CHANGE_EMAIL_CODE.value, now
+        )
+        code = new_numeric_code()
+        await self.tokens.add(
+            EmailToken(
+                account_id=account.id,
+                purpose=EmailTokenPurpose.CHANGE_EMAIL_CODE.value,
+                # Ссылки у кода нет: хеш случайного значения, которое не
+                # уходит никуда, — только чтобы строка была уникальной.
+                token_hash=hash_refresh_token(new_refresh_token()),
+                code_hash=hash_secret(f"{account.id}:{code}"),
+                email=new_email,
+                expires_at=now + CHANGE_EMAIL_CODE_TTL,
+            )
+        )
+        self.mail.enqueue(
+            account.email,
+            email_templates.email_change_code(
+                name=account.first_name,
+                code=code,
+                new_email=new_email,
+                minutes=int(CHANGE_EMAIL_CODE_TTL.total_seconds() // 60),
+            ),
+        )
+        await self.session.commit()
+
+    async def _check_change_code(
+        self, account: Account, new_email: str, code: str
+    ) -> None:
+        """Код с прежнего адреса — для того же нового адреса, что в запросе:
+        иначе код к одному адресу подтвердил бы смену на другой."""
+        token = await self.tokens.latest_active(
+            account.id, EmailTokenPurpose.CHANGE_EMAIL_CODE.value, _now()
+        )
+        if token is None or token.code_hash is None or token.email != new_email:
+            raise InvalidEmailCodeError()
+        token.attempts += 1
+        if token.attempts > MAX_CODE_ATTEMPTS:
+            token.used_at = _now()
+            await self.session.commit()
+            raise InvalidEmailCodeError()
+        expected = hash_secret(f"{account.id}:{code.strip()}")
+        if not hmac.compare_digest(expected, token.code_hash):
+            await self.session.commit()
+            raise InvalidEmailCodeError()
+        token.used_at = _now()
 
     async def confirm_email_change(self, raw_token: str) -> None:
         """Сменить почту; на старую — письмо со ссылкой «это не я»."""
@@ -445,7 +534,7 @@ class AccountService:
         них в журнале вопросов остаются без личных данных; токены, письма
         и заявки удаляются вместе с учёткой."""
         if not verify_password(password, account.hashed_password):
-            raise InvalidCurrentPasswordError()
+            raise InvalidPasswordError()
         with account_scope(account.id):
             memberships = await self.users.memberships_of_account(account.id)
         blocking: list[str] = []

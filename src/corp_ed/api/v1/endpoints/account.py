@@ -29,6 +29,7 @@ from corp_ed.api.v1.schemas.account import (
     CompanyRequestCreate,
     CompanyRequestResponse,
     EmailChangeRequest,
+    EmailChangeResponse,
     LeaveCompanyRequest,
     NameUpdateRequest,
     PasskeyCreatedResponse,
@@ -65,16 +66,25 @@ async def update_name(
     )
 
 
-@router.post("/email", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/email",
+    response_model=EmailChangeResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def request_email_change(
     data: EmailChangeRequest,
     account: CurrentAccount,
     service: Service,
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
-) -> None:
-    """Письмо со ссылкой на новый адрес; почта сменится после перехода."""
+) -> EmailChangeResponse:
+    """Пароль и второй фактор, затем письмо со ссылкой на новый адрес;
+    почта сменится после перехода (ТЗ §3). Без приложения второй фактор
+    — код на прежний адрес: первый запрос без кода его отправляет."""
     await enforce(limiter, EMAIL_CHANGE_PER_ACCOUNT, str(account.id))
-    await service.request_email_change(account, str(data.new_email), data.password)
+    step = await service.request_email_change(
+        account, str(data.new_email), data.password, data.code
+    )
+    return EmailChangeResponse(status=step.status, email_hint=step.email_hint)
 
 
 @router.post("/email/confirm", status_code=status.HTTP_204_NO_CONTENT)

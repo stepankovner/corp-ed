@@ -364,6 +364,8 @@ class EmailTokenPurpose(enum.Enum):
     VERIFY_EMAIL = "verify_email"
     RESET_PASSWORD = "reset_password"  # noqa: S105 — назначение, не пароль
     CHANGE_EMAIL = "change_email"
+    # Код на прежний адрес — второй фактор смены почты без приложения.
+    CHANGE_EMAIL_CODE = "change_email_code"
     REVERT_EMAIL = "revert_email"
 
 
@@ -379,7 +381,7 @@ class EmailToken(Base):
     __table_args__ = (
         CheckConstraint(
             "purpose IN ('verify_email', 'reset_password', 'change_email', "
-            "'revert_email')",
+            "'change_email_code', 'revert_email')",
             name="ck_email_tokens_purpose",
         ),
         Index("ix_email_tokens_account_purpose", "account_id", "purpose"),

@@ -255,7 +255,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "purpose IN ('verify_email', 'reset_password', 'change_email', "
-            "'revert_email')",
+            "'change_email_code', 'revert_email')",
             name="ck_email_tokens_purpose",
         ),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"], ondelete="CASCADE"),

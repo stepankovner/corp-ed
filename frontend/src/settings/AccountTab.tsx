@@ -23,14 +23,31 @@ export function AccountTab() {
   );
 }
 
+/**
+ * Смена почты (ТЗ §3): пароль и второй фактор. С приложением или ключом —
+ * код приложения или резервный в той же форме; без них сервер сначала
+ * присылает код на прежний адрес, и форма просит его вторым шагом.
+ */
 function EmailSection() {
   const me = useMe();
+  const strong = me.mfa.strong;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  // Код ушёл на прежний адрес: подсказка, куда именно.
+  const [codeHint, setCodeHint] = useState<string | null>(null);
+  const [needsCode, setNeedsCode] = useState(strong);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [taken, setTaken] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
+  const awaitingMailCode = codeHint !== null;
+
+  function reset() {
+    setPassword("");
+    setCode("");
+    setCodeHint(null);
+  }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -40,14 +57,32 @@ function EmailSection() {
     setSent(null);
     setBusy(true);
     try {
-      await unwrap(api.POST("/api/v1/account/email", { body: { new_email: next, password } }));
-      setSent(next);
-      setEmail("");
+      const step = await unwrap(
+        api.POST("/api/v1/account/email", {
+          body: { new_email: next, password, code: code.trim() || null },
+        }),
+      );
+      if (step.status === "code_sent") {
+        setCodeHint(step.email_hint ?? me.email);
+        setCode("");
+      } else {
+        setSent(next);
+        setEmail("");
+        reset();
+      }
     } catch (err) {
-      if (err instanceof ApiError && err.code === "email_taken") setTaken(err.message);
-      else setError(errorMessage(err));
+      setCode("");
+      if (err instanceof ApiError && err.code === "email_taken") {
+        setTaken(err.message);
+        reset();
+      } else if (err instanceof ApiError && err.code === "second_factor_required") {
+        // Профиль устарел: приложение включили в другой вкладке.
+        setNeedsCode(true);
+      } else {
+        if (err instanceof ApiError && err.code === "invalid_password") setPassword("");
+        setError(errorMessage(err));
+      }
     } finally {
-      setPassword("");
       setBusy(false);
     }
   }
@@ -64,9 +99,14 @@ function EmailSection() {
     >
       <div aria-live="polite">
         {sent ? (
-          <Notice kind="ok" title="Проверьте почту">
+          <Notice kind="ok" title="Проверьте новую почту">
             Мы отправили ссылку на {sent}; почта сменится после перехода по ней. Ссылка действует 24
             часа.
+          </Notice>
+        ) : null}
+        {awaitingMailCode ? (
+          <Notice kind="info" title="Подтвердите, что это вы">
+            Отправили код на {codeHint} — текущий адрес учётной записи. Код действует 10 минут.
           </Notice>
         ) : null}
       </div>
@@ -85,6 +125,7 @@ function EmailSection() {
           type="email"
           autoComplete="email"
           required
+          readOnly={awaitingMailCode}
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);
@@ -97,13 +138,41 @@ function EmailSection() {
           type="password"
           autoComplete="current-password"
           required
+          readOnly={awaitingMailCode}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {needsCode || awaitingMailCode ? (
+          <TextField
+            label={awaitingMailCode ? "Код из письма" : "Код из приложения или резервный код"}
+            name="code"
+            inputMode={awaitingMailCode ? "numeric" : "text"}
+            autoComplete="one-time-code"
+            autoCapitalize="characters"
+            spellCheck={false}
+            required
+            maxLength={12}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            autoFocus={awaitingMailCode}
+          />
+        ) : null}
         <div className={styles.actions}>
-          <Button type="submit" size="sm" busy={busy} disabled={!email.trim() || !password}>
-            Сменить почту
+          <Button
+            type="submit"
+            size="sm"
+            busy={busy}
+            disabled={
+              !email.trim() || !password || ((needsCode || awaitingMailCode) && !code.trim())
+            }
+          >
+            {awaitingMailCode ? "Подтвердить" : needsCode ? "Сменить почту" : "Получить код"}
           </Button>
+          {awaitingMailCode ? (
+            <Button type="button" size="sm" variant="ghost" onClick={reset}>
+              Изменить адрес
+            </Button>
+          ) : null}
         </div>
       </form>
     </Section>

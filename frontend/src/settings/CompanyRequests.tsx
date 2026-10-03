@@ -6,7 +6,6 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { useMe } from "../auth/context";
 import { formatDate, plural } from "../lib/format";
-import { tariffByCode } from "../lib/tariffs";
 import { Badge, type Tone } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { TextAreaField, TextField } from "../ui/Field";
@@ -57,7 +56,6 @@ export function CompanyRequests() {
     },
   });
   const open = requests.data?.find((item) => item.status === "new");
-  const extended = tariffByCode("extended")?.name ?? "Расширенный";
 
   return (
     <Section
@@ -65,9 +63,7 @@ export function CompanyRequests() {
       description={
         <>
           Заявку рассматривает команда kronto: после одобрения компания появится в списке выше, а вы
-          станете её администратором.{" "}
-          {`Пилотной компании первый месяц — на условиях тарифа «${extended}».`}{" "}
-          <Link to="/pricing">Тарифы</Link>
+          станете её администратором. <Link to="/pricing">Тарифы</Link>
         </>
       }
     >

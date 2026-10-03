@@ -13,14 +13,20 @@ function signedIn() {
 }
 
 describe("управление учётной записью: почта", () => {
-  it("отправляет ссылку на новый адрес — почта сменится после перехода", async () => {
+  it("без приложения: код на прежний адрес, затем ссылка на новый", async () => {
     const user = userEvent.setup();
-    let body: unknown;
+    const bodies: unknown[] = [];
     signedIn();
     server.use(
       http.post("/api/v1/account/email", async ({ request }) => {
-        body = await request.json();
-        return new HttpResponse(null, { status: 202 });
+        const body = (await request.json()) as { code: string | null };
+        bodies.push(body);
+        return HttpResponse.json(
+          body.code
+            ? { status: "link_sent", email_hint: null }
+            : { status: "code_sent", email_hint: "a***@meridian-stroy.ru" },
+          { status: 202 },
+        );
       }),
     );
     renderApp("/settings/account");
@@ -30,16 +36,54 @@ describe("управление учётной записью: почта", () =>
     expect(within(section).getByText("anna@meridian-stroy.ru")).toBeInTheDocument();
     await user.type(within(section).getByLabelText("Новая почта"), " anna@sever.ru ");
     await user.type(within(section).getByLabelText("Пароль от учётной записи"), "мой пароль");
-    await user.click(within(section).getByRole("button", { name: "Сменить почту" }));
+    await user.click(within(section).getByRole("button", { name: "Получить код" }));
+
+    expect(
+      await within(section).findByText(/Отправили код на a\*\*\*@meridian-stroy\.ru/),
+    ).toBeInTheDocument();
+    await user.type(within(section).getByLabelText("Код из письма"), "123456");
+    await user.click(within(section).getByRole("button", { name: "Подтвердить" }));
 
     expect(
       await within(section).findByText(
         /Мы отправили ссылку на anna@sever\.ru; почта сменится после перехода по ней/,
       ),
     ).toBeInTheDocument();
-    expect(body).toEqual({ new_email: "anna@sever.ru", password: "мой пароль" });
+    expect(bodies).toEqual([
+      { new_email: "anna@sever.ru", password: "мой пароль", code: null },
+      { new_email: "anna@sever.ru", password: "мой пароль", code: "123456" },
+    ]);
     expect(within(section).getByLabelText("Пароль от учётной записи")).toHaveValue("");
     expect(within(section).getByLabelText("Новая почта")).toHaveValue("");
+  });
+
+  it("с приложением: код приложения в той же форме", async () => {
+    const user = userEvent.setup();
+    let body: unknown;
+    server.use(
+      http.get("/api/v1/auth/me", () =>
+        HttpResponse.json(me({ mfa: { strong: true, strong_required: false } })),
+      ),
+      http.post("/api/v1/account/email", async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({ status: "link_sent", email_hint: null }, { status: 202 });
+      }),
+    );
+    renderApp("/settings/account");
+
+    const section = await screen.findByRole("region", { name: "Почта" });
+    await user.type(within(section).getByLabelText("Новая почта"), "anna@sever.ru");
+    await user.type(within(section).getByLabelText("Пароль от учётной записи"), "мой пароль");
+    await user.type(
+      within(section).getByLabelText("Код из приложения или резервный код"),
+      "654321",
+    );
+    await user.click(within(section).getByRole("button", { name: "Сменить почту" }));
+
+    expect(
+      await within(section).findByText(/Мы отправили ссылку на anna@sever\.ru/),
+    ).toBeInTheDocument();
+    expect(body).toEqual({ new_email: "anna@sever.ru", password: "мой пароль", code: "654321" });
   });
 
   it("занятая почта — ошибка у поля адреса", async () => {
@@ -58,7 +102,7 @@ describe("управление учётной записью: почта", () =>
     const section = await screen.findByRole("region", { name: "Почта" });
     await user.type(within(section).getByLabelText("Новая почта"), "pavel@meridian-stroy.ru");
     await user.type(within(section).getByLabelText("Пароль от учётной записи"), "мой пароль");
-    await user.click(within(section).getByRole("button", { name: "Сменить почту" }));
+    await user.click(within(section).getByRole("button", { name: "Получить код" }));
 
     const field = within(section).getByLabelText("Новая почта");
     await waitFor(() => expect(field).toHaveAttribute("aria-invalid", "true"));

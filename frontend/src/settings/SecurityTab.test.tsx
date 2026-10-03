@@ -263,6 +263,42 @@ describe("безопасность: приложение-аутентифика�
     expect(within(setup).getByLabelText("Код из приложения")).toHaveValue("");
   });
 
+  it("время настройки вышло — новый секрет и новый QR-код", async () => {
+    const user = userEvent.setup();
+    const secrets = ["JBSWY3DPEHPK3PXP", "KRSXG5CTMVRXEZLU"];
+    let setups = 0;
+    signedIn();
+    server.use(
+      http.post("/api/v1/account/totp/setup", () => {
+        const secret = secrets[setups] ?? "";
+        setups += 1;
+        return HttpResponse.json({
+          secret,
+          otpauth_uri: `otpauth://totp/kronto?secret=${secret}`,
+          setup_token: `setup-token-${setups}-0123456789abcdef`,
+        });
+      }),
+      http.post("/api/v1/account/totp/enable", () =>
+        HttpResponse.json(
+          { detail: "Время настройки вышло — начните заново", code: "setup_expired" },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderApp("/settings/security");
+
+    await user.click(await screen.findByRole("button", { name: "Подключить приложение" }));
+    let setup = await screen.findByRole("dialog", { name: "Подключение приложения" });
+    await user.type(within(setup).getByLabelText("Код из приложения"), "000000");
+    await user.click(within(setup).getByRole("button", { name: "Включить" }));
+
+    // Тост и его объявление для скринридера.
+    expect(await screen.findAllByText(/Время настройки вышло/)).not.toHaveLength(0);
+    await waitFor(() => expect(setups).toBe(2));
+    setup = await screen.findByRole("dialog", { name: "Подключение приложения" });
+    expect(within(setup).getByText(/KRSX/)).toBeInTheDocument();
+  });
+
   it("отключает приложение по паролю и коду", async () => {
     const user = userEvent.setup();
     let state = security({ totp_enabled: true, backup_codes_left: 8 });

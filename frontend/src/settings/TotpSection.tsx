@@ -3,7 +3,7 @@ import { useId, useState, type SubmitEvent } from "react";
 
 import { CopyButton } from "../admin/common";
 import { api, unwrap, type Schemas } from "../api/client";
-import { errorMessage } from "../api/errors";
+import { ApiError, errorMessage } from "../api/errors";
 import { useAuth, useMe } from "../auth/context";
 import { useMediaQuery } from "../lib/media";
 import { Badge } from "../ui/Badge";
@@ -77,6 +77,12 @@ export function TotpSection({
         <TotpSetupDialog
           setup={setup}
           onClose={() => setSetup(null)}
+          onExpired={() => {
+            // Секрет настройки сгорел — новый секрет и новый QR-код.
+            setSetup(null);
+            toast.show("Время настройки вышло — отсканируйте новый QR-код", { tone: "info" });
+            start.mutate();
+          }}
           onEnabled={async (codes) => {
             setSetup(null);
             onCodes(codes);
@@ -102,10 +108,13 @@ export function TotpSection({
 function TotpSetupDialog({
   setup,
   onClose,
+  onExpired,
   onEnabled,
 }: {
   setup: Setup;
   onClose: () => void;
+  /** Настройка истекла или исчерпала попытки (setup_expired). */
+  onExpired: () => void;
   onEnabled: (codes: string[] | null) => Promise<void>;
 }) {
   const formId = useId();
@@ -120,7 +129,10 @@ function TotpSetupDialog({
         }),
       ),
     onSuccess: (result) => onEnabled(result.backup_codes),
-    onError: () => setCode(""),
+    onError: (err) => {
+      setCode("");
+      if (err instanceof ApiError && err.code === "setup_expired") onExpired();
+    },
   });
 
   function submit(event: SubmitEvent) {

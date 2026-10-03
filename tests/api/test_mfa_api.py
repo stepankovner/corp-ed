@@ -218,9 +218,30 @@ async def test_totp_setup_needs_a_valid_code(
         headers=headers,
     )
     assert wrong.status_code == 400
+    assert wrong.json()["code"] == "invalid_second_factor"
     assert account.account is not None
     await session.refresh(account.account)
     assert account.account.totp_enabled_at is None
+
+
+async def test_totp_setup_ends_after_attempts(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """Попытки кончились — отдельный код: фронт предлагает начать заново,
+    а не «код не подошёл» без конца."""
+    headers = bearer(account)
+    setup = (await api.post("/api/v1/account/totp/setup", headers=headers)).json()
+    body = {"setup_token": setup["setup_token"], "code": "000000"}
+    for _ in range(5):
+        await api.post("/api/v1/account/totp/enable", json=body, headers=headers)
+    code = totp.code_at(setup["secret"], totp.current_step())
+    late = await api.post(
+        "/api/v1/account/totp/enable",
+        json={**body, "code": code},
+        headers=headers,
+    )
+    assert late.status_code == 400
+    assert late.json()["code"] == "setup_expired"
 
 
 async def test_disable_totp_needs_password_and_code(
