@@ -192,6 +192,130 @@
   min-height: 34px;
 }
 
+/* ——— диалоги (ТЗ §6) ——— */
+.dialogs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.dialogSearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--sidebar-hover);
+  color: var(--muted);
+}
+.dialogSearch input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+.dialogSearch input:focus {
+  outline: none;
+}
+.dialogSearch:focus-within {
+  box-shadow: var(--ring);
+}
+.dialogsNote {
+  display: flex;
+  justify-content: center;
+  padding: 12px 10px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-align: center;
+}
+.dialogGroup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin-top: 8px;
+}
+.dialogGroupTitle {
+  padding: 0 10px 2px;
+  color: var(--muted);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+.dialog {
+  position: relative;
+  min-width: 0;
+}
+.dialogLink {
+  padding-right: 36px;
+}
+.dialogLink svg {
+  color: var(--accent);
+}
+.dialogMenu {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease);
+}
+.dialog:hover .dialogMenu,
+.dialogMenu:focus-visible,
+.dialogMenu[data-state="open"],
+.active + .dialogMenu {
+  opacity: 1;
+}
+@media (hover: none) {
+  .dialogMenu {
+    opacity: 1;
+  }
+}
+.dialogMenu:hover {
+  color: var(--ink);
+  background: var(--sidebar-active);
+}
+.rename input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+.rename input:focus {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.more {
+  margin: 6px 10px 0;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  text-align: left;
+}
+.more:hover:not(:disabled) {
+  color: var(--ink);
+}
+
 /* ——— учётная запись ——— */
 .foot {
   margin-inline: -10px;

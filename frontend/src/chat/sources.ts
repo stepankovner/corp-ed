@@ -1,9 +1,9 @@
-import type { Schemas } from "../api/client";
+import type { Source } from "./api";
 
-export type Source = Schemas["FaqSourceResponse"];
+export type { Source };
 
 /** Раздел документа: «Глава › Пункт». */
-export function sourceSection(source: Source): string {
+export function sourceSection(source: Pick<Source, "heading_path">): string {
   return source.heading_path.filter(Boolean).join(" › ");
 }
 
@@ -24,11 +24,12 @@ function breadcrumbs(title: string, headingPath: string[]): string {
  * Текст фрагмента без служебной первой строки «Документ > Раздел»: её
  * бэкенд добавляет для модели, а панель показывает раздел отдельно.
  */
-export function fragmentText(source: Source): string {
+export function fragmentText(source: Pick<Source, "title" | "heading_path" | "content">): string {
+  const content = source.content ?? "";
   const crumbs = breadcrumbs(source.title, source.heading_path);
-  const newline = source.content.indexOf("\n");
-  if (crumbs && newline > 0 && source.content.slice(0, newline).trim() === crumbs) {
-    return source.content.slice(newline + 1).trimStart();
+  const newline = content.indexOf("\n");
+  if (crumbs && newline > 0 && content.slice(0, newline).trim() === crumbs) {
+    return content.slice(newline + 1).trimStart();
   }
-  return source.content;
+  return content;
 }

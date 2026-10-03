@@ -48,11 +48,10 @@ describe("боковая панель", () => {
 
     expect(screen.getByRole("button", { name: /^Компания: ООО «Меридиан Строй»/ })).toBeVisible();
     const nav = screen.getByRole("navigation", { name: "Разделы" });
-    expect(within(nav).getByRole("link", { name: "Вопросы" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
     expect(within(nav).getByRole("link", { name: "Коллеги" })).not.toHaveAttribute("aria-current");
+    // Диалоги — списком под разделами (ТЗ §6).
+    expect(screen.getByRole("region", { name: "Диалоги" })).toBeVisible();
+    expect(await screen.findByText("Здесь появятся ваши диалоги")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Профиль: Анна Смирнова/ })).toBeVisible();
     expect(document.title).toBe("Вопросы — kronto");
   });
@@ -69,7 +68,7 @@ describe("боковая панель", () => {
       "aria-current",
       "page",
     );
-    expect(within(sections).getAllByRole("link")).toHaveLength(8);
+    expect(within(sections).getAllByRole("link")).toHaveLength(9);
     expect(screen.getAllByRole("navigation")).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "Свернуть разделы управления" }));
@@ -78,28 +77,14 @@ describe("боковая панель", () => {
     expect(screen.getByRole("list", { name: "Управление" })).toBeInTheDocument();
   });
 
-  it("«Новый диалог» ведёт к вопросам с пустой перепиской", async () => {
+  it("«Новый диалог» ведёт к пустому экрану вопросов", async () => {
     const user = userEvent.setup();
     signedInAs();
-    sessionStorage.setItem(
-      "kronto.chat.u-1",
-      JSON.stringify([
-        {
-          id: "t-1",
-          question: "Старый вопрос",
-          state: "error",
-          status: 502,
-          code: null,
-          message: "Сбой",
-        },
-      ]),
-    );
     const { router } = renderApp("/people");
     await user.click(await screen.findByRole("button", { name: "Новый диалог" }));
     await screen.findByRole("log", { name: "Переписка" });
     expect(router.state.location.pathname).toBe("/");
-    expect(screen.queryByText("Старый вопрос")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Здравствуйте!" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Здравствуйте, Анна!" })).toBeInTheDocument();
   });
 
   it("сворачивается до значков и помнит это", async () => {

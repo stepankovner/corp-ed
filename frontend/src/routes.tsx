@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, useLocation, type RouteObject } from "react-router";
 
 import { PublicOnly, RequireAdmin, RequireAuth, RequireCompany } from "./auth/guards";
+import { ChatPage } from "./chat/ChatPage";
 import { AppShell } from "./layout/AppShell";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { ConfirmEmailPage, RevertEmailPage } from "./pages/EmailChangePages";
@@ -47,6 +48,10 @@ const PeoplePage = lazy(() =>
 const DepartmentsPage = lazy(() =>
   import("./admin/DepartmentsPage").then((m) => ({ default: m.DepartmentsPage })),
 );
+const SuggestionsPage = lazy(() =>
+  import("./admin/SuggestionsPage").then((m) => ({ default: m.SuggestionsPage })),
+);
+const SharedPage = lazy(() => import("./chat/SharedPage").then((m) => ({ default: m.SharedPage })));
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
@@ -98,6 +103,9 @@ export const routes: RouteObject[] = [
               // Возврат с портала OAuth (CONNECTOR_OAUTH_RETURN_URL) — сюда;
               // «Мои подключения» теперь в настройках (ТЗ §4).
               { path: "/sources", element: <SourcesRedirect /> },
+              // Диалоги на сервере (ТЗ §6): свой — по id, коллеги — по ссылке.
+              { path: "/c/:conversationId", element: <ChatPage /> },
+              { path: "/shared/:token", element: lazyPage(<SharedPage />) },
               { path: "/people", element: lazyPage(<PeoplePage />) },
               {
                 path: "/admin",
@@ -105,6 +113,7 @@ export const routes: RouteObject[] = [
                 children: [
                   { index: true, element: <Navigate to="documents" replace /> },
                   { path: "departments", element: lazyPage(<DepartmentsPage />) },
+                  { path: "suggestions", element: lazyPage(<SuggestionsPage />) },
                   { path: "documents", element: lazyPage(<DocumentsPage />) },
                   { path: "connectors", element: lazyPage(<ConnectorsPage />) },
                   { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },

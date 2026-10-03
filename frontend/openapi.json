@@ -114,6 +114,60 @@
         "title": "AnswerOrigin",
         "type": "string"
       },
+      "AskRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "attachment_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "question": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "AskRequest",
+        "type": "object"
+      },
+      "AttachmentResponse": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "size",
+          "tokens"
+        ],
+        "title": "AttachmentResponse",
+        "type": "object"
+      },
       "AuditEventResponse": {
         "properties": {
           "action": {
@@ -242,6 +296,21 @@
         "title": "BackupCodesResponse",
         "type": "object"
       },
+      "Body_upload_attachment_api_v1_attachments_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "docx, doc, xlsx, pptx, pdf, txt или md, до 10 МБ",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_attachment_api_v1_attachments_post",
+        "type": "object"
+      },
       "Body_upload_avatar_api_v1_account_avatar_put": {
         "properties": {
           "file": {
@@ -302,6 +371,45 @@
         ],
         "title": "ChangePasswordRequest",
         "type": "object"
+      },
+      "ChatStreamEvent": {
+        "description": "Событие потока ответа.",
+        "discriminator": {
+          "mapping": {
+            "delta": "#/components/schemas/StreamDelta",
+            "done": "#/components/schemas/StreamDone",
+            "error": "#/components/schemas/StreamError",
+            "origin": "#/components/schemas/StreamOrigin",
+            "reset": "#/components/schemas/StreamReset",
+            "stage": "#/components/schemas/StreamStage",
+            "start": "#/components/schemas/StreamStart"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/StreamStart"
+          },
+          {
+            "$ref": "#/components/schemas/StreamStage"
+          },
+          {
+            "$ref": "#/components/schemas/StreamOrigin"
+          },
+          {
+            "$ref": "#/components/schemas/StreamDelta"
+          },
+          {
+            "$ref": "#/components/schemas/StreamReset"
+          },
+          {
+            "$ref": "#/components/schemas/StreamDone"
+          },
+          {
+            "$ref": "#/components/schemas/StreamError"
+          }
+        ],
+        "title": "ChatStreamEvent"
       },
       "CompanyRequestCreate": {
         "additionalProperties": false,
@@ -773,6 +881,182 @@
         "title": "ConnectorUpdateRequest",
         "type": "object"
       },
+      "ConversationListResponse": {
+        "description": "Закреплённые — первыми (только на первой странице), затем по\nактивности. next_before — передать в before за следующей страницей.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_before": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before"
+          }
+        },
+        "required": [
+          "items",
+          "next_before"
+        ],
+        "title": "ConversationListResponse",
+        "type": "object"
+      },
+      "ConversationResponse": {
+        "description": "Диалог: показанная ветка от первого вопроса до current_message_id.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_message_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Message Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageResponse"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "share": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShareResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "shared": {
+            "title": "Shared",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "pinned",
+          "shared",
+          "created_at",
+          "updated_at",
+          "current_message_id",
+          "messages",
+          "share"
+        ],
+        "title": "ConversationResponse",
+        "type": "object"
+      },
+      "ConversationSummary": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "pinned": {
+            "title": "Pinned",
+            "type": "boolean"
+          },
+          "shared": {
+            "title": "Shared",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "pinned",
+          "shared",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationSummary",
+        "type": "object"
+      },
+      "ConversationUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ConversationUpdateRequest",
+        "type": "object"
+      },
       "CredentialsRequest": {
         "additionalProperties": false,
         "description": "Учётные данные — только на запись: в ответах их нет.",
@@ -1081,7 +1365,7 @@
             "title": "Conversation Id"
           },
           "question": {
-            "maxLength": 1000,
+            "maxLength": 4000,
             "minLength": 1,
             "title": "Question",
             "type": "string"
@@ -1176,7 +1460,7 @@
             "type": "integer"
           },
           "question": {
-            "maxLength": 1000,
+            "maxLength": 4000,
             "minLength": 1,
             "title": "Question",
             "type": "string"
@@ -1265,24 +1549,6 @@
           "content"
         ],
         "title": "FaqSourceResponse",
-        "type": "object"
-      },
-      "FeedbackRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "value": {
-            "enum": [
-              -1,
-              1
-            ],
-            "title": "Value",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "value"
-        ],
-        "title": "FeedbackRequest",
         "type": "object"
       },
       "FieldSpecResponse": {
@@ -2400,6 +2666,285 @@
         "title": "MembershipItem",
         "type": "object"
       },
+      "MessageRequest": {
+        "additionalProperties": false,
+        "description": "parent_id — ответ, за которым идёт вопрос (обычно — последний\nпоказанный). Ответ из середины ветки или null у непустого диалога —\nправка вопроса: появится новая версия, прежняя останется.",
+        "properties": {
+          "attachment_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "question": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question",
+          "parent_id"
+        ],
+        "title": "MessageRequest",
+        "type": "object"
+      },
+      "MessageResponse": {
+        "description": "Вопрос или ответ.\n\nstatus: complete; generating — ответ ещё пишется (поток или фоновая\nзадача; обновите диалог позже); stopped — остановлен сотрудником,\ncontent — что успело прийти; failed — не удалось (error_code:\ncredits_exhausted, llm_unavailable, timeout, interrupted, internal).\nsiblings — версии этого сообщения по порядку, включая его само\n(правки вопроса, «Ответить заново»); переключить — PUT …/current.\norigin, sources и оценка — только у ответа.",
+        "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentResponse"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "enum": [
+                  -1,
+                  1
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "feedback_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Comment"
+          },
+          "feedback_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inaccurate",
+                  "incomplete",
+                  "outdated",
+                  "wrong_source",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Reason"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerOrigin"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "siblings": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Siblings",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/MessageSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "generating",
+              "stopped",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "parent_id",
+          "role",
+          "content",
+          "status",
+          "origin",
+          "sources",
+          "attachments",
+          "error_code",
+          "feedback",
+          "feedback_reason",
+          "feedback_comment",
+          "siblings",
+          "created_at"
+        ],
+        "title": "MessageResponse",
+        "type": "object"
+      },
+      "MessageSourceResponse": {
+        "description": "Выдержка ответа. kind=attachment — из вложения сотрудника.\ncontent=null — документ удалён или недоступен смотрящему.",
+        "properties": {
+          "attachment_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "heading_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Heading Path",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "document",
+              "attachment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "material_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Id"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "heading_path",
+          "position",
+          "content",
+          "source_url",
+          "material_id",
+          "attachment_id"
+        ],
+        "title": "MessageSourceResponse",
+        "type": "object"
+      },
       "MfaChallenge": {
         "properties": {
           "email_hint": {
@@ -3175,6 +3720,21 @@
         "title": "SecurityResponse",
         "type": "object"
       },
+      "SelectMessageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "message_id": {
+            "format": "uuid",
+            "title": "Message Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id"
+        ],
+        "title": "SelectMessageRequest",
+        "type": "object"
+      },
       "SessionResponse": {
         "properties": {
           "current": {
@@ -3228,6 +3788,303 @@
           "current"
         ],
         "title": "SessionResponse",
+        "type": "object"
+      },
+      "ShareResponse": {
+        "description": "Ссылка на /shared/{token} в приложении; открывают коллеги по компании.",
+        "properties": {
+          "shared_at": {
+            "format": "date-time",
+            "title": "Shared At",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "shared_at"
+        ],
+        "title": "ShareResponse",
+        "type": "object"
+      },
+      "SharedConversationResponse": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageResponse"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "owner_name": {
+            "title": "Owner Name",
+            "type": "string"
+          },
+          "shared_at": {
+            "format": "date-time",
+            "title": "Shared At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "owner_name",
+          "shared_at",
+          "messages"
+        ],
+        "title": "SharedConversationResponse",
+        "type": "object"
+      },
+      "StreamDelta": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "delta",
+            "default": "delta",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "StreamDelta",
+        "type": "object"
+      },
+      "StreamDone": {
+        "description": "Итог: answer.content заменяет напечатанный текст (ссылки уже\nнормализованы, у общего ответа — пометка). siblings у answer пустой —\nверсии пришли в start.",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/MessageResponse"
+          },
+          "diagnostics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerDiagnosticsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "type": {
+            "const": "done",
+            "default": "done",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "StreamDone",
+        "type": "object"
+      },
+      "StreamError": {
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessageResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "answer"
+        ],
+        "title": "StreamError",
+        "type": "object"
+      },
+      "StreamOrigin": {
+        "description": "Ответ будет не по документам — плашку можно показать сразу.",
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/AnswerOrigin"
+          },
+          "type": {
+            "const": "origin",
+            "default": "origin",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin"
+        ],
+        "title": "StreamOrigin",
+        "type": "object"
+      },
+      "StreamReset": {
+        "description": "Показанный текст убрать: дальше пойдёт другой ответ.",
+        "properties": {
+          "type": {
+            "const": "reset",
+            "default": "reset",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "StreamReset",
+        "type": "object"
+      },
+      "StreamStage": {
+        "description": "searching — ищем в документах; writing — модель пишет ответ.",
+        "properties": {
+          "stage": {
+            "enum": [
+              "searching",
+              "writing"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "type": {
+            "const": "stage",
+            "default": "stage",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "StreamStage",
+        "type": "object"
+      },
+      "StreamStart": {
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/MessageResponse"
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationSummary"
+          },
+          "question": {
+            "$ref": "#/components/schemas/MessageResponse"
+          },
+          "type": {
+            "const": "start",
+            "default": "start",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation",
+          "question",
+          "answer"
+        ],
+        "title": "StreamStart",
+        "type": "object"
+      },
+      "SuggestionOrderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "SuggestionOrderRequest",
+        "type": "object"
+      },
+      "SuggestionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "SuggestionRequest",
+        "type": "object"
+      },
+      "SuggestionResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "SuggestionResponse",
+        "type": "object"
+      },
+      "SuggestionsResponse": {
+        "description": "company — заданные администратором; frequent — частые вопросы\nкомпании, обезличенно (не меньше трёх разных людей).",
+        "properties": {
+          "company": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestionResponse"
+            },
+            "title": "Company",
+            "type": "array"
+          },
+          "frequent": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Frequent",
+            "type": "array"
+          }
+        },
+        "required": [
+          "company",
+          "frequent"
+        ],
+        "title": "SuggestionsResponse",
         "type": "object"
       },
       "SwitchCompanyRequest": {
@@ -3709,6 +4566,80 @@
           "code"
         ],
         "title": "VerifyCodeRequest",
+        "type": "object"
+      },
+      "corp_ed__api__v1__schemas__chat__FeedbackRequest": {
+        "additionalProperties": false,
+        "description": "value=null — снять оценку. reason — только к -1.",
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "inaccurate",
+                  "incomplete",
+                  "outdated",
+                  "wrong_source",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "enum": [
+                  -1,
+                  1
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "FeedbackRequest",
+        "type": "object"
+      },
+      "corp_ed__api__v1__schemas__faq__FeedbackRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "enum": [
+              -1,
+              1
+            ],
+            "title": "Value",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "FeedbackRequest",
         "type": "object"
       }
     },
@@ -4551,6 +5482,95 @@
         "summary": "Start Totp Setup",
         "tags": [
           "account"
+        ]
+      }
+    },
+    "/api/v1/attachments": {
+      "post": {
+        "description": "Файл к следующему вопросу: id передать в attachment_ids вопроса.\n\nХранится только текст файла и только вместе с диалогом; не\nотправленный с вопросом удаляется через сутки.",
+        "operationId": "upload_attachment_api_v1_attachments_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_attachment_api_v1_attachments_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Attachment",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/attachments/{attachment_id}": {
+      "delete": {
+        "description": "Убрать файл из ещё не отправленного вопроса.",
+        "operationId": "delete_attachment_api_v1_attachments__attachment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "attachment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Attachment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Attachment",
+        "tags": [
+          "chat"
         ]
       }
     },
@@ -6032,6 +7052,714 @@
         ]
       }
     },
+    "/api/v1/conversations": {
+      "get": {
+        "description": "Свои диалоги. q — поиск по названию и тексту вопросов и ответов.",
+        "operationId": "list_conversations_api_v1_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Conversations",
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "description": "Новый диалог с первым вопросом; название — по вопросу.",
+        "operationId": "start_conversation_api_v1_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatStreamEvent"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Поток text/event-stream: строки «data: <ChatStreamEvent>». Первым — start, последним — done или error. Разорванное соединение ответ не останавливает: он допишется и сохранится; остановить — POST …/stop."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/shared/{token}": {
+      "get": {
+        "description": "Диалог, которым поделился коллега по компании (только чтение).",
+        "operationId": "shared_conversation_api_v1_conversations_shared__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Shared Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}": {
+      "delete": {
+        "description": "Удалить диалог со всеми ветками и вложениями. Журнал вопросов\n(обезличенная статистика) остаётся.",
+        "operationId": "delete_conversation_api_v1_conversations__conversation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Conversation",
+        "tags": [
+          "chat"
+        ]
+      },
+      "get": {
+        "operationId": "get_conversation_api_v1_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Conversation",
+        "tags": [
+          "chat"
+        ]
+      },
+      "patch": {
+        "description": "Переименовать, закрепить или открепить.",
+        "operationId": "update_conversation_api_v1_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/current": {
+      "put": {
+        "description": "Показать другую версию сообщения (стрелки ‹ 1/2 ›).",
+        "operationId": "select_version_api_v1_conversations__conversation_id__current_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelectMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Select Version",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/messages": {
+      "post": {
+        "description": "Вопрос в диалоге или правка вопроса (см. MessageRequest).",
+        "operationId": "ask_api_v1_conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatStreamEvent"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Поток text/event-stream: строки «data: <ChatStreamEvent>». Первым — start, последним — done или error. Разорванное соединение ответ не останавливает: он допишется и сохранится; остановить — POST …/stop."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ask",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/messages/{message_id}/feedback": {
+      "put": {
+        "description": "👍/👎 и «что не так». Администратор видит оценки только обезличенно.",
+        "operationId": "rate_api_v1_conversations__conversation_id__messages__message_id__feedback_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/corp_ed__api__v1__schemas__chat__FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rate",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/messages/{message_id}/regenerate": {
+      "post": {
+        "description": "«Ответить заново» на вопрос message_id: прежний ответ — версия.",
+        "operationId": "regenerate_api_v1_conversations__conversation_id__messages__message_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatStreamEvent"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Поток text/event-stream: строки «data: <ChatStreamEvent>». Первым — start, последним — done или error. Разорванное соединение ответ не останавливает: он допишется и сохранится; остановить — POST …/stop."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Regenerate",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/messages/{message_id}/stop": {
+      "post": {
+        "description": "«Остановить»: ответ сохранится таким, каким успел быть. Уже готовый\nответ — без изменений, тоже 204.",
+        "operationId": "stop_api_v1_conversations__conversation_id__messages__message_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "message_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Message Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Stop",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/share": {
+      "delete": {
+        "description": "Закрыть ссылку: она перестанет открываться.",
+        "operationId": "unshare_api_v1_conversations__conversation_id__share_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Unshare",
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "description": "Ссылка для коллег по компании на то, что видно сейчас. Повторно —\nобновить снимок, ссылка та же.",
+        "operationId": "share_api_v1_conversations__conversation_id__share_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Share",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
     "/api/v1/departments": {
       "get": {
         "description": "Отделы компании — всем её людям: выбрать свой в профиле, отобрать\nколлег в справочнике (ТЗ §4).",
@@ -6225,7 +7953,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FeedbackRequest"
+                "$ref": "#/components/schemas/corp_ed__api__v1__schemas__faq__FeedbackRequest"
               }
             }
           },
@@ -7367,6 +9095,224 @@
         "summary": "Update Person",
         "tags": [
           "people"
+        ]
+      }
+    },
+    "/api/v1/suggestions": {
+      "get": {
+        "description": "Подсказки для пустого экрана: от администратора и частые вопросы\nкомпании (обезличенно, не меньше трёх разных людей).",
+        "operationId": "list_suggestions_api_v1_suggestions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Suggestions",
+        "tags": [
+          "chat"
+        ]
+      },
+      "post": {
+        "operationId": "create_suggestion_api_v1_suggestions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Suggestion",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/suggestions/order": {
+      "put": {
+        "operationId": "reorder_suggestions_api_v1_suggestions_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuggestionResponse"
+                  },
+                  "title": "Response Reorder Suggestions Api V1 Suggestions Order Put",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reorder Suggestions",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/suggestions/{suggestion_id}": {
+      "delete": {
+        "operationId": "delete_suggestion_api_v1_suggestions__suggestion_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Suggestion",
+        "tags": [
+          "chat"
+        ]
+      },
+      "patch": {
+        "operationId": "update_suggestion_api_v1_suggestions__suggestion_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "suggestion_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Suggestion Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Suggestion",
+        "tags": [
+          "chat"
         ]
       }
     },

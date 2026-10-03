@@ -392,6 +392,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Attachment
+         * @description Файл к следующему вопросу: id передать в attachment_ids вопроса.
+         *
+         *     Хранится только текст файла и только вместе с диалогом; не
+         *     отправленный с вопросом удаляется через сутки.
+         */
+        post: operations["upload_attachment_api_v1_attachments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/attachments/{attachment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Attachment
+         * @description Убрать файл из ещё не отправленного вопроса.
+         */
+        delete: operations["delete_attachment_api_v1_attachments__attachment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/audit": {
         parameters: {
             query?: never;
@@ -1023,6 +1066,202 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Conversations
+         * @description Свои диалоги. q — поиск по названию и тексту вопросов и ответов.
+         */
+        get: operations["list_conversations_api_v1_conversations_get"];
+        put?: never;
+        /**
+         * Start Conversation
+         * @description Новый диалог с первым вопросом; название — по вопросу.
+         */
+        post: operations["start_conversation_api_v1_conversations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/shared/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Shared Conversation
+         * @description Диалог, которым поделился коллега по компании (только чтение).
+         */
+        get: operations["shared_conversation_api_v1_conversations_shared__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Conversation */
+        get: operations["get_conversation_api_v1_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Conversation
+         * @description Удалить диалог со всеми ветками и вложениями. Журнал вопросов
+         *     (обезличенная статистика) остаётся.
+         */
+        delete: operations["delete_conversation_api_v1_conversations__conversation_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Conversation
+         * @description Переименовать, закрепить или открепить.
+         */
+        patch: operations["update_conversation_api_v1_conversations__conversation_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Select Version
+         * @description Показать другую версию сообщения (стрелки ‹ 1/2 ›).
+         */
+        put: operations["select_version_api_v1_conversations__conversation_id__current_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask
+         * @description Вопрос в диалоге или правка вопроса (см. MessageRequest).
+         */
+        post: operations["ask_api_v1_conversations__conversation_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/messages/{message_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rate
+         * @description 👍/👎 и «что не так». Администратор видит оценки только обезличенно.
+         */
+        put: operations["rate_api_v1_conversations__conversation_id__messages__message_id__feedback_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/messages/{message_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate
+         * @description «Ответить заново» на вопрос message_id: прежний ответ — версия.
+         */
+        post: operations["regenerate_api_v1_conversations__conversation_id__messages__message_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/messages/{message_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop
+         * @description «Остановить»: ответ сохранится таким, каким успел быть. Уже готовый
+         *     ответ — без изменений, тоже 204.
+         */
+        post: operations["stop_api_v1_conversations__conversation_id__messages__message_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Share
+         * @description Ссылка для коллег по компании на то, что видно сейчас. Повторно —
+         *     обновить снимок, ссылка та же.
+         */
+        post: operations["share_api_v1_conversations__conversation_id__share_post"];
+        /**
+         * Unshare
+         * @description Закрыть ссылку: она перестанет открываться.
+         */
+        delete: operations["unshare_api_v1_conversations__conversation_id__share_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/departments": {
         parameters: {
             query?: never;
@@ -1472,6 +1711,63 @@ export interface paths {
         patch: operations["update_person_api_v1_people__member_id__patch"];
         trace?: never;
     };
+    "/api/v1/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Suggestions
+         * @description Подсказки для пустого экрана: от администратора и частые вопросы
+         *     компании (обезличенно, не меньше трёх разных людей).
+         */
+        get: operations["list_suggestions_api_v1_suggestions_get"];
+        put?: never;
+        /** Create Suggestion */
+        post: operations["create_suggestion_api_v1_suggestions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/suggestions/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder Suggestions */
+        put: operations["reorder_suggestions_api_v1_suggestions_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/suggestions/{suggestion_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Suggestion */
+        delete: operations["delete_suggestion_api_v1_suggestions__suggestion_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Suggestion */
+        patch: operations["update_suggestion_api_v1_suggestions__suggestion_id__patch"];
+        trace?: never;
+    };
     "/api/v1/usage": {
         parameters: {
             query?: never;
@@ -1624,6 +1920,27 @@ export interface components {
          * @enum {string}
          */
         AnswerOrigin: "documents" | "general_knowledge" | "none";
+        /** AskRequest */
+        AskRequest: {
+            /** Attachment Ids */
+            attachment_ids?: string[];
+            /** Question */
+            question: string;
+        };
+        /** AttachmentResponse */
+        AttachmentResponse: {
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Size */
+            size: number;
+            /** Tokens */
+            tokens: number;
+        };
         /** AuditEventResponse */
         AuditEventResponse: {
             /** Action */
@@ -1663,6 +1980,14 @@ export interface components {
             /** Backup Codes */
             backup_codes: string[] | null;
         };
+        /** Body_upload_attachment_api_v1_attachments_post */
+        Body_upload_attachment_api_v1_attachments_post: {
+            /**
+             * File
+             * @description docx, doc, xlsx, pptx, pdf, txt или md, до 10 МБ
+             */
+            file: string;
+        };
         /** Body_upload_avatar_api_v1_account_avatar_put */
         Body_upload_avatar_api_v1_account_avatar_put: {
             /**
@@ -1688,6 +2013,11 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /**
+         * ChatStreamEvent
+         * @description Событие потока ответа.
+         */
+        ChatStreamEvent: components["schemas"]["StreamStart"] | components["schemas"]["StreamStage"] | components["schemas"]["StreamOrigin"] | components["schemas"]["StreamDelta"] | components["schemas"]["StreamReset"] | components["schemas"]["StreamDone"] | components["schemas"]["StreamError"];
         /** CompanyRequestCreate */
         CompanyRequestCreate: {
             /** Comment */
@@ -1858,6 +2188,80 @@ export interface components {
             status?: components["schemas"]["ConnectorStatus"] | null;
             /** Sync Interval Minutes */
             sync_interval_minutes?: number | null;
+        };
+        /**
+         * ConversationListResponse
+         * @description Закреплённые — первыми (только на первой странице), затем по
+         *     активности. next_before — передать в before за следующей страницей.
+         */
+        ConversationListResponse: {
+            /** Items */
+            items: components["schemas"]["ConversationSummary"][];
+            /** Next Before */
+            next_before: string | null;
+        };
+        /**
+         * ConversationResponse
+         * @description Диалог: показанная ветка от первого вопроса до current_message_id.
+         */
+        ConversationResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Message Id */
+            current_message_id: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Messages */
+            messages: components["schemas"]["MessageResponse"][];
+            /** Pinned */
+            pinned: boolean;
+            share: components["schemas"]["ShareResponse"] | null;
+            /** Shared */
+            shared: boolean;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ConversationSummary */
+        ConversationSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Pinned */
+            pinned: boolean;
+            /** Shared */
+            shared: boolean;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ConversationUpdateRequest */
+        ConversationUpdateRequest: {
+            /** Pinned */
+            pinned?: boolean | null;
+            /** Title */
+            title?: string | null;
         };
         /**
          * CredentialsRequest
@@ -2066,14 +2470,6 @@ export interface components {
             source_url?: string | null;
             /** Title */
             title: string;
-        };
-        /** FeedbackRequest */
-        FeedbackRequest: {
-            /**
-             * Value
-             * @enum {integer}
-             */
-            value: -1 | 1;
         };
         /** FieldSpecResponse */
         FieldSpecResponse: {
@@ -2521,6 +2917,99 @@ export interface components {
              */
             tenant_id: string;
         };
+        /**
+         * MessageRequest
+         * @description parent_id — ответ, за которым идёт вопрос (обычно — последний
+         *     показанный). Ответ из середины ветки или null у непустого диалога —
+         *     правка вопроса: появится новая версия, прежняя останется.
+         */
+        MessageRequest: {
+            /** Attachment Ids */
+            attachment_ids?: string[];
+            /** Parent Id */
+            parent_id: string | null;
+            /** Question */
+            question: string;
+        };
+        /**
+         * MessageResponse
+         * @description Вопрос или ответ.
+         *
+         *     status: complete; generating — ответ ещё пишется (поток или фоновая
+         *     задача; обновите диалог позже); stopped — остановлен сотрудником,
+         *     content — что успело прийти; failed — не удалось (error_code:
+         *     credits_exhausted, llm_unavailable, timeout, interrupted, internal).
+         *     siblings — версии этого сообщения по порядку, включая его само
+         *     (правки вопроса, «Ответить заново»); переключить — PUT …/current.
+         *     origin, sources и оценка — только у ответа.
+         */
+        MessageResponse: {
+            /** Attachments */
+            attachments: components["schemas"]["AttachmentResponse"][];
+            /** Content */
+            content: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error Code */
+            error_code: string | null;
+            /** Feedback */
+            feedback: (-1 | 1) | null;
+            /** Feedback Comment */
+            feedback_comment: string | null;
+            /** Feedback Reason */
+            feedback_reason: ("inaccurate" | "incomplete" | "outdated" | "wrong_source" | "other") | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            origin: components["schemas"]["AnswerOrigin"] | null;
+            /** Parent Id */
+            parent_id: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Siblings */
+            siblings: string[];
+            /** Sources */
+            sources: components["schemas"]["MessageSourceResponse"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "complete" | "generating" | "stopped" | "failed";
+        };
+        /**
+         * MessageSourceResponse
+         * @description Выдержка ответа. kind=attachment — из вложения сотрудника.
+         *     content=null — документ удалён или недоступен смотрящему.
+         */
+        MessageSourceResponse: {
+            /** Attachment Id */
+            attachment_id: string | null;
+            /** Content */
+            content: string | null;
+            /** Heading Path */
+            heading_path: string[];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "document" | "attachment";
+            /** Material Id */
+            material_id: string | null;
+            /** Position */
+            position: number;
+            /** Source Url */
+            source_url: string | null;
+            /** Title */
+            title: string;
+        };
         /** MfaChallenge */
         MfaChallenge: {
             /** Email Hint */
@@ -2783,6 +3272,14 @@ export interface components {
             /** Totp Enabled */
             totp_enabled: boolean;
         };
+        /** SelectMessageRequest */
+        SelectMessageRequest: {
+            /**
+             * Message Id
+             * Format: uuid
+             */
+            message_id: string;
+        };
         /** SessionResponse */
         SessionResponse: {
             /** Current */
@@ -2806,6 +3303,152 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
+        };
+        /**
+         * ShareResponse
+         * @description Ссылка на /shared/{token} в приложении; открывают коллеги по компании.
+         */
+        ShareResponse: {
+            /**
+             * Shared At
+             * Format: date-time
+             */
+            shared_at: string;
+            /** Token */
+            token: string;
+        };
+        /** SharedConversationResponse */
+        SharedConversationResponse: {
+            /** Messages */
+            messages: components["schemas"]["MessageResponse"][];
+            /** Owner Name */
+            owner_name: string;
+            /**
+             * Shared At
+             * Format: date-time
+             */
+            shared_at: string;
+            /** Title */
+            title: string;
+        };
+        /** StreamDelta */
+        StreamDelta: {
+            /** Text */
+            text: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delta";
+        };
+        /**
+         * StreamDone
+         * @description Итог: answer.content заменяет напечатанный текст (ссылки уже
+         *     нормализованы, у общего ответа — пометка). siblings у answer пустой —
+         *     версии пришли в start.
+         */
+        StreamDone: {
+            answer: components["schemas"]["MessageResponse"];
+            diagnostics?: components["schemas"]["AnswerDiagnosticsResponse"] | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "done";
+        };
+        /** StreamError */
+        StreamError: {
+            answer: components["schemas"]["MessageResponse"] | null;
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "error";
+        };
+        /**
+         * StreamOrigin
+         * @description Ответ будет не по документам — плашку можно показать сразу.
+         */
+        StreamOrigin: {
+            origin: components["schemas"]["AnswerOrigin"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "origin";
+        };
+        /**
+         * StreamReset
+         * @description Показанный текст убрать: дальше пойдёт другой ответ.
+         */
+        StreamReset: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reset";
+        };
+        /**
+         * StreamStage
+         * @description searching — ищем в документах; writing — модель пишет ответ.
+         */
+        StreamStage: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "searching" | "writing";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "stage";
+        };
+        /** StreamStart */
+        StreamStart: {
+            answer: components["schemas"]["MessageResponse"];
+            conversation: components["schemas"]["ConversationSummary"];
+            question: components["schemas"]["MessageResponse"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "start";
+        };
+        /** SuggestionOrderRequest */
+        SuggestionOrderRequest: {
+            /** Ids */
+            ids: string[];
+        };
+        /** SuggestionRequest */
+        SuggestionRequest: {
+            /** Text */
+            text: string;
+        };
+        /** SuggestionResponse */
+        SuggestionResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * SuggestionsResponse
+         * @description company — заданные администратором; frequent — частые вопросы
+         *     компании, обезличенно (не меньше трёх разных людей).
+         */
+        SuggestionsResponse: {
+            /** Company */
+            company: components["schemas"]["SuggestionResponse"][];
+            /** Frequent */
+            frequent: string[];
         };
         /** SwitchCompanyRequest */
         SwitchCompanyRequest: {
@@ -3005,6 +3648,26 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /**
+         * FeedbackRequest
+         * @description value=null — снять оценку. reason — только к -1.
+         */
+        corp_ed__api__v1__schemas__chat__FeedbackRequest: {
+            /** Comment */
+            comment?: string | null;
+            /** Reason */
+            reason?: ("inaccurate" | "incomplete" | "outdated" | "wrong_source" | "other") | null;
+            /** Value */
+            value: (-1 | 1) | null;
+        };
+        /** FeedbackRequest */
+        corp_ed__api__v1__schemas__faq__FeedbackRequest: {
+            /**
+             * Value
+             * @enum {integer}
+             */
+            value: -1 | 1;
         };
     };
     responses: never;
@@ -3628,6 +4291,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TotpSetupResponse"];
+                };
+            };
+        };
+    };
+    upload_attachment_api_v1_attachments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_attachment_api_v1_attachments_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttachmentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_attachment_api_v1_attachments__attachment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attachment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4633,6 +5358,427 @@ export interface operations {
             };
         };
     };
+    list_conversations_api_v1_conversations_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_conversation_api_v1_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskRequest"];
+            };
+        };
+        responses: {
+            /** @description Поток text/event-stream: строки «data: <ChatStreamEvent>». Первым — start, последним — done или error. Разорванное соединение ответ не останавливает: он допишется и сохранится; остановить — POST …/stop. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatStreamEvent"];
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_conversation_api_v1_conversations_shared__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_conversation_api_v1_conversations__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_conversation_api_v1_conversations__conversation_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_conversation_api_v1_conversations__conversation_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    select_version_api_v1_conversations__conversation_id__current_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelectMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_api_v1_conversations__conversation_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Поток text/event-stream: строки «data: <ChatStreamEvent>». Первым — start, последним — done или error. Разорванное соединение ответ не останавливает: он допишется и сохранится; остановить — POST …/stop. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatStreamEvent"];
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rate_api_v1_conversations__conversation_id__messages__message_id__feedback_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["corp_ed__api__v1__schemas__chat__FeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_api_v1_conversations__conversation_id__messages__message_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Поток text/event-stream: строки «data: <ChatStreamEvent>». Первым — start, последним — done или error. Разорванное соединение ответ не останавливает: он допишется и сохранится; остановить — POST …/stop. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatStreamEvent"];
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_api_v1_conversations__conversation_id__messages__message_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    share_api_v1_conversations__conversation_id__share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unshare_api_v1_conversations__conversation_id__share_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_departments_api_v1_departments_get: {
         parameters: {
             query?: never;
@@ -4761,7 +5907,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["FeedbackRequest"];
+                "application/json": components["schemas"]["corp_ed__api__v1__schemas__faq__FeedbackRequest"];
             };
         };
         responses: {
@@ -5519,6 +6665,156 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PersonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_suggestions_api_v1_suggestions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionsResponse"];
+                };
+            };
+        };
+    };
+    create_suggestion_api_v1_suggestions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reorder_suggestions_api_v1_suggestions_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_suggestion_api_v1_suggestions__suggestion_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_suggestion_api_v1_suggestions__suggestion_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestionResponse"];
                 };
             };
             /** @description Validation Error */

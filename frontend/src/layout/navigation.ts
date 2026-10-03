@@ -2,6 +2,7 @@ import {
   BookA,
   ChartColumn,
   FileText,
+  Lightbulb,
   Network,
   Plug,
   ScrollText,
@@ -24,6 +25,7 @@ export const ADMIN_SECTIONS: NavSection[] = [
   { to: "/admin/departments", label: "Отделы", icon: Network },
   { to: "/admin/gaps", label: "Пробелы в документах", icon: SearchX },
   { to: "/admin/glossary", label: "Глоссарий", icon: BookA },
+  { to: "/admin/suggestions", label: "Подсказки", icon: Lightbulb },
   { to: "/admin/usage", label: "Лимит вопросов", icon: ChartColumn },
   { to: "/admin/audit", label: "Журнал действий", icon: ScrollText },
 ];
