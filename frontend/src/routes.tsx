@@ -10,10 +10,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { PageSpinner } from "./ui/Spinner";
 
-// Управление нужно только администраторам — отдельным чанком.
-const AdminLayout = lazy(() =>
-  import("./layout/AdminLayout").then((m) => ({ default: m.AdminLayout })),
-);
+// Управление нужно только администраторам — отдельными чанками; его
+// разделы — в боковой панели оболочки (layout/Sidebar.tsx).
 const DocumentsPage = lazy(() =>
   import("./admin/DocumentsPage").then((m) => ({ default: m.DocumentsPage })),
 );
@@ -68,20 +66,15 @@ export const routes: RouteObject[] = [
             path: "/admin",
             element: <RequireAdmin />,
             children: [
-              {
-                element: lazyPage(<AdminLayout />),
-                children: [
-                  { index: true, element: <Navigate to="documents" replace /> },
-                  { path: "documents", element: lazyPage(<DocumentsPage />) },
-                  { path: "connectors", element: lazyPage(<ConnectorsPage />) },
-                  { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },
-                  { path: "users", element: lazyPage(<UsersPage />) },
-                  { path: "gaps", element: lazyPage(<GapsPage />) },
-                  { path: "glossary", element: lazyPage(<GlossaryPage />) },
-                  { path: "usage", element: lazyPage(<UsagePage />) },
-                  { path: "audit", element: lazyPage(<AuditPage />) },
-                ],
-              },
+              { index: true, element: <Navigate to="documents" replace /> },
+              { path: "documents", element: lazyPage(<DocumentsPage />) },
+              { path: "connectors", element: lazyPage(<ConnectorsPage />) },
+              { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },
+              { path: "users", element: lazyPage(<UsersPage />) },
+              { path: "gaps", element: lazyPage(<GapsPage />) },
+              { path: "glossary", element: lazyPage(<GlossaryPage />) },
+              { path: "usage", element: lazyPage(<UsagePage />) },
+              { path: "audit", element: lazyPage(<AuditPage />) },
             ],
           },
           { path: "*", element: <NotFoundPage /> },
