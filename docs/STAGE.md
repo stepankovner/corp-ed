@@ -361,6 +361,51 @@ ssh-keygen -t ed25519 -N "" -C kronto-stage-deploy -f kronto-stage-deploy
 мониторинг (тревоги). Сначала проверьте, что Telegram доступен с сервера
 (RISKS №50): `curl -m 10 -sS https://api.telegram.org -o /dev/null && echo ok`.
 
+### 4.5а. Письма: ящик Яндекс 360 (ТЗ §3)
+
+С 03.10 регистрация подтверждается кодом из письма, пароль
+восстанавливается по почте, приглашённые получают письма. Без ящика
+письма пишутся только в журнал API, и зарегистрироваться на стенде
+нельзя. Нужно один раз:
+
+1. **Ящик.** В организации Яндекс 360 домена krontoai.ru — отдельный
+   ящик, например `noreply@krontoai.ru` (это ещё один сотрудник
+   организации; если на тарифе это платно — подойдёт любой существующий
+   ящик на krontoai.ru).
+2. **Почтовые программы.** Войти в этот ящик → Почта → Все настройки →
+   Почтовые программы: разрешить доступ по протоколу IMAP/SMTP с паролем
+   приложения.
+3. **Пароль приложения.** Яндекс ID этого ящика → Безопасность →
+   Пароли приложений → «Почта» → придумать название (`kronto stage`) →
+   пароль покажут один раз
+   ([справка](https://yandex.ru/support/yandex-360/customers/mail/ru/mail-clients/others)).
+   **В чат пароль не присылать.**
+4. **Вписать на сервере** — как ключи Yandex Cloud (§4.5):
+   ```bash
+   ssh root@<IP>
+   nano /opt/kronto/.env
+   # дописать в конец (значения — без пробелов и кавычек):
+   MAIL_BACKEND=smtp
+   MAIL_SMTP_HOST=smtp.yandex.ru
+   MAIL_SMTP_PORT=465
+   MAIL_SMTP_SECURITY=ssl
+   MAIL_SMTP_USERNAME=noreply@krontoai.ru
+   MAIL_SMTP_PASSWORD=<пароль приложения>
+   MAIL_FROM_ADDRESS=noreply@krontoai.ru
+   MAIL_SITE_URL=https://stage.krontoai.ru
+   # сохранить: Ctrl+O, Enter; выйти: Ctrl+X
+   cd /opt/kronto && sudo -u deploy docker compose -f compose.yaml up -d
+   ```
+5. **Проверить:** зарегистрироваться на https://stage.krontoai.ru своей
+   почтой — код придёт за несколько секунд. Не пришёл — `docker logs
+   kronto-worker-1 --since 10m 2>&1 | grep mail_` (`smtp_auth` — пароль
+   приложения, `smtp_unavailable` — сеть, `smtp_5xx` — Яндекс отказал).
+
+Лимит Яндекса — 300 писем в сутки с ящика через SMTP
+([справка](https://yandex.ru/support/yandex-360/business/mail/ru/web/letter/create/send-many-letters.html)).
+Для стенда и пилота с запасом; при росте — сервис рассылок, меняется
+теми же `MAIL_*` без правки кода.
+
 ### 4.6. Настройки GitHub
 
 Всё делается на странице репозитория → **Settings**. Нужны права
@@ -411,13 +456,22 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
 # тариф по умолчанию — «Базовый» (до 5 подключений); другой: --tariff extended | enterprise
 ```
 
+Если у почты уже есть учётка kronto (человек зарегистрировался сам),
+пароль не спросят: учётка просто станет администратором новой компании.
+
 Не получается войти: «Неверный логин или пароль» сервис отвечает на любую
 ошибку, причину пишет в журнал — `docker logs kronto-api-1 --since 1h 2>&1
-| grep login_failed` (`reason`: `unknown_or_inactive_company` — код
-компании, `unknown_user` — почта, `wrong_password` — пароль). Учтите, что
-форма входа подставляет код компании прошлого входа. Пароль забыт —
-`… python -m corp_ed.cli reset-password --code demo --email <почта>` (как
-выше, через `sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api`).
+| grep login_failed` (`reason`: `unknown_account` — такой почты нет,
+`wrong_password` — пароль). С 03.10 вход — только почта и пароль, без
+кода компании. Пароль забыт — «Забыли пароль?» на форме входа (нужен
+ящик, §4.5а); без ящика — `… python -m corp_ed.cli reset-password --email
+<почта>` (как выше, через `sudo -u deploy docker compose -f compose.yaml
+run --rm --no-deps api`).
+
+**Заявки «Подключить компанию»** (человек зарегистрировался сам и
+попросил подключить компанию): `… python -m corp_ed.cli requests list`,
+затем `requests approve --id <id> [--seats 30] [--tariff extended]` или
+`requests reject --id <id>` — заявителю уходит письмо.
 
 ### 4.8. Автовозобновление сервера (Selectel → GitHub)
 
