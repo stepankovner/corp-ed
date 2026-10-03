@@ -211,6 +211,7 @@ docs/             документация, см. ниже
 | [`docs/RISKS.md`](docs/RISKS.md) | что известно и не закрыто |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | модель угроз, меры с тестами, OWASP, чек-лист пентеста |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | роли базы, переменные, прокси, cron, бэкапы, ротация ключей |
+| [`docs/OAUTH-SETUP.md`](docs/OAUTH-SETUP.md) | приложения Яндекс 360 и Битрикс24 для подключений сотрудников: пошагово для владельца и администратора клиента |
 | [`docs/STAGE.md`](docs/STAGE.md) | тестовый стенд: прерываемый сервер Selectel, первичная настройка, выкатка из GitHub Actions, мониторинг, автовозобновление, правила |
 | [`docs/CI-RUNNER.md`](docs/CI-RUNNER.md) | свой runner GitHub Actions: ВМ Timeweb, `setup.sh`, переключение переменной `RUNS_ON`, откат, безопасность |
 | [`docs/STAGE-TESTING.md`](docs/STAGE-TESTING.md) | тестирование стенда: логика и работоспособность, качество ответов, что исправлено и что открыто |

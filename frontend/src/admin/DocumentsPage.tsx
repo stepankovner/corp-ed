@@ -276,7 +276,7 @@ export function DocumentsPage() {
     <>
       <div className={styles.tabHead}>
         <p className={styles.tabIntro}>
-          По этим документам Kronto отвечает сотрудникам. Папка решает, кому они видны, а файлы из
+          По этим документам kronto отвечает сотрудникам. Папка решает, кому они видны, а файлы из
           подключений появляются здесь сами после синхронизации.
         </p>
         <div className={styles.tabActions}>

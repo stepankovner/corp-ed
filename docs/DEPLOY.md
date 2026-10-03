@@ -76,7 +76,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется |
-| OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — страница фронта «Мои источники» |
+| OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — `/sources`, фронт переводит на «Настройки → Мои подключения» |
 
 `.env` лежит рядом с `compose.yaml`, права `600`, в репозиторий не
 попадает (`.gitignore`). Секреты в переменных окружения видны в
@@ -218,7 +218,7 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
 - **OAuth коннекторов** (`per_user`): `CONNECTOR_OAUTH_CALLBACK_URL` =
   `https://<имя>/api/v1/connectors/oauth/callback`,
   `CONNECTOR_OAUTH_RETURN_URL` = `https://<имя>/sources` — страница
-  «Мои источники», она показывает итог подключения.
+  «Мои подключения» (`/sources` переводит туда), она показывает итог подключения.
 
 ---
 

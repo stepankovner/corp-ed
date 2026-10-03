@@ -61,7 +61,7 @@ export function ConnectorsPage() {
       <div className={styles.tabHead}>
         <div className={styles.tabIntro}>
           <p>
-            Kronto сам забирает документы из этих систем и обновляет их по расписанию: Битрикс24,
+            kronto сам забирает документы из этих систем и обновляет их по расписанию: Битрикс24,
             Яндекс 360, Confluence.
           </p>
           {tariff.data ? (
@@ -142,7 +142,7 @@ export function ConnectorsPage() {
           {perUser ? (
             <p className={`muted ${styles.below}`}>
               Туда, где каждый входит своим аккаунтом, сотрудники подключаются сами — в{" "}
-              <Link to="/settings/connections">«Настройки → Мои подключения»</Link>. Kronto видит
+              <Link to="/settings/connections">«Настройки → Мои подключения»</Link>. kronto видит
               там только то, что доступно самому сотруднику.
             </p>
           ) : null}
