@@ -1,15 +1,15 @@
 import { Navigate, Outlet, useParams } from "react-router";
 
-import { useDocumentTitle } from "../lib/title";
 import { LinkTabs } from "../ui/LinkTabs";
 import { Page, PageHeader } from "../ui/Page";
 
 /**
  * «Источники» в одном месте (ТЗ §5): загруженные файлы по папкам и
- * подключённые системы — вкладками, у каждой свой адрес.
+ * подключённые системы — вкладками, у каждой свой адрес. Заголовок вкладки
+ * браузера ставят сами вкладки («Файлы», «Подключения»): эффект родителя
+ * срабатывает после дочернего и затирал бы его.
  */
 export function SourcesPage() {
-  useDocumentTitle("Источники");
   return (
     <Page>
       <PageHeader

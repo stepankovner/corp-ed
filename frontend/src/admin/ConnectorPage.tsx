@@ -28,6 +28,7 @@ import {
 import {
   CONNECTOR_STATUS,
   filled,
+  grantsLabel,
   intervalLabel,
   MODE_LABEL,
   secretFields,
@@ -192,7 +193,13 @@ function ConnectorView({
             {connector.name} <Badge tone={status.tone}>{status.label}</Badge>
           </span>
         }
-        description={`${MODE_LABEL[connector.mode]} · ${intervalLabel(connector.sync_interval_minutes)}`}
+        description={[
+          MODE_LABEL[connector.mode],
+          intervalLabel(connector.sync_interval_minutes),
+          grantsLabel(connector)?.toLowerCase(),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           <>
             <Button variant="ghost" size="sm" busy={test.isPending} onClick={() => test.mutate()}>
@@ -231,7 +238,7 @@ function ConnectorView({
                 <>
                   {" "}
                   — проверка идёт от вашего имени: сначала подключите свой аккаунт в{" "}
-                  <Link to="/sources">«Моих источниках»</Link>.
+                  <Link to="/settings/connections">«Настройки → Мои подключения»</Link>.
                 </>
               ) : null}
             </Notice>
