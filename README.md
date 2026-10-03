@@ -163,7 +163,9 @@ uv run pre-commit install   # один раз
 сборка и запуск образа не под root, проверки и сквозные тесты
 фронтенда. **Security** (по push и еженедельно) — pip-audit, npm audit,
 gitleaks, CodeQL (Python и TypeScript), Trivy по образам и конфигурации,
-SBOM. С 30.09 задания CodeQL падают на каждом коммите: репозиторий стал
+SBOM. Исполнитель — машины GitHub или свой runner: переменная
+`RUNS_ON`, [`docs/CI-RUNNER.md`](docs/CI-RUNNER.md). С 30.09 задания
+CodeQL падают на каждом коммите: репозиторий стал
 приватным, а сканированию кода в приватном репозитории нужен платный
 GitHub Code Security — решение владельца ждёт (оплатить, заменить на
 Semgrep или убрать).
@@ -203,6 +205,7 @@ docs/             документация, см. ниже
 | [`docs/SECURITY.md`](docs/SECURITY.md) | модель угроз, меры с тестами, OWASP, чек-лист пентеста |
 | [`docs/DEPLOY.md`](docs/DEPLOY.md) | роли базы, переменные, прокси, cron, бэкапы, ротация ключей |
 | [`docs/STAGE.md`](docs/STAGE.md) | тестовый стенд: прерываемый сервер Selectel, первичная настройка, выкатка из GitHub Actions, мониторинг, автовозобновление, правила |
+| [`docs/CI-RUNNER.md`](docs/CI-RUNNER.md) | свой runner GitHub Actions: ВМ Timeweb, `setup.sh`, переключение переменной `RUNS_ON`, откат, безопасность |
 | [`docs/STAGE-TESTING.md`](docs/STAGE-TESTING.md) | тестирование стенда: логика и работоспособность, качество ответов, что исправлено и что открыто |
 | [`docs/CONNECTORS-RESEARCH.md`](docs/CONNECTORS-RESEARCH.md) | исследование перед коннекторами: как у других, что API отдают по правам |
 | [`docs/MONITORING-RESEARCH.md`](docs/MONITORING-RESEARCH.md) | исследование перед мониторингом: сценарии отказов, варианты по слоям, ограничения в РФ |
