@@ -44,7 +44,7 @@ export function EmptyState({
 }) {
   return (
     <div className={styles.empty}>
-      {icon}
+      {icon ? <span className={styles.emptyIcon}>{icon}</span> : null}
       <p className={styles.emptyTitle}>{title}</p>
       {children}
     </div>

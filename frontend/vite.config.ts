@@ -46,7 +46,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    css: { modules: { classNameStrategy: "non-scoped" } },
+    // Стили в тестах не нужны; ?raw — текст файла для проверок токенов.
+    css: { include: [/\.css\?raw$/], modules: { classNameStrategy: "non-scoped" } },
     include: ["src/**/*.test.{ts,tsx}"],
   },
 });

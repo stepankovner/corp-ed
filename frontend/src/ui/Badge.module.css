@@ -19,8 +19,8 @@
   color: var(--muted);
 }
 .ok {
-  background: var(--ok-bg);
-  color: var(--ok-ink);
+  background: var(--success-bg);
+  color: var(--success);
 }
 .error {
   background: var(--error-bg);

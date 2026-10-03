@@ -33,8 +33,9 @@ export function Modal({ open, onOpenChange, title, description, children, footer
                 </Dialog.Description>
               ) : null}
             </div>
+            {/* Без подсказки: окно ставит сюда фокус при открытии, и она всплывала бы сразу. */}
             <Dialog.Close asChild>
-              <IconButton label="Закрыть">
+              <IconButton label="Закрыть" tooltip={false}>
                 <X size={20} aria-hidden />
               </IconButton>
             </Dialog.Close>

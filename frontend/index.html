@@ -7,7 +7,29 @@
     <meta name="robots" content="noindex" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Kronto</title>
+    <title>kronto</title>
+    <!--
+      Тема до первой отрисовки, без вспышки светлой: повторяет applyTheme из
+      src/lib/theme.ts. Хеш скрипта разрешён в CSP (nginx.conf) — после правки
+      пересчитайте его, тест src/lib/theme.test.ts подскажет новый.
+    -->
+    <script>
+      (function () {
+        var root = document.documentElement;
+        var choice = null;
+        try {
+          choice = localStorage.getItem("kronto.theme");
+        } catch (e) {}
+        if (choice === "light" || choice === "dark") root.setAttribute("data-theme", choice);
+        var dark =
+          choice === "dark" ||
+          (choice !== "light" &&
+            !!window.matchMedia &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", dark ? "#1c1b19" : "#ffffff");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
