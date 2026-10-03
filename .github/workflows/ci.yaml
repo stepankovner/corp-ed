@@ -254,6 +254,8 @@ jobs:
     env:
       SECRET_KEY: ci-only-e2e-secret-key-0123456789abcdef
       LLM_PROVIDER: fake
+      # Ответ печатается по словам (ТЗ §6): медленнее — чтобы успеть «Остановить».
+      LLM_FAKE_STREAM_DELAY_MS: "80"
       EMBEDDING_DIM: "768"
       RAG_CHUNK_TOKENS: "400"
       RAG_OVERLAP_TOKENS: "50"

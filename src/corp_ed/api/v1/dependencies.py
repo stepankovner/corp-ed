@@ -10,7 +10,7 @@ import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.connectors.registry import AdapterRegistry, default_registry
 from corp_ed.core.config import (
@@ -23,7 +23,7 @@ from corp_ed.core.config import (
     get_connector_settings,
     get_lead_settings,
 )
-from corp_ed.core.database import get_session
+from corp_ed.core.database import get_session, get_session_maker
 from corp_ed.core.dialogue_store import DialogueStore
 from corp_ed.core.exceptions import (
     MfaSetupRequiredError,
@@ -67,8 +67,16 @@ from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.account_service import AccountService
+from corp_ed.services.attachment_service import AttachmentService
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.avatar_service import AvatarService
+from corp_ed.services.chat_generation import (
+    ChatGenerator,
+    ChatRunner,
+    InMemoryStopSignals,
+    StopSignals,
+)
+from corp_ed.services.chat_service import ChatService
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_service import CreditService
@@ -82,6 +90,7 @@ from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 from corp_ed.services.people_service import PeopleService
+from corp_ed.services.suggestion_service import SuggestionService
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 from corp_ed.services.user_service import UserService
 
@@ -346,13 +355,28 @@ def get_query_throttle(request: Request) -> Throttle | None:
     return throttle
 
 
+def get_document_throttle(request: Request) -> Throttle | None:
+    throttle: Throttle | None = getattr(
+        request.app.state, "embedding_ingest_throttle", None
+    )
+    return throttle
+
+
 def get_embedding_gateway(
     client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
     settings: Annotated[LLMSettings, Depends(get_llm_settings)],
     query_throttle: Annotated[Throttle | None, Depends(get_query_throttle)],
+    document_throttle: Annotated[Throttle | None, Depends(get_document_throttle)],
 ) -> EmbeddingGateway:
-    """В API эмбеддинги нужны только для вопросов; документы считает воркер."""
-    return build_embedding_gateway(client, settings, query_throttle=query_throttle)
+    """Вопросы — в своей доле квоты; документы компании считает воркер, а
+    API — только вложения к вопросу (ТЗ §6), в общей с воркером доле
+    ингеста."""
+    return build_embedding_gateway(
+        client,
+        settings,
+        query_throttle=query_throttle,
+        document_throttle=document_throttle,
+    )
 
 
 def get_llm_gateway(
@@ -479,46 +503,132 @@ def get_credit_service(
     )
 
 
-def get_faq_service(
-    chunk_repo: Annotated[ChunkRepository, Depends(get_chunk_repository)],
-    qa_log_repo: Annotated[QaLogRepository, Depends(get_qa_log_repository)],
-    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
-    glossary_repo: Annotated[GlossaryRepository, Depends(get_glossary_repository)],
-    credits: Annotated[CreditService, Depends(get_credit_service)],
+FaqBuilder = Callable[[AsyncSession], FaqService]
+"""FaqService на заданной сессии: у фоновой задачи чата (ТЗ §6) своя
+сессия БД — сессия запроса закрывается раньше, чем дописан ответ."""
+
+
+def get_faq_builder(
     embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
     llm_gateway: Annotated[LLMGateway, Depends(get_llm_gateway)],
-    session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[RagSettings, Depends(get_rag_settings)],
-    dialogue_store: Annotated[DialogueStore | None, Depends(get_dialogue_store)],
+    billing: Annotated[BillingSettings, Depends(get_billing_settings)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
     reranker: Annotated[Reranker | None, Depends(get_reranker)],
+    dialogue_store: Annotated[DialogueStore | None, Depends(get_dialogue_store)],
+) -> FaqBuilder:
+    def build(session: AsyncSession) -> FaqService:
+        tenant_repo = TenantRepository(session)
+        qa_log_repo = QaLogRepository(session)
+        credits = CreditService(
+            tenant_repo,
+            qa_log_repo,
+            AuditRepository(session),
+            credits_per_seat=billing.credits_per_seat,
+            tokens_per_credit=billing.tokens_per_credit,
+            zone=billing.zone,
+            warn_at_percent=billing.warn_at_percent,
+            notifier=notifier,
+        )
+        return FaqService(
+            chunk_repo=ChunkRepository(session),
+            qa_log_repo=qa_log_repo,
+            tenant_repo=tenant_repo,
+            glossary_repo=GlossaryRepository(session),
+            credits=credits,
+            embedding_gateway=embedding_gateway,
+            llm_gateway=llm_gateway,
+            session=session,
+            limit=settings.faq_limit,
+            max_distance=settings.faq_max_distance,
+            context_max_tokens=settings.context_max_tokens,
+            temperature=settings.faq_temperature,
+            retriever=Retriever(settings.retriever),
+            fulltext_weight=settings.fulltext_weight,
+            # Поиск в интернете после MVP — другой GeneralAnswerSource здесь.
+            general_source=ModelKnowledgeSource(
+                llm_gateway, temperature=settings.faq_temperature
+            ),
+            # Память в Redis — только у /faq/ask; чат передаёт историю
+            # из своих диалогов сам (ChatService).
+            dialogue_store=dialogue_store,
+            history_turns=settings.history_turns,
+            history_ttl_minutes=settings.history_ttl_minutes,
+            condense_timeout=settings.condense_timeout_seconds,
+            reranker=reranker,
+            rerank_depth=settings.rerank_depth,
+            rerank_timeout=settings.rerank_timeout_ms / 1000,
+        )
+
+    return build
+
+
+def get_faq_service(
+    build: Annotated[FaqBuilder, Depends(get_faq_builder)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> FaqService:
-    return FaqService(
-        chunk_repo=chunk_repo,
-        qa_log_repo=qa_log_repo,
-        tenant_repo=tenant_repo,
-        glossary_repo=glossary_repo,
-        credits=credits,
-        embedding_gateway=embedding_gateway,
-        llm_gateway=llm_gateway,
-        session=session,
-        limit=settings.faq_limit,
-        max_distance=settings.faq_max_distance,
-        context_max_tokens=settings.context_max_tokens,
-        temperature=settings.faq_temperature,
-        retriever=Retriever(settings.retriever),
-        fulltext_weight=settings.fulltext_weight,
-        # Поиск в интернете после MVP — другой GeneralAnswerSource здесь.
-        general_source=ModelKnowledgeSource(
-            llm_gateway, temperature=settings.faq_temperature
-        ),
-        dialogue_store=dialogue_store,
-        history_turns=settings.history_turns,
-        history_ttl_minutes=settings.history_ttl_minutes,
-        condense_timeout=settings.condense_timeout_seconds,
-        reranker=reranker,
-        rerank_depth=settings.rerank_depth,
-        rerank_timeout=settings.rerank_timeout_ms / 1000,
+    return build(session)
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Фабрика сессий для работы вне запроса (фоновый ответ чата)."""
+    return get_session_maker()
+
+
+_DEFAULT_STOP_SIGNALS = InMemoryStopSignals()
+_DEFAULT_CHAT_RUNNER = ChatRunner()
+
+
+def get_stop_signals(request: Request) -> StopSignals:
+    """«Остановить» ответ: Redis в бою (поток и просьба могут попасть в
+    разные процессы), память процесса без Redis и в тестах."""
+    signals: StopSignals = getattr(
+        request.app.state, "chat_stop_signals", _DEFAULT_STOP_SIGNALS
     )
+    return signals
+
+
+def get_chat_runner(request: Request) -> ChatRunner:
+    runner: ChatRunner = getattr(request.app.state, "chat_runner", _DEFAULT_CHAT_RUNNER)
+    return runner
+
+
+def get_chat_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    credits: Annotated[CreditService, Depends(get_credit_service)],
+    settings: Annotated[RagSettings, Depends(get_rag_settings)],
+) -> ChatService:
+    return ChatService(session, credits, history_turns=settings.history_turns)
+
+
+def get_chat_generator(
+    session_factory: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+    build: Annotated[FaqBuilder, Depends(get_faq_builder)],
+    stop: Annotated[StopSignals, Depends(get_stop_signals)],
+) -> ChatGenerator:
+    return ChatGenerator(session_factory, build, stop)
+
+
+def get_attachment_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    embedding_gateway: Annotated[EmbeddingGateway, Depends(get_embedding_gateway)],
+    settings: Annotated[RagSettings, Depends(get_rag_settings)],
+) -> AttachmentService:
+    return AttachmentService(
+        session,
+        embedding_gateway,
+        chunk_tokens=settings.chunk_tokens,
+        overlap_tokens=settings.overlap_tokens,
+    )
+
+
+def get_suggestion_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> SuggestionService:
+    return SuggestionService(session, audit)
 
 
 @lru_cache

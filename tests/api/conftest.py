@@ -8,7 +8,7 @@ import httpx
 import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.api.v1.dependencies import (
     get_current_user,
@@ -16,6 +16,7 @@ from corp_ed.api.v1.dependencies import (
     get_llm_gateway,
     get_rag_settings,
     get_secret_box,
+    get_session_factory,
 )
 from corp_ed.api.v1.session_cookie import REFRESH_COOKIE
 from corp_ed.core import totp
@@ -81,6 +82,11 @@ async def api(
     )
 
     app.dependency_overrides[get_session] = test_session
+    # Фоновый ответ чата открывает свою сессию — к той же тестовой базе.
+    factory = async_sessionmaker(
+        session.bind, class_=AsyncSession, expire_on_commit=False
+    )
+    app.dependency_overrides[get_session_factory] = lambda: factory
     # Ключ шифрования секретов (TOTP, подключения) — только для тестов.
     app.dependency_overrides[get_secret_box] = lambda: SecretBox([TEST_SECRETS_KEY])
     app.dependency_overrides[get_embedding_gateway] = lambda: fake_embeddings

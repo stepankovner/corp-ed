@@ -71,19 +71,25 @@ describe("справочник коллег", () => {
     expect(document.title).toBe("Коллеги — kronto");
     expect(screen.getByText(/3 человека в «ООО «Меридиан Строй»»/)).toBeInTheDocument();
 
-    await user.type(screen.getByRole("searchbox"), "семен елкин");
+    await user.type(
+      screen.getByRole("searchbox", { name: "Поиск по имени, должности, отделу" }),
+      "семен елкин",
+    );
     expect(
       within(screen.getByRole("list", { name: "Коллеги" })).getAllByRole("listitem"),
     ).toHaveLength(1);
     expect(screen.getByText("Менеджер по продажам")).toBeInTheDocument();
 
-    await user.clear(screen.getByRole("searchbox"));
+    await user.clear(screen.getByRole("searchbox", { name: "Поиск по имени, должности, отделу" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Отдел" }), "none");
     expect(
       within(screen.getByRole("list", { name: "Коллеги" })).getAllByRole("listitem"),
     ).toHaveLength(2);
 
-    await user.type(screen.getByRole("searchbox"), "нет такого");
+    await user.type(
+      screen.getByRole("searchbox", { name: "Поиск по имени, должности, отделу" }),
+      "нет такого",
+    );
     expect(screen.getByText("Никого не нашли")).toBeInTheDocument();
   });
 

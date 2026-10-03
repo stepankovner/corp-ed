@@ -227,7 +227,9 @@ DomainError (400)
 `lifespan`: `SELECT 1` и проверка роли базы (в `production` —
 `SUPERUSER`/`BYPASSRLS` = отказ), Redis (`ping`) → лимитер и ограничитель
 квоты эмбеддингов (или память вне `production`), семафор LLM,
-`httpx.AsyncClient`. Докс выключены в `production`.
+`httpx.AsyncClient`, задачи ответов чата и флаги «Остановить» (Redis).
+При остановке процесса начатые ответы дописываются до 15 секунд.
+Докс выключены в `production`.
 
 Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `RequestID` →
 `Metrics` → `TrustedHost` → `BodySizeLimit`. Порядок важен: заголовки безопасности и
@@ -238,7 +240,12 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 ## 4. `llm` и `ingest`
 
 - `types.py`, `gateway.py` (`LLMGateway.generate(messages, temperature,
-  max_tokens, response_format)`), `embedding_gateway.py`.
+  max_tokens, response_format)`; `stream(...)` — куски текста и последним
+  `Completion`, по умолчанию один кусок через `generate`),
+  `embedding_gateway.py`. `yandex_openai.py` отдаёт настоящий поток
+  (`stream=true`, расход — `stream_options.include_usage`, без него —
+  оценка), повторяет только до первого байта и, если провайдер не принял
+  поток (400/404/422), зовёт модель без него.
 - `errors.py`, `retry.py` — классификация и экспоненциальные повторы.
 - `yandex.py` (нативный API), `yandex_openai.py` (OpenAI-совместимый,
   Alice AI LLM Flash) — выбираются `factory.build_llm_gateway` по
@@ -318,6 +325,28 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 кредитов в одной транзакции → ответ с `origin`, `sources`, `answer_id`,
 `diagnostics` (ADMIN).
 
+**Чат** (`/conversations`, `/attachments`, `/suggestions`; ТЗ §6):
+диалог — дерево `chat_messages` (`parent_id`): правка вопроса и «Ответить
+заново» — соседние ветки, `conversations.current_message_id` — лист
+показанной. Ход (`POST /conversations`, `…/messages`, `…/regenerate`):
+проверки и пул кредитов **до** потока (обычные 402/404/409/422) → в одной
+транзакции вопрос и пустой ответ «пишется» → фоновая задача процесса
+(`services/chat_generation.py`, своя сессия БД) → `FaqService.answer_turn`
+с историей из ветки (вместо Redis), выдержками вложений и `AnswerSink`
+→ события `start / stage / origin / delta / reset / done | error` в
+очередь → ответ HTTP `text/event-stream` пересылает их (`X-Accel-Buffering:
+no`, пинг раз в 15 с). Обрыв соединения ответ не останавливает:
+допишется и сохранится, фронт опрашивает диалог. «Остановить» —
+`POST …/stop`: флаг в Redis (общий для процессов API), задача проверяет его
+перед каждым куском и сохраняет текст до остановки (токены — оценкой).
+Ответ, который «пишется» дольше 10 минут (задачу убил перезапуск), при
+чтении становится «прерван». Вложение: разбор в песочнице →
+`split_document` → до 6 000 токенов уходит в промпт целиком, больше —
+эмбеддинги фрагментов в доле ингеста и 8 ближайших к вопросу; в базу
+компании не попадает. «Поделиться» — токен на снимок ветки, открывают
+коллеги по компании. Подсказки — от администратора и частые вопросы
+`qa_log` (не меньше трёх разных людей, без масок ПДн и 👎).
+
 **Документ** (`POST /materials/upload`): лимит на компанию → размер →
 `detect_format` (сигнатура, zip-бомба) → `extract_isolated` в дочернем
 процессе (транзакция закрыта) → дубликат по sha256 в пределах компании →
@@ -375,7 +404,8 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 использование отзывает семейство и пишет аудит.
 
 **Ночью** (`cli purge`, `cli gaps --all`): удаление `qa_log` по сроку,
-журнала запусков коннекторов старше 90 дней и аудита старше года; по каждой активной компании в её `tenant_scope` —
+журнала запусков коннекторов старше 90 дней, аудита старше года и
+вложений чата, не отправленных с вопросом за сутки; по каждой активной компании в её `tenant_scope` —
 классы, кластеры, сопоставление, подпись моделью, запись.
 
 ---

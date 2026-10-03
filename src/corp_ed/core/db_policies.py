@@ -89,6 +89,11 @@ TENANT_TABLES = (
     "material_access",
     "invites",
     "departments",
+    "conversations",
+    "chat_messages",
+    "chat_attachments",
+    "chat_attachment_chunks",
+    "chat_suggestions",
 )
 """Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
 проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,

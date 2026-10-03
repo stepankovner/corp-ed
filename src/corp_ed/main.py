@@ -16,9 +16,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from corp_ed.api.v1.endpoints import (
     account,
+    attachments,
     audit,
     auth,
     avatars,
+    chat,
     connectors,
     departments,
     faq,
@@ -28,6 +30,7 @@ from corp_ed.api.v1.endpoints import (
     leads,
     materials,
     people,
+    suggestions,
     usage,
     users,
 )
@@ -95,13 +98,18 @@ from corp_ed.core.rate_limit import (
 from corp_ed.core.readiness import readiness_failures
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle
+from corp_ed.services.chat_generation import (
+    ChatRunner,
+    InMemoryStopSignals,
+    RedisStopSignals,
+)
 from corp_ed.services.team_notify import build_team_notifier
 from corp_ed.services.team_notify import drain as drain_team_notifier
 
 logger = structlog.get_logger()
 
 # Пути, где тело — файл, а не JSON: у них свой лимит размера.
-UPLOAD_PATH_SUFFIXES = ("/materials/upload",)
+UPLOAD_PATH_SUFFIXES = ("/materials/upload", "/attachments")
 
 
 @asynccontextmanager
@@ -136,7 +144,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Семафор генерации — один на процесс: адаптер создаётся на запрос.
     # Размер читается лениво: без YC-ключей (тесты, alembic) он не нужен.
-    concurrency, query_rps = _llm_limits()
+    concurrency, query_rps, ingest_rps = _llm_limits()
     app.state.llm_semaphore = asyncio.Semaphore(concurrency)
     # Темп эмбеддингов вопросов — общий с воркером через Redis (квота
     # каталога одна). Сотрудник ждёт слота не дольше нескольких секунд.
@@ -144,6 +152,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         RedisThrottle(redis, "embedding-query", query_rps, max_wait=QUERY_MAX_WAIT)
         if redis is not None
         else InMemoryThrottle(query_rps, max_wait=QUERY_MAX_WAIT)
+    )
+    # Вложения к вопросу (ТЗ §6) считаются в доле ингеста — общей с
+    # воркером: файл сотрудника не отнимает квоту у вопросов коллег.
+    app.state.embedding_ingest_throttle = (
+        RedisThrottle(
+            redis, "embedding-ingest", ingest_rps, max_wait=ATTACHMENT_MAX_WAIT
+        )
+        if redis is not None
+        else InMemoryThrottle(ingest_rps, max_wait=ATTACHMENT_MAX_WAIT)
+    )
+    # Чат (ТЗ §6): ответы пишутся фоновыми задачами процесса, «Остановить»
+    # — флаг в Redis, общий для процессов API.
+    app.state.chat_runner = ChatRunner()
+    app.state.chat_stop_signals = (
+        RedisStopSignals(redis) if redis is not None else InMemoryStopSignals()
     )
 
     app.state.http_client = httpx.AsyncClient()
@@ -153,6 +176,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        # Выкатка: начатые ответы дописываются, пока есть время.
+        await app.state.chat_runner.shutdown()
         await drain_team_notifier(app.state.team_notifier)
         await app.state.http_client.aclose()
         if redis is not None:
@@ -160,17 +185,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 QUERY_MAX_WAIT = 5.0
+ATTACHMENT_MAX_WAIT = 30.0
 
 
-def _llm_limits() -> tuple[int, float]:
+def _llm_limits() -> tuple[int, float, float]:
     try:
         settings = LLMSettings()
     except ValidationError:
         # Нет ключей провайдера — ответы всё равно не заработают, а
         # запуск ради остальных ручек (вход, пользователи) нужен.
         logger.warning("llm_settings_missing")
-        return 1, 1.0
-    return settings.llm_max_concurrency, settings.embedding_query_rps
+        return 1, 1.0, 1.0
+    return (
+        settings.llm_max_concurrency,
+        settings.embedding_query_rps,
+        settings.embedding_ingest_rps,
+    )
 
 
 async def _check_database_role(connection: AsyncConnection) -> None:
@@ -225,6 +255,9 @@ app.include_router(invites.router, prefix="/api/v1")
 app.include_router(leads.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")
 app.include_router(faq.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
+app.include_router(attachments.router, prefix="/api/v1")
+app.include_router(suggestions.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")

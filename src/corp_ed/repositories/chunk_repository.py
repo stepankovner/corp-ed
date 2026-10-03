@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, delete, exists, func, literal_column, or_, select
@@ -53,6 +54,27 @@ class ChunkRepository:
             Chunk.tenant_id == require_tenant(),
         )
         await self.session.execute(stmt)
+
+    async def visible_material_ids(
+        self, material_ids: Iterable[UUID], *, viewer: UUID
+    ) -> set[UUID]:
+        """Какие из документов сейчас есть и видны сотруднику.
+
+        Источники сохранённого ответа (ТЗ §6) показываются по этому
+        правилу: документ удалён или доступ к нему снят — фрагмента нет.
+        """
+        ids = set(material_ids)
+        if not ids:
+            return set()
+        tenant_id = require_tenant()
+        result = await self.session.scalars(
+            select(Material.id).where(
+                Material.id.in_(ids),
+                Material.tenant_id == tenant_id,
+                _visible_to(viewer, tenant_id),
+            )
+        )
+        return set(result.all())
 
     async def search(
         self, embedding: list[float], limit: int = 5, *, viewer: UUID

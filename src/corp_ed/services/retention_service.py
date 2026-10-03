@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from corp_ed.core.db_policies import AUDIT_RETENTION_DAYS
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import AuditEvent
+from corp_ed.repositories.chat_repository import AttachmentRepository
 from corp_ed.repositories.connector_repository import SyncRunRepository
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
@@ -22,6 +23,7 @@ class PurgeReport:
     audit_events: int
     sync_runs: int = 0
     leads: int = 0
+    attachments: int = 0
 
 
 class RetentionService:
@@ -50,12 +52,15 @@ class RetentionService:
         audit_cutoff = now - timedelta(days=AUDIT_RETENTION_DAYS)
         runs_cutoff = now - timedelta(days=self.sync_run_days)
         leads_cutoff = now - timedelta(days=self.lead_days)
+        # Вложения, не отправленные с вопросом (ТЗ §6), — через сутки.
+        attachments_cutoff = now - timedelta(days=1)
 
         async with self.session_maker() as session:
             tenants = await TenantRepository(session).list_all()
 
         qa_deleted = 0
         runs_deleted = 0
+        attachments_deleted = 0
         for tenant in tenants:
             with tenant_scope(tenant.id):
                 async with self.session_maker() as session:
@@ -65,6 +70,9 @@ class RetentionService:
                     runs_deleted += await SyncRunRepository(session).delete_older_than(
                         runs_cutoff
                     )
+                    attachments_deleted += await AttachmentRepository(
+                        session
+                    ).delete_pending_older_than(attachments_cutoff)
                     await session.commit()
 
         async with self.session_maker() as session:
@@ -87,10 +95,12 @@ class RetentionService:
             audit_events=audit_deleted,
             sync_runs=runs_deleted,
             leads=leads_deleted,
+            attachments=attachments_deleted,
         )
         return PurgeReport(
             qa_log=qa_deleted,
             audit_events=audit_deleted,
             sync_runs=runs_deleted,
             leads=leads_deleted,
+            attachments=attachments_deleted,
         )

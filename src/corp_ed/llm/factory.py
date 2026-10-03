@@ -24,7 +24,7 @@ def build_llm_gateway(
     достался.
     """
     if settings.llm_provider == "fake":
-        return DevAdapter()
+        return DevAdapter(stream_delay=settings.llm_fake_stream_delay_ms / 1000)
     if settings.llm_provider == "yandex-native":
         return YandexAdapter(
             client=client,

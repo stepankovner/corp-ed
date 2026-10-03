@@ -37,7 +37,7 @@ export function AppShell() {
   // Переписка — своя у каждой компании человека: другая компания — другой ключ.
   const chatKey = `${me.id}:${me.company?.tenant_id ?? "none"}`;
   return (
-    <ChatProvider key={chatKey} userId={chatKey}>
+    <ChatProvider key={chatKey}>
       <Shell />
     </ChatProvider>
   );

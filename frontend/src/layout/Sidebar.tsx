@@ -2,7 +2,6 @@ import {
   BookUser,
   ChevronDown,
   House,
-  MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
   Settings2,
@@ -15,13 +14,13 @@ import { Link, matchPath, useLocation, useNavigate } from "react-router";
 
 import { errorMessage } from "../api/errors";
 import { isAdmin, needsStrongFactor, useAuth, useMe, type Me } from "../auth/context";
-import { useChat } from "../chat/store";
 import { IconButton } from "../ui/IconButton";
 import { Logo } from "../ui/Logo";
 import { Tooltip } from "../ui/Tooltip";
 import { useToast } from "../ui/useToast";
 import { AccountMenu } from "./AccountMenu";
 import { CompanySwitcher, type CompanyOption } from "./CompanySwitcher";
+import { ConversationList } from "./ConversationList";
 import { ADMIN_SECTIONS } from "./navigation";
 import styles from "./Sidebar.module.css";
 
@@ -104,13 +103,6 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
           <ul className={styles.list}>
             {inCompany ? (
               <>
-                <NavItem
-                  to="/"
-                  end
-                  icon={MessageSquareText}
-                  label="Вопросы"
-                  collapsed={collapsed}
-                />
                 <NavItem to="/people" icon={BookUser} label="Коллеги" collapsed={collapsed} />
                 {isAdmin(me) ? <AdminNav collapsed={collapsed} /> : null}
               </>
@@ -119,11 +111,8 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
             )}
           </ul>
         </nav>
-        {/*
-          Этап 6 (ТЗ §6): здесь — список диалогов с сервера: поиск,
-          закрепление, переименование. Место между разделами и учётной
-          записью оставлено пустым и растягивается.
-        */}
+        {/* Диалоги с сервера (ТЗ §6); в свёрнутой панели — только значки разделов. */}
+        {inCompany && !collapsed ? <ConversationList /> : null}
       </div>
 
       <div className={styles.foot}>
@@ -152,7 +141,7 @@ function companyOptions(me: Me): CompanyOption[] {
     }));
 }
 
-/** «Новый диалог»: то же, что делала кнопка в окне чата, — сбросить переписку. */
+/** «Новый диалог»: пустой экран вопросов, прежние диалоги — в списке. */
 export function NewDialogButton({
   collapsed = false,
   compact = false,
@@ -161,26 +150,24 @@ export function NewDialogButton({
   /** Кнопка-иконка для верхней полосы телефона. */
   compact?: boolean;
 }) {
-  const { reset, busy } = useChat();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
   function start() {
-    reset();
     if (pathname === "/") document.getElementById("question")?.focus();
     else void navigate("/");
   }
 
   if (compact) {
     return (
-      <IconButton label="Новый диалог" onClick={start} disabled={busy} tooltip={false}>
+      <IconButton label="Новый диалог" onClick={start} tooltip={false}>
         <SquarePen size={20} aria-hidden />
       </IconButton>
     );
   }
   return (
     <Tooltip content="Новый диалог" side="right" disabled={!collapsed}>
-      <button type="button" className={styles.newDialog} onClick={start} disabled={busy}>
+      <button type="button" className={styles.newDialog} onClick={start}>
         <SquarePen size={18} aria-hidden />
         <span className={styles.label}>Новый диалог</span>
       </button>

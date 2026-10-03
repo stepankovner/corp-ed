@@ -43,6 +43,9 @@ const PIXEL_PNG =
 
 let inviteUrl = "";
 let inviteCode = "";
+/** Ссылка «поделиться» на диалог администратора — откроет новый сотрудник. */
+let sharedUrl = "";
+const sharedTitle = `Какое кодовое слово в положении о командировках`;
 /** Cookie доверенного устройства администратора: дальше вход без второго шага. */
 let adminDevice: Cookie | null = null;
 
@@ -223,11 +226,20 @@ test.describe.serial("путь компании", () => {
     await expect(row.getByText("готов", { exact: true })).toBeVisible({ timeout: 60_000 });
   });
 
-  test("ответ ссылается на документ и открывает фрагмент", async ({ page, context }) => {
+  test("ответ печатается, диалог сохраняется на сервере, им можно поделиться", async ({
+    page,
+    context,
+  }) => {
     await loginAdmin(page, context);
-    await ask(page, `Какое кодовое слово в положении о командировках, суточные ${codeWord}?`);
+    await ask(page, `${sharedTitle}, суточные ${codeWord}?`);
+    // Ответ печатается по мере генерации: кнопка «Остановить», пока пишется.
+    await expect(page.getByRole("button", { name: "Остановить ответ" })).toBeVisible();
     const answer = page.getByRole("log").locator("div").filter({ hasText: codeWord }).last();
     await expect(answer).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Отправить вопрос" })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page).toHaveURL(/\/c\/[0-9a-f-]{36}$/);
     await page
       .getByRole("button", { name: /^Источник 1: / })
       .first()
@@ -240,6 +252,82 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: "Ответ помог" }).click();
     await expect(page.getByText("Спасибо за оценку")).toBeVisible();
+
+    // Диалог — на сервере: в списке слева и после перезагрузки.
+    const dialogs = page.getByRole("region", { name: "Диалоги" });
+    await expect(dialogs.getByRole("link", { name: new RegExp(`^${sharedTitle}`) })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(codeWord).first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Поделиться" }).click();
+    const share = page.getByRole("dialog", { name: "Поделиться диалогом" });
+    await share.getByRole("button", { name: "Создать ссылку" }).click();
+    sharedUrl = await share.getByLabel("Ссылка на диалог").inputValue();
+    expect(sharedUrl).toMatch(/\/shared\/[\w-]{24,}$/);
+    await page.keyboard.press("Escape");
+  });
+
+  test("правка вопроса и «Ответить заново» — версии; ответ можно остановить", async ({
+    page,
+    context,
+  }) => {
+    await loginAdmin(page, context);
+    await ask(page, "Когда сдаётся авансовый отчёт?");
+    await expect(page.getByRole("button", { name: "Отправить вопрос" })).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "Изменить вопрос" }).click();
+    await page
+      .getByLabel("Изменить вопрос")
+      .fill("Когда сдаётся авансовый отчёт после командировки?");
+    await page.getByRole("button", { name: "Отправить", exact: true }).click();
+    await expect(page.getByLabel("Версия 2 из 2").first()).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Предыдущая версия вопроса" }).click();
+    await expect(
+      page.getByRole("log").getByText("Когда сдаётся авансовый отчёт?", { exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Ответить заново" }).click();
+    await page.getByRole("button", { name: "Остановить ответ" }).click();
+    await expect(page.getByText("Ответ остановлен.")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel("Версия 2 из 2").last()).toBeVisible();
+  });
+
+  test("вопрос по приложенному файлу — файл не попадает в документы", async ({ page, context }) => {
+    await loginAdmin(page, context);
+    const phrase = `аренда-${codeWord}`;
+    await page.locator("input[type=file]").setInputFiles({
+      name: "dogovor.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from(`Договор аренды. Кодовая фраза договора: ${phrase}.`, "utf8"),
+    });
+    const files = page.getByRole("list", { name: "Файлы к вопросу" });
+    await expect(files.getByText("dogovor.txt")).toBeVisible();
+    await expect(files.getByText("Читаю файл…")).toHaveCount(0, { timeout: 30_000 });
+    await ask(page, "Какая кодовая фраза в договоре?");
+    await expect(page.getByRole("log").getByText(phrase).first()).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByRole("button", { name: /Источник 1: dogovor\.txt/ }).last(),
+    ).toBeVisible();
+
+    await page.goto("/admin/documents");
+    await expect(page.getByRole("heading", { name: "Документы" })).toBeVisible();
+    await expect(page.getByText("dogovor")).toHaveCount(0);
+  });
+
+  test("администратор задаёт подсказку вопроса", async ({ page, context }) => {
+    await loginAdmin(page, context);
+    await page.goto("/admin/suggestions");
+    await page.getByRole("button", { name: "Добавить подсказку" }).click();
+    await page.getByRole("textbox", { name: "Вопрос" }).fill("Как оформить командировку?");
+    await page.getByRole("button", { name: "Сохранить" }).click();
+    await expect(page.getByText("Как оформить командировку?").first()).toBeVisible();
+    await page.getByRole("button", { name: "Новый диалог" }).click();
+    await expect(
+      page.getByRole("list", { name: "Подсказки" }).getByRole("button", {
+        name: "Как оформить командировку?",
+      }),
+    ).toBeVisible();
   });
 
   // Новая компания — в строгом режиме (решение 28.09): честный отказ.
@@ -284,6 +372,15 @@ test.describe.serial("путь компании", () => {
     await expect(page.getByRole("button", { name: /^Источник 1: / }).first()).toBeVisible({
       timeout: 30_000,
     });
+
+    // Диалоги администратора сотруднику не видны; по ссылке — только чтение.
+    const dialogs = page.getByRole("region", { name: "Диалоги" });
+    await expect(dialogs.getByRole("link", { name: new RegExp(`^${sharedTitle}`) })).toHaveCount(0);
+    await page.goto(sharedUrl);
+    await expect(page.getByRole("heading", { name: new RegExp(`^${sharedTitle}`) })).toBeVisible();
+    await expect(page.getByText(/^Автор: /)).toBeVisible();
+    await expect(page.getByText(codeWord).first()).toBeVisible();
+    await expect(page.getByLabel("Ваш вопрос")).toHaveCount(0);
 
     // В управление сотрудника не пускает.
     await page.goto("/admin/users");

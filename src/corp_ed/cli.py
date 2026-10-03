@@ -314,7 +314,8 @@ async def _run(args: argparse.Namespace) -> int:
         ).purge()
         print(
             f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}, "
-            f"sync_runs: {purged.sync_runs}, leads: {purged.leads}"
+            f"sync_runs: {purged.sync_runs}, leads: {purged.leads}, "
+            f"attachments: {purged.attachments}"
         )
         return 0
 
