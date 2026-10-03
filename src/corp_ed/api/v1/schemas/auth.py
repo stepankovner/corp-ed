@@ -174,3 +174,5 @@ class MeResponse(BaseModel):
     companies: list[MembershipItem]
     """Все компании человека (кроме тех, откуда он ушёл)."""
     mfa: MfaState
+    staff: bool = False
+    """Команда kronto: открыта наша панель (/staff, ТЗ §9)."""

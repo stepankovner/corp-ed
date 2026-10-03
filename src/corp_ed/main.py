@@ -35,6 +35,7 @@ from corp_ed.api.v1.endpoints import (
     materials,
     people,
     sources,
+    staff,
     suggestions,
     usage,
     users,
@@ -273,6 +274,7 @@ app.include_router(logos.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(folders.router, prefix="/api/v1")
 app.include_router(sources.router, prefix="/api/v1")
+app.include_router(staff.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")

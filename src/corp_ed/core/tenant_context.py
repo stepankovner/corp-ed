@@ -12,6 +12,11 @@ current_tenant: ContextVar[UUID | None] = ContextVar("current_tenant", default=N
 # не данные этих компаний (db_policies.own_membership_statements).
 current_account: ContextVar[UUID | None] = ContextVar("current_account", default=None)
 
+# Учётка команды kronto, которая действует из нашей панели (ТЗ §9). Её
+# членства в компании, которую она правит, нет — журнал действий пишет
+# её в details.staff_account_id (AuditRepository.record).
+current_staff: ContextVar[UUID | None] = ContextVar("current_staff", default=None)
+
 
 def require_tenant() -> UUID:
     """Вернуть тенанта из контекста или упасть.

@@ -105,6 +105,14 @@ FOLDER_EDIT_PER_TENANT = RatePolicy(
 TARIFF_REQUEST_PER_TENANT = RatePolicy(
     "tariff-request", limit=5, window=86400, fail_open=False
 )
+# Наша панель (ТЗ §9): правки команды — сотни в час уже не люди, а
+# украденная сессия; письма о новом пароле — не рассылка.
+STAFF_EDIT_PER_ACCOUNT = RatePolicy(
+    "staff-edit", limit=300, window=3600, fail_open=False
+)
+STAFF_RESET_PER_ACCOUNT = RatePolicy(
+    "staff-reset", limit=20, window=3600, fail_open=False
+)
 SUGGESTION_EDIT_PER_TENANT = RatePolicy(
     "suggestion-edit", limit=120, window=3600, fail_open=True
 )
