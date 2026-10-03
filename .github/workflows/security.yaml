@@ -6,8 +6,13 @@ on:
   # push — только main: ветку PR проверяет pull_request. С push на
   # любую ветку каждый пуш в PR запускал прогон дважды, а минуты Actions
   # у приватного репозитория ограничены (02.10 выкатка #56 не получила исполнителя).
+  #
+  # На PR — быстрые проверки (зависимости, секреты), в том числе для
+  # коммитов с одной документацией: ключ легко вставить в инструкцию.
+  # CodeQL и Trivy (4 и 2 минуты) — на main и по расписанию.
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]   # документацию уже проверил PR
   pull_request:
     branches: [main]
   schedule:
@@ -80,6 +85,7 @@ jobs:
 
   codeql:
     name: Static analysis (CodeQL)
+    if: github.event_name != 'pull_request'
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
@@ -102,6 +108,7 @@ jobs:
   # Python-анализа остаются прежними.
   codeql-frontend:
     name: Static analysis of the frontend (CodeQL)
+    if: github.event_name != 'pull_request'
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
@@ -120,6 +127,7 @@ jobs:
 
   image:
     name: Image vulnerabilities and SBOM (Trivy)
+    if: github.event_name != 'pull_request'
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     # Тег — свой у прогона: на своём runner Docker общий у параллельных

@@ -4,10 +4,17 @@ on:
   # push — только main: ветку PR проверяет pull_request. С push на
   # любую ветку каждый пуш в PR запускал прогон дважды, а минуты Actions
   # у приватного репозитория ограничены (02.10 выкатка #56 не получила исполнителя).
+  #
+  # Только документация (docs/, *.md) — без прогона: ни код, ни тесты её
+  # не читают. Слияние одной документации в main не запускает и выкатку.
+  # Для pull_request фильтр смотрит на весь PR; коммит с одной
+  # документацией в PR с кодом пропускает задание changes.
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
   pull_request:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md"]
 
 # Токен workflow — только чтение. Ни одному шагу здесь не нужно писать в
 # репозиторий; утёкший токен с правом записи — это подмена кода.
@@ -28,7 +35,56 @@ env:
 # runner задания делят одну машину и один Docker: порты сервисов на хосте
 # случайные, теги образов — с номером прогона.
 jobs:
+  # Новый коммит в PR меняет только документацию, а предыдущий коммит PR
+  # прошёл CI целиком (или сам был таким же коммитом) — остальные задания
+  # пропускаются. Прогон предыдущего коммита отменён (concurrency), упал
+  # или его нет — проверяется всё: иначе код из отменённого прогона
+  # остался бы непроверенным.
+  changes:
+    name: Code changed
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read   # прогоны CI предыдущего коммита
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          API: ${{ github.api_url }}/repos/${{ github.repository }}
+        run: |
+          code=true
+          if [ "$ACTION" = synchronize ] && [ -n "$BEFORE" ] \
+            && git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            changed=$(git diff --name-only "$BEFORE" "$AFTER")
+            echo "Изменено с $BEFORE:"
+            printf '%s\n' "$changed"
+            # here-string, не конвейер: с pipefail ранний выход grep -q
+            # (SIGPIPE у printf) читался бы как «только документация».
+            if [ -n "$changed" ] && ! grep -qvE '^docs/|\.md$' <<<"$changed"; then
+              ok=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" \
+                "$API/actions/workflows/ci.yaml/runs?head_sha=$BEFORE&event=pull_request&per_page=20" \
+                | jq '[.workflow_runs[] | select(.conclusion == "success")] | length' || echo 0)
+              if [ "$ok" -gt 0 ]; then
+                code=false
+              else
+                echo "Прогон CI для $BEFORE не прошёл целиком — проверяется всё."
+              fi
+            fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Lint, types, tests
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
@@ -99,6 +155,8 @@ jobs:
           retention-days: 14
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Frontend lint, types, tests, build
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
@@ -147,6 +205,8 @@ jobs:
         run: npm run build
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: End-to-end (browser against the API, fake LLM)
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
@@ -289,6 +349,8 @@ jobs:
           retention-days: 7
 
   migrations:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Migrations on a fresh database
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
@@ -377,6 +439,8 @@ jobs:
           test "$(psql -tAc "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")" = "f"
 
   image:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     name: Docker image builds and runs unprivileged
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
