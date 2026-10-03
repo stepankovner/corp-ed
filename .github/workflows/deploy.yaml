@@ -30,6 +30,10 @@ concurrency:
   group: deploy-stage
   cancel-in-progress: false
 
+# Исполнитель — переменная репозитория RUNS_ON (docs/CI-RUNNER.md, как в
+# ci.yaml). Ключ выкатки и логин GHCR — в RUNNER_TEMP, не в домашнем
+# каталоге: на своём runner он общий у всех заданий и переживает job, а
+# RUNNER_TEMP runner очищает в начале и в конце каждого job.
 jobs:
   images:
     name: Build and push images
@@ -41,7 +45,7 @@ jobs:
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
           github.event.workflow_run.head_repository.full_name == github.repository))
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -64,7 +68,9 @@ jobs:
       - name: Log in to GHCR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        run: |
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+          printf '%s' "$GH_TOKEN" | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Build and push
         env:
@@ -82,7 +88,7 @@ jobs:
   deploy:
     name: Deploy to the stage
     needs: images
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
     # Токен job — скачать образы из GHCR на сервере: пакеты могут
     # оставаться приватными. Живёт до конца job.
@@ -100,12 +106,12 @@ jobs:
           SSH_KEY: ${{ secrets.STAGE_SSH_KEY }}
           KNOWN_HOSTS: ${{ vars.STAGE_SSH_KNOWN_HOSTS }}
         run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/stage
-          chmod 600 ~/.ssh/stage
+          install -d -m 700 "$RUNNER_TEMP/ssh"
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/ssh/stage"
+          chmod 600 "$RUNNER_TEMP/ssh/stage"
           # Ключ хоста закреплён заранее: StrictHostKeyChecking=no — это
           # подмена сервера на выкатке.
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/ssh/known_hosts"
 
       - name: Deploy
         env:
@@ -117,7 +123,8 @@ jobs:
         # командной строке.
         run: |
           printf '%s\n' "$GH_TOKEN" |
-            ssh -i ~/.ssh/stage -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "deploy $SHA"
+            ssh -i "$RUNNER_TEMP/ssh/stage" -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+              -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "deploy $SHA"
 
       - name: Reachable from outside
         env:
@@ -131,4 +138,6 @@ jobs:
       - name: Stand check
         env:
           HOST: ${{ vars.STAGE_HOST }}
-        run: ssh -i ~/.ssh/stage -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" check < /dev/null
+        run: |
+          ssh -i "$RUNNER_TEMP/ssh/stage" -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes "deploy@$HOST" check < /dev/null
