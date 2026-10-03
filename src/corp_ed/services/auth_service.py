@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import structlog
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.config import get_settings
@@ -24,6 +25,7 @@ from corp_ed.core.exceptions import (
     WeakPasswordError,
 )
 from corp_ed.core.password_policy import validate_password
+from corp_ed.core.request_context import current_client_ip, current_user_agent
 from corp_ed.core.security import (
     create_access_token,
     hash_password,
@@ -33,7 +35,13 @@ from corp_ed.core.security import (
     verify_password,
 )
 from corp_ed.core.tenant_context import account_scope, tenant_scope
-from corp_ed.domain.models import Account, MemberStatus, RefreshToken, User
+from corp_ed.domain.models import (
+    Account,
+    MemberStatus,
+    RefreshToken,
+    TrustedDevice,
+    User,
+)
 from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
@@ -82,8 +90,9 @@ class AuthService:
         self.audit = audit
         self.session = session
 
-    async def login(self, email: str, password: str, *, remember: bool) -> TokenPair:
-        """Проверить почту и пароль и выдать пару токенов.
+    async def check_password(self, email: str, password: str) -> Account:
+        """Первый шаг входа: почта и пароль. Сессию не открывает — дальше
+        второй фактор или доверенное устройство (services/mfa_service.py).
 
         На все причины отказа — один ответ и одинаковое время: пароль
         проверяется и тогда, когда учётки нет (фиктивный хеш в
@@ -113,9 +122,12 @@ class AuthService:
 
         if account.email_verified_at is None:
             raise EmailNotVerifiedError()
-
         if password_needs_rehash(account.hashed_password):
             account.hashed_password = hash_password(password)
+        return account
+
+    async def login_session(self, account: Account, *, remember: bool) -> TokenPair:
+        """Второй шаг пройден — сессия в компании по умолчанию."""
         member = await self.default_membership(account)
         pair = await self.open_session(account, member, remember=remember)
         logger.info("login_succeeded", account_id=str(account.id))
@@ -308,8 +320,13 @@ class AuthService:
         return pair
 
     async def invalidate_sessions(self, account: Account) -> None:
+        """Все сессии и доверенные устройства учётки — прочь: смена пароля,
+        «выйти везде», откат захвата почты."""
         account.token_version += 1
         await self.refresh_repo.revoke_account(account.id, _now())
+        await self.session.execute(
+            delete(TrustedDevice).where(TrustedDevice.account_id == account.id)
+        )
 
     async def active_membership(self, account: Account, tenant_id: UUID) -> User | None:
         """Действующее членство учётки в компании или None."""
@@ -357,6 +374,8 @@ class AuthService:
                 token_hash=hash_refresh_token(raw),
                 remember=remember,
                 expires_at=_now() + ttl,
+                user_agent=current_user_agent.get(),
+                ip=current_client_ip.get(),
             )
         )
         access = create_access_token(

@@ -1,5 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -144,6 +145,10 @@ async def admin(session: AsyncSession, tenant_ctx: Tenant) -> User:
         role=UserRole.ADMIN,
         hashed_password="hashed",
     )
+    # Администратору нужен надёжный второй фактор (ТЗ §3): отметка
+    # «приложение включено» — без секрета, вход этим админом не нужен.
+    assert admin.account is not None
+    admin.account.totp_enabled_at = datetime.now(UTC)
     session.add(admin)
     await session.commit()
 

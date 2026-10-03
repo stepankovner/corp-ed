@@ -20,11 +20,13 @@ from corp_ed.api.v1.dependencies import (
     get_embedding_gateway,
     get_llm_gateway,
     get_rag_settings,
+    get_secret_box,
 )
 from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
 from corp_ed.core.dialogue_store import InMemoryDialogueStore
 from corp_ed.core.rate_limit import InMemoryRateLimiter
+from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import hash_password
 from corp_ed.domain.models import Tenant, User, UserRole
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
@@ -32,6 +34,7 @@ from corp_ed.llm.fake_embedding import WordEmbeddingAdapter
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.main import app
 from corp_ed.worker import IngestWorker
+from tests.api.conftest import TEST_SECRETS_KEY, enable_test_totp
 from tests.factories import make_user
 
 PASSWORD = "stand-check-password-42"
@@ -67,6 +70,10 @@ async def make_admin(session: AsyncSession, tenant: Tenant) -> User:
         role=UserRole.ADMIN,
         hashed_password=hash_password(PASSWORD),
     )
+    # Администратору нужен второй фактор (ТЗ §3): как check.sh на стенде —
+    # приложение с известным проверке секретом.
+    assert admin.account is not None
+    enable_test_totp(admin.account)
     session.add(admin)
     await session.commit()
     return admin
@@ -103,6 +110,7 @@ async def stand_client(
             yield session
 
     app.dependency_overrides[get_session] = per_request
+    app.dependency_overrides[get_secret_box] = lambda: SecretBox([TEST_SECRETS_KEY])
     app.dependency_overrides[get_embedding_gateway] = lambda: embeddings
     app.dependency_overrides[get_llm_gateway] = lambda: llm
     app.dependency_overrides[get_rag_settings] = lambda: rag

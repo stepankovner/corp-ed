@@ -8,6 +8,8 @@
         [--tariff extended] [--code acme]
     python -m corp_ed.cli requests reject --id <uuid>
     python -m corp_ed.cli reset-password --email admin@acme.ru [--password-stdin]
+    python -m corp_ed.cli set-totp --email stand-check@krontoai.ru --secret-stdin
+                                       # приложение-аутентификатор служебной учётке
     python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
     python -m corp_ed.cli set-not-found-mode --code acme --mode general
     python -m corp_ed.cli set-tariff --code acme --tariff extended \
@@ -45,6 +47,7 @@ import getpass
 import json
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -53,6 +56,7 @@ import httpx
 
 from corp_ed.connectors.base import AdapterError, AdapterOptions, SourceAdapter
 from corp_ed.connectors.registry import UnknownKindError, default_registry
+from corp_ed.core import totp
 from corp_ed.core.config import (
     ConnectorSettings,
     GapsSettings,
@@ -76,7 +80,7 @@ from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.account_repository import AccountRepository
-from corp_ed.repositories.audit_repository import AuditRepository
+from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -188,6 +192,14 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     commands.add_parser("purge", help="удалить данные старше срока хранения")
+
+    set_totp = commands.add_parser(
+        "set-totp",
+        help="приложение-аутентификатор служебной учётке (проверка стенда): "
+        "секрет base32 — первой строкой stdin",
+    )
+    set_totp.add_argument("--email", required=True)
+    set_totp.add_argument("--secret-stdin", action="store_true", required=True)
 
     requests = commands.add_parser(
         "requests", help="заявки «Подключить компанию» от учёток без компании"
@@ -311,6 +323,9 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "requests":
         return await _requests(args)
+
+    if args.command == "set-totp":
+        return await _set_totp(args.email, sys.stdin.readline().strip())
 
     if args.command == "gaps":
         return await _gaps(None if args.all else args.code)
@@ -466,6 +481,31 @@ async def _leads(args: argparse.Namespace) -> int:
                 print(f"    {lead.comment[:300]}")
         print(f"Заявок: {len(found)}")
         return 0
+
+
+async def _set_totp(email: str, secret: str) -> int:
+    """Секрет TOTP служебной учётке — чтобы автоматическая проверка стенда
+    проходила второй фактор (ТЗ §3). Людям — только через настройки."""
+
+    try:
+        totp.code_at(secret, 0)
+    except ValueError as exc:
+        raise DomainError("Секрет — base32 (A–Z, 2–7)") from exc
+    box = SecretBox(get_connector_settings().keys)
+    async with get_session_maker()() as session:
+        account = await AccountRepository(session).get_by_email(email)
+        if account is None:
+            raise DomainError(f"Учётки {email} нет")
+        account.totp_secret = box.encrypt({"secret": secret})
+        account.totp_enabled_at = datetime.now(UTC)
+        account.totp_last_step = None
+        AuditRepository(session).record(
+            AuditAction.MFA_ENABLED,
+            details={"account_id": str(account.id), "method": "totp", "source": "cli"},
+        )
+        await session.commit()
+    print(f"{email}: приложение-аутентификатор включено.")
+    return 0
 
 
 async def _requests(args: argparse.Namespace) -> int:

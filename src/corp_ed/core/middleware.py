@@ -8,7 +8,11 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from corp_ed.core.request_context import current_client_ip, current_request_id
+from corp_ed.core.request_context import (
+    current_client_ip,
+    current_request_id,
+    current_user_agent,
+)
 
 logger = structlog.get_logger()
 
@@ -40,6 +44,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.bind_contextvars(request_id=request_id)
         current_request_id.set(request_id)
         current_client_ip.set(request.client.host if request.client else None)
+        current_user_agent.set((request.headers.get("user-agent") or "")[:300] or None)
 
         try:
             response = await call_next(request)

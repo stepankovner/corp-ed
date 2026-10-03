@@ -251,6 +251,19 @@ class NoCompanyError(PermissionError):
         super().__init__("Вы ещё не состоите в компании")
 
 
+class MfaSetupRequiredError(PermissionError):
+    """Администратору (или всем в компании с правилом strong) нужен
+    надёжный второй фактор — приложение или ключ доступа (ТЗ §3). HTTP 403."""
+
+    code = "mfa_setup_required"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Включите вход через приложение-аутентификатор или ключ доступа — "
+            "это обязательно для администраторов"
+        )
+
+
 class MembershipBlockedError(PermissionError):
     """Администратор заблокировал человека в этой компании. HTTP 403."""
 

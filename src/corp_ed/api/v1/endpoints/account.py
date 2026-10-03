@@ -3,6 +3,7 @@
 Ручки работают без выбранной компании: учётка существует сама по себе.
 """
 
+import json
 from typing import Annotated
 from uuid import UUID
 
@@ -12,6 +13,8 @@ from corp_ed.api.v1.dependencies import (
     get_account_service,
     get_company_request_service,
     get_current_account,
+    get_mfa_service,
+    get_relying_party,
 )
 from corp_ed.api.v1.rate_limits import (
     COMPANY_REQUEST_PER_ACCOUNT,
@@ -22,19 +25,30 @@ from corp_ed.api.v1.rate_limits import (
     get_rate_limiter,
 )
 from corp_ed.api.v1.schemas.account import (
+    BackupCodesResponse,
     CompanyRequestCreate,
     CompanyRequestResponse,
     EmailChangeRequest,
     LeaveCompanyRequest,
     NameUpdateRequest,
+    PasskeyCreatedResponse,
+    PasskeyRegisterRequest,
+    PasskeyResponse,
+    PasskeySetupResponse,
     PasswordConfirmRequest,
+    SecondFactorConfirmRequest,
+    SecurityResponse,
+    SessionResponse,
+    TotpEnableRequest,
+    TotpSetupResponse,
 )
 from corp_ed.api.v1.schemas.auth import TokenRequest
-from corp_ed.api.v1.session_cookie import clear_refresh_cookie
+from corp_ed.api.v1.session_cookie import clear_refresh_cookie, read_refresh_cookie
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.models import Account
 from corp_ed.services.account_service import AccountService
 from corp_ed.services.company_request_service import CompanyRequestService
+from corp_ed.services.mfa_service import MfaService, RelyingParty
 
 router = APIRouter(prefix="/account", tags=["account"])
 
@@ -153,3 +167,129 @@ async def cancel_company_request(
     return CompanyRequestResponse.model_validate(
         await service.cancel(account, request_id)
     )
+
+
+# --- защита: второй фактор и сеансы (ТЗ §3) ---------------------------------
+
+Mfa = Annotated[MfaService, Depends(get_mfa_service)]
+
+
+@router.get("/security", response_model=SecurityResponse)
+async def read_security(account: CurrentAccount, mfa: Mfa) -> SecurityResponse:
+    return SecurityResponse(
+        totp_enabled=account.totp_enabled_at is not None,
+        passkeys=[
+            PasskeyResponse.model_validate(k) for k in await mfa.passkeys(account)
+        ],
+        backup_codes_left=await mfa.backup_codes_left(account),
+        strong_required=await mfa.strong_required(account),
+    )
+
+
+@router.post("/totp/setup", response_model=TotpSetupResponse)
+async def start_totp_setup(account: CurrentAccount, mfa: Mfa) -> TotpSetupResponse:
+    """Секрет для приложения (QR из otpauth_uri). Действует после
+    подтверждения кодом — /account/totp/enable."""
+    secret, uri, token = await mfa.start_totp_setup(account)
+    return TotpSetupResponse(secret=secret, otpauth_uri=uri, setup_token=token)
+
+
+@router.post("/totp/enable", response_model=BackupCodesResponse)
+async def enable_totp(
+    request: Request,
+    data: TotpEnableRequest,
+    account: CurrentAccount,
+    mfa: Mfa,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> BackupCodesResponse:
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    codes = await mfa.enable_totp(account, data.setup_token, data.code)
+    return BackupCodesResponse(backup_codes=codes)
+
+
+@router.post("/totp/disable", status_code=status.HTTP_204_NO_CONTENT)
+async def disable_totp(
+    request: Request,
+    data: SecondFactorConfirmRequest,
+    account: CurrentAccount,
+    mfa: Mfa,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> None:
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    await mfa.disable_totp(account, data.password, data.code)
+
+
+@router.post("/passkeys/options", response_model=PasskeySetupResponse)
+async def passkey_options(
+    account: CurrentAccount,
+    mfa: Mfa,
+    rp: Annotated[RelyingParty, Depends(get_relying_party)],
+) -> PasskeySetupResponse:
+    """Параметры для navigator.credentials.create()."""
+    options, token = await mfa.passkey_registration_options(account, rp)
+    return PasskeySetupResponse(options=json.loads(options), setup_token=token)
+
+
+@router.post(
+    "/passkeys",
+    response_model=PasskeyCreatedResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_passkey(
+    data: PasskeyRegisterRequest,
+    account: CurrentAccount,
+    mfa: Mfa,
+    rp: Annotated[RelyingParty, Depends(get_relying_party)],
+) -> PasskeyCreatedResponse:
+    key, codes = await mfa.register_passkey(
+        account, data.setup_token, data.credential, data.name, rp
+    )
+    return PasskeyCreatedResponse(
+        passkey=PasskeyResponse.model_validate(key), backup_codes=codes
+    )
+
+
+@router.post("/passkeys/{passkey_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_passkey(
+    passkey_id: UUID,
+    data: PasswordConfirmRequest,
+    account: CurrentAccount,
+    mfa: Mfa,
+) -> None:
+    await mfa.delete_passkey(account, passkey_id, data.password)
+
+
+@router.post("/backup-codes", response_model=BackupCodesResponse)
+async def regenerate_backup_codes(
+    data: PasswordConfirmRequest, account: CurrentAccount, mfa: Mfa
+) -> BackupCodesResponse:
+    """Новые 10 резервных кодов; старые перестают действовать."""
+    return BackupCodesResponse(
+        backup_codes=await mfa.regenerate_backup_codes(account, data.password)
+    )
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    request: Request, account: CurrentAccount, mfa: Mfa
+) -> list[SessionResponse]:
+    """Где открыта учётка: браузер, адрес, когда начат сеанс."""
+    sessions = await mfa.sessions(account, read_refresh_cookie(request))
+    return [
+        SessionResponse(
+            id=item.family_id,
+            device=item.device,
+            ip=item.ip,
+            started_at=item.started_at,
+            last_active_at=item.last_active_at,
+            current=item.current,
+        )
+        for item in sessions
+    ]
+
+
+@router.post("/sessions/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
+async def end_session(session_id: UUID, account: CurrentAccount, mfa: Mfa) -> None:
+    """Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
+    для немедленного выхода везде есть /auth/logout-all."""
+    await mfa.end_session(account, session_id)

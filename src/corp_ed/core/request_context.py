@@ -13,3 +13,8 @@ current_request_id: ContextVar[str | None] = ContextVar(
 current_client_ip: ContextVar[str | None] = ContextVar(
     "current_client_ip", default=None
 )
+# Браузер — для списка сеансов и письма о входе с нового устройства (ТЗ
+# §3). Обрезан: заголовок задаёт клиент.
+current_user_agent: ContextVar[str | None] = ContextVar(
+    "current_user_agent", default=None
+)

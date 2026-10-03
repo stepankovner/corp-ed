@@ -44,6 +44,8 @@ from typing import Any
 
 import httpx
 
+from corp_ed.core import totp
+
 API = "/api/v1"
 DEFAULT_BASE_URL = "http://localhost:8000"
 # Что сервер принимает при всех включённых форматах Р-5 (INGEST_EXTRA_FORMATS);
@@ -125,15 +127,48 @@ class StandClient:
         url = path if path.startswith("/health") else f"{API}{path}"
         return await self.http.request(method, url, headers=self._headers(), **kwargs)
 
-    async def login(self, email: str, password: str) -> None:
+    async def login(
+        self, email: str, password: str, totp_secret: str | None = None
+    ) -> None:
         # Код компании во входе больше не нужен (ТЗ §2): после входа
-        # выбрана последняя компания учётки.
+        # выбрана последняя компания учётки. Администратору нужен второй
+        # фактор — код приложения из секрета служебной учётки (check.sh).
         response = await self.request(
-            "POST", "/auth/login", json={"email": email, "password": password}
+            "POST",
+            "/auth/login",
+            json={"email": email, "password": password, "remember": False},
         )
         if response.status_code != 200:
             raise StandError(f"вход: HTTP {response.status_code} {_code(response)}")
-        self.token = response.json()["access_token"]
+        body = response.json()
+        if body.get("status") == "mfa_required":
+            methods = body["mfa"]["methods"]
+            if "totp" not in methods or not totp_secret:
+                raise StandError(
+                    "вход: нужен второй фактор — CORP_ED_TOTP_SECRET "
+                    f"(способы: {', '.join(methods)})"
+                )
+            # Код текущего шага, затем следующего: два запуска проверки за
+            # 30 секунд — тот же код, а повтор кода сервер отвергает.
+            step = totp.current_step()
+            for candidate in (step, step + 1):
+                response = await self.request(
+                    "POST",
+                    "/auth/mfa/verify",
+                    json={
+                        "token": body["mfa"]["token"],
+                        "method": "totp",
+                        "code": totp.code_at(totp_secret, candidate),
+                    },
+                )
+                if response.status_code == 200:
+                    break
+            if response.status_code != 200:
+                raise StandError(
+                    f"второй фактор: HTTP {response.status_code} {_code(response)}"
+                )
+            body = response.json()
+        self.token = body["access_token"]
 
     async def change_password(self, current: str, new: str) -> None:
         response = await self.request(
@@ -220,6 +255,7 @@ async def run_check(
     password: str | None = None,
     token: str | None = None,
     new_password: str | None = None,
+    totp_secret: str | None = None,
     nonce: str | None = None,
     timeout: float = INDEX_TIMEOUT,
     poll_interval: float = POLL_INTERVAL,
@@ -239,7 +275,7 @@ async def run_check(
         if token:
             client.token = token
         elif password:
-            await client.login(email, password)
+            await client.login(email, password, totp_secret)
         else:
             raise StandError("нужен CORP_ED_PASSWORD или CORP_ED_TOKEN")
         me = (await client.request("GET", "/auth/me")).json()
@@ -394,6 +430,7 @@ async def upload_directory(
     password: str | None = None,
     token: str | None = None,
     titles: dict[str, str] | None = None,
+    totp_secret: str | None = None,
 ) -> Report:
     """Загрузить все поддерживаемые файлы папки. Дубликат (тот же sha256
     уже есть в компании) — не ошибка: повторный запуск ничего не ломает."""
@@ -402,7 +439,7 @@ async def upload_directory(
     if token:
         client.token = token
     elif password:
-        await client.login(email, password)
+        await client.login(email, password, totp_secret)
     else:
         raise StandError("нужен CORP_ED_PASSWORD или CORP_ED_TOKEN")
     files = sorted(
@@ -470,6 +507,7 @@ async def _main(args: argparse.Namespace) -> int:
                 password=env.get("CORP_ED_PASSWORD") or None,
                 token=token,
                 new_password=env.get("CORP_ED_NEW_PASSWORD") or None,
+                totp_secret=env.get("CORP_ED_TOTP_SECRET") or None,
                 timeout=args.timeout,
             )
         else:
@@ -483,6 +521,7 @@ async def _main(args: argparse.Namespace) -> int:
                     password=env.get("CORP_ED_PASSWORD") or None,
                     token=token,
                     titles=titles,
+                    totp_secret=env.get("CORP_ED_TOTP_SECRET") or None,
                 )
             except StandError as exc:
                 print(f"Ошибка: {exc}", file=sys.stderr)

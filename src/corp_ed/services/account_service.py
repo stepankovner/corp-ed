@@ -54,6 +54,7 @@ from corp_ed.services.auth_service import (
     TokenPair,
 )
 from corp_ed.services.email_service import EmailService
+from corp_ed.services.mfa_service import InvalidSecondFactorError, MfaService
 
 logger = structlog.get_logger()
 
@@ -78,16 +79,29 @@ class RegistrationClosedError(PermissionError):
         )
 
 
+class SecondFactorRequiredError(PermissionError):
+    """Сброс пароля учётки с приложением или ключом требует ещё и код
+    приложения или резервный код (ТЗ §3): иначе взлом почты обходил бы
+    второй фактор. HTTP 403."""
+
+    code = "second_factor_required"
+
+    def __init__(self) -> None:
+        super().__init__("Введите код из приложения-аутентификатора или резервный код")
+
+
 class AccountService:
     def __init__(
         self,
         session: AsyncSession,
         auth: AuthService,
         audit: AuditRepository,
+        mfa: MfaService,
     ) -> None:
         self.session = session
         self.auth = auth
         self.audit = audit
+        self.mfa = mfa
         self.accounts = AccountRepository(session)
         self.tokens = EmailTokenRepository(session)
         self.users = UserRepository(session)
@@ -235,15 +249,27 @@ class AccountService:
         )
         await self.session.commit()
 
-    async def reset_password(self, raw_token: str, new_password: str) -> TokenPair:
+    async def reset_password(
+        self, raw_token: str, new_password: str, second_factor: str | None = None
+    ) -> TokenPair:
         """Новый пароль по ссылке из письма. Все прежние сессии закрываются;
         ссылка доказывает владение почтой — неподтверждённая почта
-        становится подтверждённой."""
+        становится подтверждённой. С приложением или ключом — ещё и код
+        приложения или резервный (second_factor)."""
         token = await self._active_token(raw_token, EmailTokenPurpose.RESET_PASSWORD)
         account = await self.accounts.get(token.account_id)
         if account is None:
             raise InvalidEmailCodeError()
         validate_password(new_password, email=account.email)
+        if await self.mfa.has_strong(account):
+            if not second_factor:
+                raise SecondFactorRequiredError()
+            if not await self.mfa.verify_code(account, second_factor):
+                token.attempts += 1
+                if token.attempts >= MAX_CODE_ATTEMPTS:
+                    token.used_at = _now()
+                await self.session.commit()
+                raise InvalidSecondFactorError()
         account.hashed_password = hash_password(new_password)
         account.must_change_password = False
         if account.email_verified_at is None:

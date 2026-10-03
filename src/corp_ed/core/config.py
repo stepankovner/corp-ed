@@ -473,6 +473,35 @@ def get_registration_settings() -> RegistrationSettings:
     return RegistrationSettings()
 
 
+class AuthSettings(BaseSettings):
+    """Ключи доступа (WebAuthn, ТЗ §3).
+
+    Пусто — сайт берётся из заголовка Host (его проверяет TrustedHost):
+    https://<хост>, для localhost — http. Задавать нужно, только если
+    фронт и API на разных адресах (разработка: http://localhost:5173).
+    """
+
+    webauthn_rp_id: str | None = None
+    # Через запятую: http://localhost:5173,https://stage.krontoai.ru
+    webauthn_origins: str = ""
+
+    model_config = SettingsConfigDict(
+        env_prefix="AUTH_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def origins(self) -> list[str]:
+        return _split_csv(self.webauthn_origins)
+
+
+@lru_cache
+def get_auth_settings() -> AuthSettings:
+    return AuthSettings()
+
+
 class HttpSettings(BaseSettings):
     """Настройки HTTP-периметра: CORS, хосты, лимиты тела, документация.
 

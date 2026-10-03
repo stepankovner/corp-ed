@@ -285,3 +285,82 @@ def company_rejected(*, name: str | None, company: str) -> RenderedEmail:
         ],
     )
     return RenderedEmail("company_rejected", subject, text, html)
+
+
+def _device_line(device: str | None, ip: str | None) -> str:
+    parts = [p for p in (device, f"адрес {ip}" if ip else None) if p]
+    return ", ".join(parts) if parts else "неизвестное устройство"
+
+
+def login_code(
+    *, name: str | None, code: str, minutes: int, device: str | None, ip: str | None
+) -> RenderedEmail:
+    """Второй фактор по почте (ТЗ §3): код для входа с нового устройства."""
+    where = _device_line(device, ip)
+    subject = f"Код для входа в {BRAND}: {code}"
+    text = (
+        f"{_greeting(name)}\n\n"
+        f"Код для входа: {code}\nДействует {minutes} минут.\n"
+        f"Вход с устройства: {where}.\n\n"
+        "Если это не вы — кто-то знает ваш пароль: смените его в настройках "
+        f"{BRAND} и включите приложение-аутентификатор."
+    )
+    html = _layout(
+        subject,
+        [
+            _p(escape(_greeting(name))),
+            _p("Код для входа:"),
+            _code(code),
+            _muted(f"Действует {minutes} минут. Вход с устройства: {escape(where)}."),
+            _muted(
+                "Если это не вы — кто-то знает ваш пароль: смените его в "
+                f"настройках {BRAND} и включите приложение-аутентификатор."
+            ),
+        ],
+    )
+    return RenderedEmail("login_code", subject, text, html)
+
+
+def new_device_login(
+    *, name: str | None, device: str | None, ip: str | None, reset_url: str
+) -> RenderedEmail:
+    """Вход с нового устройства вторым фактором не из почты (ТЗ §3)."""
+    where = _device_line(device, ip)
+    subject = f"Вход в {BRAND} с нового устройства"
+    text = (
+        f"{_greeting(name)}\n\n"
+        f"В вашу учётную запись {BRAND} вошли с нового устройства: {where}.\n"
+        f"Если это не вы, сразу смените пароль: {reset_url}"
+    )
+    html = _layout(
+        subject,
+        [
+            _p(escape(_greeting(name))),
+            _p(
+                f"В вашу учётную запись {BRAND} вошли с нового устройства: "
+                f"{escape(where)}."
+            ),
+            _p("Если это не вы, сразу смените пароль:"),
+            _button("Сменить пароль", reset_url),
+        ],
+    )
+    return RenderedEmail("new_device_login", subject, text, html)
+
+
+def security_changed(*, name: str | None, what: str, reset_url: str) -> RenderedEmail:
+    """Изменился второй фактор: включён, выключен, ключ добавлен или удалён."""
+    subject = f"Защита учётной записи {BRAND} изменена"
+    text = (
+        f"{_greeting(name)}\n\n{what}\n\n"
+        f"Если это были не вы, сразу смените пароль: {reset_url}"
+    )
+    html = _layout(
+        subject,
+        [
+            _p(escape(_greeting(name))),
+            _p(escape(what)),
+            _p("Если это были не вы, сразу смените пароль:"),
+            _button("Сменить пароль", reset_url),
+        ],
+    )
+    return RenderedEmail("security_changed", subject, text, html)

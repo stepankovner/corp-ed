@@ -30,6 +30,9 @@ from corp_ed.services.auth_service import TokenPair
 
 REFRESH_COOKIE = "kronto_refresh"
 REFRESH_COOKIE_PATH = "/api/v1/auth"
+# «Запомнить это устройство» (ТЗ §3): 30 дней без второго фактора.
+DEVICE_COOKIE = "kronto_device"
+DEVICE_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
 
 
 def session_response(response: Response, pair: TokenPair) -> TokenResponse:
@@ -88,3 +91,22 @@ def ensure_same_origin(request: Request) -> None:
     if host and urlsplit(origin).netloc == host:
         return
     raise PermissionError("Запрос пришёл не со страницы приложения")
+
+
+def set_device_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        DEVICE_COOKIE,
+        token,
+        max_age=DEVICE_COOKIE_MAX_AGE,
+        path=REFRESH_COOKIE_PATH,
+        secure=get_http_settings().is_production,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def read_device_cookie(request: Request) -> str | None:
+    value = request.cookies.get(DEVICE_COOKIE)
+    if not value or len(value) > MAX_TOKEN_LENGTH:
+        return None
+    return value

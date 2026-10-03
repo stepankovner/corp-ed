@@ -30,6 +30,8 @@ class AuditAction(StrEnum):
     ACCOUNT_EMAIL_CHANGED = "account.email_changed"
     ACCOUNT_EMAIL_REVERTED = "account.email_reverted"
     ACCOUNT_DELETED = "account.deleted"
+    MFA_ENABLED = "account.mfa_enabled"
+    MFA_DISABLED = "account.mfa_disabled"
     PASSWORD_RESET_REQUESTED = "auth.password.reset_requested"  # noqa: S105 — имя события
     PASSWORD_RESET_DONE = "auth.password.reset_done"  # noqa: S105 — имя события
     USER_JOIN_REQUESTED = "user.join_requested"

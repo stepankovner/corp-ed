@@ -2,14 +2,14 @@
 моделью: вход, загрузка через песочницу, воркер, ответ со ссылкой,
 общий ответ вне документов, оценка, кредиты, удаление."""
 
-import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.domain.models import Tenant
+from corp_ed.domain.models import Tenant, User
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.stand import main as stand_main
 from corp_ed.stand import run_check, smoke_document, upload_directory
+from tests.api.conftest import TEST_TOTP_SECRET, bearer
 from tests.stand_harness import (
     PASSWORD,
     WordEmbeddings,
@@ -46,6 +46,7 @@ async def test_stand_check_passes_end_to_end(
     async with stand_client(session_maker, embeddings, llm, rag) as client:
         report = await run_check(
             client,
+            totp_secret=TEST_TOTP_SECRET,
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
@@ -77,13 +78,14 @@ async def test_wrong_answer_fails_the_check_and_still_cleans_up(
     rag,  # type: ignore[no-untyped-def]
 ) -> None:
     """Модель не назвала кодовое слово — шаг красный, документ всё равно удалён."""
-    await make_admin(session, tenant_ctx)
+    admin = await make_admin(session, tenant_ctx)
     embeddings = WordEmbeddings()
     llm = FakeAdapter(content="Кодовое слово не указано [1].")
 
     async with stand_client(session_maker, embeddings, llm, rag) as client:
         report = await run_check(
             client,
+            totp_secret=TEST_TOTP_SECRET,
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
@@ -93,7 +95,7 @@ async def test_wrong_answer_fails_the_check_and_still_cleans_up(
         )
         listed = await client.get(
             "/api/v1/materials",
-            headers={"Authorization": f"Bearer {await _token(client)}"},
+            headers={"Authorization": f"Bearer {_token(admin)}"},
         )
 
     assert not report.ok
@@ -114,6 +116,7 @@ async def test_worker_not_running_times_out_with_a_hint(
     ) as client:
         report = await run_check(
             client,
+            totp_secret=TEST_TOTP_SECRET,
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
@@ -144,10 +147,16 @@ async def test_temporary_password_needs_a_new_one(
         session_maker, WordEmbeddings(), FakeAdapter(), rag
     ) as client:
         blocked = await run_check(
-            client, company="test", email=admin.email, password=PASSWORD, nonce=NONCE
+            client,
+            totp_secret=TEST_TOTP_SECRET,
+            company="test",
+            email=admin.email,
+            password=PASSWORD,
+            nonce=NONCE,
         )
         changed = await run_check(
             client,
+            totp_secret=TEST_TOTP_SECRET,
             company="test",
             email=admin.email,
             password=PASSWORD,
@@ -169,13 +178,10 @@ def test_smoke_document_is_unique_per_nonce() -> None:
     assert first[0].endswith(".md")
 
 
-async def _token(client: httpx.AsyncClient) -> str:
-    response = await client.post(
-        "/api/v1/auth/login",
-        json={"email": "stand-admin@test.com", "password": PASSWORD},
-    )
-    token: str = response.json()["access_token"]
-    return token
+def _token(admin: User) -> str:
+    """Токен админа без входа: вход занял бы ещё один код приложения, а
+    один и тот же код сервер дважды не принимает."""
+    return bearer(admin)["Authorization"].removeprefix("Bearer ")
 
 
 async def test_upload_directory_loads_supported_files_once(
@@ -185,7 +191,7 @@ async def test_upload_directory_loads_supported_files_once(
     rag,  # type: ignore[no-untyped-def]
     tmp_path,  # type: ignore[no-untyped-def]
 ) -> None:
-    await make_admin(session, tenant_ctx)
+    admin = await make_admin(session, tenant_ctx)
     (tmp_path / "Правила_отпусков.md").write_text("# Отпуск\n\nОтпуск — 28 дней.\n")
     (tmp_path / "faq.txt").write_text("Пропуск выдаёт охрана на первом этаже.\n")
     (tmp_path / "setup.exe").write_bytes(b"MZ\x90\x00")
@@ -196,6 +202,7 @@ async def test_upload_directory_loads_supported_files_once(
         first = await upload_directory(
             client,
             tmp_path,
+            totp_secret=TEST_TOTP_SECRET,
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
@@ -204,11 +211,12 @@ async def test_upload_directory_loads_supported_files_once(
         again = await upload_directory(
             client,
             tmp_path,
+            totp_secret=TEST_TOTP_SECRET,
             company="test",
             email="stand-admin@test.com",
             password=PASSWORD,
         )
-        token = await _token(client)
+        token = _token(admin)
         listed = await client.get(
             "/api/v1/materials", headers={"Authorization": f"Bearer {token}"}
         )

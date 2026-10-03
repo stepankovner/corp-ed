@@ -9,6 +9,7 @@ import httpx
 import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.connectors.registry import AdapterRegistry, default_registry
@@ -17,6 +18,7 @@ from corp_ed.core.config import (
     ConnectorSettings,
     LLMSettings,
     RagSettings,
+    get_auth_settings,
     get_billing_settings,
     get_connector_settings,
     get_lead_settings,
@@ -24,6 +26,7 @@ from corp_ed.core.config import (
 from corp_ed.core.database import get_session
 from corp_ed.core.dialogue_store import DialogueStore
 from corp_ed.core.exceptions import (
+    MfaSetupRequiredError,
     NoCompanyError,
     NotAuthenticatedError,
     PasswordChangeRequiredError,
@@ -34,7 +37,7 @@ from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
 from corp_ed.core.tenant_context import current_account, current_tenant
-from corp_ed.domain.models import Account, MemberStatus, User, UserRole
+from corp_ed.domain.models import Account, MemberStatus, Passkey, Tenant, User, UserRole
 from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
@@ -74,6 +77,7 @@ from corp_ed.services.glossary_service import GlossaryService
 from corp_ed.services.invite_service import InviteService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
+from corp_ed.services.mfa_service import MfaService, RelyingParty
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 from corp_ed.services.user_service import UserService
 
@@ -144,20 +148,29 @@ def get_user_service(
     return UserService(user_repo, audit, session)
 
 
-def get_account_service(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
-) -> AccountService:
-    return AccountService(session, auth_service, audit)
+def get_relying_party(request: Request) -> RelyingParty:
+    """Сайт для ключей доступа (WebAuthn). Имя хоста — из заголовка Host,
+    который уже проверил TrustedHost; адреса страниц — https этого хоста
+    (http — только для localhost) или AUTH_WEBAUTHN_ORIGINS."""
+    settings = get_auth_settings()
+    host = request.headers.get("host", "")
+    hostname = host.rsplit(":", 1)[0] if not host.startswith("[") else host
+    rp_id = settings.webauthn_rp_id or hostname
+    if settings.origins:
+        origins = settings.origins
+    else:
+        scheme = "http" if hostname in ("localhost", "127.0.0.1") else "https"
+        origins = [f"{scheme}://{host}"]
+    return RelyingParty(id=rp_id, origins=origins)
 
 
 @dataclass(frozen=True)
 class Principal:
-    """Кто вошёл: учётка и, если выбрана компания, членство в ней."""
+    """Кто вошёл: учётка и, если выбрана компания, членство и компания."""
 
     account: Account
     member: User | None
+    tenant: Tenant | None = None
 
 
 async def get_principal_allow_password_change(
@@ -229,7 +242,7 @@ async def get_principal_allow_password_change(
     ):
         raise NotAuthenticatedError("Сессия недействительна")
 
-    return Principal(account=account, member=member)
+    return Principal(account=account, member=member, tenant=tenant)
 
 
 async def get_principal(
@@ -251,15 +264,35 @@ async def get_current_account(
 
 async def get_current_user(
     principal: Annotated[Principal, Depends(get_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> User:
     """Зависимость ручек компании: членство в выбранной компании.
 
     Нет выбранной компании — 403 no_company: фронт показывает экран
-    «Вы ещё не в компании».
+    «Вы ещё не в компании». Администратору и компании с правилом strong
+    нужен надёжный второй фактор (ТЗ §3) — без него 403
+    mfa_setup_required: фронт ведёт на настройку защиты.
     """
-    if principal.member is None:
+    member = principal.member
+    if member is None:
         raise NoCompanyError()
-    return principal.member
+    needs_strong = member.role is UserRole.ADMIN or (
+        principal.tenant is not None and principal.tenant.mfa_policy == "strong"
+    )
+    if needs_strong and not await _has_strong_factor(session, principal.account):
+        raise MfaSetupRequiredError()
+    return member
+
+
+async def _has_strong_factor(session: AsyncSession, account: Account) -> bool:
+    if account.totp_enabled_at is not None:
+        return True
+    count = await session.scalar(
+        select(func.count())
+        .select_from(Passkey)
+        .where(Passkey.account_id == account.id)
+    )
+    return bool(count)
 
 
 def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
@@ -492,6 +525,25 @@ def get_adapter_registry() -> AdapterRegistry:
 @lru_cache
 def get_secret_box() -> SecretBox:
     return SecretBox(get_connector_settings().keys)
+
+
+def get_mfa_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    secrets: Annotated[SecretBox, Depends(get_secret_box)],
+) -> MfaService:
+    # Секрет TOTP шифруется тем же ключом, что учётные данные подключений
+    # (CONNECTOR_SECRETS_KEYS): одно кольцо ключей на сервис.
+    return MfaService(session, secrets, audit)
+
+
+def get_account_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    mfa: Annotated[MfaService, Depends(get_mfa_service)],
+) -> AccountService:
+    return AccountService(session, auth_service, audit, mfa)
 
 
 def get_outbound_client(

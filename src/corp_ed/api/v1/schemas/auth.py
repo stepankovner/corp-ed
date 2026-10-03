@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, StringConstraints
@@ -59,6 +59,8 @@ class TokenRequest(RequestModel):
 
 class ResetPasswordRequest(TokenRequest):
     new_password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    second_factor: str | None = Field(default=None, max_length=32)
+    """Код приложения или резервный — если у учётки приложение или ключ."""
 
 
 class ChangePasswordRequest(RequestModel):
@@ -78,6 +80,47 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"  # noqa: S105 — схема токена (RFC 6750), не пароль
     expires_in: int
+
+
+class MfaChallenge(BaseModel):
+    token: str
+    """Шаг входа — вернуть в /auth/mfa/verify. Действует 10 минут."""
+    methods: list[Literal["email", "totp", "passkey", "backup"]]
+    email_hint: str | None
+    """Куда ушёл код: a***@acme.ru (только для способа email)."""
+
+
+class LoginResponse(BaseModel):
+    """Вход: сразу сессия (доверенное устройство) или второй фактор."""
+
+    status: Literal["ok", "mfa_required"]
+    access_token: str | None = None
+    token_type: str = "bearer"  # noqa: S105 — схема токена (RFC 6750), не пароль
+    expires_in: int | None = None
+    mfa: MfaChallenge | None = None
+
+
+class MfaTokenRequest(RequestModel):
+    token: str = Field(min_length=16, max_length=MAX_TOKEN_LENGTH)
+
+
+class MfaVerifyRequest(MfaTokenRequest):
+    method: Literal["email", "totp", "passkey", "backup"]
+    code: str | None = Field(default=None, max_length=32)
+    credential: dict[str, Any] | None = None
+    """Ответ navigator.credentials.get() в JSON (только для passkey)."""
+
+
+class PasskeyOptionsResponse(BaseModel):
+    options: dict[str, Any]
+    """PublicKeyCredentialRequestOptions / CreationOptions в JSON (base64url)."""
+
+
+class MfaState(BaseModel):
+    strong: bool
+    """Включено приложение или есть ключ доступа."""
+    strong_required: bool
+    """Администратор или компания требует надёжный фактор."""
 
 
 class MembershipItem(BaseModel):
@@ -107,3 +150,4 @@ class MeResponse(BaseModel):
     """Выбранная компания; null — человек без компании."""
     companies: list[MembershipItem]
     """Все компании человека (кроме тех, откуда он ушёл)."""
+    mfa: MfaState

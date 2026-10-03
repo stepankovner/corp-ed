@@ -6,12 +6,14 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     ARRAY,
+    BigInteger,
     CheckConstraint,
     Computed,
     DateTime,
     Float,
     ForeignKey,
     Index,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
@@ -100,6 +102,9 @@ class Tenant(Base):
             "connector_limit IS NULL OR connector_limit > 0",
             name="ck_tenants_connector_limit_positive",
         ),
+        CheckConstraint(
+            "mfa_policy IN ('any', 'strong')", name="ck_tenants_mfa_policy"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -127,6 +132,16 @@ class Tenant(Base):
     # Технический потолок подключений для этой компании; NULL — общий
     # CONNECTOR_MAX_PER_TENANT. Поднимает команда (cli set-tariff).
     connector_limit: Mapped[int | None]
+    # Второй фактор (ТЗ §3): any — достаточно кода на почту; strong —
+    # всем сотрудникам приложение или ключ доступа. Администраторам
+    # strong обязателен всегда. Меняет администратор компании.
+    mfa_policy: Mapped[str] = mapped_column(
+        String(16), default="any", server_default="any"
+    )
+    # Галочка «Запомнить это устройство» на входе (ТЗ §3).
+    allow_remember_device: Mapped[bool] = mapped_column(
+        default=True, server_default=true()
+    )
 
 
 class Account(Base):
@@ -162,6 +177,12 @@ class Account(Base):
     must_change_password: Mapped[bool] = mapped_column(
         default=False, server_default=false()
     )
+    # Приложение-аутентификатор (TOTP, ТЗ §3): секрет зашифрован SecretBox;
+    # totp_last_step — последний принятый 30-секундный шаг (код нельзя
+    # предъявить дважды).
+    totp_secret: Mapped[str | None] = mapped_column(Text)
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)
     # Компания, в которой человек был последней: после входа — она.
     last_tenant_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("tenants.id", ondelete="SET NULL")
@@ -410,6 +431,107 @@ class OutboxEmail(Base):
     )
 
 
+class BackupCode(Base):
+    """Резервный код второго фактора (ТЗ §3): 10 штук, каждый — один раз.
+
+    На случай потерянного телефона. Хранится sha256 с солью учётки.
+    """
+
+    __tablename__ = "backup_codes"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Passkey(Base):
+    """Ключ доступа (WebAuthn, ТЗ §3): отпечаток, Face ID, Windows Hello,
+    аппаратный ключ. Хранится открытый ключ — секрета у нас нет."""
+
+    __tablename__ = "passkeys"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    transports: Mapped[list[str]] = mapped_column(
+        ARRAY(String(32)), default=list, server_default="{}"
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TrustedDevice(Base):
+    """«Запомнить это устройство» (ТЗ §3): 30 дней без второго фактора.
+
+    Браузер держит случайный токен в httpOnly-cookie, здесь — sha256.
+    «Выйти везде» и смена пароля забывают все устройства.
+    """
+
+    __tablename__ = "trusted_devices"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AuthChallenge(Base):
+    """Незавершённый шаг входа или настройки второго фактора (ТЗ §3).
+
+    login — пароль верный, ждём второй фактор (браузер держит токен,
+    здесь — sha256); totp_setup — секрет приложения до подтверждения
+    кодом; passkey_setup — challenge регистрации ключа. Короткий срок,
+    одноразовый.
+    """
+
+    __tablename__ = "auth_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('login', 'totp_setup', 'passkey_setup')",
+            name="ck_auth_challenges_purpose",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # Код на почту для входа — sha256 с солью учётки.
+    email_code_hash: Mapped[str | None] = mapped_column(String(64))
+    webauthn_challenge: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Секрет TOTP до подтверждения — зашифрован SecretBox.
+    payload: Mapped[str | None] = mapped_column(Text)
+    remember: Mapped[bool] = mapped_column(default=False, server_default=false())
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Lead(Base):
     """Заявка на созвон со страницы тарифов (досье 10.1, решение 28.09).
 
@@ -486,6 +608,9 @@ class RefreshToken(Base):
     # «Запомнить это устройство» не отмечено: cookie без срока, сессия
     # кончается с браузером (ТЗ §3).
     remember: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # Для списка сеансов в настройках (ТЗ §3): браузер и адрес при выдаче.
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    ip: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
