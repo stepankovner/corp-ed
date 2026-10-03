@@ -292,6 +292,16 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 одобряет команда (`cli requests approve`): компания создаётся,
 заявитель — администратор.
 
+**Профиль и справочник** (`/account`, `/people`, `/departments`,
+`/avatars`; ТЗ §4, §7): личное — имя, отчество, телефон, Telegram, фото
+— в учётке и общее для всех компаний человека; должность и отдел — в
+членстве, свои в каждой компании. Фото перекодируется в WebP 256×256
+(`services/avatar_service.py`) и лежит отдельно от учётки
+(`account_avatars`); наружу — только подписанной ссылкой со сроком до
+конца следующих суток, которую получают сам человек (в `/auth/me`) и
+коллеги (в `/people`). Справочник — работающие люди компании из токена
+под RLS; отделы заводит администратор.
+
 **Вопрос сотрудника** (`POST /faq/ask`):
 токен → тенант в контекст → лимит частоты → `CreditService.ensure_available`
 (402 до платных вызовов) → режим компании → история диалога из Redis
@@ -379,9 +389,10 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 Тенантские таблицы (все под RLS): `users`, `materials`, `chunks`,
 `qa_log`, `glossary_terms`, `gap_clusters`, `gap_cluster_questions`,
 `connectors`, `connector_user_grants`, `connector_sync_runs`,
-`material_access`, `invites`. Очереди без RLS: `ingest_jobs`,
-`connector_sync_jobs`; без RLS и `leads` — заявки на созвон, клиента ещё
-нет, читает только команда из CLI.
+`material_access`, `invites`, `departments`. Очереди без RLS:
+`ingest_jobs`, `connector_sync_jobs`; без RLS и `leads` — заявки на
+созвон, клиента ещё нет, читает только команда из CLI; `accounts` и
+`account_avatars` — учётка человека вне компаний.
 
 Ловушки, закреплённые в коде: `postgresql.ENUM(...).create(checkfirst=True)`
 для новых enum (и `create_type=False` при переиспользовании существующего); FORCE RLS и массовые правки; генерируемая колонка `fts`;

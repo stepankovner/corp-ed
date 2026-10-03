@@ -98,7 +98,14 @@ describe("компании: список", () => {
       http.post("/api/v1/auth/switch-company", async ({ request }) => {
         body = await request.json();
         profile = me({
-          company: { tenant_id: "t-2", member_id: "m-2", name: "ООО «Север»", role: "employee" },
+          company: {
+            tenant_id: "t-2",
+            member_id: "m-2",
+            name: "ООО «Север»",
+            role: "employee",
+            position: null,
+            department: null,
+          },
           companies: profile.companies,
         });
         return HttpResponse.json(tokens(2));

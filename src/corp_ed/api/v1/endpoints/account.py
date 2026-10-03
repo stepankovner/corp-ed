@@ -1,4 +1,4 @@
-"""Учётка человека: имя, почта, компании, заявки, удаление (ТЗ §2–4).
+"""Учётка человека: профиль, почта, компании, заявки, удаление (ТЗ §2–4).
 
 Ручки работают без выбранной компании: учётка существует сама по себе.
 """
@@ -7,16 +7,18 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 
 from corp_ed.api.v1.dependencies import (
     get_account_service,
+    get_avatar_service,
     get_company_request_service,
     get_current_account,
     get_mfa_service,
     get_relying_party,
 )
 from corp_ed.api.v1.rate_limits import (
+    AVATAR_PER_ACCOUNT,
     COMPANY_REQUEST_PER_ACCOUNT,
     EMAIL_CHANGE_PER_ACCOUNT,
     VERIFY_PER_IP,
@@ -25,18 +27,19 @@ from corp_ed.api.v1.rate_limits import (
     get_rate_limiter,
 )
 from corp_ed.api.v1.schemas.account import (
+    AvatarResponse,
     BackupCodesResponse,
     CompanyRequestCreate,
     CompanyRequestResponse,
     EmailChangeRequest,
     EmailChangeResponse,
     LeaveCompanyRequest,
-    NameUpdateRequest,
     PasskeyCreatedResponse,
     PasskeyRegisterRequest,
     PasskeyResponse,
     PasskeySetupResponse,
     PasswordConfirmRequest,
+    ProfileUpdateRequest,
     SecondFactorConfirmRequest,
     SecurityResponse,
     SessionResponse,
@@ -48,6 +51,11 @@ from corp_ed.api.v1.session_cookie import clear_refresh_cookie, read_refresh_coo
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.domain.models import Account
 from corp_ed.services.account_service import AccountService
+from corp_ed.services.avatar_service import (
+    MAX_AVATAR_BYTES,
+    AvatarService,
+    InvalidAvatarError,
+)
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 
@@ -58,12 +66,35 @@ Service = Annotated[AccountService, Depends(get_account_service)]
 
 
 @router.patch("", status_code=status.HTTP_204_NO_CONTENT)
-async def update_name(
-    data: NameUpdateRequest, account: CurrentAccount, service: Service
+async def update_profile(
+    data: ProfileUpdateRequest, account: CurrentAccount, service: Service
 ) -> None:
-    await service.update_name(
-        account, first_name=data.first_name, last_name=data.last_name
-    )
+    """Имя, отчество, телефон, Telegram (ТЗ §4). Пришедшее null — очистить."""
+    await service.update_profile(account, data.model_dump(exclude_unset=True))
+
+
+@router.put("/avatar", response_model=AvatarResponse)
+async def upload_avatar(
+    file: Annotated[UploadFile, File(description="JPEG, PNG или WebP до 5 МБ")],
+    account: CurrentAccount,
+    avatars: Annotated[AvatarService, Depends(get_avatar_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> AvatarResponse:
+    """Фото профиля: сервер вырезает квадрат 256×256 и убирает метаданные
+    снимка. Формат определяется по содержимому, а не по имени файла."""
+    await enforce(limiter, AVATAR_PER_ACCOUNT, str(account.id))
+    raw = await file.read(MAX_AVATAR_BYTES + 1)
+    if len(raw) > MAX_AVATAR_BYTES:
+        raise InvalidAvatarError()
+    return AvatarResponse(avatar_url=await avatars.save(account, raw))
+
+
+@router.delete("/avatar", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_avatar(
+    account: CurrentAccount,
+    avatars: Annotated[AvatarService, Depends(get_avatar_service)],
+) -> None:
+    await avatars.remove(account)
 
 
 @router.post(

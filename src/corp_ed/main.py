@@ -18,13 +18,16 @@ from corp_ed.api.v1.endpoints import (
     account,
     audit,
     auth,
+    avatars,
     connectors,
+    departments,
     faq,
     gaps,
     glossary,
     invites,
     leads,
     materials,
+    people,
     usage,
     users,
 )
@@ -215,6 +218,9 @@ app = FastAPI(
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(account.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(people.router, prefix="/api/v1")
+app.include_router(departments.router, prefix="/api/v1")
+app.include_router(avatars.router, prefix="/api/v1")
 app.include_router(invites.router, prefix="/api/v1")
 app.include_router(leads.router, prefix="/api/v1")
 app.include_router(materials.router, prefix="/api/v1")

@@ -1,7 +1,7 @@
 import {
+  BookUser,
   ChevronDown,
   House,
-  Link2,
   MessageSquareText,
   PanelLeftClose,
   PanelLeftOpen,
@@ -111,7 +111,7 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
                   label="Вопросы"
                   collapsed={collapsed}
                 />
-                <NavItem to="/sources" icon={Link2} label="Мои источники" collapsed={collapsed} />
+                <NavItem to="/people" icon={BookUser} label="Коллеги" collapsed={collapsed} />
                 {isAdmin(me) ? <AdminNav collapsed={collapsed} /> : null}
               </>
             ) : (

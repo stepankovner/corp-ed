@@ -7,6 +7,8 @@ from corp_ed.api.v1.dependencies import (
     Principal,
     get_account_service,
     get_auth_service,
+    get_avatar_service,
+    get_department_repository,
     get_invite_service,
     get_mfa_service,
     get_principal,
@@ -34,6 +36,7 @@ from corp_ed.api.v1.rate_limits import (
 from corp_ed.api.v1.schemas.auth import (
     ChangePasswordRequest,
     CurrentCompany,
+    DepartmentRef,
     EmailRequest,
     EmailSentResponse,
     LoginRequest,
@@ -65,10 +68,12 @@ from corp_ed.core.password_policy import validate_password
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.tenant_context import account_scope
 from corp_ed.repositories.account_repository import normalize_email
+from corp_ed.repositories.department_repository import DepartmentRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.account_service import AccountService
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.avatar_service import AvatarService
 from corp_ed.services.invite_service import InviteService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 
@@ -81,6 +86,8 @@ async def read_me(
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
     user_repo: Annotated[UserRepository, Depends(get_user_repository)],
     mfa: Annotated[MfaService, Depends(get_mfa_service)],
+    avatars: Annotated[AvatarService, Depends(get_avatar_service)],
+    departments: Annotated[DepartmentRepository, Depends(get_department_repository)],
 ) -> MeResponse:
     """Кто вошёл: учётка, выбранная компания и все компании человека.
     Доступна и до смены временного пароля: фронту нужно знать
@@ -104,18 +111,32 @@ async def read_me(
     company = None
     if member is not None:
         tenant = await tenant_repo.get_by_id(member.tenant_id)
+        # Отдел ищется под RLS компании из токена — чужой не найдётся.
+        department = (
+            await departments.get_by_id(member.department_id)
+            if member.department_id
+            else None
+        )
         company = CurrentCompany(
             tenant_id=member.tenant_id,
             member_id=member.id,
             name=tenant.name if tenant else "",
             role=member.role,
+            position=member.position,
+            department=DepartmentRef(id=department.id, name=department.name)
+            if department
+            else None,
         )
     return MeResponse(
         id=account.id,
         email=account.email,
         first_name=account.first_name,
         last_name=account.last_name,
+        patronymic=account.patronymic,
         full_name=account.full_name,
+        phone=account.phone,
+        telegram=account.telegram,
+        avatar_url=await avatars.url_for(account.id),
         must_change_password=account.must_change_password,
         last_login_at=account.last_login_at,
         company=company,

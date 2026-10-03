@@ -24,5 +24,7 @@ class UserResponse(BaseModel):
     full_name: str | None
     role: UserRole
     status: MemberStatus
+    position: str | None
+    department_id: UUID | None
     last_login_at: datetime | None
     created_at: datetime

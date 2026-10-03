@@ -18,6 +18,8 @@ function signedInAs(profile: Schemas["MeResponse"] = me()) {
     http.get("/api/v1/materials", () => HttpResponse.json([])),
     http.get("/api/v1/users", () => HttpResponse.json([])),
     http.get("/api/v1/invites", () => HttpResponse.json([])),
+    http.get("/api/v1/people", () => HttpResponse.json([])),
+    http.get("/api/v1/departments", () => HttpResponse.json([])),
   );
 }
 
@@ -50,9 +52,7 @@ describe("боковая панель", () => {
       "aria-current",
       "page",
     );
-    expect(within(nav).getByRole("link", { name: "Мои источники" })).not.toHaveAttribute(
-      "aria-current",
-    );
+    expect(within(nav).getByRole("link", { name: "Коллеги" })).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("button", { name: /^Профиль: Анна Смирнова/ })).toBeVisible();
     expect(document.title).toBe("Вопросы — kronto");
   });
@@ -69,7 +69,7 @@ describe("боковая панель", () => {
       "aria-current",
       "page",
     );
-    expect(within(sections).getAllByRole("link")).toHaveLength(7);
+    expect(within(sections).getAllByRole("link")).toHaveLength(8);
     expect(screen.getAllByRole("navigation")).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "Свернуть разделы управления" }));
@@ -94,7 +94,7 @@ describe("боковая панель", () => {
         },
       ]),
     );
-    const { router } = renderApp("/sources");
+    const { router } = renderApp("/people");
     await user.click(await screen.findByRole("button", { name: "Новый диалог" }));
     await screen.findByRole("log", { name: "Переписка" });
     expect(router.state.location.pathname).toBe("/");
@@ -113,7 +113,7 @@ describe("боковая панель", () => {
     );
     expect(localStorage.getItem("kronto.sidebar")).toBe("collapsed");
     // Подписи остаются для скринридера.
-    expect(screen.getByRole("link", { name: "Мои источники" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Коллеги" })).toBeInTheDocument();
     first.unmount();
 
     renderApp("/");
@@ -197,10 +197,10 @@ describe("телефон", () => {
     await user.click(await screen.findByRole("button", { name: "Открыть меню" }));
     await user.click(
       within(screen.getByRole("dialog", { name: "Меню" })).getByRole("link", {
-        name: "Мои источники",
+        name: "Коллеги",
       }),
     );
-    expect(router.state.location.pathname).toBe("/sources");
+    expect(router.state.location.pathname).toBe("/people");
     expect(screen.queryByRole("dialog", { name: "Меню" })).not.toBeInTheDocument();
   });
 

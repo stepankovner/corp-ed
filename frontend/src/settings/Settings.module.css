@@ -284,3 +284,11 @@
     flex: 1 1 auto;
   }
 }
+
+/* Фото профиля и кнопки рядом; на узком экране кнопки под фото. */
+.photoRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}

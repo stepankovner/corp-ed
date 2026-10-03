@@ -206,6 +206,19 @@
         "title": "AuditEventResponse",
         "type": "object"
       },
+      "AvatarResponse": {
+        "properties": {
+          "avatar_url": {
+            "title": "Avatar Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "avatar_url"
+        ],
+        "title": "AvatarResponse",
+        "type": "object"
+      },
       "BackupCodesResponse": {
         "properties": {
           "backup_codes": {
@@ -227,6 +240,21 @@
           "backup_codes"
         ],
         "title": "BackupCodesResponse",
+        "type": "object"
+      },
+      "Body_upload_avatar_api_v1_account_avatar_put": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "JPEG, PNG или WebP до 5 МБ",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_avatar_api_v1_account_avatar_put",
         "type": "object"
       },
       "Body_upload_material_api_v1_materials_upload_post": {
@@ -767,6 +795,16 @@
       },
       "CurrentCompany": {
         "properties": {
+          "department": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DepartmentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "member_id": {
             "format": "uuid",
             "title": "Member Id",
@@ -775,6 +813,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
           },
           "role": {
             "$ref": "#/components/schemas/UserRole"
@@ -789,9 +838,71 @@
           "tenant_id",
           "member_id",
           "name",
-          "role"
+          "role",
+          "position",
+          "department"
         ],
         "title": "CurrentCompany",
+        "type": "object"
+      },
+      "DepartmentRef": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DepartmentRef",
+        "type": "object"
+      },
+      "DepartmentRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DepartmentRequest",
+        "type": "object"
+      },
+      "DepartmentResponse": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "members"
+        ],
+        "title": "DepartmentResponse",
         "type": "object"
       },
       "EmailChangeRequest": {
@@ -2108,6 +2219,17 @@
       },
       "MeResponse": {
         "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
           "companies": {
             "items": {
               "$ref": "#/components/schemas/MembershipItem"
@@ -2186,6 +2308,39 @@
           "must_change_password": {
             "title": "Must Change Password",
             "type": "boolean"
+          },
+          "patronymic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patronymic"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "telegram": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram"
           }
         },
         "required": [
@@ -2193,7 +2348,11 @@
           "email",
           "first_name",
           "last_name",
+          "patronymic",
           "full_name",
+          "phone",
+          "telegram",
+          "avatar_url",
           "must_change_password",
           "last_login_at",
           "company",
@@ -2436,29 +2595,6 @@
         "title": "MyConnectorResponse",
         "type": "object"
       },
-      "NameUpdateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "first_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "First Name",
-            "type": "string"
-          },
-          "last_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Last Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "first_name",
-          "last_name"
-        ],
-        "title": "NameUpdateRequest",
-        "type": "object"
-      },
       "OAuthCallbackResponse": {
         "description": "Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.",
         "properties": {
@@ -2651,6 +2787,239 @@
           "password"
         ],
         "title": "PasswordConfirmRequest",
+        "type": "object"
+      },
+      "PersonResponse": {
+        "description": "Коллега в справочнике компании (ТЗ §4).",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DepartmentRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "member_id": {
+            "format": "uuid",
+            "title": "Member Id",
+            "type": "string"
+          },
+          "patronymic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patronymic"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "telegram": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram"
+          }
+        },
+        "required": [
+          "member_id",
+          "first_name",
+          "last_name",
+          "patronymic",
+          "full_name",
+          "email",
+          "phone",
+          "telegram",
+          "avatar_url",
+          "position",
+          "department",
+          "role"
+        ],
+        "title": "PersonResponse",
+        "type": "object"
+      },
+      "PersonUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Должность и отдел в компании. Пришедшее null — очистить.",
+        "properties": {
+          "department_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "title": "PersonUpdateRequest",
+        "type": "object"
+      },
+      "ProfileUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Личное в профиле (ТЗ §4). Пришедшее null — очистить, не пришедшее —\nне трогать. Имя и фамилия, если пришли, не пустые.",
+        "properties": {
+          "first_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Name"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Name"
+          },
+          "patronymic": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Patronymic"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "telegram": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram"
+          }
+        },
+        "title": "ProfileUpdateRequest",
         "type": "object"
       },
       "RegisterRequest": {
@@ -3160,6 +3529,18 @@
             "title": "Created At",
             "type": "string"
           },
+          "department_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department Id"
+          },
           "email": {
             "anyOf": [
               {
@@ -3200,6 +3581,17 @@
             ],
             "title": "Last Login At"
           },
+          "position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          },
           "role": {
             "$ref": "#/components/schemas/UserRole"
           },
@@ -3213,6 +3605,8 @@
           "full_name",
           "role",
           "status",
+          "position",
+          "department_id",
           "last_login_at",
           "created_at"
         ],
@@ -3356,12 +3750,13 @@
     },
     "/api/v1/account": {
       "patch": {
-        "operationId": "update_name_api_v1_account_patch",
+        "description": "Имя, отчество, телефон, Telegram (ТЗ §4). Пришедшее null — очистить.",
+        "operationId": "update_profile_api_v1_account_patch",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NameUpdateRequest"
+                "$ref": "#/components/schemas/ProfileUpdateRequest"
               }
             }
           },
@@ -3387,7 +3782,71 @@
             "HTTPBearer": []
           }
         ],
-        "summary": "Update Name",
+        "summary": "Update Profile",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/account/avatar": {
+      "delete": {
+        "operationId": "delete_avatar_api_v1_account_avatar_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Avatar",
+        "tags": [
+          "account"
+        ]
+      },
+      "put": {
+        "description": "Фото профиля: сервер вырезает квадрат 256×256 и убирает метаданные\nснимка. Формат определяется по содержимому, а не по имени файла.",
+        "operationId": "upload_avatar_api_v1_account_avatar_put",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_avatar_api_v1_account_avatar_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvatarResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Avatar",
         "tags": [
           "account"
         ]
@@ -4766,6 +5225,77 @@
         ]
       }
     },
+    "/api/v1/avatars/{account_id}": {
+      "get": {
+        "operationId": "read_avatar_api_v1_avatars__account_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "v",
+            "required": true,
+            "schema": {
+              "maxLength": 16,
+              "minLength": 1,
+              "title": "V",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exp",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Exp",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "maxLength": 32,
+              "minLength": 32,
+              "title": "Sig",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/webp": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Avatar",
+        "tags": [
+          "avatars"
+        ]
+      }
+    },
     "/api/v1/connectors": {
       "get": {
         "operationId": "list_connectors_api_v1_connectors_get",
@@ -5499,6 +6029,179 @@
         "summary": "Test Connector",
         "tags": [
           "connectors"
+        ]
+      }
+    },
+    "/api/v1/departments": {
+      "get": {
+        "description": "Отделы компании — всем её людям: выбрать свой в профиле, отобрать\nколлег в справочнике (ТЗ §4).",
+        "operationId": "list_departments_api_v1_departments_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DepartmentResponse"
+                  },
+                  "title": "Response List Departments Api V1 Departments Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Departments",
+        "tags": [
+          "departments"
+        ]
+      },
+      "post": {
+        "operationId": "create_department_api_v1_departments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepartmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Department",
+        "tags": [
+          "departments"
+        ]
+      }
+    },
+    "/api/v1/departments/{department_id}": {
+      "delete": {
+        "description": "Удалить отдел. Люди остаются, у них просто нет отдела.",
+        "operationId": "delete_department_api_v1_departments__department_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "department_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Department Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Department",
+        "tags": [
+          "departments"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_department_api_v1_departments__department_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "department_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Department Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepartmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepartmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Department",
+        "tags": [
+          "departments"
         ]
       }
     },
@@ -6528,6 +7231,142 @@
         "summary": "Ingest Material",
         "tags": [
           "materials"
+        ]
+      }
+    },
+    "/api/v1/people": {
+      "get": {
+        "description": "Работающие люди компании по алфавиту. Видят только её люди.",
+        "operationId": "list_people_api_v1_people_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PersonResponse"
+                  },
+                  "title": "Response List People Api V1 People Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List People",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/api/v1/people/{member_id}": {
+      "get": {
+        "operationId": "read_person_api_v1_people__member_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Person",
+        "tags": [
+          "people"
+        ]
+      },
+      "patch": {
+        "description": "Должность и отдел: свои — сам человек, чужие — администратор.",
+        "operationId": "update_person_api_v1_people__member_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Person",
+        "tags": [
+          "people"
         ]
       }
     },

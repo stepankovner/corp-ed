@@ -1,17 +1,34 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from corp_ed.api.v1.schemas.auth import PersonName
+from corp_ed.api.v1.schemas.auth import PersonName, ProfileText
 from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.core.password_policy import MAX_PASSWORD_LENGTH
 
 
-class NameUpdateRequest(RequestModel):
-    first_name: PersonName
-    last_name: PersonName
+class ProfileUpdateRequest(RequestModel):
+    """Личное в профиле (ТЗ §4). Пришедшее null — очистить, не пришедшее —
+    не трогать. Имя и фамилия, если пришли, не пустые."""
+
+    first_name: PersonName | None = None
+    last_name: PersonName | None = None
+    patronymic: ProfileText | None = None
+    phone: str | None = Field(default=None, max_length=32)
+    telegram: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def names_are_required(self) -> Self:
+        for field in ("first_name", "last_name"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} не может быть пустым")
+        return self
+
+
+class AvatarResponse(BaseModel):
+    avatar_url: str
 
 
 class EmailChangeRequest(RequestModel):

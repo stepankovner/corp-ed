@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { Navigate, type RouteObject } from "react-router";
+import { Navigate, useLocation, type RouteObject } from "react-router";
 
 import { PublicOnly, RequireAdmin, RequireAuth, RequireCompany } from "./auth/guards";
 import { AppShell } from "./layout/AppShell";
@@ -41,13 +41,21 @@ const PricingPage = lazy(() =>
 const CallRequestPage = lazy(() =>
   import("./pages/CallRequestPage").then((m) => ({ default: m.CallRequestPage })),
 );
-const MySourcesPage = lazy(() =>
-  import("./pages/MySourcesPage").then((m) => ({ default: m.MySourcesPage })),
+const PeoplePage = lazy(() =>
+  import("./people/PeoplePage").then((m) => ({ default: m.PeoplePage })),
+);
+const DepartmentsPage = lazy(() =>
+  import("./admin/DepartmentsPage").then((m) => ({ default: m.DepartmentsPage })),
 );
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
+
+function SourcesRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/settings/connections${search}`} replace />;
+}
 
 function lazyPage(node: ReactNode) {
   return <Suspense fallback={<PageSpinner />}>{node}</Suspense>;
@@ -87,12 +95,16 @@ export const routes: RouteObject[] = [
           {
             element: <RequireCompany />,
             children: [
-              { path: "/sources", element: lazyPage(<MySourcesPage />) },
+              // Возврат с портала OAuth (CONNECTOR_OAUTH_RETURN_URL) — сюда;
+              // «Мои подключения» теперь в настройках (ТЗ §4).
+              { path: "/sources", element: <SourcesRedirect /> },
+              { path: "/people", element: lazyPage(<PeoplePage />) },
               {
                 path: "/admin",
                 element: <RequireAdmin />,
                 children: [
                   { index: true, element: <Navigate to="documents" replace /> },
+                  { path: "departments", element: lazyPage(<DepartmentsPage />) },
                   { path: "documents", element: lazyPage(<DocumentsPage />) },
                   { path: "connectors", element: lazyPage(<ConnectorsPage />) },
                   { path: "connectors/:connectorId", element: lazyPage(<ConnectorPage />) },

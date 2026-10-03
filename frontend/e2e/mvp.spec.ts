@@ -37,6 +37,10 @@ const DOCUMENT = `# Положение о командировках
 Авансовый отчёт сдаётся в течение трёх рабочих дней после возвращения.
 `;
 
+/** Фото 1×1 — сервер всё равно вырежет квадрат 256×256. */
+const PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 let inviteUrl = "";
 let inviteCode = "";
 /** Cookie доверенного устройства администратора: дальше вход без второго шага. */
@@ -284,6 +288,67 @@ test.describe.serial("путь компании", () => {
     // В управление сотрудника не пускает.
     await page.goto("/admin/users");
     await expect(page).toHaveURL(/\/$/);
+  });
+
+  test("администратор заводит отдел", async ({ page, context }) => {
+    await loginAdmin(page, context);
+    await page.goto("/admin/departments");
+    await page.getByRole("button", { name: "Добавить отдел" }).click();
+    await page.getByLabel("Название").fill("Продажи");
+    await page.getByRole("button", { name: "Сохранить" }).click();
+    await expect(page.getByRole("table", { name: "Отделы" })).toContainText("Продажи");
+  });
+
+  test("профиль: фото, контакты, должность и отдел — коллеги видят в справочнике", async ({
+    page,
+    context,
+  }) => {
+    await loginByMail(page, invitedEmail, employeePassword);
+    await page.goto("/settings/profile");
+    // Настоящая загрузка файлом: сервер перекодирует фото в WebP 256×256.
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "me.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(PIXEL_PNG, "base64"),
+    });
+    await expect(page.getByText("Фото обновлено")).toBeVisible();
+
+    const personal = page.getByRole("region", { name: "Личные данные" });
+    await personal.getByLabel("Телефон").fill("8 999 123-45-67");
+    await personal.getByLabel("Telegram").fill("https://t.me/inna_e2e");
+    await personal.getByRole("button", { name: "Сохранить" }).click();
+    await expect(page.getByText("Профиль сохранён")).toBeVisible();
+    await expect(personal.getByLabel("Телефон")).toHaveValue("+7 999 123-45-67");
+
+    const work = page.getByRole("region", { name: /^Работа в «E2E»/ });
+    await work.getByLabel("Должность").fill("Менеджер");
+    await work.getByLabel("Отдел").selectOption({ label: "Продажи" });
+    await work.getByRole("button", { name: "Сохранить" }).click();
+    await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
+
+    // Администратор видит её в справочнике: должность, отдел, фото, контакты.
+    await page.getByRole("button", { name: /^Профиль/ }).click();
+    await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await loginAdmin(page, context);
+    await page.goto("/people");
+    const card = page
+      .getByRole("list", { name: "Коллеги" })
+      .getByRole("button", { name: /Инна Проверкина/ });
+    await expect(card).toContainText("Менеджер");
+    await expect(card).toContainText("Продажи");
+    // Фото пришло по подписанной ссылке и отрисовалось.
+    await expect
+      .poll(() =>
+        card.locator("img").evaluate((img) => (img as { naturalWidth: number }).naturalWidth),
+      )
+      .toBe(256);
+    await card.click();
+    const dialog = page.getByRole("dialog", { name: /Проверкина Инна/ });
+    await expect(dialog.getByRole("link", { name: "+7 999 123-45-67" })).toHaveAttribute(
+      "href",
+      "tel:+79991234567",
+    );
+    await expect(dialog.getByRole("link", { name: "@inna_e2e" })).toBeVisible();
   });
 
   test("учётка без компании вступает по коду с главной", async ({ page }) => {
