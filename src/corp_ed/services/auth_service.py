@@ -6,6 +6,7 @@
 компании читаются из членства на каждый запрос (api/v1/dependencies).
 """
 
+import contextlib
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -125,20 +126,33 @@ class AuthService:
     ) -> TokenPair:
         """Новая сессия (вход, подтверждение почты, сброс пароля): пара
         токенов и коммит всей транзакции — действие и вход фиксируются
-        вместе."""
+        вместе.
+
+        Членство пишется в контексте своей компании: вне его RLS не
+        найдёт строку, и UPDATE ничего не изменит (до 03.10 вход шёл
+        всегда в контексте компании из кода).
+        """
         now = _now()
         account.last_login_at = now
-        if member is not None:
-            member.last_login_at = now
-            account.last_tenant_id = member.tenant_id
-        pair = await self._issue(account, member, family_id=uuid4(), remember=remember)
-        self.audit.record(
-            AuditAction.LOGIN_SUCCEEDED,
-            tenant_id=member.tenant_id if member else None,
-            actor_id=member.id if member else None,
-            details={"account_id": str(account.id)},
+        scope = (
+            tenant_scope(member.tenant_id)
+            if member is not None
+            else contextlib.nullcontext()
         )
-        await self.session.commit()
+        with scope:
+            if member is not None:
+                member.last_login_at = now
+                account.last_tenant_id = member.tenant_id
+            pair = await self._issue(
+                account, member, family_id=uuid4(), remember=remember
+            )
+            self.audit.record(
+                AuditAction.LOGIN_SUCCEEDED,
+                tenant_id=member.tenant_id if member else None,
+                actor_id=member.id if member else None,
+                details={"account_id": str(account.id)},
+            )
+            await self.session.commit()
         return pair
 
     async def refresh(self, raw_token: str) -> TokenPair:

@@ -37,6 +37,7 @@ from corp_ed.domain.types import (
 )
 from corp_ed.ingest.extract import detect_format, extract
 from corp_ed.services.connector_sync_service import ConnectorSyncService, SyncOutcome
+from tests.factories import make_user
 from tests.live.confluence_dc.seed import (
     EMAIL_TEMPLATE,
     EXPECTED_READERS,
@@ -170,7 +171,7 @@ async def people(session: AsyncSession, tenant_ctx: Tenant) -> dict[str, User]:
     """Сотрудники компании в kronto с той же почтой, что в Confluence."""
     users = {}
     for username in USERS:
-        user = User(
+        user = make_user(
             email=_email(username),
             full_name=username,
             role=UserRole.EMPLOYEE,

@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, StringConstraints
 
 from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.core.password_policy import MAX_PASSWORD_LENGTH
@@ -13,6 +13,12 @@ from corp_ed.domain.models import MemberStatus, UserRole
 MAX_TOKEN_LENGTH = 128
 MAX_NAME_LENGTH = 100
 
+# Имя и фамилия: пробелы по краям не считаются, из одних пробелов — пусто.
+PersonName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_NAME_LENGTH),
+]
+
 
 class LoginRequest(RequestModel):
     email: EmailStr
@@ -22,8 +28,8 @@ class LoginRequest(RequestModel):
 
 
 class RegisterRequest(RequestModel):
-    first_name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
-    last_name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    first_name: PersonName
+    last_name: PersonName
     email: EmailStr
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
     consent: Literal[True]

@@ -4,14 +4,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from corp_ed.api.v1.schemas.auth import MAX_NAME_LENGTH
+from corp_ed.api.v1.schemas.auth import PersonName
 from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.core.password_policy import MAX_PASSWORD_LENGTH
 
 
 class NameUpdateRequest(RequestModel):
-    first_name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
-    last_name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    first_name: PersonName
+    last_name: PersonName
 
 
 class EmailChangeRequest(RequestModel):

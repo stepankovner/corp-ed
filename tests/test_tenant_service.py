@@ -16,7 +16,7 @@ from corp_ed.cli import _parser, _read_admin_password
 from corp_ed.core.exceptions import ConflictError, DomainError, WeakPasswordError
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
-from corp_ed.domain.models import AuditEvent, Tenant, User, UserRole
+from corp_ed.domain.models import Account, AuditEvent, Tenant, User, UserRole
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -54,15 +54,61 @@ async def test_provision_creates_tenant_and_admin(session: AsyncSession) -> None
 
     assert result.tenant.company_code == "acme-co"
     assert result.admin.role is UserRole.ADMIN
-    assert result.admin.email == "admin@acme.ru"
-    assert result.admin.must_change_password is True
-    assert verify_password(ADMIN_PASSWORD, result.admin.hashed_password)
+    assert result.account_created is True
+    assert result.account.email == "admin@acme.ru"
+    assert result.account.must_change_password is True
+    # Почту назвал клиент на созвоне — подтверждать её письмом незачем.
+    assert result.account.email_verified_at is not None
+    assert verify_password(ADMIN_PASSWORD, result.account.hashed_password)
     # Контекст тенанта не утёк из сервиса.
     assert current_tenant.get() is None
 
     with tenant_scope(result.tenant.id):
         users = (await session.execute(select(User))).scalars().all()
     assert [user.id for user in users] == [result.admin.id]
+
+
+async def test_provision_makes_existing_account_admin_without_password(
+    session: AsyncSession,
+) -> None:
+    """Учётка уже есть (человек зарегистрировался сам): она становится
+    администратором, пароль не нужен и не меняется."""
+    first = await _service(session).provision(
+        company_code="first",
+        name="First",
+        admin_email="admin@acme.ru",
+        admin_full_name="Анна Петрова",
+        admin_password=ADMIN_PASSWORD,
+        seats=30,
+    )
+    second = await _service(session).provision(
+        company_code="second",
+        name="Second",
+        admin_email="ADMIN@acme.ru",
+        admin_full_name=None,
+        admin_password=None,
+        seats=10,
+    )
+
+    assert second.account_created is False
+    assert second.account.id == first.account.id
+    assert verify_password(ADMIN_PASSWORD, second.account.hashed_password)
+    assert first.account.first_name == "Анна"
+    assert first.account.last_name == "Петрова"
+
+
+async def test_provision_needs_password_for_a_new_account(
+    session: AsyncSession,
+) -> None:
+    with pytest.raises(ConflictError, match="временный пароль"):
+        await _service(session).provision(
+            company_code="acme",
+            name="A",
+            admin_email="nobody@acme.ru",
+            admin_full_name=None,
+            admin_password=None,
+            seats=30,
+        )
 
 
 @pytest.mark.parametrize("code", ["a", "bad code", "код", "a" * 64, "-lead", "x;drop"])
@@ -411,60 +457,54 @@ async def _provisioned(session: AsyncSession) -> TenantService:
     return service
 
 
-async def _update_only_user(session: AsyncSession, **changes: object) -> User:
-    """Единственный пользователь компании; правки — в контексте тенанта,
-    иначе хук изоляции не даст их записать."""
-    tenant = (await session.execute(select(Tenant))).scalar_one()
-    with tenant_scope(tenant.id):
-        user = (await session.execute(select(User))).scalar_one()
-        for name, value in changes.items():
-            setattr(user, name, value)
-        await session.commit()
-    return user
-
-
-async def test_operator_resets_forgotten_admin_password(session: AsyncSession) -> None:
+async def test_operator_resets_forgotten_password(session: AsyncSession) -> None:
     service = await _provisioned(session)
-    admin = await _update_only_user(session, must_change_password=False)
-    version = admin.token_version
+    account = (await session.execute(select(Account))).scalar_one()
+    account.must_change_password = False
+    await session.commit()
+    version = account.token_version
 
-    user = await service.reset_password("ACME", " Admin@Acme.ru ", "Reset-by-team-2026")
+    reset = await service.reset_password(" Admin@Acme.ru ", "Reset-by-team-2026")
 
-    assert user.id == admin.id
-    assert verify_password("Reset-by-team-2026", user.hashed_password)
-    assert user.must_change_password is True
-    assert user.token_version == version + 1
+    assert reset.id == account.id
+    assert verify_password("Reset-by-team-2026", reset.hashed_password)
+    assert reset.must_change_password is True
+    assert reset.token_version == version + 1
     event = (
         await session.execute(
             select(AuditEvent).where(AuditEvent.action == "user.password_reset")
         )
     ).scalar_one()
     assert event.actor_user_id is None
-    assert event.details == {"source": "cli"}
+    assert event.details == {"source": "cli", "account_id": str(account.id)}
     assert current_tenant.get() is None
 
 
-async def test_operator_reset_needs_existing_active_user(session: AsyncSession) -> None:
+async def test_operator_reset_needs_existing_account(session: AsyncSession) -> None:
     service = await _provisioned(session)
-    with pytest.raises(ConflictError, match="Компании"):
-        await service.reset_password("ghost", "admin@acme.ru", "Reset-by-team-2026")
-    with pytest.raises(ConflictError, match="нет сотрудника"):
-        await service.reset_password("acme", "nobody@acme.ru", "Reset-by-team-2026")
+    with pytest.raises(ConflictError, match="Учётки с почтой"):
+        await service.reset_password("nobody@acme.ru", "Reset-by-team-2026")
     with pytest.raises(WeakPasswordError):
-        await service.reset_password("acme", "admin@acme.ru", "short")
-
-    await _update_only_user(session, is_active=False)
-    with pytest.raises(ConflictError, match="заблокирована"):
-        await service.reset_password("acme", "admin@acme.ru", "Reset-by-team-2026")
+        await service.reset_password("admin@acme.ru", "short")
 
 
 def test_cli_reset_password_args() -> None:
+    """Учётка не зависит от компании: кода компании у команды больше нет."""
     args = _parser().parse_args(
-        ["reset-password", "--code", "acme", "--email", "a@b.ru", "--password-stdin"]
+        ["reset-password", "--email", "a@b.ru", "--password-stdin"]
     )
-    assert (args.code, args.email, args.password_stdin) == ("acme", "a@b.ru", True)
+    assert (args.email, args.password_stdin) == ("a@b.ru", True)
     with pytest.raises(SystemExit):
-        _parser().parse_args(["reset-password", "--code", "acme"])
+        _parser().parse_args(["reset-password"])
+
+
+def test_cli_company_requests_args() -> None:
+    request_id = uuid4()
+    args = _parser().parse_args(
+        ["requests", "approve", "--id", str(request_id), "--seats", "20"]
+    )
+    assert (args.requests_command, args.id, args.seats) == ("approve", request_id, 20)
+    assert _parser().parse_args(["requests", "list"]).status == "new"
 
 
 def test_cli_rejects_password_typed_in_cyrillic_layout(

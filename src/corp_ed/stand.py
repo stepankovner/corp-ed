@@ -125,11 +125,11 @@ class StandClient:
         url = path if path.startswith("/health") else f"{API}{path}"
         return await self.http.request(method, url, headers=self._headers(), **kwargs)
 
-    async def login(self, company: str, email: str, password: str) -> None:
+    async def login(self, email: str, password: str) -> None:
+        # Код компании во входе больше не нужен (ТЗ §2): после входа
+        # выбрана последняя компания учётки.
         response = await self.request(
-            "POST",
-            "/auth/login",
-            json={"company_code": company, "email": email, "password": password},
+            "POST", "/auth/login", json={"email": email, "password": password}
         )
         if response.status_code != 200:
             raise StandError(f"вход: HTTP {response.status_code} {_code(response)}")
@@ -206,11 +206,17 @@ async def _wait_ready(
         await sleep(poll_interval)
 
 
+def _company(me: dict[str, Any]) -> dict[str, Any]:
+    """Выбранная компания из /auth/me (с 03.10 — вложенный объект)."""
+    company = me.get("company")
+    return company if isinstance(company, dict) else {}
+
+
 async def run_check(
     http: httpx.AsyncClient,
     *,
-    company: str,
     email: str,
+    company: str | None = None,
     password: str | None = None,
     token: str | None = None,
     new_password: str | None = None,
@@ -233,7 +239,7 @@ async def run_check(
         if token:
             client.token = token
         elif password:
-            await client.login(company, email, password)
+            await client.login(email, password)
         else:
             raise StandError("нужен CORP_ED_PASSWORD или CORP_ED_TOKEN")
         me = (await client.request("GET", "/auth/me")).json()
@@ -246,8 +252,8 @@ async def run_check(
             me = (await client.request("GET", "/auth/me")).json()
         report.add(
             "вход администратора",
-            me.get("role") == "admin",
-            f"роль {me.get('role')}, компания {me.get('company_name')}",
+            _company(me).get("role") == "admin",
+            f"роль {_company(me).get('role')}, компания {_company(me).get('name')}",
         )
 
         usage_before = (await client.request("GET", "/usage")).json()
@@ -383,8 +389,8 @@ async def upload_directory(
     http: httpx.AsyncClient,
     directory: Path,
     *,
-    company: str,
     email: str,
+    company: str | None = None,
     password: str | None = None,
     token: str | None = None,
     titles: dict[str, str] | None = None,
@@ -396,7 +402,7 @@ async def upload_directory(
     if token:
         client.token = token
     elif password:
-        await client.login(company, email, password)
+        await client.login(email, password)
     else:
         raise StandError("нужен CORP_ED_PASSWORD или CORP_ED_TOKEN")
     files = sorted(
@@ -444,12 +450,14 @@ def _parser() -> argparse.ArgumentParser:
 async def _main(args: argparse.Namespace) -> int:
     env = os.environ
     base_url = env.get("CORP_ED_BASE_URL", DEFAULT_BASE_URL)
-    company = env.get("CORP_ED_COMPANY", "")
+    # CORP_ED_COMPANY с 03.10 не нужен (вход по почте), но не мешает:
+    # старые скрипты стенда его передают.
+    company = env.get("CORP_ED_COMPANY") or None
     email = env.get("CORP_ED_EMAIL", "")
     token = env.get("CORP_ED_TOKEN") or None
-    if not token and not (company and email):
+    if not token and not email:
         print(
-            "Ошибка: задайте CORP_ED_COMPANY и CORP_ED_EMAIL (или CORP_ED_TOKEN)",
+            "Ошибка: задайте CORP_ED_EMAIL (или CORP_ED_TOKEN)",
             file=sys.stderr,
         )
         return 2

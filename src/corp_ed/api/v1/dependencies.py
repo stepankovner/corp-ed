@@ -119,14 +119,6 @@ def get_auth_service(
     return AuthService(tenant_repo, user_repo, refresh_repo, audit, session)
 
 
-def get_company_request_service(
-    session: Annotated[AsyncSession, Depends(get_session)],
-    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
-    request: Request,
-) -> CompanyRequestService:
-    return CompanyRequestService(session, audit, get_team_notifier(request))
-
-
 def get_invite_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
@@ -398,6 +390,14 @@ def get_team_notifier(request: Request) -> TeamNotifier:
     уведомлений нет."""
     notifier: TeamNotifier = getattr(request.app.state, "team_notifier", NULL_NOTIFIER)
     return notifier
+
+
+def get_company_request_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
+) -> CompanyRequestService:
+    return CompanyRequestService(session, audit, notifier)
 
 
 def get_dialogue_store(request: Request) -> DialogueStore | None:

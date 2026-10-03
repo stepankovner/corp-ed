@@ -1,3 +1,5 @@
+import asyncio
+import contextvars
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import httpx
@@ -15,11 +17,32 @@ from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
 from corp_ed.core.rate_limit import InMemoryRateLimiter
 from corp_ed.core.security import create_access_token, hash_password
-from corp_ed.core.tenant_context import current_tenant
-from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.core.tenant_context import current_account, current_tenant
+from corp_ed.domain.models import Account, Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.main import app
+from tests.factories import make_user
+
+
+class CleanContextTransport(httpx.ASGITransport):
+    """Каждый запрос — в чистом контексте, как на сервере.
+
+    ASGITransport выполняет приложение в задаче теста, и контекст теста
+    (компания из фикстуры tenant_ctx) протекал в обработчик: код, который
+    пишет в базу вне своей компании, в тестах проходил, а на сервере RLS
+    его отвергал (вход 03.10). Здесь запрос идёт в копии контекста без
+    компании и учётки — их ставит только сам обработчик.
+    """
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        context = contextvars.copy_context()
+        context.run(current_tenant.set, None)
+        context.run(current_account.set, None)
+        task = asyncio.create_task(
+            super().handle_async_request(request), context=context
+        )
+        return await task
 
 
 def _as(user: User) -> Callable[[], Awaitable[User]]:
@@ -59,7 +82,7 @@ async def api(
     # счётчики одного теста не влияли на другой.
     app.state.rate_limiter = InMemoryRateLimiter()
 
-    transport = httpx.ASGITransport(app=app)
+    transport = CleanContextTransport(app=app)
 
     try:
         async with httpx.AsyncClient(
@@ -95,7 +118,7 @@ PASSWORD = "correct-horse-battery-staple"
 @pytest.fixture
 async def account(session: AsyncSession, tenant_ctx: Tenant) -> User:
     """Сотрудник с настоящим паролем — для тестов входа без подмены."""
-    user = User(
+    user = make_user(
         tenant_id=tenant_ctx.id,
         email="worker@test.com",
         role=UserRole.EMPLOYEE,
@@ -108,7 +131,7 @@ async def account(session: AsyncSession, tenant_ctx: Tenant) -> User:
 
 @pytest.fixture
 async def admin_account(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    user = User(
+    user = make_user(
         tenant_id=tenant_ctx.id,
         email="boss@test.com",
         role=UserRole.ADMIN,
@@ -120,13 +143,22 @@ async def admin_account(session: AsyncSession, tenant_ctx: Tenant) -> User:
 
 
 def bearer(user: User) -> dict[str, str]:
-    """Заголовок с настоящим подписанным токеном пользователя."""
+    """Заголовок с настоящим подписанным токеном: учётка и её членство."""
+    assert user.account is not None
     token = create_access_token(
-        user_id=user.id,
+        user.account.id,
+        user.account.token_version,
         tenant_id=user.tenant_id,
+        member_id=user.id,
         role=user.role.value,
-        token_version=user.token_version,
+        member_version=user.token_version,
     )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def account_bearer(account: Account) -> dict[str, str]:
+    """Токен учётки без выбранной компании."""
+    token = create_access_token(account.id, account.token_version)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -134,8 +166,7 @@ async def login(
     api: httpx.AsyncClient, email: str, password: str = PASSWORD
 ) -> httpx.Response:
     return await api.post(
-        "/api/v1/auth/login",
-        json={"company_code": "test", "email": email, "password": password},
+        "/api/v1/auth/login", json={"email": email, "password": password}
     )
 
 

@@ -407,6 +407,8 @@ class AccountService:
                 target_type="user",
                 target_id=member.id,
             )
+            # В контексте компании: вне его RLS не найдёт строку членства.
+            await self.session.flush()
         if account.last_tenant_id == tenant_id:
             account.last_tenant_id = None
         await self.session.commit()
@@ -444,6 +446,7 @@ class AccountService:
                 member = await self.users.get_by_id(membership.id)
                 if member is not None:
                     _mark_left(member)
+                    await self.session.flush()
         self.audit.record(
             AuditAction.ACCOUNT_DELETED, details={"account_id": str(account.id)}
         )

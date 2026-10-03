@@ -44,23 +44,39 @@ def _sign(claims: dict[str, Any], key: str | None = None, alg: str = ALGORITHM) 
 
 
 def test_roundtrip() -> None:
-    user_id, tenant_id = uuid4(), uuid4()
-    token = create_access_token(user_id, tenant_id, "employee", token_version=3)
+    account_id, tenant_id, member_id = uuid4(), uuid4(), uuid4()
+    token = create_access_token(
+        account_id,
+        3,
+        tenant_id=tenant_id,
+        member_id=member_id,
+        role="employee",
+        member_version=5,
+    )
 
     payload = decode_access_token(token)
 
-    assert payload["sub"] == str(user_id)
+    assert payload["sub"] == str(account_id)
     assert payload["tenant_id"] == str(tenant_id)
+    assert payload["member_id"] == str(member_id)
     assert payload["ver"] == 3
+    assert payload["mver"] == 5
     assert payload["iss"] == ISSUER
     assert payload["aud"] == AUDIENCE
 
 
 def test_every_token_has_unique_jti() -> None:
     user_id, tenant_id = uuid4(), uuid4()
-    first = decode_access_token(create_access_token(user_id, tenant_id, "admin", 0))
-    second = decode_access_token(create_access_token(user_id, tenant_id, "admin", 0))
+    first = decode_access_token(create_access_token(user_id, 0, tenant_id=tenant_id))
+    second = decode_access_token(create_access_token(user_id, 0, tenant_id=tenant_id))
     assert first["jti"] != second["jti"]
+
+
+def test_token_without_company_has_no_company_claims() -> None:
+    """Учётка без компании (ТЗ §2): в токене только она и её версия."""
+    payload = decode_access_token(create_access_token(uuid4(), 0))
+    assert "tenant_id" not in payload
+    assert "member_id" not in payload
 
 
 def test_rejects_foreign_signature() -> None:

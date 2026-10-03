@@ -274,6 +274,9 @@ class InviteService:
                 target_id=member.id,
                 details={"invite_id": str(invite.id), "account_id": str(account.id)},
             )
+            # Записать в контексте компании: коммит вызывающего идёт уже
+            # вне его, и RLS не нашёл бы строки членства и приглашения.
+            await self.session.flush()
         logger.info(
             "user_joined_by_invite",
             user_id=str(member.id),

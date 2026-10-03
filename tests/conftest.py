@@ -32,6 +32,7 @@ from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.material_service import MaterialService
+from tests.factories import make_user
 
 load_dotenv()
 TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
@@ -136,7 +137,7 @@ async def tenant_ctx(session: AsyncSession) -> AsyncGenerator[Tenant]:
 
 @pytest.fixture
 async def admin(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    admin = User(
+    admin = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="admin@test.com",
@@ -254,7 +255,7 @@ def faq_service(
 
 @pytest.fixture
 async def employee(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    employee = User(
+    employee = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="employee@test.com",

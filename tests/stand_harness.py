@@ -32,6 +32,7 @@ from corp_ed.llm.fake_embedding import WordEmbeddingAdapter
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.main import app
 from corp_ed.worker import IngestWorker
+from tests.factories import make_user
 
 PASSWORD = "stand-check-password-42"
 
@@ -59,7 +60,7 @@ WordEmbeddings = WordEmbeddingAdapter
 
 
 async def make_admin(session: AsyncSession, tenant: Tenant) -> User:
-    admin = User(
+    admin = make_user(
         id=uuid4(),
         tenant_id=tenant.id,
         email="stand-admin@test.com",

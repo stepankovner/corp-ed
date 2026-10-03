@@ -136,7 +136,8 @@ async def test_temporary_password_needs_a_new_one(
     rag,  # type: ignore[no-untyped-def]
 ) -> None:
     admin = await make_admin(session, tenant_ctx)
-    admin.must_change_password = True
+    assert admin.account is not None
+    admin.account.must_change_password = True
     await session.commit()
 
     async with stand_client(
@@ -171,11 +172,7 @@ def test_smoke_document_is_unique_per_nonce() -> None:
 async def _token(client: httpx.AsyncClient) -> str:
     response = await client.post(
         "/api/v1/auth/login",
-        json={
-            "company_code": "test",
-            "email": "stand-admin@test.com",
-            "password": PASSWORD,
-        },
+        json={"email": "stand-admin@test.com", "password": PASSWORD},
     )
     token: str = response.json()["access_token"]
     return token

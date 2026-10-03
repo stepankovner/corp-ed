@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import LLMSettings
 from corp_ed.core.security import hash_password
-from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.domain.models import Tenant, UserRole
 from corp_ed.domain.types import SyncRunStatus, SyncTrigger
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_llm_gateway
@@ -31,6 +31,7 @@ from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.throttle import InMemoryThrottle
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.stand import run_check
+from tests.factories import make_user
 from tests.live.bitrix24_stand import HAVE_PORTAL, Bitrix24Stand
 from tests.stand_harness import (
     PASSWORD,
@@ -122,7 +123,7 @@ async def test_portal_document_answers_with_a_link_to_the_portal(
     tenant_ctx: Tenant,
     session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    employee = User(
+    employee = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="portal-employee@test.com",
