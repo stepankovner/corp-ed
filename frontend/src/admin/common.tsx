@@ -100,17 +100,20 @@ export function ConfirmDialog({
   );
 }
 
-/** Одноразовый секрет (временный пароль, ссылка-приглашение): показать, дать скопировать. */
+/** Одноразовый секрет (ссылка-приглашение): показать, дать скопировать. */
 export function SecretValue({
   value,
-  copyLabel = "Скопировать пароль",
+  copyLabel = "Скопировать",
+  testId,
 }: {
   value: string;
   copyLabel?: string;
+  /** data-testid значения — по нему секрет берёт e2e. */
+  testId?: string;
 }) {
   return (
     <div className={styles.secret}>
-      <code>{value}</code>
+      <code data-testid={testId}>{value}</code>
       <CopyButton value={value} label={copyLabel} />
     </div>
   );
