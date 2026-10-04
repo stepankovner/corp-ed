@@ -9,7 +9,12 @@ import pytest
 
 from corp_ed.core import totp
 from eval import run_eval
-from eval.api_client import CorpEdClient, parse_search_response
+from eval.api_client import (
+    MAX_RETRIES,
+    CorpEdClient,
+    parse_search_response,
+    retry_after,
+)
 from eval.datasets import GOLDEN_COLUMNS
 from eval.results import read_csv, write_csv
 
@@ -326,3 +331,44 @@ def test_login_without_secret_when_second_factor_required() -> None:
 
     with pytest.raises(SystemExit, match="CORP_ED_TOTP_SECRET"):
         CorpEdClient(http=http).login("admin@acme.ru", "secret")
+
+
+def test_rate_limited_request_waits_and_retries() -> None:
+    # /faq/ask — 30 вопросов в минуту на пользователя: прогон набора в это
+    # упирается, и 429 не должен ронять run_eval.
+    answers = iter(
+        [
+            httpx.Response(429, headers={"Retry-After": "7"}),
+            httpx.Response(503, headers={"Retry-After": "30"}),
+            httpx.Response(200, json={"matches": [VACATION_CHUNK]}),
+        ]
+    )
+    waits: list[float] = []
+    http = httpx.Client(
+        base_url="http://test", transport=httpx.MockTransport(lambda r: next(answers))
+    )
+
+    chunks, _ = CorpEdClient(http=http, sleep=waits.append).search("отпуск", 5)
+
+    assert [c.id for c in chunks] == ["c-31"]
+    assert waits == [7.0, 30.0]
+
+
+def test_rate_limit_gives_up_after_max_retries() -> None:
+    waits: list[float] = []
+    http = httpx.Client(
+        base_url="http://test",
+        transport=httpx.MockTransport(lambda r: httpx.Response(429)),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        CorpEdClient(http=http, sleep=waits.append).search("отпуск", 5)
+
+    # Без Retry-After — 10 с; попыток — MAX_RETRIES + первая.
+    assert waits == [10.0] * MAX_RETRIES
+
+
+def test_retry_after_is_bounded() -> None:
+    assert retry_after(httpx.Response(429, headers={"Retry-After": "3600"})) == 120.0
+    assert retry_after(httpx.Response(429, headers={"Retry-After": "0"})) == 1.0
+    assert retry_after(httpx.Response(429, headers={"Retry-After": "soon"})) == 10.0
