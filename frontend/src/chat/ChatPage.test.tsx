@@ -305,6 +305,44 @@ describe("открытый диалог", () => {
     expect(screen.getByRole("button", { name: "Отправить вопрос" })).toBeInTheDocument();
   });
 
+  it("«Остановить» до первого события сервера — ответ всё равно останавливается", async () => {
+    signedIn();
+    const flow = controlledStream();
+    let stopped = false;
+    const partial = reply({
+      id: "a-2",
+      parent_id: "q-2",
+      content: "",
+      sources: [],
+      siblings: ["a-2"],
+    });
+    server.use(
+      http.get("/api/v1/conversations/c-1", () => HttpResponse.json(conversation())),
+      // Поток открыт, но start ещё не пришёл: номера ответа у фронта нет.
+      http.post("/api/v1/conversations/c-1/messages", () => eventStream(flow.stream)),
+      http.post("/api/v1/conversations/c-1/messages/a-2/stop", () => {
+        stopped = true;
+        flow.push({ type: "done", answer: { ...partial, status: "stopped" }, diagnostics: null });
+        flow.close();
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    renderApp("/c/c-1");
+    await screen.findByText(/Суточные по России/);
+    const user = await ask("Ещё вопрос");
+    await user.click(await screen.findByRole("button", { name: "Остановить ответ" }));
+    expect(stopped).toBe(false);
+
+    flow.push({
+      type: "start",
+      conversation: summary(),
+      question: question({ id: "q-2", parent_id: "a-1", content: "Ещё вопрос" }),
+      answer: { ...partial, status: "generating" },
+    });
+    expect(await screen.findByText("Ответ остановлен.")).toBeInTheDocument();
+    expect(stopped).toBe(true);
+  });
+
   it("👎 с причиной и комментарием", async () => {
     signedIn();
     const votes: unknown[] = [];
