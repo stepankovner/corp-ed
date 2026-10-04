@@ -40,9 +40,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 # Docker и compose — из архива Ubuntu: он доступен из РФ через зеркала,
 # в отличие от download.docker.com. Нужен compose v2 (docker compose).
+# age и rclone — копия бэкапа вне сервера (offsite.sh).
 apt-get install -y -q --no-install-recommends \
     ca-certificates curl git openssh-client openssl cron ufw unattended-upgrades \
-    nginx certbot docker.io docker-compose-v2
+    nginx certbot docker.io docker-compose-v2 age rclone
 
 log "Журнал: 14 дней, логи Docker — в journald"
 # Логи контейнеров — в journald (решение 30.09: хранить 14 дней). Оттуда
