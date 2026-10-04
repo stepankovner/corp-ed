@@ -9,8 +9,10 @@ from corp_ed.ingest.doc import check_container, doc_to_markdown, read_document
 from corp_ed.ingest.ooxml import OfficeFileError
 from corp_ed.ingest.preprocess import preprocess
 from tests.ingest.doc_samples import (
+    END_SUP,
     ENDNOTE,
     FOOTNOTE,
+    SUP,
     Para,
     Row,
     Style,
@@ -283,6 +285,30 @@ def test_footnote_mark_does_not_break_bold_heading() -> None:
         "## Надбавки",
         "Сноска: С 1 января 2026 года.",
         "Текст раздела.",
+    ]
+
+
+def test_manual_superscript_does_not_glue_to_number() -> None:
+    # Верхний индекс прямым форматированием (не сноска Word): номер сноски не
+    # становится частью числа, «м²» остаётся степенью.
+    bounds = Row([0, 2000, 4000])
+    data = doc(
+        [
+            Para("Заявка", cell_end=True),
+            Para("Грант, руб.", cell_end=True),
+            Para("", ttp=True, row=bounds),
+            Para(f"С1ИИ-601828{SUP}1{END_SUP}", cell_end=True),
+            Para(f"5 000 000{SUP}2{END_SUP}", cell_end=True),
+            Para("", ttp=True, row=bounds),
+            Para(f"Офис — 120 м{SUP}2{END_SUP}."),
+            Para(f"Итоги года{SUP}3{END_SUP}", bold=True),
+        ]
+    )
+    assert "С1ИИ-601828<sup>1</sup>" in doc_to_markdown(data)
+    assert _lines(data) == [
+        "Заявка: С1ИИ-601828; Грант, руб.: 5 000 000",
+        "Офис — 120 м².",
+        "## Итоги года",
     ]
 
 

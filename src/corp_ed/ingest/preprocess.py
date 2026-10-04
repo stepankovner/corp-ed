@@ -14,7 +14,10 @@ Markdown, но без мусора, который ест токены и лом
    «Приложение № N к Договору» — лишь на 10 из 85, и это настоящий
    заголовок, его трогать нельзя. Отсюда порог «больше половины страниц».
 3. Встроенный HTML от pymupdf4llm: <br> в ячейках, <u>, <sup>13</sup>
-   (номера сносок) в заголовках.
+   (номера сносок) в заголовках. Тот же <sup> дают .doc, .xlsx, .pptx и
+   .docx (BH-36) для верхнего индекса, набранного вручную: цифры в нём —
+   номер сноски, они убираются, иначе прилипают к числу
+   («С1ИИ-601828<sup>1</sup>» было «С1ИИ-6018281»); «м<sup>2</sup>» → «м²».
 4. Таблицы → строки «Заголовок1: значение; Заголовок2: значение». Чанк,
    разрезавший таблицу, без шапки бесполезен; строка с ключами
    самодостаточна. Пустая шапка (таблица Word без помеченной строки
@@ -86,6 +89,17 @@ _PAGE_NUMBER_LINE = re.compile(
 )
 
 _FOOTNOTE_SUP = re.compile(r"<sup>[\s\d*,]*</sup>", re.IGNORECASE)
+# Номер в начале строки — сама сноска («¹ С учётом НДС.»): с ним уходит и
+# пробел после, иначе строка начинается с пробела.
+_LEADING_FOOTNOTE_SUP = re.compile(
+    r"^[ \t]*<sup>[\s\d*,]*</sup>[ \t]*", re.IGNORECASE | re.MULTILINE
+)
+# Квадратные и кубические единицы длины — не сноска: «120 м<sup>2</sup>».
+_UNIT_POWER = re.compile(
+    r"(?<![^\W\d_])((?:[кмсд]|[kcmd])?[мm])<sup>\s*([23])\s*</sup>",
+    re.IGNORECASE,
+)
+_POWERS = {"2": "²", "3": "³"}
 _BR_TAG = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _INLINE_TAG = re.compile(
     r"</?(?:u|b|i|em|strong|sup|sub|span|s|strike|del|ins|mark|small|font)\b[^>]*>",
@@ -223,6 +237,8 @@ def _drop_edge_lines(page: str, repeated: set[str]) -> str:
 
 
 def _strip_inline_html(text: str) -> str:
+    text = _UNIT_POWER.sub(lambda m: m.group(1) + _POWERS[m.group(2)], text)
+    text = _LEADING_FOOTNOTE_SUP.sub("", text)
     text = _FOOTNOTE_SUP.sub("", text)
     text = _BR_TAG.sub(" ", text)
     return _INLINE_TAG.sub("", text)

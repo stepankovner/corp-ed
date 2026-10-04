@@ -43,7 +43,7 @@ BH-33…BH-35). Замер по форматам —
 | эмбеддинги | `text-embeddings-v2`, 768 | `--embedding-model`, `--embedding-dim` |
 | нарезка | 400 токенов, перекрытие 50, крошки с названием документа | `--chunk-tokens`, `--overlap-tokens`; только в `bench`: `--no-crumbs`, `--crumbs-without-title` |
 | поиск | только вектор | `--retriever hybrid --weights 1.0,0.5` (в `bench` ещё `bm25`) |
-| порог отказа | 0,59 (косинусное расстояние; с 30.09, было 0,51) | `--max-distance` (`offline_e2e`) |
+| порог отказа | 0,59 (косинусное расстояние; с 30.09, было 0,51) | `--max-distance` (`offline_e2e`); вариант «отвечать до 0,70, выдержки до 0,59» (BH-37, замер 04.10) — `--gate-distance 0.70 --near-margin 0.05` |
 | фрагментов в ответ | 5, до 3 000 токенов | `--limit`, `--context-tokens` (`offline_e2e`) |
 | промпт | `faq-v2.5` | — (версия в `src/corp_ed/prompts/faq.py`) |
 | ответа в документах нет | общий ответ с пометкой | `--not-found strict` — только отказ |
@@ -74,7 +74,7 @@ id,question,expected_answer,expected_material,expected_section,in_corpus,type,le
   любой фрагмент нужного раздела.
 - `expected_section` — начало заголовка: `3.1` совпадёт с
   «3.1. Продолжительность», но не с «3.12».
-- `split` — **dev (33)** для настройки и **holdout (19)** для финальной
+- `split` — **dev (39)** для настройки и **holdout (19)** для финальной
   проверки. Разбиение делается один раз (`python -m eval.datasets split`).
   Без `--split holdout` инструменты holdout не берут. **Holdout
   открывается один раз, на финальном прогоне.** Новые вопросы — только
@@ -191,7 +191,9 @@ python -m eval.alice_compare report --ours <…ours-blind_e2e_judged.csv> --alic
 ## Правила
 
 - Одно изменение за эксперимент. Температура 0.
-- Holdout не открывать до финального прогона.
+- Holdout не открывать до финального прогона. Финальный прогон —
+  по протоколу [`docs/ml-holdout-protocol.md`](../docs/ml-holdout-protocol.md)
+  (записан 01.10, до прогона).
 - Прогон дороже 300 ₽ — сначала смета.
 - Не запускать два стенда одновременно: квота эмбеддингов — 10 запросов
   в секунду на каталог, клиент держит 8.

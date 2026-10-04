@@ -376,6 +376,24 @@ def test_shared_strings_rich_text_escapes_and_phonetics() -> None:
     assert lines == ["Главный", "строка", "вторая"]
 
 
+def test_superscript_runs_do_not_glue_to_numbers() -> None:
+    # Верхний индекс в ячейке — <sup>: номер сноски не становится частью
+    # числа, «м²» остаётся степенью (дальше решает preprocess).
+    raised = '<rPr><vertAlign val="superscript"/></rPr>'
+    shared = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        "<si><t>Сумма</t></si><si><t>Площадь</t></si>"
+        f"<si><r><t>5 000 000</t></r><r>{raised}<t>1</t></r></si>"
+        f"<si><r><t>120 м</t></r><r>{raised}<t>2</t></r></si>"
+        "</sst>"
+    )
+    cells = {"A1": "Сумма", "B1": "Площадь", "A2": "5 000 0001", "B2": "120 м2"}
+    data = xlsx([SheetSpec("Лист1", cells)], shared_strings_xml=shared)
+    assert "5 000 000<sup>1</sup>" in xlsx_to_markdown(data)
+    assert _lines(xlsx_to_markdown(data)) == ["Сумма: 5 000 000; Площадь: 120 м²"]
+
+
 def test_container_checks() -> None:
     with pytest.raises(XlsxError) as error:
         check_container(b"%PDF-1.7")

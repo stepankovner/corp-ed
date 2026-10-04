@@ -18,6 +18,8 @@
    ссылки, номер), код
    (`HYPERLINK …`) выбрасывается; оглавление (`TOC`) — целиком: в нём
    названия всех разделов, такой фрагмент вытесняет из выдачи ответы.
+   Верхний индекс прямым форматированием — `<sup>…</sup>` (как у .docx):
+   номер сноски, набранный вручную, иначе прилипает к числу.
 3. Заголовки — по стилю абзаца: встроенные «Заголовок 1–9», «Название»,
    уровень структуры в стиле или в самом абзаце; имя стиля «Heading N» /
    «Заголовок N». Абзац, целиком набранный полужирным, — `**…**`:
@@ -74,6 +76,8 @@ _SPRM_T_VERT_MERGE = 0xD62B
 _SPRM_C_BOLD = 0x0835
 _SPRM_P_HUGE_PAPX = 0x6646
 _SPRM_C_R_MARK_DEL = 0x0800
+_SPRM_C_ISS = 0x2A48
+_ISS_SUPERSCRIPT = 1
 
 _STI_TITLE = 62
 _HEADING_NAME = re.compile(r"^(?:heading|заголовок)\s*([1-9])$", re.IGNORECASE)
@@ -473,6 +477,7 @@ class _Lookup:
             any(s == _SPRM_C_R_MARK_DEL and o[0] for s, o in _sprms(run.grpprl))
             for run in runs
         ]
+        self.superscript: list[bool] = [_direct_superscript(run.grpprl) for run in runs]
 
     def index(self, fc: int) -> int | None:
         index = bisect_right(self.starts, fc) - 1
@@ -483,6 +488,15 @@ class _Lookup:
     def at(self, fc: int) -> _Run | None:
         index = self.index(fc)
         return self.runs[index] if index is not None else None
+
+
+def _direct_superscript(grpprl: bytes) -> bool:
+    """sprmCIss = 1 — верхний индекс (последний sprm в прогоне главнее)."""
+    value = False
+    for sprm, operand in _sprms(grpprl):
+        if sprm == _SPRM_C_ISS:
+            value = operand[0] == _ISS_SUPERSCRIPT
+    return value
 
 
 def _direct_bold(grpprl: bytes) -> int | None:
@@ -639,8 +653,9 @@ def _read(data: bytes) -> DocText:
     }
     note_fcs = frozenset(fcs[cp] for cp in marks)
     text, fcs = _without_fields(*_without_deleted(*_with_marks(text, fcs, marks), chpx))
+    text, fcs, sup_fcs = _with_superscript(text, fcs, chpx, note_fcs)
     paragraphs = _paragraphs(
-        text, fcs, papx, chpx, styles, has_ttp=has_ttp, skip=note_fcs
+        text, fcs, papx, chpx, styles, has_ttp=has_ttp, skip=note_fcs | sup_fcs
     )
     document = _assemble(paragraphs, styles)
     definitions = [
@@ -676,6 +691,7 @@ class _Stories:
     def paragraphs(self, start: int, end: int) -> list[str]:
         text, fcs = _story(self.word, self.pieces, start, end)
         text, fcs = _without_fields(*_without_deleted(text, fcs, self.chpx))
+        text, fcs, _ = _with_superscript(text, fcs, self.chpx, frozenset())
         return [p.text for p in _paragraphs(text, fcs, None, None, {}) if p.text]
 
     def notes(
@@ -725,6 +741,48 @@ def _with_marks(
         chars.append(mark)
         positions.extend([fc] * len(mark))
     return "".join(chars), positions
+
+
+def _with_superscript(
+    text: str, fcs: list[int], chpx: _Lookup, skip: frozenset[int]
+) -> tuple[str, list[int], frozenset[int]]:
+    """Верхний индекс (sprmCIss) → `<sup>…</sup>`, как у .docx после mammoth.
+
+    Набранный вручную индекс — номер сноски, «м²» — иначе прилипает к
+    соседнему символу: «С1ИИ-601828¹» превращалось в «С1ИИ-6018281». Что
+    делать с содержимым, решает `preprocess` (шаг 3). Возвращаются и
+    позиции символов индекса: они, как знаки сносок (skip), не решают,
+    полужирный ли абзац.
+    """
+    if not any(chpx.superscript):
+        return text, fcs, frozenset()
+    flags = [
+        _is_superscript(char, fc, chpx, skip)
+        for char, fc in zip(text, fcs, strict=True)
+    ]
+    chars: list[str] = []
+    positions: list[int] = []
+    for index, (char, fc) in enumerate(zip(text, fcs, strict=True)):
+        if flags[index] and (index == 0 or not flags[index - 1]):
+            chars.append("<sup>")
+            positions.extend([fc] * len("<sup>"))
+        chars.append(char)
+        positions.append(fc)
+        if flags[index] and (index + 1 == len(text) or not flags[index + 1]):
+            chars.append("</sup>")
+            positions.extend([fc] * len("</sup>"))
+    raised = frozenset(fc for fc, flag in zip(fcs, flags, strict=True) if flag)
+    return "".join(chars), positions, raised
+
+
+def _is_superscript(char: str, fc: int, chpx: _Lookup, skip: frozenset[int]) -> bool:
+    run = chpx.index(fc)
+    return (
+        run is not None
+        and chpx.superscript[run]
+        and fc not in skip
+        and ord(char) >= 0x20
+    )
 
 
 def _without_deleted(text: str, fcs: list[int], chpx: _Lookup) -> tuple[str, list[int]]:
