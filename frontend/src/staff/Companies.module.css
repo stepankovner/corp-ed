@@ -1,0 +1,60 @@
+/* Наша панель, вкладка «Компании»: таблица компаний и окно правки. */
+
+/* Компания: название, код и почта администраторов — длинная почта переносится. */
+.company {
+  display: grid;
+  gap: 2px;
+  min-width: 14rem;
+  overflow-wrap: anywhere;
+}
+.name {
+  font-weight: 500;
+}
+.code {
+  color: var(--muted);
+}
+
+/* Ячейка с плашкой под текстом: пилот, места. */
+.cell {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+
+/* Доля потраченного пула под числами: с 80 % — предупреждение, с 100 % — ошибка. */
+.share {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.share.warn {
+  color: var(--warn-ink);
+}
+.share.error {
+  color: var(--error);
+}
+
+/* Окно правки: сводка сверху, поля ниже. */
+.summary {
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.contacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+
+/* Дата пилота и «Без пилота» — в одну строку, кнопка вровень с полем. */
+.pilotRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--s-3);
+}
+.pilotHint {
+  margin-top: 6px;
+}
