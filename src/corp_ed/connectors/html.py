@@ -67,7 +67,10 @@ def html_to_markdown(html: str) -> str:
         ):
             del element.attrs["src"]
     body = soup.body or soup
-    markdown = markdownify(str(body), heading_style="ATX", strip=["img"])
+    # Верхний индекс — тегом, как в .docx (BH-36): разбирает preprocess.
+    markdown = markdownify(
+        str(body), heading_style="ATX", strip=["img"], sup_symbol="<sup>"
+    )
     markdown = re.sub(r"\n{3,}", "\n\n", markdown).strip()
     if len(markdown) > MAX_EXTRACTED_CHARS:
         raise ExtractionError("document_too_large")
