@@ -581,6 +581,8 @@ def get_faq_builder(
             session=session,
             limit=settings.faq_limit,
             max_distance=settings.faq_max_distance,
+            gate_distance=settings.faq_gate_distance,
+            near_margin=settings.faq_near_margin,
             context_max_tokens=settings.context_max_tokens,
             temperature=settings.faq_temperature,
             retriever=Retriever(settings.retriever),
