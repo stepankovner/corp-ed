@@ -679,6 +679,10 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
     (`{container=~"kronto-.*"}`), 14 дней;
   - история выкаток: `/var/log/kronto/deploys.log`;
   - cron: `/var/log/kronto/cron.log`.
+- **Настройки ответов** (`RAG_*`) выкатка берёт из `.env.example`
+  коммита и пишет в `.env` сервера сама — в логе workflow строка
+  «==> настройки ответов» и что поменялось. Руками — только размер
+  фрагментов (нужна переиндексация) и реранкер (ниже).
 - **Реранкер** (когда ML скажет включить): на сервере
   `sudo /opt/kronto/deploy/reranker/fetch-model.sh`, затем в `.env` —
   `COMPOSE_PROFILES=reranker` и
