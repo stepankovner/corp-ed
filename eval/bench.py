@@ -37,6 +37,7 @@ from pathlib import Path
 
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import expand_query, fuse_query_rankings
+from corp_ed.domain.rerank import rerank_allowed
 from corp_ed.prompts.multi_query import PROMPT_VERSION as MQ_PROMPT_VERSION
 from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
 from eval.datasets import EvalItem, load_dataset, select_split
@@ -49,6 +50,7 @@ from eval.rerank import (
     config_suffix,
     make_reranker,
     rerank_candidates,
+    rerank_rule_suffix,
 )
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.retrieval_eval import evaluate_retrieval, format_report
@@ -186,6 +188,19 @@ def add_rerank_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="M3: пересортировать только кандидатов не дальше порога",
     )
+    parser.add_argument(
+        "--rerank-order",
+        choices=("score", "keep_first", "rrf"),
+        default="score",
+        help="как ставить прошедших порог: по баллу; ближайший по вектору "
+        "первым; RRF вектора и балла (починка длинных вопросов, 04.10)",
+    )
+    parser.add_argument(
+        "--rerank-max-words",
+        type=int,
+        default=None,
+        help="вопрос длиннее стольких слов — без реранкера (починка 04.10)",
+    )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -288,6 +303,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             quantize=args.rerank_quantize,
         )
         + (f"-md{args.rerank_max_distance}" if args.rerank_max_distance else "")
+        + rerank_rule_suffix(args.rerank_order, args.rerank_max_words)
         if args.rerank
         else ""
     )
@@ -394,15 +410,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         if reranker is not None:
             before = reranker.scoring_ms
             query = queries[index]
-            ranking = rerank_candidates(
-                ranking,
-                distance_of,
-                lambda idx, q=query: reranker.score(
-                    q, [rerank_text(chunks[i], args.rerank_text) for i in idx]
-                ),
-                depth=args.rerank_depth,
-                max_distance=args.rerank_max_distance,
-            )
+            if rerank_allowed(query, args.rerank_max_words):
+                ranking = rerank_candidates(
+                    ranking,
+                    distance_of,
+                    lambda idx, q=query: reranker.score(
+                        q, [rerank_text(chunks[i], args.rerank_text) for i in idx]
+                    ),
+                    depth=args.rerank_depth,
+                    max_distance=args.rerank_max_distance,
+                    order=args.rerank_order,
+                )
             rerank_ms[item.id] = reranker.scoring_ms - before
         retrieved[item.id] = [
             _retrieved(chunks[i], distance_of.get(i)) for i in ranking[: args.k]

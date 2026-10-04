@@ -2,7 +2,7 @@
 
 import pytest
 
-from corp_ed.domain.rerank import order_by_scores, rerank
+from corp_ed.domain.rerank import order_by_scores, order_passed, rerank, rerank_allowed
 
 
 def test_order_by_scores_keeps_original_order_on_ties() -> None:
@@ -43,3 +43,41 @@ def test_rerank_without_threshold_scores_whole_head() -> None:
     assert result == [3, 2, 1]
     with pytest.raises(ValueError):
         rerank([1], {}, lambda items: [0.0], depth=0)
+
+
+def test_order_passed_rules_for_long_questions() -> None:
+    # Прошедшие порог — в порядке вектора; модель любит «c» и «b», а
+    # ближайший по вектору «a» ставит последним (как на длинных вопросах).
+    passed = ["a", "b", "c", "d"]
+    scores = [0.1, 0.8, 0.9, 0.2]
+
+    assert order_passed(passed, scores) == ["c", "b", "d", "a"]
+    assert order_passed(passed, scores, "keep_first") == ["a", "c", "b", "d"]
+    # RRF, k = 60: места по вектору a1 b2 c3 d4, по баллу c1 b2 d3 a4 —
+    # c 1/63 + 1/61 > b 2/62 > a 1/61 + 1/64 > d 1/64 + 1/63; «a» уже не
+    # последний, как при сортировке по баллу.
+    assert order_passed(passed, scores, "rrf") == ["c", "b", "a", "d"]
+    assert order_passed([], [], "keep_first") == []
+    with pytest.raises(ValueError):
+        order_passed(passed, scores, "other")  # type: ignore[arg-type]
+
+
+def test_rerank_order_applies_only_to_passed() -> None:
+    ranking = ["a", "far", "b", "c"]
+    distance_of = {"a": 0.3, "far": 0.7, "b": 0.4, "c": 0.5}
+    scores = {"a": 0.1, "b": 0.5, "c": 0.9}
+
+    def score(items: list[str]) -> list[float]:
+        return [scores[item] for item in items]
+
+    kept = rerank(
+        ranking, distance_of, score, depth=4, max_distance=0.59, order="keep_first"
+    )
+    assert kept == ["a", "c", "b", "far"]
+
+
+def test_rerank_allowed_counts_words() -> None:
+    assert rerank_allowed("Сколько дней отпуска?", 40)
+    assert not rerank_allowed(" ".join(["слово"] * 41), 40)
+    assert rerank_allowed(" ".join(["слово"] * 40), 40)
+    assert rerank_allowed(" ".join(["слово"] * 400), None)

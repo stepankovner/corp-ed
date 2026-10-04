@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from corp_ed.domain.rerank import order_by_scores, rerank
+from corp_ed.domain.rerank import RerankOrder, order_by_scores, rerank
 
 DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
 DEFAULT_DEPTH = 30
@@ -49,13 +49,23 @@ def rerank_candidates(
     *,
     depth: int,
     max_distance: float | None = None,
+    order: RerankOrder = "score",
 ) -> list[int]:
     """Переупорядочить первые depth кандидатов; остальные — следом, как были.
 
     Та же функция, что в продукте (`corp_ed.domain.rerank.rerank`, BH-32):
     реранкер видит только прошедших порог, не прошедшие идут после них.
     """
-    return rerank(ranking, distance_of, score, depth=depth, max_distance=max_distance)
+    return rerank(
+        ranking, distance_of, score, depth=depth, max_distance=max_distance, order=order
+    )
+
+
+def rerank_rule_suffix(order: str, max_words: int | None) -> str:
+    """Имя прогона: правило починки длинных вопросов (04.10), если задано."""
+    return ("" if order == "score" else f"-{order}") + (
+        f"-w{max_words}" if max_words is not None else ""
+    )
 
 
 @dataclass

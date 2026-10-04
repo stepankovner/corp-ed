@@ -59,6 +59,7 @@ from corp_ed.domain.context import (
 )
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
+from corp_ed.domain.rerank import RerankOrder, rerank_allowed
 from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
@@ -94,6 +95,7 @@ from eval.rerank import (
     config_suffix,
     make_reranker,
     rerank_candidates,
+    rerank_rule_suffix,
 )
 from eval.results import RESULTS_DIR, append_summary, results_path, write_csv
 from eval.run_eval import is_answered, looks_like_refusal, summarize_e2e
@@ -234,6 +236,8 @@ def retrieve(
     rerank_kind: str = "embed",
     gate_distance: float | None = None,
     near_margin: float = 0.0,
+    rerank_order: RerankOrder = "score",
+    rerank_max_words: int | None = None,
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
 
@@ -250,6 +254,9 @@ def retrieve(
     gate_distance (BH-37) — порог реранкера у каждого вопроса свой, как в
     faq_service: `relevance_limit` по ближайшему фрагменту; ответа по
     документам нет — реранкер не зовём.
+
+    rerank_order, rerank_max_words — кандидаты починки длинных вопросов
+    (`domain.rerank.order_passed`, `rerank_allowed`; 04.10).
     """
     if (
         reranker is not None
@@ -297,8 +304,12 @@ def retrieve(
             )
         # С gate ответа по документам нет — продукт реранкер не зовёт; без
         # gate None — оценить всех первых rerank_depth (как было).
-        if reranker is not None and (gate_distance is None or cutoff is not None):
-            question = questions[index]
+        question = questions[index]
+        if (
+            reranker is not None
+            and (gate_distance is None or cutoff is not None)
+            and rerank_allowed(question, rerank_max_words)
+        ):
             ranking = rerank_candidates(
                 ranking,
                 distance_of,
@@ -307,6 +318,7 @@ def retrieve(
                 ),
                 depth=rerank_depth,
                 max_distance=cutoff,
+                order=rerank_order,
             )
         results.append(
             (
@@ -533,6 +545,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.rerank_text,
             quantize=args.rerank_quantize,
         )
+        + rerank_rule_suffix(args.rerank_order, args.rerank_max_words)
         if args.rerank
         else ""
     )
@@ -595,6 +608,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         rerank_kind=args.rerank_text,
         gate_distance=args.gate_distance,
         near_margin=args.near_margin,
+        rerank_order=args.rerank_order,
+        rerank_max_words=args.rerank_max_words,
     )
     if reranker is not None:
         reranker.save()

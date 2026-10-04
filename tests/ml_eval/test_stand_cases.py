@@ -3,6 +3,8 @@
 import csv
 from pathlib import Path
 
+import pytest
+
 from eval.datasets import GOLDEN_COLUMNS, load_dataset
 from eval.stand_cases import (
     FAIL_FORBIDDEN,
@@ -133,20 +135,28 @@ def test_rule_matches_backend_verdicts_on_recorded_answers() -> None:
     assert mismatched == []
 
 
-def test_long_questions_keep_answers_of_their_stand_cases() -> None:
-    # eval/stand_long.csv: меняется только вопрос — ответ, запрещённые слова
-    # и документ взяты из случая стенда, на который указывает note.
-    long_path = Path(__file__).parents[2] / "eval" / "stand_long.csv"
-    with long_path.open(encoding="utf-8", newline="") as file:
-        origin = {
-            row["id"]: row["note"].removeprefix("длинная версия ")
-            for row in csv.DictReader(file)
-        }
+@pytest.mark.parametrize(
+    ("name", "count", "words"),
+    [
+        ("stand_long.csv", 15, (55, 80)),
+        ("stand_long_val.csv", 20, (25, 80)),
+        ("stand_mid_val.csv", 10, (15, 24)),
+    ],
+)
+def test_question_sets_keep_answers_of_their_stand_cases(
+    name: str, count: int, words: tuple[int, int]
+) -> None:
+    # Наборы реранкера на длинных вопросах (04.10): меняется только вопрос —
+    # ответ, запрещённые слова и документ взяты из случая стенда, на который
+    # указывает note; источники наборов не пересекаются.
+    path = Path(__file__).parents[2] / "eval" / name
+    with path.open(encoding="utf-8", newline="") as file:
+        origin = {row["id"]: row["note"].split()[-1] for row in csv.DictReader(file)}
     source = {case.id: case for case in load_cases(STAND)}
-    long = load_cases(long_path)
+    cases = load_cases(path)
 
-    assert len(long) == 15
-    for case in long:
+    assert len(cases) == count
+    for case in cases:
         stand = source[origin[case.id]]
         assert (case.groups, case.forbidden, case.materials, case.in_corpus) == (
             stand.groups,
@@ -154,4 +164,13 @@ def test_long_questions_keep_answers_of_their_stand_cases() -> None:
             stand.materials,
             stand.in_corpus,
         )
-        assert len(case.question) > 3 * len(stand.question)
+        assert words[0] <= len(case.question.split()) <= words[1]
+
+
+def test_question_sets_use_different_stand_cases() -> None:
+    seen: list[str] = []
+    for name in ("stand_long.csv", "stand_long_val.csv", "stand_mid_val.csv"):
+        path = Path(__file__).parents[2] / "eval" / name
+        with path.open(encoding="utf-8", newline="") as file:
+            seen += [row["note"].split()[-1] for row in csv.DictReader(file)]
+    assert len(seen) == len(set(seen)) == 45
