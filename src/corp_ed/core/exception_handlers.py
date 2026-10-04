@@ -6,32 +6,30 @@ from fastapi.responses import JSONResponse
 logger = structlog.get_logger()
 
 
+def _body(exc: Exception) -> dict[str, str]:
+    """Текст для человека и, если есть, машинный код для фронта
+    (email_not_verified, no_company…): по тексту ветвиться нельзя."""
+    body = {"detail": str(exc)}
+    code = getattr(exc, "code", None)
+    if isinstance(code, str):
+        body["code"] = code
+    return body
+
+
 async def domain_fallback_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        content={"detail": str(exc)},
-    )
+    return JSONResponse(status_code=status.HTTP_400_BAD_REQUEST, content=_body(exc))
 
 
 async def conflict_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content={"detail": str(exc)},
-    )
+    return JSONResponse(status_code=status.HTTP_409_CONFLICT, content=_body(exc))
 
 
 async def not_found_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={"detail": str(exc)},
-    )
+    return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=_body(exc))
 
 
 async def permission_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN,
-        content={"detail": str(exc)},
-    )
+    return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=_body(exc))
 
 
 async def invalid_credentials_handler(request: Request, exc: Exception) -> JSONResponse:

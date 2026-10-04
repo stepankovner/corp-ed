@@ -10,6 +10,11 @@ from corp_ed.domain.credits import CreditUsage, billing_period, credits_for
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.services.notification_service import (
+    Notice,
+    NotificationKind,
+    NotificationService,
+)
 from corp_ed.services.team_notify import (
     NULL_NOTIFIER,
     TeamNotifier,
@@ -48,6 +53,7 @@ class CreditService:
         warn_at_percent: int,
         now: Callable[[], datetime] = _utcnow,
         notifier: TeamNotifier = NULL_NOTIFIER,
+        notifications: NotificationService | None = None,
     ) -> None:
         self.tenant_repo = tenant_repo
         self.qa_log_repo = qa_log_repo
@@ -58,6 +64,9 @@ class CreditService:
         self.warn_at_percent = warn_at_percent
         self.now = now
         self.notifier = notifier
+        # Колокольчик и письма администраторам — в той же сессии, что и
+        # событие порога: нет события — нет и уведомления.
+        self.notifications = notifications or NotificationService(audit.session)
 
     def cost(self, tokens: int) -> int:
         return credits_for(tokens, self.tokens_per_credit)
@@ -135,6 +144,9 @@ class CreditService:
                 used=used,
                 pool=before.pool,
             )
+            await self.notifications.notify_admins(
+                tenant_id, _credits_notice(action, before, used)
+            )
             if action is AuditAction.CREDITS_EXHAUSTED:
                 # Команде (П-5): компания упёрлась в пул — повод позвонить.
                 tenant = await self.tenant_repo.get_by_id(tenant_id)
@@ -146,3 +158,30 @@ class CreditService:
                         until=before.period_end,
                     )
                 )
+
+
+def _credits_notice(action: AuditAction, usage: CreditUsage, used: int) -> Notice:
+    until = usage.period_end.strftime("%d.%m.%Y")
+    if action is AuditAction.CREDITS_EXHAUSTED:
+        return Notice(
+            kind=NotificationKind.CREDITS_EXHAUSTED,
+            title="Лимит вопросов исчерпан",
+            lines=[
+                f"Израсходовано {used} из {usage.pool} кредитов на месяц.",
+                f"Сотрудники не смогут задавать вопросы до {until}. Чтобы "
+                "продолжить раньше, добавьте места: «Тариф» → «Сменить тариф».",
+            ],
+            link="/admin/tariff",
+            action="Открыть тариф",
+        )
+    return Notice(
+        kind=NotificationKind.CREDITS_WARNING,
+        title=f"Лимит вопросов: израсходовано {usage.warn_at_percent} %",
+        lines=[
+            f"Израсходовано {used} из {usage.pool} кредитов на месяц.",
+            f"Когда лимит закончится, вопросы остановятся до {until}. "
+            "Добавить места — «Тариф» → «Сменить тариф».",
+        ],
+        link="/admin/tariff",
+        action="Открыть тариф",
+    )

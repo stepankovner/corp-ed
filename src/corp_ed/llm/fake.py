@@ -1,4 +1,6 @@
+import asyncio
 import re
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
 from corp_ed.llm.gateway import LLMGateway
@@ -6,12 +8,18 @@ from corp_ed.llm.types import Completion, FinishReason, Message, Usage
 
 
 class FakeAdapter(LLMGateway):
+    model_name = "fake"
+
     def __init__(
         self,
         content: str = "фейковый ответ",
         finish_reason: FinishReason = FinishReason.COMPLETED,
     ):
         self.content = content
+        # Потоковая выдача в тестах: на какие куски резать ответ и чего
+        # ждать перед каждым (остановка посреди ответа).
+        self.pieces: list[str] | None = None
+        self.before_piece: Callable[[int], Awaitable[None]] | None = None
         self.calls: list[list[Message]] = []
         self.call_kwargs: list[dict[str, float | int]] = []
         self.response_formats: list[dict[str, Any] | None] = []
@@ -41,10 +49,31 @@ class FakeAdapter(LLMGateway):
             latency_ms=0,
         )
 
+    async def stream(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float = 0.3,
+        max_tokens: int = 1000,
+    ) -> AsyncGenerator[str | Completion, None]:
+        completion = await self.generate(
+            messages, temperature=temperature, max_tokens=max_tokens
+        )
+        pieces = self.pieces if self.pieces is not None else [completion.content]
+        for index, piece in enumerate(pieces):
+            if self.before_piece is not None:
+                await self.before_piece(index)
+            if piece:
+                yield piece
+        yield completion
+
 
 _FIRST_EXCERPT = re.compile(
     r"^\[1\][^\n]*\n(.+?)(?:\n\n\[2\]|\n\nВопрос сотрудника:)", re.S | re.M
 )
+
+
+_CONDENSE_QUESTION = re.compile(r"\nНовый вопрос: (.+)\nОтвет:\Z", re.S)
 
 
 class DevAdapter(LLMGateway):
@@ -54,7 +83,30 @@ class DevAdapter(LLMGateway):
     чтобы фронт показывал настоящие источники; общий ответ — короткая
     заглушка. Токены считаются по длине текста — кредиты списываются как
     в бою. В production запрещена настройками.
+
+    Поток — по словам с паузой stream_delay: интерфейс печатает ответ
+    так же, как с настоящей моделью, и его можно остановить.
     """
+
+    model_name = "dev"
+
+    def __init__(self, stream_delay: float = 0.03) -> None:
+        self.stream_delay = stream_delay
+
+    async def stream(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float = 0.3,
+        max_tokens: int = 1000,
+    ) -> AsyncGenerator[str | Completion, None]:
+        completion = await self.generate(
+            messages, temperature=temperature, max_tokens=max_tokens
+        )
+        for word in re.findall(r"\S+\s*", completion.content):
+            await asyncio.sleep(self.stream_delay)
+            yield word
+        yield completion
 
     async def generate(
         self,
@@ -65,8 +117,13 @@ class DevAdapter(LLMGateway):
         response_format: dict[str, Any] | None = None,
     ) -> Completion:
         prompt = messages[-1].content if messages else ""
+        condense = _CONDENSE_QUESTION.search(prompt)
         match = _FIRST_EXCERPT.search(prompt)
-        if match:
+        if condense:
+            # Переписывание уточняющего вопроса (BH-28): без модели вопрос
+            # остаётся как есть — поиск идёт по нему.
+            content = condense.group(1).strip()
+        elif match:
             fragment = " ".join(match.group(1).split())[:280]
             content = (
                 f"Режим разработки, ответ без модели. По документам: {fragment} [1]"

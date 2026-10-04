@@ -57,6 +57,7 @@ export function TextField({
   error,
   optional,
   id,
+  className,
   ...rest
 }: Common & InputHTMLAttributes<HTMLInputElement>) {
   const auto = useId();
@@ -65,7 +66,7 @@ export function TextField({
     <Frame id={fieldId} label={label} hint={hint} error={error} optional={optional}>
       <input
         id={fieldId}
-        className={styles.control}
+        className={[styles.control, className].filter(Boolean).join(" ")}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(fieldId, hint, error)}
         {...rest}
@@ -80,6 +81,7 @@ export function TextAreaField({
   error,
   optional,
   id,
+  className,
   ...rest
 }: Common & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const auto = useId();
@@ -88,7 +90,7 @@ export function TextAreaField({
     <Frame id={fieldId} label={label} hint={hint} error={error} optional={optional}>
       <textarea
         id={fieldId}
-        className={styles.control}
+        className={[styles.control, className].filter(Boolean).join(" ")}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(fieldId, hint, error)}
         {...rest}
@@ -110,16 +112,28 @@ export function SelectField({
   const fieldId = id ?? auto;
   return (
     <Frame id={fieldId} label={label} hint={hint} error={error} optional={optional}>
-      <select
+      <Select
         id={fieldId}
-        className={styles.control}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy(fieldId, hint, error)}
         {...rest}
       >
         {children}
-      </select>
+      </Select>
     </Frame>
+  );
+}
+
+/** Список выбора без подписи-рамки: подпись даёт вызывающий (label или aria-label). */
+export function Select({
+  compact = false,
+  className,
+  ...rest
+}: { compact?: boolean } & SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span className={[styles.select, compact ? styles.compact : "", className].join(" ")}>
+      <select className={styles.control} {...rest} />
+    </span>
   );
 }
 

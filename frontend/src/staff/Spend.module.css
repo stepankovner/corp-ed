@@ -1,0 +1,103 @@
+/* Расход на модель ответа: плитки, токены по дням, таблицы по моделям и компаниям. */
+.body[aria-busy="true"] {
+  opacity: 0.6;
+  transition: opacity 0.15s var(--ease);
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--s-3);
+}
+.stat {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  min-width: 0;
+}
+.statValue {
+  font-size: 1.75rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.statLabel {
+  font-size: var(--fs-small);
+}
+.statHint {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+/* Имя переменной окружения — моноширинным, переносится где угодно. */
+.statHint code {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.chart {
+  position: relative;
+  height: 180px;
+  padding-top: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.max {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+}
+.bar {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.bar > span {
+  display: block;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+.axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 0.75rem;
+}
+
+/* Числа в таблицах — по правому краю, чтобы разряды стояли друг под другом. */
+.tables th.number,
+.tables td.number {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.code {
+  font-family: var(--font-mono);
+}
+.foot {
+  font-size: var(--fs-small);
+}
+/* Телефон: строки таблиц — карточки с подписью слева, числа — у подписи. */
+@media (max-width: 640px) {
+  /* Две плитки в ряд: десятки миллионов токенов должны поместиться. */
+  .statValue {
+    font-size: 1.5rem;
+  }
+  .tables th.number,
+  .tables td.number {
+    text-align: left;
+  }
+}

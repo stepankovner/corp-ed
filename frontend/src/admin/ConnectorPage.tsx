@@ -7,6 +7,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { describeCode } from "../lib/codes";
 import { formatDateTime, formatRelative } from "../lib/format";
+import { useDocumentTitle } from "../lib/title";
 import { Badge, type Tone } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
@@ -27,6 +28,7 @@ import {
 import {
   CONNECTOR_STATUS,
   filled,
+  grantsLabel,
   intervalLabel,
   MODE_LABEL,
   secretFields,
@@ -102,6 +104,7 @@ export function ConnectorPage() {
   });
   const kinds = useKinds();
   const kind = kinds.data?.find((item) => item.kind === connector.data?.kind);
+  useDocumentTitle(connector.data?.name ?? "Подключение");
 
   if (connector.isPending || kinds.isPending) return <PageSpinner />;
   if (connector.isError) {
@@ -172,7 +175,7 @@ function ConnectorView({
   return (
     <Page>
       <Link
-        to="/admin/connectors"
+        to="/admin/sources/connections"
         style={{
           display: "inline-flex",
           gap: 6,
@@ -190,7 +193,13 @@ function ConnectorView({
             {connector.name} <Badge tone={status.tone}>{status.label}</Badge>
           </span>
         }
-        description={`${MODE_LABEL[connector.mode]} · ${intervalLabel(connector.sync_interval_minutes)}`}
+        description={[
+          MODE_LABEL[connector.mode],
+          intervalLabel(connector.sync_interval_minutes),
+          grantsLabel(connector)?.toLowerCase(),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           <>
             <Button variant="ghost" size="sm" busy={test.isPending} onClick={() => test.mutate()}>
@@ -229,7 +238,7 @@ function ConnectorView({
                 <>
                   {" "}
                   — проверка идёт от вашего имени: сначала подключите свой аккаунт в{" "}
-                  <Link to="/sources">«Моих источниках»</Link>.
+                  <Link to="/settings/connections">«Настройки → Мои подключения»</Link>.
                 </>
               ) : null}
             </Notice>
@@ -258,11 +267,11 @@ function ConnectorView({
           <>
             {runs.data[0] && runSkips(runs.data[0].stats).includes("не читаются") ? (
               <Notice kind="info" title="Часть файлов в источнике ассистент не читает">
-                {runSkips(runs.data[0].stats)}. Чтобы они попали в ответы, сохраните их как .docx
-                или PDF.
+                {runSkips(runs.data[0].stats)}. Чтобы они попали в ответы, сохраните их в
+                поддерживаемом формате: .docx, .xlsx, .pptx или PDF.
               </Notice>
             ) : null}
-            <Table label="История синхронизаций">
+            <Table label="История синхронизаций" rowTitle={false}>
               <thead>
                 <tr>
                   <th>Начало</th>
@@ -352,7 +361,7 @@ function ConnectorView({
           await unwrap(api.DELETE("/api/v1/connectors/{connector_id}", path));
           await queryClient.invalidateQueries({ queryKey: ["connectors"] });
           await queryClient.invalidateQueries({ queryKey: ["materials"] });
-          void navigate("/admin/connectors", { replace: true });
+          void navigate("/admin/sources/connections", { replace: true });
         }}
       />
     </Page>

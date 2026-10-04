@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     # здесь есть: короткий access ограничивает окно украденного токена,
     # refresh ротируется при каждом использовании (см. DECISIONS.md).
     access_token_ttl_minutes: int = Field(default=15, gt=0, le=60)
-    refresh_token_ttl_days: int = Field(default=14, gt=0, le=90)
+    # «Запомнить это устройство» (ТЗ §3): 30 дней. Без галочки — сессия
+    # до закрытия браузера, но не дольше короткого срока ниже.
+    refresh_token_ttl_days: int = Field(default=30, gt=0, le=90)
+    session_refresh_ttl_hours: int = Field(default=12, gt=0, le=72)
 
     # База данных
     database_url: str
@@ -94,6 +97,9 @@ class LLMSettings(BaseSettings):
     # Квота генерации — 10 одновременных запросов на каталог. Лимит — на
     # процесс: при N воркерах uvicorn ставить не больше 10 / N.
     llm_max_concurrency: int = Field(default=8, gt=0, le=10)
+    # Режим fake печатает ответ по словам с этой паузой (ТЗ §6): видно,
+    # как ответ появляется, и его можно остановить в сквозных тестах.
+    llm_fake_stream_delay_ms: int = Field(default=30, ge=0, le=1000)
 
     # Эмбеддинги — пара моделей <семейство>-doc / <семейство>-query.
     # Смена семейства без переиндексации смешает в выдаче векторы двух
@@ -168,6 +174,40 @@ class RagSettings(BaseSettings):
     # и оптимум Битрикс24; вес выше 1.0 у них ухудшал качество.
     fulltext_weight: float = Field(gt=0, le=2)
 
+    # Память диалога (BH-28): сколько последних реплик видит переписывание
+    # вопроса и модель ответа. 3 — замер ML 01.10 на 30 диалогах: верных
+    # ответов на уточняющие вопросы 8 → 15 из 19 (p = 0,032), смена темы не
+    # портится, уточнение — 1 кредит. 0 — функция выключена целиком.
+    history_turns: int = Field(default=3, ge=0, le=10)
+    # Диалог живёт в Redis столько после последнего вопроса (решение
+    # Артёма 30.09: 12 ч — уточнение после обеда работает; в контракте
+    # ML было 30 мин).
+    history_ttl_minutes: int = Field(default=720, gt=0, le=7 * 24 * 60)
+    # Переписывание вопроса — короткий вызов; ждать его дольше, чем
+    # сам ответ, нельзя. Не успел — ответ по исходному вопросу.
+    condense_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+
+    # Реранкер (M3, BH-32; решение Артёма 01.10 — в MVP за флагом, по
+    # умолчанию выключен). Пусто — выключен, порядок вектора; имя модели —
+    # включён (ML: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1). Имя же
+    # уходит в журнал ответов. Модель — отдельный сервис с контрактом
+    # text-embeddings-inference /rerank (compose.yaml, профиль reranker);
+    # файлы — deploy/reranker/fetch-model.sh. Включение — по итогам
+    # holdout 11–12.10.
+    rerank_model: str = ""
+    rerank_url: str = "http://reranker:8080"
+    # Сколько кандидатов вектора отдать модели (замерено при 30; 20 —
+    # быстрее, качество не мерили). Не больше --max-client-batch-size
+    # сервиса (64 в compose.yaml): больше он не примет.
+    rerank_depth: int = Field(default=30, ge=1, le=64)
+    # Окно модели в токенах. Сервис режет пары по окну самой модели — 512
+    # у mMiniLM, как в замере ML; другого он не умеет, поэтому значение
+    # одно. Настройка — чтобы окружение совпадало со стендом ML (BH-32).
+    rerank_max_length: int = Field(default=512, ge=512, le=512)
+    # Не успел — ответ по порядку вектора. 30 кандидатов на 4 vCPU —
+    # около 1,9 с (замер 30.09); 3 с — по контракту BH-32.
+    rerank_timeout_ms: int = Field(default=3000, ge=100, le=30_000)
+
     model_config = SettingsConfigDict(
         env_prefix="RAG_",
         env_file=".env",
@@ -234,16 +274,21 @@ class BillingSettings(BaseSettings):
 
     Структура решена командой 24.09: один пул на компанию, один тип
     кредита, персональных лимитов нет, жёсткая остановка при
-    исчерпании. Числа — ПРЕДЛОЖЕНИЕ досье, не утверждены: 1 кредит ≈
-    одно обычное обращение (~2 000 токенов), 420 кредитов на место в
-    месяц (20 обращений × 21 день). Поэтому — настройки с дефолтами.
+    исчерпании. 420 кредитов на место в месяц (20 обращений × 21 день,
+    досье v3.3). 1 кредит = 4 000 токенов ≈ одно обращение, в том числе
+    уточняющее (решение Артёма 29.09, BH-30): при 2 000 вопрос с медианой
+    1 844 токена округлялся до 2 кредитов в 13 из 33 случаев — выходило
+    14–15 вопросов в день вместо 20 (ROADMAP.md, «Р-4 подробно»).
     """
 
     credits_per_seat: int = Field(default=420, gt=0)
-    tokens_per_credit: int = Field(default=2000, gt=0)
+    tokens_per_credit: int = Field(default=4000, gt=0)
     # Месяц считается по московскому времени: клиенты и счета — в России.
     billing_timezone: str = "Europe/Moscow"
     warn_at_percent: int = Field(default=80, gt=0, lt=100)
+    # Цена 1 000 токенов модели ответа в рублях — для оценки расхода в
+    # нашей панели (ТЗ §9). Не задана — панель показывает только токены.
+    llm_rub_per_1k_tokens: float | None = Field(default=None, ge=0)
 
     model_config = SettingsConfigDict(
         env_prefix="BILLING_",
@@ -356,6 +401,114 @@ def get_team_notify_settings() -> TeamNotifySettings:
     return TeamNotifySettings()
 
 
+class MailSettings(BaseSettings):
+    """Отправка писем (ТЗ §3, решение 03.10).
+
+    backend:
+    - smtp — настоящая отправка; на старте — ящик Яндекс 360 на
+      krontoai.ru (smtp.yandex.ru:465, пароль приложения; лимит Яндекса —
+      300 писем в сутки с ящика);
+    - console — письмо в лог вместо отправки (разработка);
+    - memory — в список в памяти процесса (тесты).
+
+    Стенд — тот же ящик Яндекс 360 (STAGE.md §4.5а); сквозные проверки
+    CI — перехватчик писем Mailpit (ci.yaml, задание e2e): наружу ничего
+    не уходит. Пароль — секрет: в логи не пишется.
+    """
+
+    backend: Literal["smtp", "console", "memory"] = "console"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=465, gt=0, lt=65536)
+    smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    from_address: str = "noreply@krontoai.ru"
+    from_name: str = "kronto"
+    # Адрес сайта для ссылок в письмах, без «/» в конце.
+    site_url: str = "http://localhost:5173"
+
+    model_config = SettingsConfigDict(
+        env_prefix="MAIL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("site_url")
+    @classmethod
+    def strip_slash(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def validate_smtp(self) -> Self:
+        # Без хоста smtp молча не отправит ни одного письма — регистрация
+        # встанет на подтверждении почты. Лучше не стартовать.
+        if self.backend == "smtp" and not self.smtp_host:
+            raise ValueError("MAIL_SMTP_HOST is required for MAIL_BACKEND=smtp")
+        return self
+
+
+@lru_cache
+def get_mail_settings() -> MailSettings:
+    return MailSettings()
+
+
+class RegistrationSettings(BaseSettings):
+    """Самостоятельная регистрация (ТЗ §2, §11).
+
+    enabled=false — регистрироваться можно только по приглашению: так
+    на боевом домене, пока нет юридических текстов от ИП. policy_version
+    — редакция политики обработки ПДн, на которую человек дал согласие
+    (пишется в учётку).
+    """
+
+    enabled: bool = True
+    policy_url: str = "/privacy"
+    policy_version: str = Field(default="draft-2026-10-03", max_length=64)
+
+    model_config = SettingsConfigDict(
+        env_prefix="REGISTRATION_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_registration_settings() -> RegistrationSettings:
+    return RegistrationSettings()
+
+
+class AuthSettings(BaseSettings):
+    """Ключи доступа (WebAuthn, ТЗ §3).
+
+    Пусто — сайт берётся из заголовка Host (его проверяет TrustedHost):
+    https://<хост>, для localhost — http. Задавать нужно, только если
+    фронт и API на разных адресах (разработка: http://localhost:5173).
+    """
+
+    webauthn_rp_id: str | None = None
+    # Через запятую: http://localhost:5173,https://stage.krontoai.ru
+    webauthn_origins: str = ""
+
+    model_config = SettingsConfigDict(
+        env_prefix="AUTH_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def origins(self) -> list[str]:
+        return _split_csv(self.webauthn_origins)
+
+
+@lru_cache
+def get_auth_settings() -> AuthSettings:
+    return AuthSettings()
+
+
 class HttpSettings(BaseSettings):
     """Настройки HTTP-периметра: CORS, хосты, лимиты тела, документация.
 
@@ -427,6 +580,10 @@ def get_http_settings() -> HttpSettings:
     return HttpSettings()
 
 
+EXTRA_FORMAT_NAMES = ("xlsx", "pptx", "doc")
+"""Форматы Р-5, которые включает INGEST_EXTRA_FORMATS (ingest/extract.py)."""
+
+
 class IngestSettings(BaseSettings):
     """Разбор файлов в песочнице (API — загрузка, воркер — коннекторы).
 
@@ -435,9 +592,15 @@ class IngestSettings(BaseSettings):
     дороже по CPU при том же объёме текста (RISKS №40); качество таблиц и
     заголовков без неё не сравнивалось. По умолчанию — как было (включена),
     решение команды и ML — одной переменной INGEST_PDF_LAYOUT=false.
+
+    extra_formats — форматы Р-5 (решение Артёма 29.09: по одному, после
+    приёмки ML; .xlsx, .pptx и .doc приняты 01.10, ml-formats.md), через
+    запятую. Убрать формат — он снова отклоняется с подсказкой и не
+    скачивается из подключённых систем; уже загруженные файлы остаются.
     """
 
     pdf_layout: bool = True
+    extra_formats: str = "xlsx,pptx,doc"
 
     model_config = SettingsConfigDict(
         env_prefix="INGEST_",
@@ -445,6 +608,23 @@ class IngestSettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("extra_formats")
+    @classmethod
+    def validate_extra_formats(cls, value: str) -> str:
+        # Опечатка в имени формата — ошибка старта, а не молча выключенный
+        # формат.
+        unknown = set(_split_csv(value.lower())) - set(EXTRA_FORMAT_NAMES)
+        if unknown:
+            raise ValueError(
+                f"INGEST_EXTRA_FORMATS: unknown {sorted(unknown)}, "
+                f"allowed {list(EXTRA_FORMAT_NAMES)}"
+            )
+        return value
+
+    @property
+    def extra_format_names(self) -> list[str]:
+        return _split_csv(self.extra_formats.lower())
 
 
 @lru_cache

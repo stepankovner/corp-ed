@@ -4,13 +4,13 @@
 # скачиваются и получают локальные имена из compose.yaml — поэтому
 # compose.yaml на стенде тот же, что в разработке и в бою.
 #
-# Вызывает corp-ed-deploy (ssh-entry.sh) после checkout коммита. Откат —
+# Вызывает kronto-deploy (ssh-entry.sh) после checkout коммита. Откат —
 # Run workflow «Deploy» с полем sha; с сервера (образ из GHCR — если пакет
 # публичный или сделан docker login):
-#   sudo -u deploy SSH_ORIGINAL_COMMAND="deploy <sha>" /usr/local/bin/corp-ed-deploy
+#   sudo -u deploy SSH_ORIGINAL_COMMAND="deploy <sha>" /usr/local/bin/kronto-deploy
 set -euo pipefail
 # shellcheck source=/dev/null
-. /etc/corp-ed/stage.env
+. /etc/kronto/stage.env
 
 sha="${1:?sha коммита}"
 cd "$APP_DIR"
@@ -33,7 +33,7 @@ if [[ -n "$token" ]]; then
     export DOCKER_CONFIG="$docker_config"
     printf '%s' "$token" | docker login "${IMAGE_PREFIX%%/*}" -u deploy --password-stdin >/dev/null
 fi
-for name in corp-ed kronto-web; do
+for name in kronto-api kronto-web; do
     docker pull --quiet "$IMAGE_PREFIX/$name:$sha" >/dev/null
     docker tag "$IMAGE_PREFIX/$name:$sha" "$name:local"
 done
@@ -70,7 +70,19 @@ local_https=(curl -fsS --max-time 10 --noproxy '*' --resolve "$DOMAIN:443:127.0.
 "${local_https[@]}" "https://$DOMAIN/health" >/dev/null
 "${local_https[@]}" -o /dev/null "https://$DOMAIN/"
 
-printf '%s %s\n' "$(date -u +%FT%TZ)" "$sha" >> /var/log/corp-ed/deploys.log
+# Мониторинг (deploy/monitoring, П-9) — из того же коммита, что приложение:
+# правила тревог и дашборд едут вместе с кодом. Его сбой выкатку не
+# останавливает — приложение уже работает, — но виден в логе workflow.
+if [[ -f /etc/kronto/monitoring.env ]]; then
+    echo "==> мониторинг"
+    if ! docker compose -f deploy/monitoring/compose.yaml \
+        --env-file .env --env-file /etc/kronto/monitoring.env \
+        up -d --remove-orphans --quiet-pull; then
+        echo "ВНИМАНИЕ: мониторинг не поднялся (приложение выкачено)" >&2
+    fi
+fi
+
+printf '%s %s\n' "$(date -u +%FT%TZ)" "$sha" >> /var/log/kronto/deploys.log
 # Неиспользуемые образы старше недели: иначе каждая выкатка оставляет
 # ~1 ГБ. Работающие контейнеры prune не трогает; для отката старый образ
 # скачается из GHCR заново.

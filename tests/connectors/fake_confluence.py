@@ -5,6 +5,10 @@
 предками, тело в storage-формате, ограничения чтения по операциям,
 участники групп, вложения и их скачивание, текущий пользователь.
 Ломается по команде: 429 с Retry-After, 5xx, страница входа вместо JSON.
+
+Режим 7.x/8.x (`members_admin_only`) сверен с живыми 7.19.30 и 8.5.31
+(01.10): состав группы — 401 для не-администратора, поиск пользователей
+CQL и `user/memberof` открыты; `basic_disabled` — как у 10.2.17.
 """
 
 from dataclasses import dataclass, field
@@ -38,6 +42,12 @@ class FakeConfluence:
     hidden_pages: set[str] = field(default_factory=set)
     """Страницы, которые служебной учётке не видны (403 по id, нет в списке)."""
     unreadable_groups: set[str] = field(default_factory=set)
+    members_admin_only: bool = False
+    """7.x, 8.x: `group/{name}/member` — 401 для не-администратора."""
+    directory_status: int = 200
+    """Ответ поиска пользователей и `user/memberof` (403, 401 — сбой)."""
+    basic_disabled: bool = False
+    """10.x: Basic в REST выключен — 403 с объяснением (живой 10.2.17)."""
     rate_limit_hits: int = 0
     retry_after: str | None = "1"
     server_errors: int = 0
@@ -160,6 +170,11 @@ class FakeConfluence:
             return httpx.Response(
                 200, headers={"content-type": "text/html"}, text="<html>login</html>"
             )
+        if self.basic_disabled and request.headers.get("authorization", "").startswith(
+            "Basic "
+        ):
+            message = "Basic Authentication has been disabled on this instance."
+            return httpx.Response(403, json={"message": message})
         user = self._user(request)
         route = path.removeprefix("/rest/api/")
         if route == "user/current":
@@ -271,6 +286,9 @@ class FakeConfluence:
                     }
                 )
         if parts[0] == "group" and len(parts) == 3 and parts[2] == "member":
+            if self.members_admin_only:
+                message = "Client must be authenticated to access this resource."
+                return httpx.Response(401, json={"message": message})
             name = parts[1]
             if name in self.unreadable_groups:
                 return httpx.Response(403, json={"message": "Forbidden"})
@@ -283,7 +301,33 @@ class FakeConfluence:
                 ],
                 query,
             )
+        if route == "search" and query.get("cql") == "type=user":
+            if self.directory_status != 200:
+                return httpx.Response(self.directory_status, json={"message": "x"})
+            return self._page(
+                [
+                    {"user": {"type": "known", "username": u, "displayName": u}}
+                    for u in self.directory()
+                ],
+                query,
+            )
+        if route == "user/memberof":
+            if self.directory_status != 200:
+                return httpx.Response(self.directory_status, json={"message": "x"})
+            username = query.get("username", "")
+            return self._page(
+                [
+                    {"type": "group", "name": name}
+                    for name, members in sorted(self.groups.items())
+                    if username in members
+                ],
+                query,
+            )
         return httpx.Response(404, json={"message": "No resource"})
+
+    def directory(self) -> list[str]:
+        """Все пользователи: участники групп и служебная учётка."""
+        return sorted({SERVICE_USER, *(u for m in self.groups.values() for u in m)})
 
     def _expand(
         self, page: dict[str, Any], expand: str, content_id: str | None = None

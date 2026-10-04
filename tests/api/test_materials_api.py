@@ -160,3 +160,27 @@ async def test_admin_cannot_read_other_company_material(
 
     assert read.status_code == 404
     assert ingest.status_code == 404
+
+
+async def test_blank_title_and_text_are_rejected(
+    admin_client: httpx.AsyncClient,
+) -> None:
+    """Стенд 02.10: «   » принималось названием, а текст из пробелов
+    индексировался в «готовый» документ без единого фрагмента."""
+    blank_title = await admin_client.post(
+        "/api/v1/materials", json={"title": "   ", "content": "Текст."}
+    )
+    assert blank_title.status_code == 422
+    blank_text = await admin_client.post(
+        "/api/v1/materials", json={"title": "Памятка", "content": " \n\t "}
+    )
+    assert blank_text.status_code == 422
+
+    created = await admin_client.post(
+        "/api/v1/materials", json={"title": "  Памятка  ", "content": "Текст."}
+    )
+    assert created.json()["title"] == "Памятка"
+    renamed = await admin_client.patch(
+        f"/api/v1/materials/{created.json()['id']}", json={"title": "  "}
+    )
+    assert renamed.status_code == 422

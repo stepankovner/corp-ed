@@ -1,7 +1,10 @@
 """Refresh-токен в httpOnly-cookie (RISKS №44).
 
 Браузерный скрипт токен не видит: XSS на origin приложения больше не
-уносит сессию на 14 дней, только пользуется ей, пока открыта вкладка.
+уносит сессию на 30 дней, только пользуется ей, пока открыта вкладка.
+
+Без «Запомнить это устройство» (ТЗ §3) cookie — сеансовая, без срока:
+браузер стирает её при закрытии.
 Access-токен остаётся в теле ответа и живёт в памяти вкладки 15 минут.
 
 Атрибуты cookie:
@@ -27,19 +30,24 @@ from corp_ed.services.auth_service import TokenPair
 
 REFRESH_COOKIE = "kronto_refresh"
 REFRESH_COOKIE_PATH = "/api/v1/auth"
+# «Запомнить это устройство» (ТЗ §3): 30 дней без второго фактора.
+DEVICE_COOKIE = "kronto_device"
+DEVICE_COOKIE_MAX_AGE = 30 * 24 * 60 * 60
 
 
 def session_response(response: Response, pair: TokenPair) -> TokenResponse:
     """Ответ ручки, открывающей сессию: refresh — в cookie, access — в теле."""
-    set_refresh_cookie(response, pair.refresh_token)
+    set_refresh_cookie(response, pair.refresh_token, remember=pair.remember)
     return TokenResponse(access_token=pair.access_token, expires_in=pair.expires_in)
 
 
-def set_refresh_cookie(response: Response, token: str) -> None:
+def set_refresh_cookie(response: Response, token: str, *, remember: bool) -> None:
     response.set_cookie(
         REFRESH_COOKIE,
         token,
-        max_age=get_settings().refresh_token_ttl_days * 24 * 60 * 60,
+        max_age=(
+            get_settings().refresh_token_ttl_days * 24 * 60 * 60 if remember else None
+        ),
         path=REFRESH_COOKIE_PATH,
         secure=get_http_settings().is_production,
         httponly=True,
@@ -83,3 +91,22 @@ def ensure_same_origin(request: Request) -> None:
     if host and urlsplit(origin).netloc == host:
         return
     raise PermissionError("Запрос пришёл не со страницы приложения")
+
+
+def set_device_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        DEVICE_COOKIE,
+        token,
+        max_age=DEVICE_COOKIE_MAX_AGE,
+        path=REFRESH_COOKIE_PATH,
+        secure=get_http_settings().is_production,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def read_device_cookie(request: Request) -> str | None:
+    value = request.cookies.get(DEVICE_COOKIE)
+    if not value or len(value) > MAX_TOKEN_LENGTH:
+        return None
+    return value

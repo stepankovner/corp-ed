@@ -6,6 +6,7 @@ import { setSession } from "../api/session";
 import { AuthProvider } from "../auth/AuthProvider";
 import { makeQueryClient } from "../queryClient";
 import { routes } from "../routes";
+import { UiProvider } from "../ui/UiProvider";
 
 /** Всё приложение на заданном адресе; signedIn — с access-токеном в памяти вкладки. */
 export function renderApp(path: string, { signedIn = true } = {}) {
@@ -18,7 +19,9 @@ export function renderApp(path: string, { signedIn = true } = {}) {
   const utils = render(
     <QueryClientProvider client={client}>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <UiProvider>
+          <RouterProvider router={router} />
+        </UiProvider>
       </AuthProvider>
     </QueryClientProvider>,
   );

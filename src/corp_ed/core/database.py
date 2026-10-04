@@ -17,9 +17,9 @@ from sqlalchemy.orm import (
 from sqlalchemy.orm.attributes import get_history
 
 from corp_ed.core.config import get_settings
-from corp_ed.core.db_policies import TENANT_SETTING
+from corp_ed.core.db_policies import ACCOUNT_SETTING, TENANT_SETTING
 from corp_ed.core.exceptions import TenantContextMissingError, TenantMismatchError
-from corp_ed.core.tenant_context import current_tenant
+from corp_ed.core.tenant_context import current_account, current_tenant
 from corp_ed.domain.mixins import TenantMixin
 
 
@@ -50,7 +50,15 @@ async def get_session() -> AsyncGenerator[AsyncSession]:
 
 
 _RLS_TENANT_KEY = "rls_tenant"
-_SET_TENANT = text(f"SELECT set_config('{TENANT_SETTING}', :tenant, true)")
+_SET_TENANT = text(
+    f"SELECT set_config('{TENANT_SETTING}', :tenant, true), "
+    f"set_config('{ACCOUNT_SETTING}', :account, true)"
+)
+
+ACCOUNT_SCOPE_OPTION = "account_memberships"
+"""execution_options(account_memberships=True) у select(User): членства
+учётки во всех компаниях. Фильтр по тенанту ORM снимается, строки
+ограничивает правило RLS own_membership — по учётке из токена."""
 
 
 def _sync_rls_tenant(session: Session, connection: Connection) -> None:
@@ -64,10 +72,13 @@ def _sync_rls_tenant(session: Session, connection: Connection) -> None:
     Session: иначе он сам бы запустил do_orm_execute.
     """
     tenant_id = current_tenant.get()
-    value = str(tenant_id) if tenant_id is not None else ""
+    account_id = current_account.get()
+    tenant = str(tenant_id) if tenant_id is not None else ""
+    account = str(account_id) if account_id is not None else ""
+    value = f"{tenant}|{account}"
     if session.info.get(_RLS_TENANT_KEY) == value:
         return
-    connection.execute(_SET_TENANT, {"tenant": value})
+    connection.execute(_SET_TENANT, {"tenant": tenant, "account": account})
     session.info[_RLS_TENANT_KEY] = value
 
 
@@ -94,6 +105,14 @@ def _apply_tenant_filter(execute_state: ORMExecuteState) -> None:
         issubclass(m.class_, TenantMixin) for m in execute_state.all_mappers
     )
     if not involves_tenant_model:
+        return
+
+    if execute_state.execution_options.get(ACCOUNT_SCOPE_OPTION):
+        # Членства своей учётки во всех компаниях: строки ограничивает
+        # RLS own_membership. Без учётки в контексте — баг, как и без
+        # тенанта.
+        if current_account.get() is None:
+            raise TenantContextMissingError("В контексте нет учётки")
         return
 
     # дошли сюда => в запросе есть тенант-модель => тенант ОБЯЗАТЕЛЕН

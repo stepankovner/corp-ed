@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.domain.models import MaterialStatus
@@ -12,6 +13,12 @@ from corp_ed.domain.models import MaterialStatus
 MAX_MATERIAL_LENGTH = 200_000
 MAX_TITLE_LENGTH = 200
 
+# Название из одних пробелов — не название (стенд 02.10: принималось).
+Title = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TITLE_LENGTH),
+]
+
 
 class MaterialCreateRequest(RequestModel):
     """Документ компании в виде текста (Markdown или простой текст).
@@ -20,12 +27,26 @@ class MaterialCreateRequest(RequestModel):
     файла: оно уходит в крошки эмбеддинга и в подписи источников.
     """
 
-    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+    title: Title
     content: str = Field(min_length=1, max_length=MAX_MATERIAL_LENGTH)
+    folder_id: UUID | None = None
+    """Папка (ТЗ §5); нет — «Общие документы»."""
+
+    @field_validator("content")
+    @classmethod
+    def _has_text(cls, value: str) -> str:
+        # Из одних пробелов индексировать нечего, а статус был бы «готов».
+        if not value.strip():
+            raise ValueError("Текст документа пустой")
+        return value
 
 
 class MaterialUpdateRequest(RequestModel):
-    title: str = Field(min_length=1, max_length=MAX_TITLE_LENGTH)
+    """Что прислано, то и меняется: название (с переиндексацией) и папка
+    (null — общие документы; только у загруженных)."""
+
+    title: Title | None = None
+    folder_id: UUID | None = None
 
 
 class MaterialResponse(BaseModel):
@@ -46,6 +67,7 @@ class MaterialResponse(BaseModel):
     source_url: str | None = None
     synced_at: datetime | None = None
     visibility: str = "tenant"
+    folder_id: UUID | None = None
     created_at: datetime
 
 

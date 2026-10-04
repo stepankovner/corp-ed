@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -21,19 +21,28 @@ function form(overrides: Partial<Schemas["LeadFormResponse"]> = {}): Schemas["Le
 }
 
 describe("тарифы и запись на созвон", () => {
-  it("тарифы открыты без входа, цена базового — на странице", async () => {
+  it("тарифы открыты без входа: три тарифа с ценами", async () => {
     renderApp("/pricing", { signedIn: false });
 
     expect(await screen.findByRole("heading", { name: "Тарифы" })).toBeInTheDocument();
-    expect(screen.getByText("1 490 ₽")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Записаться на созвон" })).toHaveAttribute(
+    const base = screen.getByRole("region", { name: "Базовый" });
+    expect(within(base).getByText("990 ₽")).toBeInTheDocument();
+    expect(within(base).getByText(/До 20 обращений в день на место/)).toBeInTheDocument();
+    expect(within(base).getByText(/до 5 подключений/)).toBeInTheDocument();
+    expect(within(base).getByRole("link", { name: "Записаться на созвон" })).toHaveAttribute(
       "href",
       "/pricing/request?tariff=base",
     );
-    expect(screen.getByRole("link", { name: "Обсудить на созвоне" })).toHaveAttribute(
+    const extended = screen.getByRole("region", { name: "Расширенный" });
+    expect(within(extended).getByText("1 290 ₽")).toBeInTheDocument();
+    const enterprise = screen.getByRole("region", { name: "Корпоративный" });
+    expect(within(enterprise).getByText("По запросу")).toBeInTheDocument();
+    expect(within(enterprise).getByRole("link", { name: "Обсудить на созвоне" })).toHaveAttribute(
       "href",
-      "/pricing/request?tariff=custom",
+      "/pricing/request?tariff=enterprise",
     );
+    // Бесплатный первый месяц команда предлагает сама — на сайте его нет.
+    expect(screen.queryByText(/Пилот/)).not.toBeInTheDocument();
   });
 
   it("пока политика не задана, форма закрыта", async () => {
@@ -58,7 +67,7 @@ describe("тарифы и запись на созвон", () => {
         return HttpResponse.json({ status: "received" }, { status: 201 });
       }),
     );
-    renderApp("/pricing/request?tariff=custom", { signedIn: false });
+    renderApp("/pricing/request?tariff=enterprise", { signedIn: false });
 
     await user.type(await screen.findByLabelText("Компания"), "ООО «Меридиан Строй»");
     await user.type(screen.getByLabelText("Сколько сотрудников работают за компьютером"), "60");
@@ -82,7 +91,7 @@ describe("тарифы и запись на созвон", () => {
       phone: "+7 999 123-45-67",
       email: null,
       seats: 60,
-      tariff: "custom",
+      tariff: "enterprise",
       preferred_date: "2026-10-01",
       preferred_slot: "14:00–16:00",
       comment: null,

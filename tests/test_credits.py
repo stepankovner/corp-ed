@@ -18,6 +18,7 @@ from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.services.faq_service import FaqService
 from tests.conftest import make_credit_service
+from tests.factories import make_user
 
 MOSCOW = ZoneInfo("Europe/Moscow")
 
@@ -68,6 +69,18 @@ async def _events(session: AsyncSession, action: str) -> list[AuditEvent]:
 )
 def test_credits_for(tokens: int, credits: int) -> None:
     assert credits_for(tokens, 2000) == credits
+
+
+@pytest.mark.parametrize(
+    ("tokens", "credits"),
+    # Максимум золотого dev (2 428) и уточняющий вопрос (~3 500) — один
+    # кредит; дороже 4 000 — два (BH-30).
+    [(1844, 1), (2428, 1), (3500, 1), (4000, 1), (4001, 2)],
+)
+def test_default_credit_is_one_question(tokens: int, credits: int) -> None:
+    default = BillingSettings.model_fields["tokens_per_credit"].default
+    assert default == 4000
+    assert credits_for(tokens, default) == credits
 
 
 def test_period_is_moscow_calendar_month() -> None:
@@ -162,7 +175,7 @@ async def test_usage_does_not_count_other_company(
     session.add(other)
     await session.commit()
     with tenant_scope(other.id):
-        stranger = User(
+        stranger = make_user(
             tenant_id=other.id, email="s@o.ru", role=employee.role, hashed_password="x"
         )
         session.add(stranger)

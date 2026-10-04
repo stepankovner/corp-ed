@@ -24,6 +24,26 @@ export function formatDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? "—" : dateOnly.format(date);
 }
 
+const calendarDate = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/**
+ * Календарная дата из строки сервера как есть, без перевода в пояс браузера.
+ * Границы расчётного месяца — полночь по поясу биллинга (Москва): западнее
+ * «1 октября 00:00 МСК» превращалось в «30 сентября» (стенд 02.10).
+ * shiftDays = −1 — последний день периода, когда граница исключающая.
+ */
+export function formatCalendarDate(value: string | null | undefined, shiftDays = 0): string {
+  const match = value ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;
+  if (!match) return "—";
+  const [year, month, day] = [match[1], match[2], match[3]].map(Number) as [number, number, number];
+  return calendarDate.format(new Date(Date.UTC(year, month - 1, day + shiftDays)));
+}
+
 /** «5 минут назад», «вчера»; старше недели — дата. */
 export function formatRelative(value: string | null | undefined, now = Date.now()): string {
   if (!value) return "—";

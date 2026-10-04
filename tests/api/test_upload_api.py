@@ -21,9 +21,23 @@ from corp_ed.domain.models import (
 )
 from tests.api.conftest import bearer
 from tests.ingest import samples
+from tests.ingest.xlsx_samples import SheetSpec, xlsx
 
 DOCX = samples.docx(
     [("Положение об отпусках", "Heading1"), ("Отпуск — 28 дней.", None)]
+)
+WORKBOOK = xlsx(
+    [
+        SheetSpec(
+            "Суточные",
+            {
+                "A1": "Направление",
+                "B1": "Суточные в день",
+                "A2": "Остальные страны",
+                "B2": "2 500 рублей",
+            },
+        )
+    ]
 )
 
 
@@ -86,7 +100,7 @@ async def test_anonymous_cannot_upload(api: httpx.AsyncClient) -> None:
 async def test_unsupported_format_is_415_with_code(
     api: httpx.AsyncClient, admin_account: User
 ) -> None:
-    response = await _upload(api, admin_account, filename="old.doc", data=b"\xd0\xcf")
+    response = await _upload(api, admin_account, filename="old.rtf", data=b"{\\rtf1")
 
     assert response.status_code == 415
     assert response.json()["code"] == "unsupported_format"
@@ -95,15 +109,44 @@ async def test_unsupported_format_is_415_with_code(
     )
 
 
-async def test_presentation_gets_pdf_advice(
+async def test_old_presentation_gets_pptx_advice(
     api: httpx.AsyncClient, admin_account: User
 ) -> None:
     response = await _upload(
-        api, admin_account, filename="deck.PPTX", data=b"PK\x03\x04"
+        api, admin_account, filename="deck.PPT", data=b"\xd0\xcf\x11\xe0"
     )
 
     assert response.status_code == 415
-    assert "сохраните файл как PDF" in response.json()["detail"]
+    assert "сохраните файл как .pptx или PDF" in response.json()["detail"]
+
+
+async def test_admin_uploads_xlsx(
+    api: httpx.AsyncClient, admin_account: User, session: AsyncSession
+) -> None:
+    response = await _upload(
+        api, admin_account, filename="Суточные.xlsx", data=WORKBOOK, title="Суточные"
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["source_format"] == "xlsx"
+    with tenant_scope(admin_account.tenant_id):
+        material = await session.get(Material, UUID(body["id"]))
+        assert material is not None
+        # Таблица Markdown; «ключ: значение» из неё делает preprocess при
+        # нарезке (tests/ingest/test_office_intake.py).
+        assert "| Остальные страны | 2 500 рублей |" in material.content
+
+
+async def test_pdf_renamed_to_xlsx_is_rejected(
+    api: httpx.AsyncClient, admin_account: User
+) -> None:
+    response = await _upload(
+        api, admin_account, filename="report.xlsx", data=b"%PDF-1.7\n"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "format_mismatch"
 
 
 async def test_disguised_file_is_rejected(
@@ -279,3 +322,9 @@ async def test_employee_cannot_delete(
         f"/api/v1/materials/{material.id}", headers=bearer(account)
     )
     assert response.status_code == 403
+
+
+async def test_upload_rejects_blank_title(
+    api: httpx.AsyncClient, admin_account: User
+) -> None:
+    assert (await _upload(api, admin_account, title="   ")).status_code == 422

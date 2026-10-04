@@ -1,0 +1,131 @@
+# Тревоги стенда (MONITORING-RESEARCH.md §1 — сценарии отказов).
+# severity: critical — сразу в Telegram, повтор раз в час; warning — повтор
+# раз в 4 часа. Звонки ночью — только с боевого сервера (Ping-Admin), на
+# прерываемом стенде — нет (решение 30.09).
+groups:
+  - name: availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"api|worker|node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Не отвечает {{ $labels.job }}"
+          description: "Prometheus не может забрать метрики {{ $labels.job }} больше 2 минут."
+
+      - alert: NotReady
+        expr: probe_success{job=~"ready|public"} == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Стенд не готов отвечать сотрудникам ({{ $labels.job }})"
+          description: "/health/ready не 200 больше 3 минут: упала база, Redis или воркер — `docker compose ps` на сервере."
+
+      - alert: WorkerHeartbeatStale
+        expr: time() - corp_ed_worker_heartbeat_timestamp_seconds{job="worker"} > 180
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Воркер завис: пульса нет больше 3 минут"
+          description: "Документы не индексируются, подключения не синхронизируются."
+
+      - alert: ModelErrors
+        expr: |
+          sum(rate(corp_ed_http_requests_total{route="/api/v1/faq/ask", status="502"}[10m]))
+          / sum(rate(corp_ed_http_requests_total{route="/api/v1/faq/ask"}[10m])) > 0.2
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Больше 20 % вопросов — ошибка модели (502)"
+          description: "Яндекс не отвечает или отвечает ошибками. Проверить status.yandex.cloud и баланс каталога."
+
+      - alert: TLSCertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry{job="public"} - time() < 14 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Сертификат стенда истекает меньше чем через 14 дней"
+          description: "Продление certbot не сработало: `sudo certbot renew --dry-run`."
+
+  - name: quality
+    rules:
+      - alert: AnswersDegraded
+        expr: sum(increase(corp_ed_faq_degraded_total[30m])) by (reason) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ответы без части пайплайна: {{ $labels.reason }}"
+          description: "За 30 минут {{ $value | humanize }} раз ответ шёл без переписывания вопроса, реранкера или истории диалога."
+
+      - alert: IngestFailures
+        expr: sum(increase(corp_ed_worker_jobs_total{result="failed"}[1h])) by (queue) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "Задачи {{ $labels.queue }} падают"
+          description: "За час {{ $value | humanize }} задач завершились ошибкой."
+
+      - alert: QueueBacklog
+        expr: corp_ed_worker_queue_jobs{job="worker", status="queued"} > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Очередь {{ $labels.queue }} не разбирается"
+          description: "В очереди {{ $value | humanize }} задач дольше 30 минут."
+
+  - name: host
+    rules:
+      - alert: DiskAlmostFull
+        expr: node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "На диске меньше 15 % места"
+          description: "Свободно {{ $value | humanizePercentage }}. Логи, дампы (/var/backups/kronto), образы Docker."
+
+      - alert: DiskFull
+        expr: node_filesystem_avail_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/", fstype!~"tmpfs|overlay"} < 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Диск почти заполнен (меньше 5 %)"
+          description: "База перестанет писать. `docker system prune -af`, старые дампы."
+
+      - alert: MemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Свободной памяти меньше 10 %"
+          description: "Разбор больших PDF и реранкер — главные потребители."
+
+  # «Мёртвая рука»: ночные задачи пишут время успеха (cron-run.sh); нет
+  # отметки больше суток с запасом — задача не работает. absent — на
+  # новом сервере, где задача ещё ни разу не прошла.
+  - name: cron
+    rules:
+      - alert: NightlyJobMissed
+        expr: time() - corp_ed_cron_last_success_timestamp_seconds > 26 * 3600
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ночная задача {{ $labels.task }} не проходила больше 26 часов"
+          description: "Лог — /var/log/kronto/cron.log на сервере."
+
+      - alert: NightlyBackupNeverRan
+        expr: absent(corp_ed_cron_last_success_timestamp_seconds{task="backup"})
+        for: 26h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Бэкап базы ни разу не прошёл"
+          description: "Нет отметки успеха backup больше 26 часов. Лог — /var/log/kronto/cron.log."

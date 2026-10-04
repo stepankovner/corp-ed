@@ -9,6 +9,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  background: var(--bg);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -102,13 +103,19 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
   border-radius: 4px;
 }
 
 ::selection {
   background: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* Полосы прокрутки — в тон теме (системные цвета даёт color-scheme). */
+* {
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 table {
@@ -150,8 +157,8 @@ table {
   top: -100px;
   z-index: 100;
   padding: 10px 16px;
-  background: var(--ink);
-  color: #fff;
+  background: var(--primary);
+  color: var(--on-primary);
   border-radius: var(--r-sm);
   text-decoration: none;
 }

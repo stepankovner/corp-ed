@@ -1,4 +1,4 @@
-# Развёртывание corp-ed
+# Развёртывание Kronto
 
 Как поднять и обслуживать систему в бою. Что и почему устроено именно
 так — в `DECISIONS.md`; что известно и не закрыто — в `RISKS.md`;
@@ -11,13 +11,14 @@
 
 | Сервис | Образ | Что делает |
 |---|---|---|
-| `api` | `corp-ed` | HTTP API (uvicorn), порт 8000 — только для reverse proxy |
-| `worker` | `corp-ed` | фоновый ингест: `python -m corp_ed.worker` |
-| `migrate` | `corp-ed` | одноразово при старте: `alembic upgrade head` |
+| `api` | `kronto-api` | HTTP API (uvicorn), порт 8000 — только для reverse proxy |
+| `worker` | `kronto-api` | фоновый ингест и синхронизация подключений: `python -m corp_ed.worker` |
+| `migrate` | `kronto-api` | одноразово при старте: `alembic upgrade head` |
 | `db` | `pgvector/pgvector:pg16` | PostgreSQL + pgvector, единственное хранилище данных |
-| `redis` | `redis:7-alpine` | лимиты частоты и квота эмбеддингов; без диска, без пароля не стартует |
+| `redis` | `redis:7-alpine` | лимиты частоты, квота эмбеддингов, история диалогов (12 часов), одноразовость OAuth `state`, пульс воркера; без диска, без пароля не стартует |
 | `web` | `kronto-web` (`frontend/Dockerfile`) | статика фронтенда: nginx без root, порт 8080, CSP; API не проксирует |
-| cron на хосте | `corp-ed` | раз в сутки `cli purge` и `cli gaps --all` |
+| `reranker` | `text-embeddings-inference:cpu-1.9.4` (по хешу) | только с `COMPOSE_PROFILES=reranker`: модель реранкера (BH-32), без root, только чтение, ≤ 3 ядер, 2 ГБ |
+| cron на хосте | `kronto-api` | раз в сутки `cli purge` и `cli gaps --all` |
 
 Один образ на всё: API, воркер, миграции, CLI. Код и окружение внутри
 принадлежат root и доступны только на чтение; процессы работают под
@@ -65,14 +66,17 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Режим | `ENVIRONMENT=production` | включает HSTS, выключает `/docs`, требует явных хостов, CORS и Redis |
 | Секреты | `SECRET_KEY` (≥ 32 символов), `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `REDIS_PASSWORD`, `YC_API_KEY` | генерировать: `openssl rand -hex 32` |
 | Yandex Cloud | `YC_FOLDER_ID`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_MAX_CONCURRENCY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `EMBEDDING_QUERY_RPS`, `EMBEDDING_INGEST_RPS` | квоты каталога делятся между API и воркером |
-| Поиск и ответ | `RAG_*` | значения задаёт ML; дефолтов нет намеренно |
+| Поиск и ответ | `RAG_*` | значения задаёт ML; у основных дефолтов нет намеренно. Порог — `RAG_FAQ_MAX_DISTANCE=0.59` (BH-31, 30.09) |
+| Память диалога | `RAG_HISTORY_TURNS`, `RAG_HISTORY_TTL_MINUTES`, `RAG_CONDENSE_TIMEOUT_SECONDS` | BH-28: 3 последние пары реплик (замер ML 01.10), 0 — выключена; реплики — только в Redis, 720 мин от последнего вопроса (решение 30.09) |
+| Форматы файлов | `INGEST_EXTRA_FORMATS`, `INGEST_PDF_LAYOUT` | Р-5, BH-33…BH-35: `xlsx,pptx,doc` по умолчанию — к docx, pdf, txt и md; убранный формат отклоняется с подсказкой и не скачивается из систем; новых зависимостей образа нет |
+| Реранкер | `RAG_RERANK_MODEL`, `RAG_RERANK_URL`, `RAG_RERANK_DEPTH`, `RAG_RERANK_MAX_LENGTH`, `RAG_RERANK_TIMEOUT_MS`, `COMPOSE_PROFILES=reranker` | M3, BH-32: пустая модель — выключен (по умолчанию); включать по итогам holdout ML — `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, файлы — `deploy/reranker/fetch-model.sh`; глубина ≤ 64 (размер пачки сервиса) |
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
-| HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5 |
-| Кредиты | `BILLING_*` | дефолты — предложение досье, пересмотреть с тарифами |
+| HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5; с мониторингом (раздел 10) — добавить `api`: Prometheus ходит на `api:8000` |
+| Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09); `BILLING_LLM_RUB_PER_1K_TOKENS` — цена 1 000 токенов модели ответа в рублях для оценки расхода в нашей панели (не задана — только токены) |
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется |
-| OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — страница фронта «Мои источники» |
+| OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — `/sources`, фронт переводит на «Настройки → Мои подключения» |
 
 `.env` лежит рядом с `compose.yaml`, права `600`, в репозиторий не
 попадает (`.gitignore`). Секреты в переменных окружения видны в
@@ -94,35 +98,84 @@ docker compose -f compose.yaml ps             # api, worker, web — healthy
 `compose.override.yaml` с настройками разработки (`--reload`, монтирование
 исходников, открытый порт базы).
 
-Первую компанию заводит команда из CLI — HTTP-ручки для этого нет
-намеренно (решение в `DECISIONS.md`):
+Компании подключает команда Kronto: по заявке «Подключить компанию»,
+которую человек отправляет из своей учётки (`cli requests list` →
+`requests approve --id …`), или напрямую из CLI — HTTP-ручки создания
+компании нет намеренно (решение в `DECISIONS.md`):
 
 ```bash
 docker compose -f compose.yaml run --rm api python -m corp_ed.cli create-tenant \
     --code acme --name "ACME" --seats 50 --admin-email admin@acme.ru
 ```
 
-Временный пароль администратора задаёт оператор: команда спросит его
-скрытым вводом дважды (`docker compose run` выделяет терминал) или
-прочитает первой строкой stdin с флагом `--admin-password-stdin`. CLI
-пароль не генерирует и не печатает — в выводе, истории терминала и
-журналах его нет (RISKS №42). Политика та же, что у пользователей: от 12
-символов, не словарный, без почты внутри. Удобнее всего сгенерировать
-пароль в менеджере паролей команды и передать клиенту отдельным каналом
-от кода компании; при первом входе система потребует сменить пароль.
+Если у почты уже есть учётка kronto, она просто становится
+администратором — пароль не нужен. Если нет — временный пароль задаёт
+оператор: команда спросит его скрытым вводом дважды (`docker compose
+run` выделяет терминал) или прочитает первой строкой stdin с флагом
+`--admin-password-stdin`. CLI пароль не генерирует и не печатает — в
+выводе, истории терминала и журналах его нет (RISKS №42). Политика та
+же, что у пользователей: от 12 символов, не словарный, без почты
+внутри. Удобнее всего сгенерировать пароль в менеджере паролей команды
+и передать клиенту отдельным каналом от почты; при первом входе
+система потребует сменить пароль.
 
-Новая компания получает честный отказ, когда в документах ответа нет
-(`not_found_mode=strict`). Общий ответ с пометкой включается
-`set-not-found-mode --code acme --mode general` или флагом
-`--not-found-mode general` при создании.
+Раскладку перед вводом проверьте: скрытый ввод её не показывает, и
+пароль, набранный в русской раскладке, клиент не повторит. Не латинские
+символы CLI отвергает и просит ввести заново.
 
-Остальные команды: `set-seats`, `set-not-found-mode`, `suspend-tenant`,
-`resume-tenant`, `reindex`, `purge`, `gaps` — `python -m corp_ed.cli --help`.
+**Забыли пароль.** Человек восстанавливает его сам: «Забыли пароль?» на
+форме входа, ссылка приходит на почту (нужна отправка писем — `MAIL_*`,
+`.env.example`; стенд — `STAGE.md` §4.5а). Админ компании паролей не
+выдаёт (ТЗ §2). Если письма не доходят — команда, тем же скрытым вводом
+(или `--password-stdin`):
+
+```bash
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli reset-password \
+    --email admin@acme.ru
+```
+
+Все сессии учётки закрываются, при входе система потребует сменить
+пароль, в журнале — запись «пароль сброшен» без автора (сделала команда).
+
+Когда в документах ответа нет, новая компания получает общий ответ с
+пометкой «В документах компании ответа нет» (`not_found_mode=general`,
+решение 29.09, BH-29). Строгий отказ включается
+`set-not-found-mode --code acme --mode strict` или флагом
+`--not-found-mode strict` при создании.
+
+**Наша панель** (`/staff`, ТЗ §9) делает то же в браузере: заявки на
+компании, тариф, места, срок пилота, приостановка, расход на модели,
+поиск человека и письмо о новом пароле, заявки на созвон. Открыта только
+команде kronto и только с приложением-аутентификатором или ключом
+доступа. Кто в команде — задаёт только CLI, через API себя не добавить:
+
+```bash
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff add --email <почта>
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff list
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff remove --email …
+```
+
+Учётка должна уже быть (регистрация на сайте или приглашение); панель
+откроется, когда в ней включено приложение или ключ доступа (Настройки →
+Безопасность). Действия из панели — в журнале компании с
+`details.staff_account_id`.
+
+**Недельная сводка** администраторам уходит сама: её шлёт воркер по
+понедельникам с 9:00 по `BILLING_TIMEZONE` (раз в неделю на компанию;
+неделя без вопросов — без письма), cron для неё не нужен. Проверить
+письмо — `cli digest --code <компания> --force`.
+
+Остальные команды: `reset-password`, `set-seats`, `set-tariff`, `set-not-found-mode`,
+`suspend-tenant`, `resume-tenant`, `reindex`, `purge`, `gaps`, `leads`
+(заявки на созвон), `rotate-connector-secrets` (раздел 9),
+`connector-check` (адаптер против настоящей системы) —
+`python -m corp_ed.cli --help`.
 
 **Проверка стенда после развёртывания.** Сквозной сценарий через HTTP API,
 тем же путём, что и фронт: вход администратора, загрузка документа с
 случайным кодовым словом, ожидание индексации воркером, вопрос по
-документу (ответ по документам со ссылкой), вопрос вне документов
+документу (ответ по документам со ссылкой), уточняющий вопрос в том же
+диалоге (память диалога), вопрос вне документов
 (общий ответ с пометкой или отказ), оценка, расход кредитов, удаление
 документа. Запускается с любой машины с доступом к API; пароль — только
 переменной окружения:
@@ -166,7 +219,14 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
   умолчанию), иначе загрузка файлов обрезается прокси с невнятной
   ошибкой. Приложение свои лимиты применяет само (1 МБ JSON, 25 МБ файл).
 - **Таймауты** чтения ответа — не меньше 60 с: ответ модели плюс
-  эмбеддинг вопроса.
+  эмбеддинг вопроса. Поток ответа чата (`text/event-stream`, ТЗ §6)
+  шлёт пустое событие раз в 15 с, так что этого хватает и ему.
+- **Поток ответа не буферизуется.** API отдаёт у потока заголовок
+  `X-Accel-Buffering: no` — nginx его понимает сам, менять конфиг не
+  нужно. Другой прокси (Caddy, балансировщик облака) — выключить
+  буферизацию ответа для `/api/v1/conversations`, иначе ответ появится
+  целиком в конце, а не по мере генерации. Сжатие ответов API на
+  прокси не включать (оно тоже копит поток).
 - Порты 8000 (`api`) и 8080 (`web`) в `compose.yaml` опубликованы только
   на `127.0.0.1` — для прокси на этом же хосте. Не менять на `8000:8000`:
   Docker откроет порт на всех интерфейсах в обход правил ufw, и API будет
@@ -174,13 +234,13 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
   адрес тогда и есть `FORWARDED_ALLOW_IPS`.
 - **Фронтенд — на том же имени.** `/api/` и `/health` прокси ведёт в
   `api:8000`, всё остальное — в `web:8080`. Один origin: браузеру не
-  нужен CORS (`CORS_ORIGINS` пуст), а контейнер `web` не стоит в цепочке
+  нужен CORS (`CORS_ALLOWED_ORIGINS` пуст), а контейнер `web` не стоит в цепочке
   `X-Forwarded-For` к API. Готовый пример для nginx на хосте —
   `deploy/nginx/kronto.conf`.
 - **OAuth коннекторов** (`per_user`): `CONNECTOR_OAUTH_CALLBACK_URL` =
   `https://<имя>/api/v1/connectors/oauth/callback`,
   `CONNECTOR_OAUTH_RETURN_URL` = `https://<имя>/sources` — страница
-  «Мои источники», она показывает итог подключения.
+  «Мои подключения» (`/sources` переводит туда), она показывает итог подключения.
 
 ---
 
@@ -190,9 +250,9 @@ Cron на хосте (или systemd timer), под пользователем �
 
 ```cron
 # Удалить журнал вопросов старше QA_LOG_RETENTION_DAYS и аудит старше года.
-10 3 * * *  cd /opt/corp-ed && docker compose -f compose.yaml run --rm api python -m corp_ed.cli purge
+10 3 * * *  cd /opt/kronto && docker compose -f compose.yaml run --rm api python -m corp_ed.cli purge
 # Пересобрать отчёт о пробелах по всем активным компаниям (после purge).
-30 3 * * *  cd /opt/corp-ed && docker compose -f compose.yaml run --rm api python -m corp_ed.cli gaps --all
+30 3 * * *  cd /opt/kronto && docker compose -f compose.yaml run --rm api python -m corp_ed.cli gaps --all
 ```
 
 `purge` удаляет и журнал запусков коннекторов старше
@@ -238,11 +298,13 @@ docker compose -f compose.yaml up -d --build
 
 ## 8. Бэкапы и восстановление
 
-Единственное состояние — PostgreSQL. Redis восстанавливать нечего
-(счётчики лимитов).
+Единственное состояние — PostgreSQL. Redis восстанавливать нечего:
+счётчики лимитов, история диалогов и одноразовые `state` живут часы;
+перезапуск Redis стирает историю диалогов — следующий вопрос начнёт
+новый диалог.
 
 ```bash
-docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > corp_ed-$(date +%F).dump
+docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > kronto-$(date +%F).dump
 ```
 
 Раз в сутки, хранить не меньше 30 дней вне хоста. Дамп содержит
@@ -295,11 +357,18 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
 `worker`. Ссылки на скачивание файлов диска принимаются только на хосте
 портала: чужой хост в `DOWNLOAD_URL` — ошибка документа, а не запрос.
 Для Яндекс 360 — `oauth.yandex.ru` (токены), `cloud-api.yandex.net`
-(REST Диска) и `downloader.disk.yandex.ru` (файлы по подписанной
-ссылке). Для Confluence Server/DC — выход к адресу инсталляции клиента (часто
+(REST Диска), `api.wiki.yandex.net` (Вики), `downloader.dst.yandex.ru` и
+`*.storage.yandex.net` (файлы по подписанной ссылке). Для Confluence Server/DC — выход к адресу инсталляции клиента (часто
 внутри его сети: тогда нужен маршрут или туннель до неё, а адрес всё
 равно должен быть публичным для проверки SSRF — частные адреса
-`validate_outbound_url` не пропускает, см. RISKS №29).
+`validate_outbound_url` не пропускает, см. RISKS №29; как быть с
+закрытой сетью — `OPEN-QUESTIONS.md`, П-11). Служебная учётка
+Confluence — обычный пользователь, который читает нужные пространства
+и состоит в группах из ограничений; в 10.x — только персональный
+токен (вход паролем Confluence выключает сам). В 7.x и 8.x состав групп
+адаптер собирает обратным ходом — до 2 000 пользователей; больше —
+служебной учётке нужны права администратора Confluence (проверено 01.10,
+`tests/live/confluence_dc/README.md`).
 
 **Egress-прокси.** Если `api` и `worker` выходят наружу через HTTP-прокси
 (`HTTPS_PROXY`), закрепление адреса не работает: прокси принимает CONNECT
@@ -318,11 +387,23 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
   и пароли вырезаются процессором structlog. Собирать во внешнюю
   систему с хранением ≥ 90 дней — журнал аудита в базе хранится год, но
   логи с `request_id` нужны для разбора инцидента.
-- `GET /health` — живость `api` (без базы и Redis). Сбой базы виден по
-  500 на боевых ручках и по логу `internal_error`.
-- Воркер: HTTP-порта нет; признак остановки — растущее число задач
-  `ingest_jobs` в статусе `PENDING` и материалы, не переходящие в
-  `READY`. Застрявшие `RUNNING` воркер сам переоткрывает через 15 минут.
+- `GET /health` — живость `api` (без базы и Redis): для HEALTHCHECK
+  контейнера.
+- `GET /health/ready` — готовность целиком: база, Redis, пульс воркера
+  (ключ в Redis, обновляется каждые 30 с). `200 {"status":"ok"}` или
+  `503` с именами упавших частей; проксируется nginx — её проверяет
+  внешний чекер (Ping-Admin, звонок ночью).
+- `GET /metrics` — метрики Prometheus: запросы по маршруту и коду,
+  время ответа, ответы по источнику, деградации (без переписывания,
+  реранкера, истории). Только частным адресам; nginx его не проксирует.
+  Воркер — метрики очередей и пульса на порту 9101 внутри сети Docker
+  (`WORKER_METRICS_PORT`, 0 — выключить).
+- Стек мониторинга — `deploy/monitoring` (Prometheus, Alertmanager,
+  Grafana, Loki, Alloy, node-exporter, blackbox): тревоги, SLO (одно
+  число в `prometheus/rules/slo.yml`), «мёртвая рука» для ночных задач
+  (`deploy/stage/cron-run.sh`), логи 14 дней. На стенде его поднимает
+  `deploy.sh`, настройка — `STAGE.md`; для боевого сервера — тот же
+  стек на отдельной ВМ (П-9).
 - Аудит: `GET /api/v1/audit` для администратора компании; события
   `auth.login.failed`, `auth.refresh.reuse_detected`, `credits.*` —
   сигналы, на которые стоит смотреть команде.
@@ -344,16 +425,27 @@ OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам
       отдаёт).
 - [ ] `ss -ltn` на хосте: 8000 и 8080 слушаются только на `127.0.0.1`;
       снаружи `curl http://<ip>:8000/health` не соединяется.
+- [ ] SSH только по ключу: `sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '`
+      — `no` и `without-password`. Стенд делает это в `bootstrap.sh`
+      (`/etc/ssh/sshd_config.d/00-kronto.conf`); Selectel по умолчанию
+      пускает root и по паролю.
 - [ ] После входа в браузере в `docker compose -f compose.yaml logs api` у
       запросов адрес клиента настоящий, а не `172.30.61.1`.
 - [ ] Запрос с чужим `Host` получает 400.
 - [ ] `psql -U corp_ed_app -c 'CREATE TABLE t(i int)'` — отказ.
 - [ ] Бэкап снят и восстановлен в тестовой базе хотя бы раз.
 - [ ] Cron `purge` и `gaps` стоит и отработал вручную.
-- [ ] Прогон `security.yaml` на текущем коммите зелёный.
+- [ ] Прогон `security.yaml` на текущем коммите зелёный (кроме CodeQL —
+      до решения по GitHub Code Security, RISKS №13).
 - [ ] `python -m corp_ed.stand check` против стенда — все шаги прошли.
 - [ ] `https://<имя>/` открывает вход; `curl -I https://<имя>/` —
-      `Content-Security-Policy: default-src 'self'`; `/assets/*.map` — 404.
+      `Content-Security-Policy: default-src 'self'; script-src 'self'
+      'sha256-…'` (хеш встроенного скрипта темы из `index.html`: правите
+      скрипт — обновите хеш в `nginx.conf`, иначе тема мигнёт при загрузке;
+      сверяет `frontend/src/lib/csp.test.ts`); `/assets/*.map` — 404.
+- [ ] Ключ доступа добавляется в «Настройки → Безопасность» по https
+      (WebAuthn работает только на https или localhost; сайт ключа — имя
+      хоста, `AUTH_WEBAUTHN_RP_ID` — если сайт и API на разных именах).
 - [ ] Вход администратора в браузере, загрузка документа, ответ со
       ссылкой на него (то же, что `stand check`, глазами).
 - [ ] Запись на созвон: либо `LEADS_ENABLED=false` (форма показывает

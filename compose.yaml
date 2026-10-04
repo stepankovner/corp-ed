@@ -11,7 +11,7 @@ x-app: &app
   build:
     context: .
     dockerfile: Dockerfile
-  image: corp-ed:local
+  image: kronto-api:local
   env_file: .env
   environment:
     # Приложение ходит в базу НЕ владельцем схемы: RLS для него действует,
@@ -75,6 +75,31 @@ services:
     image: kronto-web:local
     ports:
       - "127.0.0.1:8080:8080"
+    restart: unless-stopped
+
+  # Реранкер (M3, BH-32) — только с профилем: COMPOSE_PROFILES=reranker
+  # в .env и RAG_RERANK_MODEL=<модель>. Модель — deploy/reranker/fetch-model.sh
+  # (сеть сервису не нужна: модель читается с диска). Без root, файловая
+  # система только для чтения; процессор ограничен, чтобы пересортировка
+  # не отнимала его у API и воркера целиком.
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
+    profiles: ["reranker"]
+    command: ["--model-id", "/model", "--port", "8080", "--max-client-batch-size", "64", "--auto-truncate"]
+    user: "65534:65534"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - ${RERANK_MODEL_DIR:-/var/lib/kronto/reranker-model}:/model:ro
+    cpus: ${RERANK_CPUS:-3}
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 60s
+      retries: 3
     restart: unless-stopped
 
   db:

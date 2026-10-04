@@ -3,11 +3,10 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from corp_ed.api.v1.schemas.auth import MAX_TOKEN_LENGTH
+from corp_ed.api.v1.schemas.auth import MAX_TOKEN_LENGTH, TokenResponse
 from corp_ed.api.v1.schemas.base import RequestModel
-from corp_ed.core.password_policy import MAX_PASSWORD_LENGTH
 from corp_ed.services.invite_service import DEFAULT_TTL_DAYS, MAX_TTL_DAYS, MAX_USES
 
 # Имя хоста: метки из латиницы, цифр и дефиса через точку, хотя бы одна
@@ -23,6 +22,8 @@ class InviteCreateRequest(RequestModel):
     """Пусто — по числу мест компании."""
     email_domain: str | None = Field(default=None, max_length=253)
     """Только почты этого домена (и поддоменов), например acme.ru."""
+    requires_approval: bool = False
+    """Вступивший ждёт одобрения администратора."""
 
     @field_validator("email_domain")
     @classmethod
@@ -49,29 +50,33 @@ class InviteResponse(BaseModel):
     max_uses: int
     uses: int
     email_domain: str | None
+    requires_approval: bool
     status: InviteStatusValue
 
 
 class InviteCreatedResponse(BaseModel):
     invite: InviteResponse
     token: str
-    """Показывается один раз. Ссылка — /join/<код компании>#<token>:
-    токен после «#» не уходит на сервер и в журналы доступа."""
-    company_code: str
+    """Показывается один раз. Ссылка — /join#<token>: токен после «#» не
+    уходит на сервер и в журналы доступа."""
+    code: str
+    """Та же ссылка в короткой форме для диктовки (K7QM-4XPA)."""
 
 
-class InviteTokenRequest(RequestModel):
-    company_code: str = Field(min_length=1, max_length=63)
-    token: str = Field(min_length=16, max_length=MAX_TOKEN_LENGTH)
+class InviteSecretRequest(RequestModel):
+    secret: str = Field(min_length=8, max_length=MAX_TOKEN_LENGTH)
+    """Токен из ссылки или код приглашения."""
 
 
 class InvitePreviewResponse(BaseModel):
     company_name: str
     expires_at: datetime
     email_domain: str | None
+    requires_approval: bool
 
 
-class InviteAcceptRequest(InviteTokenRequest):
-    email: EmailStr
-    full_name: str | None = Field(default=None, max_length=200)
-    password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+class JoinResponse(BaseModel):
+    outcome: Literal["joined", "pending", "already_member"]
+    company_name: str
+    session: TokenResponse | None
+    """Новая сессия в этой компании; null — ждёт одобрения админа."""

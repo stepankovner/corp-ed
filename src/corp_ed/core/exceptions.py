@@ -37,6 +37,14 @@ class ConflictError(DomainError):
     """Конфликт состояния (например, дубликат)."""
 
 
+class CodedConflictError(ConflictError):
+    """Конфликт с машинным кодом для фронта (answer_in_progress…). HTTP 409."""
+
+    def __init__(self, message: str, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class PermissionError(DomainError):
     """Недостаточно прав."""
 
@@ -45,7 +53,7 @@ class EmailAlreadyExistsError(ConflictError):
     """Email уже зарегистрирован."""
 
     def __init__(self, email: str) -> None:
-        super().__init__(f"User with email '{email}' already exists")
+        super().__init__(f"Сотрудник с почтой {email} уже есть в компании")
 
 
 class TenantMismatchError(Exception):
@@ -75,8 +83,12 @@ class PasswordChangeRequiredError(PermissionError):
 class LastAdminError(ConflictError):
     """Операция оставила бы компанию без активного администратора."""
 
-    def __init__(self) -> None:
-        super().__init__("В компании должен остаться хотя бы один администратор")
+    code = "last_admin"
+
+    def __init__(
+        self, message: str = "В компании должен остаться хотя бы один администратор"
+    ) -> None:
+        super().__init__(message)
 
 
 class SelfModificationError(ConflictError):
@@ -84,6 +96,17 @@ class SelfModificationError(ConflictError):
 
     def __init__(self) -> None:
         super().__init__("Нельзя изменить собственную роль или заблокировать себя")
+
+
+class SelfPasswordResetError(ConflictError):
+    """Администратор выдаёт временный пароль сам себе.
+
+    Сброс закрывает все сессии: не скопировал пароль — вышел из системы,
+    а единственный администратор компании так теряет доступ.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("Свой пароль меняйте в меню профиля: «Сменить пароль»")
 
 
 class SeatsLimitError(ConflictError):
@@ -137,15 +160,44 @@ class CreditsExhaustedError(DomainError):
 
 
 class ConnectorLimitError(ConflictError):
-    """Технический потолок подключений на компанию (CONNECTOR_MAX_PER_TENANT).
+    """Технический потолок подключений на компанию (CONNECTOR_MAX_PER_TENANT
+    или tenants.connector_limit) — защита от скрипта в любом тарифе.
 
-    Не тарифная граница: тариф строится от мест (решение команды 25.09).
     HTTP 409 с кодом connector_limit.
     """
 
     def __init__(self, limit: int) -> None:
         super().__init__(f"В компании не больше {limit} подключений")
         self.code = "connector_limit"
+
+
+class TariffConnectorLimitError(ConflictError):
+    """Тариф компании не даёт больше подключений (domain/tariffs.py).
+
+    HTTP 409 с кодом tariff_connector_limit: админ видит, какой тариф
+    снимает ограничение.
+    """
+
+    def __init__(self, tariff_title: str, limit: int) -> None:
+        super().__init__(
+            f"В тарифе «{tariff_title}» — до {limit} подключений. "
+            "Больше — в тарифе «Расширенный»"
+        )
+        self.code = "tariff_connector_limit"
+
+
+class ConnectorNotInTariffError(ConflictError):
+    """Система вне базового списка — только в тарифе «Корпоративный».
+
+    HTTP 409 с кодом connector_not_in_tariff.
+    """
+
+    def __init__(self, tariff_title: str) -> None:
+        super().__init__(
+            f"Эта система не входит в тариф «{tariff_title}» — "
+            "она доступна в тарифе «Корпоративный»"
+        )
+        self.code = "connector_not_in_tariff"
 
 
 class InvalidConnectorConfigError(DomainError):
@@ -163,35 +215,104 @@ class ConnectorStateError(ConflictError):
 
 
 class InvalidInviteError(NotFoundError):
-    """Ссылка-приглашение не найдена, отозвана, истекла или исчерпана.
+    """Приглашение не найдено, отозвано, истекло или исчерпано.
 
     Одно сообщение на все причины: держателю ссылки незачем знать, какая.
     """
 
+    code = "invalid_invite"
+
     def __init__(self) -> None:
         super().__init__(
-            "Ссылка-приглашение недействительна или истекла. Попросите новую "
-            "у администратора компании."
+            "Приглашение недействительно или истекло. Попросите новую ссылку "
+            "или код у администратора компании."
         )
 
 
 class InviteEmailDomainError(DomainError):
     """Почта не из домена, которым админ ограничил ссылку. HTTP 422."""
 
-    def __init__(self, domain: str) -> None:
+    def __init__(self, domain: str, *, company: bool = False) -> None:
         super().__init__(
-            f"По этой ссылке можно присоединиться только с почтой @{domain}"
+            f"В эту компанию можно вступить только с почтой @{domain}"
+            if company
+            else f"По этой ссылке можно присоединиться только с почтой @{domain}"
         )
 
 
-class InviteEmailTakenError(ConflictError):
-    """Учётка с такой почтой в компании уже есть — нужно войти, а не
-    заводить вторую."""
+class EmailNotVerifiedError(PermissionError):
+    """Пароль верный, но почта не подтверждена (ТЗ §3). HTTP 403."""
+
+    code = "email_not_verified"
+
+    def __init__(self) -> None:
+        super().__init__("Почта не подтверждена — введите код из письма")
+
+
+class NoCompanyError(PermissionError):
+    """Учётка без выбранной компании обращается к данным компании (ТЗ §2).
+
+    Фронт по коду показывает экран «Вы ещё не в компании». HTTP 403.
+    """
+
+    code = "no_company"
+
+    def __init__(self) -> None:
+        super().__init__("Вы ещё не состоите в компании")
+
+
+class MfaSetupRequiredError(PermissionError):
+    """Администратору (или всем в компании с правилом strong) нужен
+    надёжный второй фактор — приложение или ключ доступа (ТЗ §3). HTTP 403."""
+
+    code = "mfa_setup_required"
 
     def __init__(self) -> None:
         super().__init__(
-            "Сотрудник с этой почтой уже есть в компании — войдите со своим паролем"
+            "Включите вход через приложение-аутентификатор или ключ доступа — "
+            "это обязательно для администраторов"
         )
+
+
+class MembershipBlockedError(PermissionError):
+    """Администратор заблокировал человека в этой компании. HTTP 403."""
+
+    code = "membership_blocked"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Администратор компании закрыл вам доступ. Если это ошибка — напишите ему."
+        )
+
+
+class InvalidEmailCodeError(DomainError):
+    """Код или ссылка из письма неверны, истекли или использованы.
+
+    Одно сообщение на все причины. HTTP 400.
+    """
+
+    code = "invalid_code"
+
+    def __init__(self) -> None:
+        super().__init__("Код или ссылка недействительны — запросите новое письмо")
+
+
+class EmailTakenError(ConflictError):
+    """Новая почта уже занята другой учёткой (смена почты). HTTP 409."""
+
+    code = "email_taken"
+
+    def __init__(self) -> None:
+        super().__init__("Эта почта уже используется другой учётной записью")
+
+
+class CompanyRequestExistsError(ConflictError):
+    """У учётки уже есть заявка на рассмотрении. HTTP 409."""
+
+    code = "company_request_exists"
+
+    def __init__(self) -> None:
+        super().__init__("Ваша заявка уже на рассмотрении — мы скоро ответим")
 
 
 class InvalidLeadError(DomainError):

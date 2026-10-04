@@ -8,24 +8,25 @@ export function Logo({ height = 24, className }: { height?: number; className?: 
       height={height}
       style={{ width: "auto" }}
       role="img"
-      aria-label="Kronto"
+      aria-label="kronto"
     >
       <path fill="currentColor" d={LOGO_PATH} />
     </svg>
   );
 }
 
-/** Знак окна из лендинга: кольцо с синей точкой. */
-export function WindowMark() {
+/** Знак окна из лендинга: кольцо с точкой акцентного цвета. */
+export function WindowMark({ size = 16 }: { size?: number }) {
+  const dot = size * 0.16;
   return (
     <span
       aria-hidden
       style={{
-        width: 16,
-        height: 16,
+        width: size,
+        height: size,
         borderRadius: "50%",
-        border: "4px solid var(--ink)",
-        background: "radial-gradient(circle, var(--accent) 0 2.5px, transparent 3px)",
+        border: `${size / 4}px solid var(--ink)`,
+        background: `radial-gradient(circle, var(--accent) 0 ${dot}px, transparent ${dot + 0.5}px)`,
         flex: "none",
         display: "inline-block",
       }}

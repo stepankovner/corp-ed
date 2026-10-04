@@ -6,51 +6,29 @@ import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
 import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
+import { useToast } from "../ui/useToast";
 import styles from "./Admin.module.css";
-
-export function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string; count?: number }[];
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className={styles.segmented} role="group" aria-label={label}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className={styles.segment}
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-          {option.count !== undefined ? <span className={styles.count}>{option.count}</span> : null}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export function CopyButton({ value, label = "Скопировать" }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false);
+  const toast = useToast();
   return (
     <IconButton
       size="sm"
-      label={copied ? "Скопировано" : label}
+      label={label}
       onClick={() => {
         void navigator.clipboard
           .writeText(value)
           .then(() => {
             setCopied(true);
+            toast.show("Скопировано");
             window.setTimeout(() => setCopied(false), 1600);
           })
-          .catch(() => undefined);
+          .catch(() =>
+            toast.show("Не удалось скопировать: браузер не дал доступа к буферу обмена", {
+              tone: "error",
+            }),
+          );
       }}
     >
       {copied ? <Check size={16} aria-hidden /> : <Copy size={16} aria-hidden />}
@@ -122,17 +100,20 @@ export function ConfirmDialog({
   );
 }
 
-/** Одноразовый секрет (временный пароль, ссылка-приглашение): показать, дать скопировать. */
+/** Одноразовый секрет (ссылка-приглашение): показать, дать скопировать. */
 export function SecretValue({
   value,
-  copyLabel = "Скопировать пароль",
+  copyLabel = "Скопировать",
+  testId,
 }: {
   value: string;
   copyLabel?: string;
+  /** data-testid значения — по нему секрет берёт e2e. */
+  testId?: string;
 }) {
   return (
     <div className={styles.secret}>
-      <code>{value}</code>
+      <code data-testid={testId}>{value}</code>
       <CopyButton value={value} label={copyLabel} />
     </div>
   );

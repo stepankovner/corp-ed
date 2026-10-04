@@ -8,6 +8,7 @@ from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.retry import call_with_retry
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
+from corp_ed.llm.yandex_headers import auth_headers
 
 URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
 
@@ -34,6 +35,7 @@ class YandexAdapter(LLMGateway):
         self._client = client
         self._api_key = api_key
         self._model = model
+        self.model_name = model
         self._max_attempts = max_attempts
         self._base_delay = base_delay
         self._read_timeout = read_timeout
@@ -67,7 +69,7 @@ class YandexAdapter(LLMGateway):
             response = await self._client.post(
                 URL,
                 json=payload,
-                headers={"Authorization": f"Api-Key {self._api_key}"},
+                headers=auth_headers(self._api_key),
                 timeout=httpx.Timeout(
                     connect=5.0,
                     read=self._read_timeout,

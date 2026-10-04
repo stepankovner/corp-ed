@@ -47,7 +47,7 @@ def test_detects_supported_formats(filename: str, fmt: SourceFormat) -> None:
     assert detect_format(filename, data).format is fmt
 
 
-@pytest.mark.parametrize("filename", ["old.doc", "slides.pptx", "run.exe", "noext"])
+@pytest.mark.parametrize("filename", ["old.rtf", "slides.ppt", "run.exe", "noext"])
 def test_rejects_unsupported_extension(filename: str) -> None:
     assert _code(lambda: detect_format(filename, b"data")) == "unsupported_format"
 
@@ -55,21 +55,22 @@ def test_rejects_unsupported_extension(filename: str) -> None:
 @pytest.mark.parametrize(
     ("filename", "advice"),
     [
-        ("old.doc", ".docx или PDF"),
-        ("slides.pptx", "как PDF"),
-        ("budget.xlsx", "листы как PDF"),
+        ("old.rtf", ".docx или PDF"),
+        ("slides.odp", ".pptx или PDF"),
+        ("budget.ods", ".xlsx или PDF"),
     ],
 )
 def test_unsupported_format_message_gives_advice(filename: str, advice: str) -> None:
-    """Решение 28.09 (П-3): совет, как загрузить файл, а не только отказ."""
+    """Решение 28.09 (П-3): совет, как загрузить файл, а не только отказ.
+    Совет по флагу форматов Р-5 — tests/ingest/test_office_intake.py."""
     message = error_message("unsupported_format", filename)
     assert advice in message
-    assert message.endswith("Поддерживаются файлы docx, pdf, txt и md")
+    assert message.endswith("Поддерживаются файлы docx, doc, xlsx, pptx, pdf, txt и md")
 
 
 def test_unknown_format_keeps_plain_message() -> None:
     assert error_message("unsupported_format", "run.exe") == (
-        "Поддерживаются файлы docx, pdf, txt и md"
+        "Поддерживаются файлы docx, doc, xlsx, pptx, pdf, txt и md"
     )
 
 
@@ -82,7 +83,9 @@ def test_rejects_docx_renamed_to_pdf() -> None:
     assert _code(lambda: detect_format("a.pdf", docx)) == "format_mismatch"
 
 
-@pytest.mark.parametrize("magic", [b"MZ\x90\x00", b"\x7fELF\x02", b"PK\x03\x04"])
+@pytest.mark.parametrize(
+    "magic", [b"MZ\x90\x00", b"\x7fELF\x02", b"PK\x03\x04", b"\xd0\xcf\x11\xe0"]
+)
 def test_rejects_binary_renamed_to_text(magic: bytes) -> None:
     assert _code(lambda: detect_format("a.txt", magic + b"rest")) == "format_mismatch"
 
@@ -138,6 +141,34 @@ def test_docx_headings_become_markdown() -> None:
     assert "По заявлению работника." in markdown
 
 
+def test_docx_running_text_is_extracted() -> None:
+    """Стенд 02.10: номер положения жил только в верхнем колонтитуле."""
+    data = samples.docx(
+        [("Положение об отпусках", "Heading1"), ("Текст положения.", None)],
+        extra_parts={
+            "word/header1.xml": samples.running_part("hdr", ["Положение П-ОТП-07"]),
+            "word/header2.xml": samples.running_part("hdr", ["Положение П-ОТП-07"]),
+            "word/footer1.xml": samples.running_part(
+                "ftr", ["Вопросы — внутренний телефон 2318", "7"]
+            ),
+        },
+    )
+    markdown = extract(SourceFormat.DOCX, data)
+
+    assert markdown.index("П-ОТП-07") < markdown.index("# Положение об отпусках")
+    assert markdown.count("П-ОТП-07") == 1
+    assert markdown.rstrip().endswith("Вопросы — внутренний телефон 2318")
+    assert "\n7" not in markdown
+
+
+def test_broken_running_text_does_not_fail_docx() -> None:
+    data = samples.docx(
+        [("Текст положения.", None)],
+        extra_parts={"word/header1.xml": "<w:hdr"},
+    )
+    assert "Текст положения." in extract(SourceFormat.DOCX, data)
+
+
 def test_pdf_pages_are_joined_with_page_break() -> None:
     data = samples.pdf([[("First page text", 11)], [("Second page text", 11)]])
     markdown = extract(SourceFormat.PDF, data)
@@ -161,9 +192,26 @@ def test_corrupted_pdf_is_rejected() -> None:
     assert _code(lambda: extract(SourceFormat.PDF, b"%PDF-1.7 broken")) == ("corrupted")
 
 
-def test_text_must_be_utf8() -> None:
-    cp1251 = "Отпуск 28 дней".encode("cp1251")
-    assert _code(lambda: extract(SourceFormat.TXT, cp1251)) == "not_utf8"
+def test_windows_encodings_are_read() -> None:
+    """Стенд 02.10: .txt из старого Блокнота отклонялся."""
+    text = "Отпуск — 28 календарных дней.\r\nПропуск: кабинет 101."
+    assert extract(SourceFormat.TXT, text.encode("cp1251")) == text
+    assert extract(SourceFormat.TXT, text.encode("utf-16")) == text
+    big_endian = b"\xfe\xff" + text.encode("utf-16-be")
+    assert extract(SourceFormat.MD, big_endian) == text
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        bytes(range(0x80, 0x98)) * 50,  # не текст ни в одной кодировке
+        # Западноевропейский текст: в cp1251 акценты стали бы кириллицей.
+        "Le café du coin est fermé le dimanche. Über alles.".encode("latin-1"),
+        b"\x01\x02\x03\xe0\xe1" * 200,  # двоичный файл
+    ],
+)
+def test_undecodable_text_is_rejected(data: bytes) -> None:
+    assert _code(lambda: extract(SourceFormat.TXT, data)) == "not_utf8"
 
 
 def test_bom_and_nul_are_removed() -> None:
@@ -173,6 +221,8 @@ def test_bom_and_nul_are_removed() -> None:
 
 def test_empty_text_is_rejected() -> None:
     assert _code(lambda: extract(SourceFormat.TXT, b"  \n\n ")) == "no_text"
+    assert error_message("no_text", "пусто.txt") == "Файл пустой — в нём нет текста"
+    assert "скан" in error_message("no_text", "скан.pdf")
 
 
 def test_oversized_text_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

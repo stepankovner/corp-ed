@@ -4,6 +4,7 @@ import { useState, type SubmitEvent } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
 import { IconButton } from "../ui/IconButton";
@@ -20,6 +21,7 @@ import { ConfirmDialog } from "./common";
 type Term = Schemas["GlossaryTermResponse"];
 
 export function GlossaryPage() {
+  useDocumentTitle("Глоссарий");
   const queryClient = useQueryClient();
   const terms = useQuery({
     queryKey: ["glossary"],
@@ -33,7 +35,7 @@ export function GlossaryPage() {
       <PageHeader
         label="управление"
         title="Глоссарий"
-        description="Внутренние сокращения и жаргон компании. Kronto разворачивает их в вопросе перед поиском: «СЗ на ДМС» найдёт «служебную записку» про «добровольное медицинское страхование»."
+        description="Внутренние сокращения и жаргон компании. kronto разворачивает их в вопросе перед поиском: «СЗ на ДМС» найдёт «служебную записку» про «добровольное медицинское страхование»."
         actions={
           <Button size="sm" onClick={() => setEditing("new")}>
             <Plus size={16} aria-hidden /> Добавить термин

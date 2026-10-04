@@ -16,7 +16,7 @@ interface Props {
 /** Фрагмент документа, на который опирается ответ. */
 export function SourcePanel({ source, number, onClose }: Props) {
   const panel = useRef<HTMLDivElement>(null);
-  const url = safeHttpUrl(source.source_url);
+  const url = safeHttpUrl(source.source_url ?? null);
   const section = sourceSection(source);
 
   useEffect(() => {
@@ -51,10 +51,18 @@ export function SourcePanel({ source, number, onClose }: Props) {
             <X size={20} aria-hidden />
           </IconButton>
         </div>
-        <p className={styles.panelSection}>{section || "Фрагмент документа"}</p>
-        <div className={styles.panelText}>
-          <Markdown className={styles.hlBlock}>{fragmentText(source)}</Markdown>
-        </div>
+        <p className={styles.panelSection}>
+          {section ||
+            (source.kind === "attachment" ? "Фрагмент вашего файла" : "Фрагмент документа")}
+        </p>
+        {source.content === null ? (
+          // Документ удалили или доступ к нему закрыли — фрагмент не показываем.
+          <p className="muted">Документ удалён или вам недоступен: фрагмент не показываем.</p>
+        ) : (
+          <div className={styles.panelText}>
+            <Markdown className={styles.hlBlock}>{fragmentText(source)}</Markdown>
+          </div>
+        )}
         {url ? (
           <a className={styles.panelLink} href={url} target="_blank" rel="noopener noreferrer">
             Открыть документ в источнике <ExternalLink size={16} aria-hidden />

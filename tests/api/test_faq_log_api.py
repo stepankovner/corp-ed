@@ -230,7 +230,10 @@ async def test_search_returns_matches_without_threshold(
         "content",
         "distance",
         "fulltext_rank",
+        # M3: балл реранкера; без rerank=true — пусто.
+        "rerank_score",
     }
+    assert matches[0]["rerank_score"] is None
 
 
 async def test_search_is_admin_only(api: httpx.AsyncClient, account: User) -> None:

@@ -4,7 +4,9 @@ import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
-import { formatDate } from "../lib/format";
+import { formatCalendarDate } from "../lib/format";
+import { priceLabel, tariffByCode, TARIFFS, type TariffCode } from "../lib/tariffs";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { Checkbox, SelectField, TextAreaField, TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
@@ -13,14 +15,13 @@ import authStyles from "./AuthLayout.module.css";
 import { AuthLayout } from "./AuthLayout";
 import styles from "./PricingPage.module.css";
 
-type Tariff = Schemas["LeadTariff"];
-
 /**
  * Запись на созвон (досье 10.1): удобные дата и окно, данные компании и
  * телефон. Команда перезванивает и подтверждает время. Форма открыта,
  * только когда на сервере заданы политика обработки данных и её версия.
  */
 export function CallRequestPage() {
+  useDocumentTitle("Запись на созвон");
   const form = useQuery({
     queryKey: ["lead-form"],
     queryFn: () => unwrap(api.GET("/api/v1/leads/form")),
@@ -49,8 +50,8 @@ export function CallRequestPage() {
 
 function RequestForm({ form }: { form: Schemas["LeadFormResponse"] }) {
   const [params] = useSearchParams();
-  const [tariff, setTariff] = useState<Tariff>(
-    params.get("tariff") === "custom" ? "custom" : "base",
+  const [tariff, setTariff] = useState<TariffCode>(
+    tariffByCode(params.get("tariff"))?.code ?? "base",
   );
   const [company, setCompany] = useState("");
   const [contact, setContact] = useState("");
@@ -87,8 +88,8 @@ function RequestForm({ form }: { form: Schemas["LeadFormResponse"] }) {
   if (send.isSuccess) {
     return (
       <Notice kind="ok" title="Заявка отправлена">
-        Мы перезвоним по номеру {phone.trim()}, чтобы подтвердить созвон {formatDate(day)} в {slot}{" "}
-        по Москве.
+        Мы перезвоним по номеру {phone.trim()}, чтобы подтвердить созвон {formatCalendarDate(day)} в{" "}
+        {slot} по Москве.
       </Notice>
     );
   }
@@ -104,10 +105,13 @@ function RequestForm({ form }: { form: Schemas["LeadFormResponse"] }) {
       <SelectField
         label="Тариф"
         value={tariff}
-        onChange={(e) => setTariff(e.target.value as Tariff)}
+        onChange={(e) => setTariff(e.target.value as TariffCode)}
       >
-        <option value="base">Базовый — 1 490 ₽ за место в месяц</option>
-        <option value="custom">Больше источников и вопросов — по запросу</option>
+        {TARIFFS.map((option) => (
+          <option key={option.code} value={option.code}>
+            {option.name} — {priceLabel(option)}
+          </option>
+        ))}
       </SelectField>
       <TextField
         label="Компания"

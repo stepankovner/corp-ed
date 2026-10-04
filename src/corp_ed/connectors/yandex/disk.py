@@ -49,7 +49,7 @@ from corp_ed.connectors.common import (
 from corp_ed.connectors.yandex.oauth import YandexAuth
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 from corp_ed.domain.types import RemoteDocumentKind
-from corp_ed.ingest.extract import SUPPORTED_EXTENSIONS
+from corp_ed.ingest.extract import supported_extensions
 
 logger = structlog.get_logger()
 
@@ -339,7 +339,7 @@ class YandexDiskModule:
     ) -> RemoteDocument | None:
         name = str(entry.get("name") or "")
         resource_id = str(entry.get("resource_id") or path)
-        if PurePath(name).suffix.lower() not in SUPPORTED_EXTENSIONS:
+        if PurePath(name).suffix.lower() not in supported_extensions():
             note_unsupported(name, resource_id)
             return None
         size = to_int(entry.get("size"))

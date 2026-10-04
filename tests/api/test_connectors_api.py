@@ -667,3 +667,32 @@ async def test_check_on_kind_without_adapter_is_422_not_500(
     )
     assert response.status_code == 422
     assert response.json()["code"] == "kind_unknown"
+
+
+async def test_admin_sees_how_many_connected_and_employee_sees_sources(
+    connectors_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+) -> None:
+    """«5 из 12» у администратора и «где ищет ассистент» у сотрудника (ТЗ §5)."""
+    per_user = await _create(
+        connectors_api, admin_account, {**CREATE, "kind": FAKE_PER_USER_KIND}
+    )
+    connector_id = per_user.json()["id"]
+    await connectors_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "my-token"}},
+        headers=bearer(account),
+    )
+
+    listed = await connectors_api.get(URL, headers=bearer(admin_account))
+    [item] = [c for c in listed.json() if c["id"] == connector_id]
+    assert item["grants_active"] == 1
+    assert item["members_active"] == 2
+
+    mine = await connectors_api.get("/api/v1/sources/mine", headers=bearer(account))
+    assert mine.status_code == 200
+    [source] = mine.json()["connectors"]
+    assert source["id"] == connector_id
+    assert source["mode"] == "per_user"
+    assert source["grant_status"] == "active"

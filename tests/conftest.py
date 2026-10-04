@@ -1,5 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -32,6 +33,7 @@ from corp_ed.services.credit_service import CreditService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.material_service import MaterialService
+from tests.factories import make_user
 
 load_dotenv()
 TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
@@ -136,13 +138,17 @@ async def tenant_ctx(session: AsyncSession) -> AsyncGenerator[Tenant]:
 
 @pytest.fixture
 async def admin(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    admin = User(
+    admin = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="admin@test.com",
         role=UserRole.ADMIN,
         hashed_password="hashed",
     )
+    # Администратору нужен надёжный второй фактор (ТЗ §3): отметка
+    # «приложение включено» — без секрета, вход этим админом не нужен.
+    assert admin.account is not None
+    admin.account.totp_enabled_at = datetime.now(UTC)
     session.add(admin)
     await session.commit()
 
@@ -215,7 +221,7 @@ def fake_llm() -> FakeAdapter:
 
 
 def make_credit_service(session: AsyncSession) -> CreditService:
-    """Пул с дефолтами досье: 420 кредитов на место, 2 000 токенов."""
+    """Пул с дефолтами: 420 кредитов на место, 4 000 токенов (BH-30)."""
     settings = BillingSettings()
     return CreditService(
         TenantRepository(session),
@@ -254,7 +260,7 @@ def faq_service(
 
 @pytest.fixture
 async def employee(session: AsyncSession, tenant_ctx: Tenant) -> User:
-    employee = User(
+    employee = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="employee@test.com",

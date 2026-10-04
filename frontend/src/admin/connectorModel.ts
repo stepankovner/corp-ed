@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { api, unwrap, type Schemas } from "../api/client";
+import { plural } from "../lib/format";
 import type { Tone } from "../ui/Badge";
 
 export type Kind = Schemas["ConnectorKindResponse"];
@@ -17,6 +18,14 @@ export const MODE_LABEL: Record<Connector["mode"], string> = {
   per_user: "каждый сотрудник подключает свой аккаунт",
   organization: "служебная учётная запись компании",
 };
+
+/** «Подключились 5 из 12 сотрудников» — у подключений, куда каждый входит своим аккаунтом. */
+export function grantsLabel(connector: Connector): string | null {
+  if (connector.mode !== "per_user") return null;
+  const { grants_active: grants, members_active: members } = connector;
+  if (grants == null || members == null) return null;
+  return `${plural(grants, "Подключился", "Подключились", "Подключились")} ${grants} из ${members} ${plural(members, "сотрудника", "сотрудников", "сотрудников")}`;
+}
 
 export const INTERVALS = [15, 30, 60, 180, 360, 720, 1440];
 

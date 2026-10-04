@@ -1,0 +1,50 @@
+name: Stage resume
+
+# Стенд — прерываемый сервер Selectel (решение 30.09): Selectel
+# останавливает его в любой момент в течение суток, и сам он не
+# поднимается. Раз в 10 минут проверяем статус и, если сервер остановил
+# Selectel (SHELVED), возобновляем (deploy/stage/resume.py, docs/STAGE.md).
+# Выключенный вручную сервер (SHUTOFF) не трогаем.
+#
+# Включается переменной репозитория STAGE_RESUME_ENABLED=true. Секреты —
+# сервисный пользователь Selectel в отдельном проекте, где только стенд:
+# его пароль может управлять всеми серверами проекта.
+on:
+  schedule:
+    # GitHub запускает расписание с задержкой до десятков минут под
+    # нагрузкой — стенд после прерывания лежит обычно 10–30 минут.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage-resume
+  cancel-in-progress: false
+
+jobs:
+  resume:
+    name: Resume the preemptible stand
+    if: vars.STAGE_RESUME_ENABLED == 'true'
+    # Исполнитель — переменная репозитория RUNS_ON (docs/CI-RUNNER.md): на
+    # своём runner запуски раз в 10 минут не тратят минуты Actions.
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          sparse-checkout: deploy/stage/resume.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Resume if Selectel stopped the server
+        env:
+          SELECTEL_USER: ${{ secrets.SELECTEL_USER }}
+          SELECTEL_PASSWORD: ${{ secrets.SELECTEL_PASSWORD }}
+          SELECTEL_ACCOUNT_ID: ${{ vars.SELECTEL_ACCOUNT_ID }}
+          SELECTEL_PROJECT: ${{ vars.SELECTEL_PROJECT }}
+          SELECTEL_REGION: ${{ vars.SELECTEL_REGION }}
+          STAGE_SERVER_ID: ${{ vars.STAGE_SERVER_ID }}
+        run: python3 deploy/stage/resume.py

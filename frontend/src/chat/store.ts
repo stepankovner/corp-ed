@@ -1,34 +1,42 @@
 import { createContext, useContext } from "react";
 
-import type { Schemas } from "../api/client";
+import type { Attachment, Origin, Turn } from "./api";
 
-export type Answer = Schemas["FaqAnswerResponse"];
-export type Vote = 1 | -1;
+/** Ключ хода в новом диалоге — до события start, пока id диалога неизвестен. */
+export const NEW_KEY = "new";
 
-export type Turn =
-  | { id: string; question: string; state: "pending" }
-  | { id: string; question: string; state: "done"; answer: Answer; vote: Vote | null }
-  | {
-      id: string;
-      question: string;
-      state: "error";
-      status: number;
-      code: string | null;
-      message: string;
-    };
+/**
+ * Ответ, который печатается прямо сейчас (ТЗ §6). Остальное — в кэше
+ * карточки диалога; здесь только то, что меняется по кускам потока.
+ */
+export interface LiveAnswer {
+  conversationId: string | null;
+  /** Вопрос до события start: показываем сразу, не дожидаясь сервера. */
+  question: string;
+  attachments: Attachment[];
+  /** Ветка, к которой добавляется ход: ответ-родитель или вопрос при повторе. */
+  parentId: string | null;
+  regenerate: boolean;
+  answerId: string | null;
+  text: string;
+  stage: "searching" | "writing";
+  origin: Origin | null;
+  stopping: boolean;
+}
+
+export interface SendOptions {
+  attachments?: Attachment[];
+  /** Сервер завёл ход (start): новый диалог получил id. */
+  onStarted?: (conversationId: string) => void;
+}
 
 export interface ChatApi {
-  turns: Turn[];
-  busy: boolean;
-  ask: (question: string) => Promise<void>;
-  retry: (turnId: string) => Promise<void>;
-  vote: (turnId: string, value: Vote) => Promise<void>;
-  reset: () => void;
+  live: Record<string, LiveAnswer>;
+  send: (turn: Turn, options?: SendOptions) => Promise<void>;
+  stop: (conversationId: string) => void;
 }
 
 export const ChatContext = createContext<ChatApi | null>(null);
-export const PREFIX = "kronto.chat.";
-export const MAX_TURNS = 50;
 
 export function useChat(): ChatApi {
   const value = useContext(ChatContext);
@@ -36,21 +44,16 @@ export function useChat(): ChatApi {
   return value;
 }
 
-/** Переписка живёт до закрытия вкладки: у бэкенда нет истории диалогов. */
-export function loadTurns(userId: string): Turn[] {
-  try {
-    const raw = sessionStorage.getItem(PREFIX + userId);
-    const turns = raw ? (JSON.parse(raw) as Turn[]) : [];
-    return Array.isArray(turns) ? turns.filter((turn) => turn.state !== "pending") : [];
-  } catch {
-    return [];
-  }
-}
+const LEGACY_PREFIX = "kronto.chat.";
 
+/**
+ * До этапа 6 переписка жила во вкладке (sessionStorage). Теперь диалоги на
+ * сервере; остатки старой переписки стираем при входе и выходе.
+ */
 export function clearChatHistory(): void {
   try {
     for (const key of Object.keys(sessionStorage)) {
-      if (key.startsWith(PREFIX)) sessionStorage.removeItem(key);
+      if (key.startsWith(LEGACY_PREFIX)) sessionStorage.removeItem(key);
     }
   } catch {
     // Нечего чистить.

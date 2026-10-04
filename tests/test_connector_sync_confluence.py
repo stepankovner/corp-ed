@@ -22,6 +22,7 @@ from corp_ed.domain.types import (
 )
 from corp_ed.services.connector_sync_service import ConnectorSyncService, SyncOutcome
 from tests.connectors.fake_confluence import PAT, FakeConfluence, sample_confluence
+from tests.factories import make_user
 from tests.fake_connector import plain_extractor
 from tests.test_connector_sync import access_of, materials_of, reload
 
@@ -99,7 +100,7 @@ async def anna(session: AsyncSession, tenant_ctx: Tenant) -> User:
     from corp_ed.core.security import hash_password
     from corp_ed.domain.models import UserRole
 
-    user = User(
+    user = make_user(
         email="anna@example.com",
         full_name="Анна",
         role=UserRole.EMPLOYEE,

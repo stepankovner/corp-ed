@@ -6,12 +6,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.domain.types import AnswerOrigin, Retriever
 
-MAX_QUESTION_LENGTH = 1000
+MAX_QUESTION_LENGTH = 4000
+"""Вопрос до 4 000 символов (ТЗ §6), как в чате."""
 MAX_SEARCH_LIMIT = 50
 
 
 class FaqQuestionRequest(RequestModel):
     question: str = Field(min_length=1, max_length=MAX_QUESTION_LENGTH)
+    # Диалог, который продолжает сотрудник (BH-28): conversation_id из
+    # прошлого ответа. Нет — новый диалог. Чужой или истёкший id не
+    # ошибка: истории просто нет (ключ хранилища включает сотрудника).
+    conversation_id: UUID | None = None
 
 
 class FaqSourceResponse(BaseModel):
@@ -38,6 +43,13 @@ class AnswerDiagnosticsResponse(BaseModel):
     output_tokens: int
     credits: int
     nearest_distance: float | None
+    # Память диалога (BH-28): как понят вопрос после переписывания и
+    # сколько прошлых реплик учтено — для замера ML на стенде.
+    standalone_question: str | None = None
+    history_turns: int = 0
+    # Реранкер (M3): модель, если порядок выдержек дал он, и время.
+    rerank_model: str | None = None
+    rerank_ms: int | None = None
 
 
 class FaqAnswerResponse(BaseModel):
@@ -50,12 +62,15 @@ class FaqAnswerResponse(BaseModel):
       компании ответа нет. Ниже — общая информация, не из документов
       компании:»), sources пуст. Фронт обязан показать это явно
       (плашка), а не только текстом;
-    - none — в документах ответа нет, компания в строгом режиме (по
-      умолчанию), или провайдер отфильтровал ответ: content начинается с
+    - none — в документах ответа нет, компания в строгом режиме, или
+      провайдер отфильтровал ответ: content начинается с
       NOT_FOUND_ANSWER («В документах компании ответа нет.»), дальше —
       совет уточнить у руководителя или в профильном отделе; sources пуст.
 
     answer_id — для оценки 👍/👎 (PATCH /faq/answers/{answer_id}).
+    conversation_id — диалог (BH-28): прислать со следующим вопросом,
+    чтобы уточняющий вопрос понимался в контексте; «Новый диалог» — не
+    присылать. Номера [n] относятся только к sources этого ответа.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -66,6 +81,7 @@ class FaqAnswerResponse(BaseModel):
     origin: AnswerOrigin
     sources: list[FaqSourceResponse]
     diagnostics: AnswerDiagnosticsResponse | None = None
+    conversation_id: UUID | None = None
 
 
 class FaqSearchRequest(RequestModel):
@@ -74,6 +90,10 @@ class FaqSearchRequest(RequestModel):
     # Сравнить способы поиска на живой базе, не меняя RAG_RETRIEVER.
     # Не задан — как в /faq/ask.
     retriever: Retriever | None = None
+    # Порядок, который дал бы ответ с реранкером (BH-32), и балл; 409 —
+    # реранкер выключен (RAG_RERANK_MODEL пуст) или поиск не векторный,
+    # 503 — реранкер не ответил.
+    rerank: bool = False
 
 
 class FaqSearchMatch(BaseModel):
@@ -87,6 +107,7 @@ class FaqSearchMatch(BaseModel):
     content: str
     distance: float
     fulltext_rank: float | None
+    rerank_score: float | None = None
 
 
 class FaqSearchResponse(BaseModel):

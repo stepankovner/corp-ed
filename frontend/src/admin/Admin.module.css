@@ -6,49 +6,243 @@
   justify-content: space-between;
   margin-bottom: var(--s-4);
 }
+/* Поиск: рамка 3:1, лупа — маской цвета текста, чтобы следовать теме. */
 .search {
-  min-height: 40px;
+  min-height: var(--control-md);
   width: min(320px, 100%);
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
+  padding: 0 14px 0 38px;
+  border: 1px solid var(--line-control);
   border-radius: var(--r-pill);
   background: var(--bg);
+  color: var(--ink);
   font-size: var(--fs-small);
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.search::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
 }
 .search:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--ring);
 }
-.segmented {
+.searchWrap {
+  position: relative;
   display: inline-flex;
-  max-width: 100%;
-  padding: 3px;
-  gap: 2px;
-  border-radius: var(--r-pill);
-  background: var(--surface);
-  overflow-x: auto;
-  scrollbar-width: none;
+  width: min(320px, 100%);
 }
-.segment {
-  border: 0;
-  background: none;
-  padding: 6px 14px;
-  border-radius: var(--r-pill);
-  font-size: 0.875rem;
+.searchWrap .search {
+  width: 100%;
+}
+.searchWrap::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin-top: -8px;
+  pointer-events: none;
+  background: var(--muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='black' stroke-width='1.75' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.75'/%3E%3Cpath d='m10.5 10.5 3.5 3.5'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+/* Вкладка «Источников»: пояснение слева, действия справа (вместо шапки страницы). */
+.tabHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-5);
+}
+.tabIntro {
+  flex: 1 1 26rem;
+  min-width: 0;
+  max-width: 70ch;
   color: var(--muted);
-  white-space: nowrap;
+  font-size: var(--fs-small);
 }
-.segment[aria-pressed="true"] {
+.tabIntro p + p {
+  margin-top: 4px;
+}
+.tabActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+@media (max-width: 640px) {
+  .tabActions {
+    flex: 1 1 100%;
+  }
+  .tabActions > * {
+    flex: 1 1 auto;
+  }
+}
+.block {
+  margin-bottom: var(--s-4);
+}
+
+/* папки над таблицей документов */
+.folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(176px, 100%), 1fr));
+  gap: var(--s-2);
+  margin-bottom: var(--s-5);
+}
+.folder {
+  position: relative;
+  min-width: 0;
+}
+.folderPick {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   background: var(--bg);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgba(22, 22, 26, 0.08);
+  font-size: var(--fs-small);
+  text-align: left;
+  transition:
+    border-color 0.15s var(--ease),
+    background-color 0.15s var(--ease);
 }
-.count {
+.folderPick:hover {
+  border-color: var(--line-strong);
+}
+.folderPick[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.folderPick:focus-visible {
+  border-radius: var(--r-md);
+  outline-offset: 2px;
+}
+.folderName {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 500;
+  line-height: 1.35;
+}
+/* Место под кнопку меню в углу плитки — только у строки с названием. */
+.folderPickMenu .folderName {
+  padding-right: 30px;
+}
+.folderName svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.folderPick[aria-pressed="true"] .folderName svg {
+  color: var(--accent);
+}
+/* Длинное название — в две строки, дальше многоточие. */
+.folderTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+/* Доступ: замок закрытой папки и отделы в одну строку. */
+.folderMeta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.folderMeta svg {
+  flex: none;
+}
+.folderMeta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folderCount {
+  margin-top: 4px;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 12px;
-  margin-left: 6px;
-  color: var(--muted);
+}
+.folderMenu {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+/* Телефон: в две колонки названия папок не помещаются — списком, где
+   название и счётчик в одной строке, доступ под ними, меню справа. */
+@media (max-width: 640px) {
+  .folders {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .folderPick {
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: var(--s-3);
+    padding: 10px 14px;
+  }
+  .folderName {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .folderCount {
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: 2px;
+  }
+  .folderMeta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .folderPickMenu {
+    padding-right: 48px;
+  }
+  .folderPickMenu .folderName {
+    padding-right: 0;
+  }
+  .folderMenu {
+    top: 50%;
+    transform: translateY(-50%);
+  }
+}
+/* Папка документа в строке таблицы: значок, название и замок закрытой. */
+.docFolder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: bottom;
+}
+.docFolder svg {
+  flex: none;
+}
+/* Отделы в окне папки: длинный список листается внутри рамки. */
+.departmentList {
+  display: grid;
+  gap: 10px;
+  max-height: 240px;
+  overflow-y: auto;
+  margin-left: 28px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
 }
 
 /* зона загрузки */
@@ -56,7 +250,7 @@
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  padding: var(--s-5);
+  padding: var(--s-4) var(--s-5);
   border: 1px dashed var(--line-strong);
   border-radius: var(--r-lg);
   background: var(--surface-2);
@@ -65,12 +259,22 @@
     border-color 0.15s var(--ease),
     background-color 0.15s var(--ease);
 }
-.drop svg {
+.dropIcon {
+  flex: none;
   color: var(--muted);
 }
-/* Перетаскивание файлов на сенсорных экранах не работает — там кнопка в шапке. */
-@media (pointer: coarse) {
+/* Перетаскивание на сенсорных и узких экранах не нужно — там кнопка «Загрузить
+   файлы» сверху; остаётся строка о том, в какую папку лягут файлы. */
+@media (pointer: coarse), (max-width: 640px) {
   .drop {
+    padding: var(--s-3) var(--s-4);
+    border-style: solid;
+    border-color: var(--line);
+    border-radius: var(--r-md);
+  }
+  .dropIcon,
+  .dropFormats,
+  .dropPick {
     display: none;
   }
 }
@@ -80,9 +284,14 @@
 }
 .dropText {
   flex: 1;
+  min-width: 0;
   display: grid;
   gap: 2px;
   font-size: var(--fs-small);
+}
+.dropTarget {
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .queue {
   display: grid;
@@ -122,20 +331,26 @@
   padding-bottom: 4px;
   border: 1px solid var(--line-strong);
   border-radius: 4px 9px 4px 4px;
-  background: var(--bg);
+  background: var(--surface-raised);
   font-family: var(--font-mono);
   font-size: 9.5px;
   line-height: 1;
   color: var(--muted);
 }
 .pdf {
-  color: #a3261b;
+  color: var(--doc-pdf);
 }
 .docx {
-  color: var(--accent);
+  color: var(--doc-word);
+}
+.xlsx {
+  color: var(--doc-sheet);
+}
+.pptx {
+  color: var(--doc-slides);
 }
 .web {
-  color: #1c6b45;
+  color: var(--doc-sheet);
   border-radius: 50%;
   width: 30px;
   height: 30px;
@@ -250,6 +465,32 @@
   background: var(--bg);
   display: grid;
   gap: 8px;
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+a.card {
+  color: inherit;
+  text-decoration: none;
+}
+a.card:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-window);
+}
+a.card svg {
+  color: var(--muted);
+}
+.cardFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 6px;
+}
+@media (max-width: 640px) {
+  .card {
+    padding: var(--s-4);
+  }
 }
 .cardHead {
   display: flex;
@@ -268,6 +509,21 @@
   gap: 6px 14px;
   color: var(--muted);
   font-size: 0.8125rem;
+}
+/* «Подключились 5 из 12 сотрудников» — заметнее остальной сводки карточки. */
+.grants {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+}
+a.card .grants svg {
+  color: var(--muted);
+}
+.below {
+  margin-top: var(--s-4);
+  max-width: 70ch;
+  font-size: var(--fs-small);
 }
 .kinds {
   display: grid;
@@ -290,6 +546,10 @@
 }
 .kind[aria-pressed="true"] {
   background: var(--accent-soft);
+}
+.kind:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .fieldset {
   border: 0;
@@ -326,4 +586,61 @@
   color: var(--muted);
   overflow-wrap: anywhere;
   max-width: 48ch;
+}
+
+/* люди компании */
+.person {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 200px;
+}
+.personName {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+/* «Убрать из компании» — красным, как кнопки необратимых действий. */
+.menuDanger,
+.menuDanger svg {
+  color: var(--error);
+}
+
+/* приглашения */
+/* Подсказка под галочкой — вровень с подписью, а не с флажком. */
+.checkHint {
+  margin: 4px 0 0 28px;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+/* Код приглашения крупно и с разрядкой: его диктуют голосом. */
+.inviteCode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+.inviteCode code {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: clamp(1.5rem, 1.25rem + 1vw, 1.875rem);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+}
+.howTo {
+  display: grid;
+  gap: 6px;
+  padding-left: 1.25em;
+  list-style: disc;
+  color: var(--muted);
+  font-size: var(--fs-small);
 }

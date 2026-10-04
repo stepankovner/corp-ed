@@ -14,6 +14,7 @@ from uuid import UUID
 
 import jwt
 import structlog
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.schemas.connector import MAX_FIELD_VALUE_LENGTH
@@ -33,9 +34,11 @@ from corp_ed.connectors.registry import (
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.exceptions import (
     ConnectorLimitError,
+    ConnectorNotInTariffError,
     ConnectorStateError,
     InvalidConnectorConfigError,
     NotFoundError,
+    TariffConnectorLimitError,
 )
 from corp_ed.core.outbound import (
     OutboundClient,
@@ -46,8 +49,16 @@ from corp_ed.core.outbound import (
 from corp_ed.core.rate_limit import RateLimiter, RateLimiterUnavailableError
 from corp_ed.core.secrets import SecretBox, SecretDecryptionError
 from corp_ed.core.security import create_oauth_state, decode_oauth_state
-from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import Connector, ConnectorSyncRun, ConnectorUserGrant, User
+from corp_ed.core.tenant_context import require_tenant, tenant_scope
+from corp_ed.domain.models import (
+    Connector,
+    ConnectorSyncRun,
+    ConnectorUserGrant,
+    MemberStatus,
+    Tenant,
+    User,
+)
+from corp_ed.domain.tariffs import TariffPlan, connector_limit, plan_for
 from corp_ed.domain.types import (
     ConnectorMode,
     ConnectorStatus,
@@ -138,6 +149,16 @@ class ConnectorService:
     async def list_all(self) -> list[Connector]:
         return await self.connectors.list_all()
 
+    async def grant_counts(self) -> tuple[dict[UUID, int], int]:
+        """Сколько сотрудников подключилось к каждому коннектору per_user и
+        сколько людей работает в компании."""
+        members = await self.session.scalar(
+            select(func.count()).where(
+                User.tenant_id == require_tenant(), User.status == MemberStatus.ACTIVE
+            )
+        )
+        return await self.grants.active_counts(), int(members or 0)
+
     async def get(self, connector_id: UUID) -> Connector:
         connector = await self.connectors.get_by_id(connector_id)
         if connector is None:
@@ -150,6 +171,33 @@ class ConnectorService:
 
     # --- настройка (ADMIN) ----------------------------------------------------
 
+    async def allowance(self) -> tuple[Tenant, TariffPlan, int, int]:
+        """Компания, её тариф, сколько подключений можно и сколько есть."""
+        tenant = await self.session.get(Tenant, require_tenant())
+        if tenant is None:
+            raise NotFoundError("Компания не найдена")
+        plan = plan_for(tenant.tariff)
+        technical = tenant.connector_limit or self.settings.max_per_tenant
+        return (
+            tenant,
+            plan,
+            connector_limit(plan, technical),
+            await self.connectors.count(),
+        )
+
+    async def _check_tariff(self, spec: KindSpec) -> None:
+        """Тариф (решение 30.09): небазовые системы — только в
+        «Корпоративном»; число подключений — по тарифу, но не больше
+        технического потолка."""
+        tenant, plan, limit, used = await self.allowance()
+        if not spec.base and not plan.non_base_connectors:
+            raise ConnectorNotInTariffError(plan.title)
+        if used < limit:
+            return
+        if plan.max_connectors is not None and plan.max_connectors <= limit:
+            raise TariffConnectorLimitError(plan.title, plan.max_connectors)
+        raise ConnectorLimitError(limit)
+
     async def create(
         self,
         actor: User,
@@ -161,8 +209,7 @@ class ConnectorService:
         sync_interval_minutes: int | None,
     ) -> Connector:
         spec = self._spec(kind)
-        if await self.connectors.count() >= self.settings.max_per_tenant:
-            raise ConnectorLimitError(self.settings.max_per_tenant)
+        await self._check_tariff(spec)
         clean_modules = _validate_modules(spec, modules)
         clean_config = await _validate_config(spec, config, self.resolver)
         connector = await self.connectors.create(

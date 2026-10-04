@@ -1,0 +1,149 @@
+# Мониторинг стенда (П-9, вариант «б»; MONITORING-RESEARCH.md, STAGE.md §7).
+# Отдельный проект compose: падение мониторинга не трогает приложение, а
+# выкатка приложения не перезапускает мониторинг без нужды.
+#
+# Поднимает deploy/stage/deploy.sh после каждой выкатки:
+#   docker compose -f deploy/monitoring/compose.yaml \
+#     --env-file .env --env-file /etc/kronto/monitoring.env up -d
+# Из .env приложения берутся только TEAM_NOTIFY_TELEGRAM_* (тревоги в тот
+# же чат, что заявки); из monitoring.env — домен и пароль Grafana.
+#
+# Наружу открыта только Grafana — через nginx (https://ДОМЕН/grafana/,
+# вход по паролю). Prometheus, Alertmanager и Loki слушают только сеть
+# Docker. Метрики и логи — 14 дней (решение 30.09).
+
+name: kronto-monitoring
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  prometheus:
+    <<: *restart
+    image: prom/prometheus:v3.15.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=14d
+      - --storage.tsdb.retention.size=4GB
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      # Адрес стенда для проверки снаружи — из /etc/kronto (bootstrap.sh).
+      - ${PUBLIC_TARGETS_FILE:-./prometheus/public-targets.yml}:/etc/prometheus/public-targets.yml:ro
+      - prometheus_data:/prometheus
+    networks: [monitoring, app]
+    mem_limit: 768m
+
+  alertmanager:
+    <<: *restart
+    image: prom/alertmanager:v0.34.1
+    # Конфиг собирается при старте: без токена Telegram тревоги видны
+    # только в Grafana и Alertmanager, контейнер не падает.
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TEAM_NOTIFY_TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TEAM_NOTIFY_TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager_data:/alertmanager
+    networks: [monitoring]
+    mem_limit: 128m
+
+  grafana:
+    <<: *restart
+    image: grafana/grafana:13.2.3
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD — в /etc/kronto/monitoring.env}
+      GF_SERVER_ROOT_URL: https://${DOMAIN:?DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      # Ни статистики, ни проверки обновлений, ни новостей — Grafana не
+      # ходит наружу.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    # Только для nginx на этом хосте (location /grafana/).
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks: [monitoring]
+    mem_limit: 384m
+
+  node-exporter:
+    <<: *restart
+    image: prom/node-exporter:v1.12.1
+    command:
+      - --path.rootfs=/host
+      # Метки ночных задач (deploy/stage/cron-run.sh): «мёртвая рука».
+      - --collector.textfile.directory=/host/var/lib/node_exporter/textfile
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    networks: [monitoring]
+    mem_limit: 64m
+
+  blackbox:
+    <<: *restart
+    image: prom/blackbox-exporter:v0.28.0
+    command: ["--config.file=/etc/blackbox_exporter/blackbox.yml"]
+    volumes:
+      - ./blackbox:/etc/blackbox_exporter:ro
+    # Проверка «как у пользователя» — через nginx этого же хоста: имя стенда
+    # указывает на шлюз Docker (публичный адрес изнутри облака доступен не
+    # везде).
+    extra_hosts:
+      - "${DOMAIN:?DOMAIN}:host-gateway"
+    networks: [monitoring, app]
+    mem_limit: 64m
+
+  loki:
+    <<: *restart
+    image: grafana/loki:3.7.8
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./loki:/etc/loki:ro
+      - loki_data:/loki
+    networks: [monitoring]
+    mem_limit: 512m
+
+  alloy:
+    <<: *restart
+    image: grafana/alloy:v1.20.1
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    # Логи контейнеров — из journald хоста (log-driver journald, ставит
+    # bootstrap.sh): без сокета Docker, только чтение журнала.
+    volumes:
+      - ./alloy:/etc/alloy:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - alloy_data:/var/lib/alloy/data
+    networks: [monitoring]
+    mem_limit: 256m
+
+networks:
+  monitoring: {}
+  # Сеть приложения (compose.yaml в корне): отсюда Prometheus читает
+  # /metrics API и воркера, blackbox проверяет /health/ready.
+  app:
+    external: true
+    name: ${APP_NETWORK:-kronto_default}
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:
+  loki_data:
+  alloy_data:

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.request_context import current_client_ip, current_request_id
+from corp_ed.core.tenant_context import current_staff
 from corp_ed.domain.models import AuditEvent
 
 
@@ -24,6 +25,37 @@ class AuditAction(StrEnum):
     USER_UPDATED = "user.updated"
     USER_PASSWORD_RESET = "user.password_reset"  # noqa: S105 — имя события
     USER_JOINED_BY_INVITE = "user.joined_by_invite"
+    # Учётки (ТЗ §2–3, 03.10). Без компании: tenant_id пуст, учётка — в details.
+    ACCOUNT_REGISTERED = "account.registered"
+    ACCOUNT_EMAIL_VERIFIED = "account.email_verified"
+    ACCOUNT_EMAIL_CHANGED = "account.email_changed"
+    ACCOUNT_EMAIL_REVERTED = "account.email_reverted"
+    ACCOUNT_DELETED = "account.deleted"
+    MFA_ENABLED = "account.mfa_enabled"
+    MFA_DISABLED = "account.mfa_disabled"
+    PASSWORD_RESET_REQUESTED = "auth.password.reset_requested"  # noqa: S105 — имя события
+    PASSWORD_RESET_DONE = "auth.password.reset_done"  # noqa: S105 — имя события
+    USER_JOIN_REQUESTED = "user.join_requested"
+    USER_APPROVED = "user.approved"
+    USER_REJECTED = "user.rejected"
+    USER_REMOVED = "user.removed"
+    USER_LEFT = "user.left"
+    USER_PROFILE_UPDATED = "user.profile_updated"
+    DEPARTMENT_CREATED = "department.created"
+    DEPARTMENT_UPDATED = "department.updated"
+    DEPARTMENT_DELETED = "department.deleted"
+    SUGGESTION_CREATED = "suggestion.created"
+    SUGGESTION_UPDATED = "suggestion.updated"
+    SUGGESTION_DELETED = "suggestion.deleted"
+    FOLDER_CREATED = "folder.created"
+    FOLDER_UPDATED = "folder.updated"
+    FOLDER_DELETED = "folder.deleted"
+    TENANT_SETTINGS_UPDATED = "tenant.settings_updated"
+    TENANT_LOGO_UPDATED = "tenant.logo_updated"
+    TENANT_TARIFF_CHANGE_REQUESTED = "tenant.tariff_change_requested"
+    COMPANY_REQUESTED = "company_request.created"
+    COMPANY_REQUEST_APPROVED = "company_request.approved"
+    COMPANY_REQUEST_REJECTED = "company_request.rejected"
     INVITE_CREATED = "invite.created"
     INVITE_REVOKED = "invite.revoked"
     TENANT_CREATED = "tenant.created"
@@ -38,6 +70,12 @@ class AuditAction(StrEnum):
     GAP_STATUS_CHANGED = "gap.status_changed"
     TENANT_SEATS_CHANGED = "tenant.seats_changed"
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
+    TENANT_TARIFF_CHANGED = "tenant.tariff_changed"
+    TENANT_PILOT_CHANGED = "tenant.pilot_changed"
+    DIGEST_SENT = "digest.sent"
+    SUPPORT_REQUESTED = "support.requested"
+    STAFF_ADDED = "staff.added"
+    STAFF_REMOVED = "staff.removed"
     CREDITS_WARNING = "credits.warning"
     CREDITS_EXHAUSTED = "credits.exhausted"
     CONNECTOR_CREATED = "connector.created"
@@ -73,7 +111,7 @@ class AuditRepository:
         self,
         action: AuditAction,
         *,
-        tenant_id: UUID | None,
+        tenant_id: UUID | None = None,
         actor_id: UUID | None = None,
         target_type: str | None = None,
         target_id: UUID | str | None = None,
@@ -88,7 +126,7 @@ class AuditRepository:
                 target_id=str(target_id) if target_id is not None else None,
                 ip=current_client_ip.get(),
                 request_id=current_request_id.get(),
-                details=details or {},
+                details=_with_staff(details),
             )
         )
 
@@ -124,3 +162,11 @@ class AuditRepository:
         stmt = stmt.order_by(AuditEvent.created_at.desc()).limit(limit)
         result = await self.session.scalars(stmt)
         return list(result)
+
+
+def _with_staff(details: dict[str, Any] | None) -> dict[str, Any]:
+    """Действие из нашей панели — с учёткой команды kronto в деталях."""
+    staff = current_staff.get()
+    if staff is None:
+        return details or {}
+    return {**(details or {}), "staff_account_id": str(staff)}
