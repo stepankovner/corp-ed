@@ -18,6 +18,9 @@ FOOTNOTE = "\x02"
 """Ссылка на сноску в тексте абзаца: k-я ссылка — k-я строка `footnotes`."""
 ENDNOTE = ""
 """Ссылка на концевую сноску; в поток пишется тем же знаком \\x02."""
+SUP, END_SUP = "", ""
+"""Начало и конец верхнего индекса в тексте абзаца (sprmCIss = 1); в поток
+сами знаки не пишутся."""
 
 
 @dataclass
@@ -179,14 +182,14 @@ def word_streams(
     начинается знаком \\x02, в конце истории — лишний знак абзаца), позиции
     ссылок — PlcffndRef, границы текстов — PlcffndTxt (у концевых —
     PlcfendRef, PlcfendTxt). Знак ссылки в тексте — не полужирный, как
-    стиль «Знак сноски». note_tables=False — без этих таблиц.
+    стиль «Знак сноски». note_tables=False — без этих таблиц. Текст между
+    SUP и END_SUP — верхний индекс прямым форматированием (как Ctrl+Shift+=).
     """
     word = bytearray(1024)
     pieces: list[tuple[int, int, int]] = []
     cp = 0
     para_fc: list[tuple[int, int, Para]] = []
     refs: dict[str, list[int]] = {FOOTNOTE: [], ENDNOTE: []}
-    ref_fcs: list[tuple[int, int]] = []
 
     def add(text: str, compressed: bool) -> tuple[int, int]:
         nonlocal cp
@@ -203,23 +206,34 @@ def word_streams(
         cp += units
         return fc, len(word)
 
+    # Особые символы абзаца: (начало FC, конец FC, вид) — "ref" или "sup".
+    special: list[tuple[int, int, str]] = []
     for para in paragraphs:
         mark = "\x07" if para.cell_end or para.ttp else "\r"
-        text = para.text + mark
-        stored = text.replace(ENDNOTE, FOOTNOTE)
+        kinds: list[tuple[str, str]] = []
+        raised = False
+        for char in para.text + mark:
+            if char in (SUP, END_SUP):
+                raised = char == SUP
+                continue
+            kind = "ref" if char in refs else "sup" if raised else ""
+            kinds.append((char, kind))
+        stored = "".join(char for char, _ in kinds).replace(ENDNOTE, FOOTNOTE)
         para_cp = cp
         start, end = add(stored, para.compressed)
-        for index, char in enumerate(text):
-            if char in refs:
-                before = stored[:index]
-                units = (
-                    len(before.encode("cp1252"))
-                    if para.compressed
-                    else len(before.encode("utf-16-le", "surrogatepass")) // 2
-                )
+        units = 0
+        for (char, kind), unit in zip(kinds, stored, strict=True):
+            size = (
+                len(unit.encode("cp1252"))
+                if para.compressed
+                else len(unit.encode("utf-16-le", "surrogatepass")) // 2
+            )
+            fc = start + (units if para.compressed else 2 * units)
+            if kind == "ref":
                 refs[char].append(para_cp + units)
-                fc = start + (units if para.compressed else 2 * units)
-                ref_fcs.append((fc, fc + (1 if para.compressed else 2)))
+            if kind:
+                special.append((fc, fc + (size if para.compressed else 2 * size), kind))
+            units += size
         para_fc.append((start, end, para))
     ccp_text = cp
 
@@ -266,12 +280,13 @@ def word_streams(
     for s, e, p in para_fc:
         deleted = _sprm(0x0800, b"\x01") if p.deleted else b""
         props = (_sprm(0x0835, b"\x01") if p.bold else b"") + deleted
+        by_kind = {"ref": deleted, "sup": props + _sprm(0x2A48, b"\x01")}
         cursor = s
-        for ref_start, ref_end in [r for r in ref_fcs if s <= r[0] < e]:
-            if cursor < ref_start:
-                chpx_runs.append((cursor, ref_start, props))
-            chpx_runs.append((ref_start, ref_end, deleted))
-            cursor = ref_end
+        for run_start, run_end, kind in [r for r in special if s <= r[0] < e]:
+            if cursor < run_start:
+                chpx_runs.append((cursor, run_start, props))
+            chpx_runs.append((run_start, run_end, by_kind[kind]))
+            cursor = run_end
         if cursor < e:
             chpx_runs.append((cursor, e, props))
     papx_pages = pages_for(papx_runs, _papx_page)

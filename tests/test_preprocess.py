@@ -504,6 +504,28 @@ def test_html_inline_tags() -> None:
     assert preprocess(markdown) == "Срок — важно, строка дальше"
 
 
+def test_superscript_footnote_number_does_not_glue_to_number() -> None:
+    # Верхний индекс, набранный вручную, приходит тегом (.doc, .xlsx, .pptx,
+    # .docx после BH-36): цифра в нём — номер сноски.
+    markdown = (
+        "Заявка С1ИИ-601828<sup>1</sup>: грант 5 000 000<sup>2</sup> ₽, "
+        "оклад<sup>3</sup>.\n\n<sup>1</sup> С учётом НДС."
+    )
+
+    assert preprocess(markdown) == (
+        "Заявка С1ИИ-601828: грант 5 000 000 ₽, оклад.\n\nС учётом НДС."
+    )
+
+
+def test_square_and_cubic_units_keep_their_power() -> None:
+    markdown = (
+        "Офис 120 м<sup>2</sup>, склад 300 м<sup>3</sup>, участок 2 км<sup>2</sup>; "
+        "по ним<sup>2</sup>."
+    )
+
+    assert preprocess(markdown) == "Офис 120 м², склад 300 м³, участок 2 км²; по ним."
+
+
 # --- Свойства ----------------------------------------------------------------
 
 
