@@ -2,7 +2,14 @@
 
     python -m corp_ed.cli create-tenant --code acme --name "ACME" --seats 50 \\
         --admin-email admin@acme.ru [--admin-name "Иван Петров"] \\
-        [--admin-password-stdin]   # иначе пароль спросят в терминале
+        [--admin-password-stdin]   # пароль — только если учётки ещё нет
+    python -m corp_ed.cli requests list [--status new|all]   # «Подключить компанию»
+    python -m corp_ed.cli requests approve --id <uuid> [--seats 30] \\
+        [--tariff extended] [--code acme]
+    python -m corp_ed.cli requests reject --id <uuid>
+    python -m corp_ed.cli reset-password --email admin@acme.ru [--password-stdin]
+    python -m corp_ed.cli set-totp --email stand-check@krontoai.ru --secret-stdin
+                                       # приложение-аутентификатор служебной учётке
     python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
     python -m corp_ed.cli set-not-found-mode --code acme --mode general
     python -m corp_ed.cli set-tariff --code acme --tariff extended \
@@ -26,10 +33,12 @@
 была бы самой ценной целью для атаки на весь сервис, а CLI доступен
 только тому, у кого уже есть доступ к серверу и к DATABASE_URL.
 
-Временный пароль администратора задаёт оператор (скрытый ввод или
+Учётка kronto не зависит от компании (ТЗ §2): если у администратора она
+уже есть, create-tenant просто делает её администратором новой компании.
+Если нет — временный пароль задаёт оператор (скрытый ввод или
 --admin-password-stdin); CLI его не генерирует и не печатает (RISKS
-№42). Передавать его клиенту — отдельным каналом от кода компании; при
-первом входе система потребует сменить пароль.
+№42). Передавать его клиенту — отдельным каналом от почты; при первом
+входе система потребует сменить пароль.
 """
 
 import argparse
@@ -38,20 +47,25 @@ import getpass
 import json
 import sys
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import httpx
+from sqlalchemy import func, select
 
 from corp_ed.connectors.base import AdapterError, AdapterOptions, SourceAdapter
 from corp_ed.connectors.registry import UnknownKindError, default_registry
+from corp_ed.core import totp
 from corp_ed.core.config import (
     ConnectorSettings,
     GapsSettings,
     LLMSettings,
     RagSettings,
+    get_billing_settings,
     get_connector_settings,
+    get_demo_settings,
     get_lead_settings,
     get_settings,
 )
@@ -65,15 +79,20 @@ from corp_ed.core.outbound import (
 )
 from corp_ed.core.secrets import SecretBox
 from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
+from corp_ed.domain.models import Account, Passkey, StaffMember
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
-from corp_ed.repositories.audit_repository import AuditRepository
+from corp_ed.repositories.account_repository import AccountRepository
+from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
+from corp_ed.services.demo_service import DemoService
+from corp_ed.services.digest_service import DigestService
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.reindex_service import ReindexService
@@ -87,7 +106,9 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     create = commands.add_parser("create-tenant", help="завести компанию и админа")
-    create.add_argument("--code", required=True, help="код компании для входа")
+    create.add_argument(
+        "--code", required=True, help="внутренний код компании (для cli и логов)"
+    )
     create.add_argument("--name", required=True, help="название компании")
     create.add_argument(
         "--seats", required=True, type=int, help="оплаченные места (пул кредитов)"
@@ -97,8 +118,8 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument(
         "--admin-password-stdin",
         action="store_true",
-        help="временный пароль администратора — первой строкой stdin; "
-        "без флага — скрытый ввод в терминале",
+        help="временный пароль администратора, если учётки ещё нет, — первой "
+        "строкой stdin; без флага — скрытый ввод в терминале",
     )
     create.add_argument(
         "--not-found-mode",
@@ -116,10 +137,8 @@ def _parser() -> argparse.ArgumentParser:
 
     reset = commands.add_parser(
         "reset-password",
-        help="временный пароль сотруднику — например, администратору, "
-        "который забыл свой",
+        help="временный пароль учётке, когда письмо восстановления не доходит",
     )
-    reset.add_argument("--code", required=True)
     reset.add_argument("--email", required=True)
     reset.add_argument(
         "--password-stdin",
@@ -179,6 +198,70 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     commands.add_parser("purge", help="удалить данные старше срока хранения")
+
+    set_totp = commands.add_parser(
+        "set-totp",
+        help="приложение-аутентификатор служебной учётке (проверка стенда): "
+        "секрет base32 — первой строкой stdin",
+    )
+    set_totp.add_argument("--email", required=True)
+    set_totp.add_argument("--secret-stdin", action="store_true", required=True)
+
+    digest = commands.add_parser(
+        "digest",
+        help="недельная сводка администраторам (воркер шлёт её сам по понедельникам)",
+    )
+    digest.add_argument("--code", help="одна компания")
+    digest.add_argument(
+        "--force",
+        action="store_true",
+        help="не ждать понедельника и прислать ещё раз — проверить письмо",
+    )
+
+    demo = commands.add_parser(
+        "demo", help="песочница на сайте: вымышленная компания и её документы"
+    )
+    demo_commands = demo.add_subparsers(dest="demo_command", required=True)
+    demo_commands.add_parser(
+        "setup",
+        help="завести компанию песочницы или обновить её документы "
+        "(идемпотентно, запускает выкатка)",
+    )
+
+    staff = commands.add_parser(
+        "staff", help="команда kronto с доступом к нашей панели (/staff)"
+    )
+    staff_commands = staff.add_subparsers(dest="staff_command", required=True)
+    staff_commands.add_parser("list", help="кто в команде")
+    for name, text in (("add", "открыть панель"), ("remove", "закрыть панель")):
+        staff_command = staff_commands.add_parser(name, help=text)
+        staff_command.add_argument("--email", required=True)
+
+    requests = commands.add_parser(
+        "requests", help="заявки «Подключить компанию» от учёток без компании"
+    )
+    requests_commands = requests.add_subparsers(dest="requests_command", required=True)
+    requests_list = requests_commands.add_parser("list", help="заявки")
+    requests_list.add_argument(
+        "--status",
+        choices=["all", "new", "approved", "rejected", "cancelled"],
+        default="new",
+    )
+    requests_approve = requests_commands.add_parser(
+        "approve", help="создать компанию, заявитель — администратор"
+    )
+    requests_approve.add_argument("--id", required=True, type=UUID)
+    requests_approve.add_argument("--seats", type=int, default=None)
+    requests_approve.add_argument(
+        "--tariff",
+        choices=[tariff.value for tariff in Tariff],
+        default=DEFAULT_TARIFF.value,
+    )
+    requests_approve.add_argument(
+        "--code", default=None, help="код компании; без него — из названия"
+    )
+    requests_reject = requests_commands.add_parser("reject", help="отклонить")
+    requests_reject.add_argument("--id", required=True, type=UUID)
 
     leads = commands.add_parser("leads", help="заявки на созвон со страницы тарифов")
     leads_commands = leads.add_subparsers(dest="leads_command", required=True)
@@ -267,12 +350,44 @@ async def _run(args: argparse.Namespace) -> int:
         ).purge()
         print(
             f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}, "
-            f"sync_runs: {purged.sync_runs}, leads: {purged.leads}"
+            f"sync_runs: {purged.sync_runs}, leads: {purged.leads}, "
+            f"attachments: {purged.attachments}"
         )
         return 0
 
     if args.command == "leads":
         return await _leads(args)
+
+    if args.command == "requests":
+        return await _requests(args)
+
+    if args.command == "staff":
+        return await _staff(args)
+
+    if args.command == "demo":
+        demo_report = await DemoService(
+            get_session_maker(), get_demo_settings()
+        ).setup()
+        company = "заведена" if demo_report.tenant_created else "есть"
+        print(
+            f"песочница: компания {company}; документов новых "
+            f"{demo_report.created}, обновлено {demo_report.updated}, "
+            f"без изменений {demo_report.unchanged}"
+        )
+        return 0
+
+    if args.command == "digest":
+        digest_report = await DigestService(
+            get_session_maker(), zone=get_billing_settings().billing_timezone
+        ).send_due(force=args.force, company_code=args.code)
+        print(
+            f"сводок отправлено: {digest_report.sent}, "
+            f"пропущено: {digest_report.skipped}"
+        )
+        return 0
+
+    if args.command == "set-totp":
+        return await _set_totp(args.email, sys.stdin.readline().strip())
 
     if args.command == "gaps":
         return await _gaps(None if args.all else args.code)
@@ -304,14 +419,15 @@ async def _run(args: argparse.Namespace) -> int:
             session,
         )
         if args.command == "create-tenant":
+            existing = await AccountRepository(session).get_by_email(args.admin_email)
             result = await service.provision(
                 company_code=args.code,
                 name=args.name,
                 admin_email=args.admin_email,
                 admin_full_name=args.admin_name,
-                admin_password=_read_admin_password(
-                    from_stdin=args.admin_password_stdin
-                ),
+                admin_password=None
+                if existing is not None
+                else _read_admin_password(from_stdin=args.admin_password_stdin),
                 seats=args.seats,
                 not_found_mode=NotFoundMode(args.not_found_mode),
                 tariff=Tariff(args.tariff),
@@ -321,17 +437,19 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"seats:              {result.tenant.seats}")
             print(f"not_found_mode:     {result.tenant.not_found_mode}")
             print(f"tariff:             {result.tenant.tariff}")
-            print(f"admin_email:        {result.admin.email}")
-            print(
-                "Временный пароль задан. Передайте его клиенту отдельным от "
-                "кода компании каналом; при первом входе система потребует "
-                "сменить его."
-            )
+            print(f"admin_email:        {result.account.email}")
+            if result.account_created:
+                print(
+                    "Учётка заведена, временный пароль задан. Передайте его "
+                    "клиенту отдельным каналом; при первом входе система "
+                    "потребует сменить его."
+                )
+            else:
+                print("Учётка уже была — она стала администратором компании.")
             return 0
 
         if args.command == "reset-password":
-            user = await service.reset_password(
-                args.code,
+            account = await service.reset_password(
                 args.email,
                 _read_admin_password(
                     from_stdin=args.password_stdin,
@@ -339,7 +457,7 @@ async def _run(args: argparse.Namespace) -> int:
                     stdin_flag="--password-stdin",
                 ),
             )
-            print(f"{user.email}: временный пароль задан, сессии закрыты.")
+            print(f"{account.email}: временный пароль задан, сессии закрыты.")
             print(
                 "Передайте пароль отдельным каналом; при входе система "
                 "потребует сменить его."
@@ -423,6 +541,114 @@ async def _leads(args: argparse.Namespace) -> int:
             print(f"    созвон: {lead.preferred_date:%d.%m} {lead.preferred_slot} МСК")
             if lead.comment:
                 print(f"    {lead.comment[:300]}")
+        print(f"Заявок: {len(found)}")
+        return 0
+
+
+async def _set_totp(email: str, secret: str) -> int:
+    """Секрет TOTP служебной учётке — чтобы автоматическая проверка стенда
+    проходила второй фактор (ТЗ §3). Людям — только через настройки."""
+
+    try:
+        totp.code_at(secret, 0)
+    except ValueError as exc:
+        raise DomainError("Секрет — base32 (A–Z, 2–7)") from exc
+    box = SecretBox(get_connector_settings().keys)
+    async with get_session_maker()() as session:
+        account = await AccountRepository(session).get_by_email(email)
+        if account is None:
+            raise DomainError(f"Учётки {email} нет")
+        account.totp_secret = box.encrypt({"secret": secret})
+        account.totp_enabled_at = datetime.now(UTC)
+        account.totp_last_step = None
+        AuditRepository(session).record(
+            AuditAction.MFA_ENABLED,
+            details={"account_id": str(account.id), "method": "totp", "source": "cli"},
+        )
+        await session.commit()
+    print(f"{email}: приложение-аутентификатор включено.")
+    return 0
+
+
+async def _staff(args: argparse.Namespace) -> int:
+    """Наша панель (ТЗ §9): кто в команде. Через API в команду не попасть —
+    только отсюда, с сервера. Вход в панель — с приложением или ключом."""
+    async with get_session_maker()() as session:
+        if args.staff_command == "list":
+            rows = await session.execute(
+                select(Account.email, StaffMember.added_at)
+                .join(StaffMember, StaffMember.account_id == Account.id)
+                .order_by(Account.email)
+            )
+            for email, added in rows:
+                print(f"{email}\t{added:%Y-%m-%d}")
+            return 0
+        account = await AccountRepository(session).get_by_email(args.email)
+        if account is None:
+            raise DomainError(f"Учётки {args.email} нет: сначала регистрация")
+        member = await session.get(StaffMember, account.id)
+        if args.staff_command == "add":
+            if member is None:
+                session.add(StaffMember(account_id=account.id))
+                AuditRepository(session).record(
+                    AuditAction.STAFF_ADDED,
+                    details={"account_id": str(account.id), "source": "cli"},
+                )
+                await session.commit()
+            strong = account.totp_enabled_at is not None or bool(
+                await session.scalar(
+                    select(func.count()).where(Passkey.account_id == account.id)
+                )
+            )
+            print(f"{account.email}: в команде.")
+            if not strong:
+                print(
+                    "Панель откроется после того, как он включит приложение-"
+                    "аутентификатор или ключ доступа (Настройки → Безопасность)."
+                )
+            return 0
+        if member is not None:
+            await session.delete(member)
+            AuditRepository(session).record(
+                AuditAction.STAFF_REMOVED,
+                details={"account_id": str(account.id), "source": "cli"},
+            )
+            await session.commit()
+        print(f"{account.email}: не в команде.")
+        return 0
+
+
+async def _requests(args: argparse.Namespace) -> int:
+    async with get_session_maker()() as session:
+        service = CompanyRequestService(session, AuditRepository(session))
+        if args.requests_command == "approve":
+            tenant = await service.approve(
+                args.id,
+                seats=args.seats,
+                tariff=Tariff(args.tariff),
+                company_code=args.code,
+            )
+            print(
+                f"Компания создана: {tenant.name} (код {tenant.company_code}, "
+                f"мест {tenant.seats}, тариф {tenant.tariff}). Заявителю ушло письмо."
+            )
+            return 0
+        if args.requests_command == "reject":
+            await service.reject(args.id)
+            print("Заявка отклонена, заявителю ушло письмо.")
+            return 0
+        found = await service.list(None if args.status == "all" else args.status)
+        accounts = AccountRepository(session)
+        for request in found:
+            account = await accounts.get(request.account_id)
+            who = account.email if account else "учётка удалена"
+            print(
+                f"{request.id}  {request.created_at:%d.%m.%Y %H:%M}  "
+                f"[{request.status}]  {request.company_name}  "
+                f"мест: {request.seats or '—'}  {who}"
+            )
+            if request.comment:
+                print(f"    {request.comment[:300]}")
         print(f"Заявок: {len(found)}")
         return 0
 
@@ -580,7 +806,9 @@ async def _gaps(company_code: str | None) -> int:
             get_session_maker(),
             build_llm_gateway(client, llm_settings),
             GapsSettings(),  # type: ignore[call-arg]
-            max_distance=rag.faq_max_distance,
+            # Вопрос, дошедший до модели, — её отказ, а не промах поиска:
+            # порог «отвечать» (BH-37), а не порог выдержек.
+            max_distance=rag.answer_distance,
         )
         reports = await service.run(company_code)
     for report in reports:

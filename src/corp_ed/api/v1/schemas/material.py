@@ -29,6 +29,8 @@ class MaterialCreateRequest(RequestModel):
 
     title: Title
     content: str = Field(min_length=1, max_length=MAX_MATERIAL_LENGTH)
+    folder_id: UUID | None = None
+    """Папка (ТЗ §5); нет — «Общие документы»."""
 
     @field_validator("content")
     @classmethod
@@ -40,7 +42,11 @@ class MaterialCreateRequest(RequestModel):
 
 
 class MaterialUpdateRequest(RequestModel):
-    title: Title
+    """Что прислано, то и меняется: название (с переиндексацией) и папка
+    (null — общие документы; только у загруженных)."""
+
+    title: Title | None = None
+    folder_id: UUID | None = None
 
 
 class MaterialResponse(BaseModel):
@@ -61,6 +67,7 @@ class MaterialResponse(BaseModel):
     source_url: str | None = None
     synced_at: datetime | None = None
     visibility: str = "tenant"
+    folder_id: UUID | None = None
     created_at: datetime
 
 

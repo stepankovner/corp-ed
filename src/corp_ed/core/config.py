@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     # здесь есть: короткий access ограничивает окно украденного токена,
     # refresh ротируется при каждом использовании (см. DECISIONS.md).
     access_token_ttl_minutes: int = Field(default=15, gt=0, le=60)
-    refresh_token_ttl_days: int = Field(default=14, gt=0, le=90)
+    # «Запомнить это устройство» (ТЗ §3): 30 дней. Без галочки — сессия
+    # до закрытия браузера, но не дольше короткого срока ниже.
+    refresh_token_ttl_days: int = Field(default=30, gt=0, le=90)
+    session_refresh_ttl_hours: int = Field(default=12, gt=0, le=72)
 
     # База данных
     database_url: str
@@ -94,6 +97,9 @@ class LLMSettings(BaseSettings):
     # Квота генерации — 10 одновременных запросов на каталог. Лимит — на
     # процесс: при N воркерах uvicorn ставить не больше 10 / N.
     llm_max_concurrency: int = Field(default=8, gt=0, le=10)
+    # Режим fake печатает ответ по словам с этой паузой (ТЗ §6): видно,
+    # как ответ появляется, и его можно остановить в сквозных тестах.
+    llm_fake_stream_delay_ms: int = Field(default=30, ge=0, le=1000)
 
     # Эмбеддинги — пара моделей <семейство>-doc / <семейство>-query.
     # Смена семейства без переиндексации смешает в выдаче векторы двух
@@ -157,6 +163,14 @@ class RagSettings(BaseSettings):
     overlap_tokens: int = Field(ge=0)
     faq_limit: int = Field(gt=0, le=50)
     faq_max_distance: float = Field(gt=0, le=2)
+    # Порог «отвечать ли по документам» отдельно от отсечения выдержек
+    # (BH-37, domain/threshold.py). Пусто — один порог faq_max_distance,
+    # как раньше; включение — решение Артёма (Р-17) после финального
+    # прогона, кандидат ML — 0.70.
+    faq_gate_distance: float | None = Field(default=None, gt=0, le=2)
+    # Ближайший фрагмент дальше faq_max_distance, но не дальше gate — в
+    # модель идут выдержки не дальше него на столько (BH-37).
+    faq_near_margin: float = Field(default=0.05, ge=0, le=1)
     context_max_tokens: int = Field(gt=0)
     # Для FAQ 0: при 0.3 ответ на один и тот же вопрос по одним и тем же
     # выдержкам переключался «ответил ↔ отказал» (замер ML 24.09, BH-8).
@@ -209,12 +223,33 @@ class RagSettings(BaseSettings):
         extra="ignore",
     )
 
+    @property
+    def answer_distance(self) -> float:
+        """Порог «отвечать ли по документам» по ближайшему фрагменту: gate
+        (BH-37), без него — faq_max_distance. Отчёт о пробелах делит по
+        нему отказ модели и промах поиска."""
+        if self.faq_gate_distance is not None:
+            return self.faq_gate_distance
+        return self.faq_max_distance
+
+    @field_validator("faq_gate_distance", mode="before")
+    @classmethod
+    def empty_gate_is_off(cls, value: object) -> object:
+        # RAG_FAQ_GATE_DISTANCE= в .env — выключено, а не ошибка числа.
+        return None if isinstance(value, str) and not value.strip() else value
+
     @model_validator(mode="after")
     def validate_overlap(self) -> Self:
         # split_document сам кидает ValueError, но на первом ингесте.
         # Падать на старте дешевле, чем узнать об ошибке от клиента.
         if self.overlap_tokens >= self.chunk_tokens:
             raise ValueError("overlap_tokens must be less than chunk_tokens")
+        # Gate ближе порога выдержек ничего бы не менял — это опечатка.
+        if (
+            self.faq_gate_distance is not None
+            and self.faq_gate_distance < self.faq_max_distance
+        ):
+            raise ValueError("faq_gate_distance must not be less than faq_max_distance")
         return self
 
 
@@ -280,6 +315,9 @@ class BillingSettings(BaseSettings):
     # Месяц считается по московскому времени: клиенты и счета — в России.
     billing_timezone: str = "Europe/Moscow"
     warn_at_percent: int = Field(default=80, gt=0, lt=100)
+    # Цена 1 000 токенов модели ответа в рублях — для оценки расхода в
+    # нашей панели (ТЗ §9). Не задана — панель показывает только токены.
+    llm_rub_per_1k_tokens: float | None = Field(default=None, ge=0)
 
     model_config = SettingsConfigDict(
         env_prefix="BILLING_",
@@ -358,6 +396,35 @@ def get_lead_settings() -> LeadSettings:
     return LeadSettings()
 
 
+class DemoSettings(BaseSettings):
+    """Песочница на сайте (ТЗ §1): вопросы без входа к вымышленной
+    компании (corp_ed/demo). Компанию заводит и обновляет `cli demo
+    setup` — его запускает выкатка; пока её нет, песочница отвечает
+    «недоступна». Вопрос стоит вызова модели, поэтому лимиты строгие и
+    при недоступном Redis — отказ (api/v1/rate_limits.py, DEMO_*).
+    """
+
+    enabled: bool = True
+    company_code: str = Field(default="demo-site", pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
+    # Учётка, от имени которой песочница спрашивает. Войти в неё нельзя:
+    # вместо хеша пароля — заглушка, которую не примет ни один пароль.
+    account_email: str = "demo@krontoai.ru"
+    # Места компании — её пул кредитов на месяц: потолок расходов на модель.
+    seats: int = Field(default=30, gt=0, le=1000)
+
+    model_config = SettingsConfigDict(
+        env_prefix="DEMO_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_demo_settings() -> DemoSettings:
+    return DemoSettings()
+
+
 class TeamNotifySettings(BaseSettings):
     """Бот в Telegram для нашей команды (решение 28.09, П-5).
 
@@ -390,6 +457,114 @@ class TeamNotifySettings(BaseSettings):
 @lru_cache
 def get_team_notify_settings() -> TeamNotifySettings:
     return TeamNotifySettings()
+
+
+class MailSettings(BaseSettings):
+    """Отправка писем (ТЗ §3, решение 03.10).
+
+    backend:
+    - smtp — настоящая отправка; на старте — ящик Яндекс 360 на
+      krontoai.ru (smtp.yandex.ru:465, пароль приложения; лимит Яндекса —
+      300 писем в сутки с ящика);
+    - console — письмо в лог вместо отправки (разработка);
+    - memory — в список в памяти процесса (тесты).
+
+    Стенд — тот же ящик Яндекс 360 (STAGE.md §4.5а); сквозные проверки
+    CI — перехватчик писем Mailpit (ci.yaml, задание e2e): наружу ничего
+    не уходит. Пароль — секрет: в логи не пишется.
+    """
+
+    backend: Literal["smtp", "console", "memory"] = "console"
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=465, gt=0, lt=65536)
+    smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    from_address: str = "noreply@krontoai.ru"
+    from_name: str = "kronto"
+    # Адрес сайта для ссылок в письмах, без «/» в конце.
+    site_url: str = "http://localhost:5173"
+
+    model_config = SettingsConfigDict(
+        env_prefix="MAIL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("site_url")
+    @classmethod
+    def strip_slash(cls, value: str) -> str:
+        return value.rstrip("/")
+
+    @model_validator(mode="after")
+    def validate_smtp(self) -> Self:
+        # Без хоста smtp молча не отправит ни одного письма — регистрация
+        # встанет на подтверждении почты. Лучше не стартовать.
+        if self.backend == "smtp" and not self.smtp_host:
+            raise ValueError("MAIL_SMTP_HOST is required for MAIL_BACKEND=smtp")
+        return self
+
+
+@lru_cache
+def get_mail_settings() -> MailSettings:
+    return MailSettings()
+
+
+class RegistrationSettings(BaseSettings):
+    """Самостоятельная регистрация (ТЗ §2, §11).
+
+    enabled=false — регистрироваться можно только по приглашению: так
+    на боевом домене, пока нет юридических текстов от ИП. policy_version
+    — редакция политики обработки ПДн, на которую человек дал согласие
+    (пишется в учётку).
+    """
+
+    enabled: bool = True
+    policy_url: str = "/privacy"
+    policy_version: str = Field(default="draft-2026-10-04", max_length=64)
+
+    model_config = SettingsConfigDict(
+        env_prefix="REGISTRATION_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_registration_settings() -> RegistrationSettings:
+    return RegistrationSettings()
+
+
+class AuthSettings(BaseSettings):
+    """Ключи доступа (WebAuthn, ТЗ §3).
+
+    Пусто — сайт берётся из заголовка Host (его проверяет TrustedHost):
+    https://<хост>, для localhost — http. Задавать нужно, только если
+    фронт и API на разных адресах (разработка: http://localhost:5173).
+    """
+
+    webauthn_rp_id: str | None = None
+    # Через запятую: http://localhost:5173,https://stage.krontoai.ru
+    webauthn_origins: str = ""
+
+    model_config = SettingsConfigDict(
+        env_prefix="AUTH_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def origins(self) -> list[str]:
+        return _split_csv(self.webauthn_origins)
+
+
+@lru_cache
+def get_auth_settings() -> AuthSettings:
+    return AuthSettings()
 
 
 class HttpSettings(BaseSettings):
@@ -553,6 +728,13 @@ class ConnectorSettings(BaseSettings):
     # флаг. Решение 28.09: «База знаний 2.0» Битрикс24 — до проверки на
     # портале (RISKS №36).
     preview_modules: str = ""
+    # Виды подключений целиком (bitrix24, confluence, yandex360 — через
+    # запятую), которые компаниям не предлагаются: их нет в каталоге,
+    # новое подключение не создать. Уже созданные работают как раньше:
+    # синхронизация, вход сотрудников, настройки, удаление;
+    # `cli connector-check` их тоже видит — для живой проверки. Для
+    # решения «не проверили на живой системе к MVP — скрыть» (STATUS.md).
+    hidden_kinds: str = ""
 
     # OAuth-приложения (режим per_user, этап 2). callback — публичный
     # адрес ручки GET /api/v1/connectors/oauth/callback: его админ
@@ -620,6 +802,10 @@ class ConnectorSettings(BaseSettings):
     @property
     def enabled_preview_modules(self) -> frozenset[str]:
         return frozenset(_split_csv(self.preview_modules))
+
+    @property
+    def hidden_kind_names(self) -> frozenset[str]:
+        return frozenset(_split_csv(self.hidden_kinds))
 
 
 @lru_cache

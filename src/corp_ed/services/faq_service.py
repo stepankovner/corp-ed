@@ -1,6 +1,9 @@
 import asyncio
 import time
+from collections.abc import AsyncGenerator
+from contextlib import aclosing
 from dataclasses import dataclass, field, replace
+from typing import Protocol
 from uuid import UUID, uuid4
 
 import structlog
@@ -24,6 +27,8 @@ from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
 from corp_ed.domain.rerank import rerank as reorder
+from corp_ed.domain.threshold import relevance_limit
+from corp_ed.domain.tokens import count_tokens
 from corp_ed.domain.types import (
     DEFAULT_NOT_FOUND_MODE,
     AnswerDiagnostics,
@@ -37,7 +42,7 @@ from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.reranker import Reranker, RerankerError, rerank_passage
-from corp_ed.llm.types import Completion, FinishReason
+from corp_ed.llm.types import Completion, FinishReason, Message, Usage
 from corp_ed.prompts.dialogue import (
     CONDENSE_PROMPT_VERSION,
     Turn,
@@ -46,8 +51,12 @@ from corp_ed.prompts.dialogue import (
     recent_turns,
 )
 from corp_ed.prompts.faq import (
+    GENERAL_ANSWER_PREFIX,
+    NOT_FOUND_ANSWER,
     PROMPT_VERSION,
     build_faq_messages,
+    build_general_messages,
+    ensure_general_prefix,
     is_not_found,
     normalize_citations,
 )
@@ -60,6 +69,7 @@ from corp_ed.services.general_answer import (
     REFUSAL_ANSWER,
     GeneralAnswerSource,
     ModelKnowledgeSource,
+    StreamingGeneralSource,
     finalize_general_answer,
 )
 
@@ -99,6 +109,9 @@ class _Retrieval:
     """top-limit в итоговом порядке, без порога."""
     relevant: list[ChunkMatch]
     """Прошедшие порог — только они могут попасть в промпт."""
+    limit: float | None
+    """До какого расстояния выдержки идут в модель (BH-37); None —
+    ответа по документам нет."""
     nearest: float | None
     """Расстояние лучшего ВЕКТОРНОГО кандидата (qa_log, классы пробелов)."""
     best_fulltext: float | None
@@ -111,6 +124,46 @@ class _Outcome:
     origin: AnswerOrigin
     sources: list[ChunkMatch]
     completions: list[Completion] = field(default_factory=list)
+    stopped: bool = False
+    """Сотрудник остановил ответ: content — то, что успело прийти."""
+
+
+@dataclass(frozen=True)
+class _Streamed:
+    completion: Completion
+    stopped: bool
+
+
+class AnswerSink(Protocol):
+    """Куда идёт ход ответа, пока он пишется (чат, ТЗ §6)."""
+
+    async def stage(self, stage: str) -> None:
+        """«searching» — ищем в документах, «writing» — модель пишет."""
+        ...
+
+    async def origin(self, origin: AnswerOrigin) -> None:
+        """Ответ будет не по документам: общий или отказ (плашка сразу)."""
+        ...
+
+    async def delta(self, text: str) -> None:
+        """Следующий кусок текста ответа."""
+        ...
+
+    async def reset(self) -> None:
+        """Показанный текст не годится (фильтр, отказ модели) — убрать."""
+        ...
+
+    async def should_stop(self) -> bool:
+        """Сотрудник нажал «Остановить»."""
+        ...
+
+
+class AttachmentSource(Protocol):
+    """Выдержки вложений сотрудника к вопросу (ТЗ §6)."""
+
+    async def select(self, embedding: list[float]) -> list[ChunkMatch]:
+        """Что из вложений положить в промпт: эмбеддинг — вопроса."""
+        ...
 
 
 class FaqService:
@@ -140,6 +193,8 @@ class FaqService:
         reranker: Reranker | None = None,
         rerank_depth: int = 30,
         rerank_timeout: float = 3.0,
+        gate_distance: float | None = None,
+        near_margin: float = 0.0,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -151,6 +206,8 @@ class FaqService:
         self.session = session
         self.limit = limit
         self.max_distance = max_distance
+        self.gate_distance = gate_distance
+        self.near_margin = near_margin
         self.context_max_tokens = context_max_tokens
         self.temperature = temperature
         self.retriever = retriever
@@ -170,6 +227,40 @@ class FaqService:
     async def answer(
         self, question: str, user: User, conversation_id: UUID | None = None
     ) -> FaqAnswer:
+        """Ответ целиком, с памятью диалога в Redis (/faq/ask, BH-28).
+
+        conversation_id — диалог, который клиент продолжает; без него
+        начинается новый, id возвращается в ответе. Реплики живут в Redis
+        (core/dialogue_store.py); чат приложения хранит диалоги в базе и
+        передаёт историю сам (answer_turn, ChatService). Сбой хранилища
+        реплик ответ не ломает — он идёт без истории.
+        """
+        dialogue = DialogueKey(
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            conversation_id=conversation_id or uuid4(),
+        )
+        history = await self._history(dialogue) if conversation_id else []
+        result = await self.answer_turn(
+            question, user, history=history, conversation_id=dialogue.conversation_id
+        )
+        # После commit: реплика, которой нет в журнале, в историю не идёт.
+        # Вопрос — как в журнале (после mask_pii), ответ — что видел
+        # сотрудник; отказы — тоже реплики (контракт BH-28).
+        await self._remember(dialogue, Turn(mask_pii(question), result.content))
+        return result
+
+    async def answer_turn(
+        self,
+        question: str,
+        user: User,
+        *,
+        history: list[Turn],
+        conversation_id: UUID | None = None,
+        sink: AnswerSink | None = None,
+        attachments: AttachmentSource | None = None,
+        commit: bool = True,
+    ) -> FaqAnswer:
         """Ответить по документам; если в них ответа нет — по режиму компании.
 
         Что отвечать, когда в документах ответа нет, решает режим
@@ -178,34 +269,38 @@ class FaqService:
         29.09, BH-29; services/general_answer.py), в режиме STRICT —
         честный отказ.
 
-        Память диалога (BH-28): conversation_id — диалог, который клиент
-        продолжает; без него начинается новый, id возвращается в ответе.
-        Если в диалоге есть прошлые реплики, вопрос сначала переписывается
-        в самостоятельный (prompts/dialogue.py): по нему идут словарь,
-        поиск, порог и общий ответ, а модель ответа видит и историю.
-        Сбой переписывания или хранилища реплик ответ не ломает — он
-        идёт по исходному вопросу без истории.
+        history — прошлые реплики диалога (BH-28). Если они есть, вопрос
+        сначала переписывается в самостоятельный (prompts/dialogue.py): по
+        нему идут словарь, поиск, порог и общий ответ, а модель ответа
+        видит и историю. Сбой переписывания ответ не ломает.
 
         Выдержки, не прошедшие порог max_distance, в модель не уходят:
         нерелевантный контекст дороже и толкает модель выдать чужой
         пункт за ответ. Как именно применяется порог — зависит от
         способа поиска (_retrieve).
 
+        attachments — вложения сотрудника к диалогу (ТЗ §6): их выдержки
+        идут первыми и вне порога — о файле спросили явно. В базу
+        компании они не попадают и в source_chunk_ids журнала не пишутся.
+
+        sink — ход ответа для потока в чате (ТЗ §6): этап, текст по мере
+        генерации, остановка по просьбе сотрудника. Без него — ответ
+        целиком (/faq/ask). Остановленный ответ — тоже ответ: текст до
+        остановки, токены и кредиты пишутся как обычно.
+
         Каждый ответ пишется в qa_log (BH-20) в той же транзакции:
         версия промпта, модель, лучшее расстояние, токены и кредиты.
+        commit=False — транзакцию завершает вызывающий (ChatService
+        пишет сообщение диалога вместе с журналом).
 
         Пул кредитов проверяется первым: исчерпанный пул не должен
         стоить ни эмбеддинга, ни вызова модели (досье 10.2).
         """
+        sink = sink or _SILENT
         usage = await self.credits.ensure_available()
         tenant = await self.tenant_repo.get_by_id(user.tenant_id)
         mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
-        dialogue = DialogueKey(
-            tenant_id=user.tenant_id,
-            user_id=user.id,
-            conversation_id=conversation_id or uuid4(),
-        )
-        history = await self._history(dialogue) if conversation_id else []
+        await sink.stage("searching")
         condensed = await self._condense(history, question)
         standalone = condensed.question
         search_text = await self._search_text(standalone)
@@ -222,9 +317,14 @@ class FaqService:
         # нет — по-прежнему по вектору, и в модель идут только прошедшие.
         # Выключен — первые limit по вектору. Пара для модели — вопрос,
         # который ушёл в поиск (после переписывания и словаря).
-        if self.retriever is Retriever.VECTOR:
+        if found.limit is None:
+            # Ответа по документам нет — переставлять нечего, модель
+            # реранкера не зовём.
+            reranked = _Reranked(matches=found.candidates, model=None, ms=None)
+        elif self.retriever is Retriever.VECTOR:
+            # Порог — этого вопроса (BH-37): в зоне (max; gate] пул не пуст.
             reranked = await self._rerank(
-                search_text, found.candidates, max_distance=self.max_distance
+                search_text, found.candidates, max_distance=found.limit
             )
         else:
             # HYBRID: порог решён целиком по лучшему вектору (_retrieve).
@@ -235,11 +335,12 @@ class FaqService:
         chosen = [m for m in reranked.matches if m.id in relevant][: self.limit]
         # Порядок сохраняется: номер [n] в ответе модели — позиция выдержки
         # в context, и в том же порядке источники уходят клиенту.
-        context = select_context(chosen, max_tokens=self.context_max_tokens)
+        attached = await attachments.select(embedded.embedding) if attachments else []
+        context = attached + select_context(chosen, max_tokens=self.context_max_tokens)
         nearest = found.nearest
 
         outcome = await self._answer(
-            question, context, mode, history=history, standalone=standalone
+            question, context, mode, history=history, standalone=standalone, sink=sink
         )
 
         # Переписывание — такой же вызов модели, его токены оплачиваются.
@@ -254,6 +355,7 @@ class FaqService:
         last = outcome.completions[-1] if outcome.completions else None
         model = last.model if last else None
         answer_given = outcome.origin is AnswerOrigin.DOCUMENTS
+        attached_ids = {match.id for match in attached}
 
         entry = await self.qa_log_repo.add(
             QaLog(
@@ -270,24 +372,28 @@ class FaqService:
                 best_fulltext_score=found.best_fulltext,
                 answer_given=answer_given,
                 origin=outcome.origin.value,
-                source_chunk_ids=[source.id for source in outcome.sources],
+                source_chunk_ids=[
+                    source.id
+                    for source in outcome.sources
+                    if source.id not in attached_ids
+                ],
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 credits=credits,
-                conversation_id=dialogue.conversation_id,
+                conversation_id=conversation_id,
                 standalone_question=mask_pii(standalone) if history else None,
                 condense_prompt_version=CONDENSE_PROMPT_VERSION if history else None,
                 history_turns=len(history),
                 rerank_model=reranked.model,
                 rerank_ms=reranked.ms,
+                attachment_chunks=len(attached),
             )
         )
         await self.credits.note_spend(usage, credits)
-        await self.session.commit()
-        # После commit: реплика, которой нет в журнале, в историю не идёт.
-        # Вопрос — как в журнале (после mask_pii), ответ — что видел
-        # сотрудник; отказы — тоже реплики (контракт BH-28).
-        await self._remember(dialogue, Turn(mask_pii(question), outcome.content))
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         FAQ_ANSWERS.labels(outcome.origin.value).inc()
 
         logger.info(
@@ -305,6 +411,8 @@ class FaqService:
             condensed=standalone != question,
             reranked=reranked.model is not None,
             rerank_ms=reranked.ms,
+            attachment_chunks=len(attached),
+            stopped=outcome.stopped,
         )
         return FaqAnswer(
             content=outcome.content,
@@ -325,7 +433,8 @@ class FaqService:
                 rerank_model=reranked.model,
                 rerank_ms=reranked.ms,
             ),
-            conversation_id=dialogue.conversation_id,
+            conversation_id=conversation_id,
+            stopped=outcome.stopped,
         )
 
     async def search(
@@ -365,10 +474,10 @@ class FaqService:
             retriever=retriever,
             viewer=viewer.id,
         )
-        if not rerank:
-            return found.candidates
+        if not rerank or found.limit is None:
+            return found.candidates[:limit]
         reranked = await self._rerank(
-            search_text, found.candidates, max_distance=self.max_distance
+            search_text, found.candidates, max_distance=found.limit
         )
         if reranked.failed:
             raise ServiceUnavailableError()
@@ -560,10 +669,15 @@ class FaqService:
                 if query
                 else []
             )
+            nearest = vector[0].distance if vector else None
+            cutoff = self._relevance_limit(nearest)
             return _Retrieval(
                 candidates=vector,
-                relevant=[m for m in vector if m.distance <= self.max_distance],
-                nearest=vector[0].distance if vector else None,
+                relevant=[
+                    m for m in vector if cutoff is not None and m.distance <= cutoff
+                ],
+                limit=cutoff,
+                nearest=nearest,
                 best_fulltext=fulltext[0].fulltext_rank if fulltext else None,
             )
 
@@ -590,12 +704,20 @@ class FaqService:
         )
         candidates = [by_id[chunk_id] for chunk_id, _ in merged[:limit]]
         nearest = vector[0].distance if vector else None
-        passed = nearest is not None and nearest <= self.max_distance
+        cutoff = self._relevance_limit(nearest)
         return _Retrieval(
             candidates=candidates,
-            relevant=candidates if passed else [],
+            relevant=candidates if cutoff is not None else [],
+            limit=cutoff,
             nearest=nearest,
             best_fulltext=fulltext[0].fulltext_rank if fulltext else None,
+        )
+
+    def _relevance_limit(self, nearest: float | None) -> float | None:
+        """Порог выдержек этого вопроса — правило ML (BH-37): без
+        gate_distance — max_distance, если ближайший его прошёл."""
+        return relevance_limit(
+            nearest, self.max_distance, self.gate_distance, self.near_margin
         )
 
     async def rate(self, user: User, log_id: UUID, feedback: int) -> None:
@@ -614,6 +736,7 @@ class FaqService:
         *,
         history: list[Turn],
         standalone: str,
+        sink: AnswerSink,
     ) -> _Outcome:
         """Ответ по выдержкам или, если в них ответа нет, по режиму.
 
@@ -621,22 +744,40 @@ class FaqService:
         переписанный вопрос (build_faq_messages); без истории промпт байт
         в байт прежний. Общий ответ строится по переписанному вопросу:
         «А для УМНИК?» без контекста общему источнику непонятен.
+
+        В поток отказ модели не попадает: _RefusalGate придерживает
+        начало ответа, пока оно может оказаться фразой NOT_FOUND_ANSWER,
+        — дальше по режиму пойдёт общий ответ или отказ.
         """
         if not context:
             return await self._not_found(
-                standalone, mode, reason="no_relevant_excerpts"
+                standalone, mode, reason="no_relevant_excerpts", sink=sink
             )
 
-        completion = await self.llm_gateway.generate(
-            messages=build_faq_messages(
-                question=question,
-                matches=context,
-                history=history,
-                standalone_question=standalone,
-            ),
-            temperature=self.temperature,
+        messages = build_faq_messages(
+            question=question,
+            matches=context,
+            history=history,
+            standalone_question=standalone,
         )
+        await sink.stage("writing")
+        streamed = await self._consume(
+            self.llm_gateway.stream(messages, temperature=self.temperature),
+            messages,
+            sink=sink,
+            gate=_RefusalGate(),
+        )
+        completion = streamed.completion
+        if streamed.stopped:
+            return _Outcome(
+                content=normalize_citations(completion.content, context),
+                origin=AnswerOrigin.DOCUMENTS,
+                sources=context,
+                completions=[completion],
+                stopped=True,
+            )
         if completion.finish_reason is FinishReason.FILTERED:
+            await sink.reset()
             return self._filtered(completion, reason="documents")
         # Модели иногда ставят в скобки номер пункта документа [4.2]
         # вместо номера выдержки: фронт такую ссылку не свяжет.
@@ -645,7 +786,10 @@ class FaqService:
         # Выдержки нашлись, но модель по ним отказала: в документах
         # ответа нет — это тот же случай, что и пустой поиск.
         if is_not_found(content):
-            fallback = await self._not_found(standalone, mode, reason="model_refusal")
+            await sink.reset()
+            fallback = await self._not_found(
+                standalone, mode, reason="model_refusal", sink=sink
+            )
             fallback.completions.insert(0, completion)
             return fallback
 
@@ -657,15 +801,16 @@ class FaqService:
         )
 
     async def _not_found(
-        self, question: str, mode: NotFoundMode, *, reason: str
+        self, question: str, mode: NotFoundMode, *, reason: str, sink: AnswerSink
     ) -> _Outcome:
         """В документах ответа нет: общий ответ или честный отказ."""
         if mode is NotFoundMode.STRICT:
             logger.info("faq_not_found_strict", reason=reason)
+            await sink.origin(AnswerOrigin.NONE)
             return _Outcome(
                 content=REFUSAL_ANSWER, origin=AnswerOrigin.NONE, sources=[]
             )
-        return await self._general_answer(question, reason=reason)
+        return await self._general_answer(question, reason=reason, sink=sink)
 
     @staticmethod
     def _filtered(completion: Completion, *, reason: str) -> _Outcome:
@@ -685,16 +830,41 @@ class FaqService:
             completions=[completion],
         )
 
-    async def _general_answer(self, question: str, *, reason: str) -> _Outcome:
+    async def _general_answer(
+        self, question: str, *, reason: str, sink: AnswerSink
+    ) -> _Outcome:
         """Общий ответ со строгой пометкой и советом уточнить.
 
         Источнику не уходит ни одной выдержки: смешать общие сведения с
         документами компании он не может. finalize_general_answer ставит
         пометку и совет, даже если модель их потеряла или переписала, —
         ответ без пометки клиенту уйти не может. Источников нет.
+
+        В поток пометка не идёт: фронт узнаёт об общем ответе из события
+        origin и показывает плашку; итоговый текст — с пометкой.
         """
-        completion = await self.general_source.generate(question)
+        await sink.origin(AnswerOrigin.GENERAL_KNOWLEDGE)
+        if isinstance(self.general_source, StreamingGeneralSource):
+            source_stream = self.general_source.stream(question)
+        else:
+            source_stream = _single(await self.general_source.generate(question))
+        streamed = await self._consume(
+            source_stream,
+            build_general_messages(question),
+            sink=sink,
+            gate=_GeneralPrefixGate(),
+        )
+        completion = streamed.completion
+        if streamed.stopped:
+            return _Outcome(
+                content=ensure_general_prefix(completion.content),
+                origin=AnswerOrigin.GENERAL_KNOWLEDGE,
+                sources=[],
+                completions=[completion],
+                stopped=True,
+            )
         if completion.finish_reason is FinishReason.FILTERED:
+            await sink.reset()
             return self._filtered(completion, reason="general")
         logger.info(
             "faq_general_answer", reason=reason, source=self.general_source.name
@@ -705,3 +875,138 @@ class FaqService:
             sources=[],
             completions=[completion],
         )
+
+    async def _consume(
+        self,
+        stream: AsyncGenerator[str | Completion, None],
+        messages: list[Message],
+        *,
+        sink: AnswerSink,
+        gate: "_Gate",
+    ) -> _Streamed:
+        """Прочитать поток модели: текст — в sink через gate, остановка —
+        по просьбе сотрудника (sink.should_stop) перед каждым куском.
+
+        Остановленный поток закрывается (адаптер рвёт соединение), а
+        ответ собирается из того, что успело прийти: токены — по оценке
+        count_tokens, провайдер до конца не дошёл и расхода не назвал.
+        """
+        started = time.perf_counter()
+        text = ""
+        async with aclosing(stream) as pieces:
+            async for piece in pieces:
+                if isinstance(piece, Completion):
+                    return _Streamed(completion=piece, stopped=False)
+                # Проверка до показа: что пришло после «Остановить», сотрудник
+                # уже не видит — и в ответ это не идёт.
+                if await sink.should_stop():
+                    break
+                text += piece
+                visible = gate.feed(piece)
+                if visible:
+                    await sink.delta(visible)
+            else:
+                raise LLMError("stream ended without completion", retryable=False)
+        return _Streamed(
+            completion=Completion(
+                content=text.strip(),
+                finish_reason=FinishReason.TRUNCATED,
+                usage=Usage(
+                    input_tokens=sum(count_tokens(m.content) for m in messages),
+                    output_tokens=count_tokens(text),
+                ),
+                model_version=self.llm_gateway.model_name,
+                model=self.llm_gateway.model_name,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            ),
+            stopped=True,
+        )
+
+
+class _Gate(Protocol):
+    def feed(self, piece: str) -> str:
+        """Что из куска показать сотруднику сейчас."""
+        ...
+
+
+_REFUSAL_WORDS = " ".join(NOT_FOUND_ANSWER.lower().rstrip(".").split())
+
+
+class _RefusalGate:
+    """Не показывать отказ модели кусками.
+
+    Пока начало ответа может оказаться фразой «В документах компании
+    ответа нет» — текст придерживается: дальше будет общий ответ или
+    плашка отказа, а не мелькнувшая фраза. Ответ пошёл другой — всё
+    придержанное уходит разом, дальше куски идут как есть.
+    """
+
+    def __init__(self) -> None:
+        self._held = ""
+        self._open = False
+
+    def feed(self, piece: str) -> str:
+        if self._open:
+            return piece
+        self._held += piece
+        probe = " ".join(self._held.lstrip(" \t\n«»\"'*").lower().split())
+        if _REFUSAL_WORDS.startswith(probe) or probe.startswith(_REFUSAL_WORDS):
+            return ""
+        self._open = True
+        held, self._held = self._held, ""
+        return held
+
+
+_GENERAL_HOLD_CHARS = len(GENERAL_ANSWER_PREFIX) + 40
+
+
+class _GeneralPrefixGate:
+    """Общий ответ — без служебной пометки в начале.
+
+    Модель пишет пометку сама (промпт ML), в одну строку или в две.
+    Начало придерживается, пока пометка точно не дописана, затем
+    ensure_general_prefix отделяет её, и наружу идёт только ответ.
+    """
+
+    def __init__(self) -> None:
+        self._held = ""
+        self._open = False
+
+    def feed(self, piece: str) -> str:
+        if self._open:
+            return piece
+        self._held += piece
+        if len(self._held) < _GENERAL_HOLD_CHARS:
+            return ""
+        self._open = True
+        trailing = self._held[len(self._held.rstrip()) :]
+        marked = ensure_general_prefix(self._held)
+        return marked[len(GENERAL_ANSWER_PREFIX) :].lstrip("\n") + trailing
+
+
+async def _single(completion: Completion) -> AsyncGenerator[str | Completion, None]:
+    if completion.content:
+        yield completion.content
+    yield completion
+
+
+class _SilentSink:
+    """Ответ без потока (/faq/ask): события никуда не идут."""
+
+    async def stage(self, stage: str) -> None:
+        return None
+
+    async def origin(self, origin: AnswerOrigin) -> None:
+        return None
+
+    async def delta(self, text: str) -> None:
+        return None
+
+    async def reset(self) -> None:
+        return None
+
+    async def should_stop(self) -> bool:
+        return False
+
+
+_SILENT = _SilentSink()

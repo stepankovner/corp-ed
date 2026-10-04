@@ -6,12 +6,14 @@ from uuid import UUID, uuid4
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     ARRAY,
+    BigInteger,
     CheckConstraint,
     Computed,
     DateTime,
     Float,
     ForeignKey,
     Index,
+    LargeBinary,
     SmallInteger,
     String,
     Text,
@@ -22,8 +24,9 @@ from sqlalchemy import (
     text,
     true,
 )
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
-from sqlalchemy.orm import Mapped, deferred, mapped_column
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
@@ -33,16 +36,33 @@ from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE
 
 
 class UserRole(enum.Enum):
-    """Роль сотрудника внутри своей компании.
+    """Роль человека в компании — свойство членства, а не учётки (ТЗ §2):
+    в одной компании он администратор, в другой — сотрудник.
 
-    ADMIN — управляет документами и пользователями компании, видит
-    отладку поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы.
-    Заводить компании (тенанты) не может ни одна роль: это делает
-    команда Kronto через CLI на сервере (см. corp_ed.cli).
+    ADMIN — управляет документами и людьми компании, видит отладку
+    поиска и отчёт о пробелах. EMPLOYEE — задаёт вопросы. Отдельных
+    «владельца» и «редактора» нет (решение владельца продукта 03.10).
+    Заводить компании не может ни одна роль: заявку одобряет команда
+    Kronto (corp_ed.cli, позже — наша панель).
     """
 
     ADMIN = "admin"
     EMPLOYEE = "employee"
+
+
+class MemberStatus(enum.Enum):
+    """Состояние членства в компании.
+
+    ACTIVE — работает и занимает место; BLOCKED — заблокирован админом,
+    место не занимает; PENDING — вступил по приглашению с одобрением и
+    ждёт админа; LEFT — ушёл сам или убран админом: учётка жива, доступа
+    к компании нет, вернуться можно по новому приглашению.
+    """
+
+    ACTIVE = "active"
+    BLOCKED = "blocked"
+    PENDING = "pending"
+    LEFT = "left"
 
 
 class MaterialStatus(enum.Enum):
@@ -82,6 +102,9 @@ class Tenant(Base):
             "connector_limit IS NULL OR connector_limit > 0",
             name="ck_tenants_connector_limit_positive",
         ),
+        CheckConstraint(
+            "mfa_policy IN ('any', 'strong')", name="ck_tenants_mfa_policy"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -109,41 +132,373 @@ class Tenant(Base):
     # Технический потолок подключений для этой компании; NULL — общий
     # CONNECTOR_MAX_PER_TENANT. Поднимает команда (cli set-tariff).
     connector_limit: Mapped[int | None]
+    # Второй фактор (ТЗ §3): any — достаточно кода на почту; strong —
+    # всем сотрудникам приложение или ключ доступа. Администраторам
+    # strong обязателен всегда. Меняет администратор компании.
+    mfa_policy: Mapped[str] = mapped_column(
+        String(16), default="any", server_default="any"
+    )
+    # Галочка «Запомнить это устройство» на входе (ТЗ §3).
+    allow_remember_device: Mapped[bool] = mapped_column(
+        default=True, server_default=true()
+    )
+    # Домены почты компании (ТЗ §7): если заданы, вступить по любому
+    # приглашению можно только с почтой этих доменов (и поддоменов).
+    email_domains: Mapped[list[str]] = mapped_column(
+        ARRAY(String(253)), default=list, server_default="{}"
+    )
+    # Последний день пилота (ТЗ §9): после него команда решает, продлить
+    # или приостановить. Сам по себе доступ не закрывает — напоминание в
+    # нашей панели. NULL — не пилот.
+    pilot_until: Mapped[date | None]
 
 
-class User(TenantMixin, Base):
-    __tablename__ = "users"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "email", name="uq_user_tenant_email"),
+class StaffMember(Base):
+    """Команда kronto с доступом к нашей панели (ТЗ §9): заявки на
+    компании, тарифы и места, расход на модели, помощь со входом.
+
+    Не тенантская: панель видит все компании. Заводится только из CLI
+    (`cli staff add`) — через API себя в команду не добавить. Вход в
+    панель — только с приложением или ключом доступа.
+    """
+
+    __tablename__ = "staff_members"
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
+
+class Account(Base):
+    """Учётная запись человека в kronto (ТЗ §2, решение 03.10).
+
+    Не зависит от компании: почта, пароль, имя и подтверждение почты
+    живут здесь, а роль и доступ — в членстве (User). Ушёл из компании —
+    учётка остаётся и ждёт следующего приглашения.
+
+    Не тенантская и не под RLS: вход ищет учётку по почте до того, как
+    известна компания. Данных компаний здесь нет.
+    """
+
+    __tablename__ = "accounts"
+
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    email: Mapped[str]
+    # В casefold: Anna@Acme.ru и anna@acme.ru — одна учётка.
+    email: Mapped[str] = mapped_column(String(254), unique=True)
     hashed_password: Mapped[str]
-    full_name: Mapped[str | None]
-    role: Mapped[UserRole]
-    is_active: Mapped[bool] = mapped_column(default=True)
-    # Версия токенов: увеличивается при смене пароля, роли, блокировке и
-    # выходе со всех устройств. Access-токен со старой версией отвергается.
+    # Хеши прежних паролей, новые первыми (services/passwords.py): после
+    # смены или сброса нельзя вернуть пароль, который заменили.
+    previous_password_hashes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
+    # У перенесённых со старой схемы учёток имени может не быть: фронт
+    # попросит его при входе. Новые без имени не регистрируются.
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str | None] = mapped_column(String(100))
+    # Профиль (ТЗ §4): видят коллеги по компаниям человека, вне их — никто.
+    patronymic: Mapped[str | None] = mapped_column(String(100))
+    # +79991234567: только цифры после «+», без пробелов (core/profile.py).
+    phone: Mapped[str | None] = mapped_column(String(16))
+    # Имя пользователя Telegram без «@».
+    telegram: Mapped[str | None] = mapped_column(String(32))
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Согласие на обработку персональных данных при регистрации (152-ФЗ):
+    # когда и с какой редакцией политики. NULL — учётка до 03.10.
+    consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consent_policy_version: Mapped[str | None] = mapped_column(String(64))
+    # Версия сессий учётки: смена пароля и «выйти везде» увеличивают её,
+    # и все выданные access-токены перестают приниматься.
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
-    # Пароль выдан администратором: до смены доступ только к смене пароля.
+    # Пароль выдала команда (cli reset-password): до смены — только смена.
     must_change_password: Mapped[bool] = mapped_column(
         default=False, server_default=false()
+    )
+    # Приложение-аутентификатор (TOTP, ТЗ §3): секрет зашифрован SecretBox;
+    # totp_last_step — последний принятый 30-секундный шаг (код нельзя
+    # предъявить дважды).
+    totp_secret: Mapped[str | None] = mapped_column(Text)
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    totp_last_step: Mapped[int | None] = mapped_column(BigInteger)
+    # Компания, в которой человек был последней: после входа — она.
+    last_tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
+    @property
+    def full_name(self) -> str | None:
+        name = " ".join(p for p in (self.first_name, self.last_name) if p)
+        return name or None
+
+
+class AccountAvatar(Base):
+    """Фото профиля (ТЗ §4): квадрат 256×256 в WebP, перекодированный на
+    сервере — без метаданных исходного снимка (геометка, модель телефона).
+
+    Отдельно от accounts: учётку читают на каждом запросе, а фото — только
+    по своей ссылке. Не под RLS, как и учётка; выдаётся по подписанной
+    ссылке, которую получают только коллеги (services/avatar_service.py).
+    """
+
+    __tablename__ = "account_avatars"
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    # Меняется с каждым новым фото: ссылка с прежней версией не отдаёт
+    # новое фото из кэша браузера.
+    version: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class TenantLogo(Base):
+    """Логотип компании (ТЗ §7): вписан в квадрат 256×256, WebP с
+    прозрачностью — в переключателе компаний и в шапке.
+
+    Как фото профиля — вне RLS: переключатель показывает логотипы всех
+    компаний человека, а <img> не шлёт токен. Выдаётся по подписанной
+    ссылке, которую получают только участники компании
+    (services/company_service.py).
+    """
+
+    __tablename__ = "tenant_logos"
+
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    version: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Department(TenantMixin, Base):
+    """Отдел компании (ТЗ §7): заводит администратор, человек выбирает свой
+    в профиле. Дальше к отделам привязывается доступ к папкам (§5)."""
+
+    __tablename__ = "departments"
+    __table_args__ = (
+        # «Продажи» и «продажи» — один отдел.
+        Index(
+            "uq_departments_tenant_name",
+            "tenant_id",
+            text("lower(name)"),
+            unique=True,
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Folder(TenantMixin, Base):
+    """Папка загруженных документов (ТЗ §5, §7) с доступом по отделам.
+
+    restricted=False — документы видят все сотрудники; True — только
+    отделы из folder_departments и администраторы компании. Документы
+    из источников (коннекторы) в папки не кладутся: у них права источника.
+    Непустую папку удалить нельзя (RESTRICT): иначе документы закрытой
+    папки стали бы видны всем.
+    """
+
+    __tablename__ = "folders"
+    __table_args__ = (
+        Index("uq_folders_tenant_name", "tenant_id", text("lower(name)"), unique=True),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    restricted: Mapped[bool] = mapped_column(default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Notification(TenantMixin, Base):
+    """Колокольчик (ТЗ §8): событие компании для одного человека —
+    остановлено подключение, лимит вопросов, заявка на вступление,
+    недельная сводка. Письмо о том же — по настройкам получателя."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class NotificationSetting(TenantMixin, Base):
+    """Какие письма слать (ТЗ §8). Строки нет — все включены: у нового
+    администратора письма о важном приходят сразу."""
+
+    __tablename__ = "notification_settings"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    email_connectors: Mapped[bool] = mapped_column(default=True, server_default=true())
+    email_credits: Mapped[bool] = mapped_column(default=True, server_default=true())
+    email_join_requests: Mapped[bool] = mapped_column(
+        default=True, server_default=true()
+    )
+    email_weekly_digest: Mapped[bool] = mapped_column(
+        default=True, server_default=true()
+    )
+
+
+class SupportRequest(Base):
+    """«Написать в поддержку» (ТЗ §8). Обращение — от учётки (у человека
+    может не быть компании), поэтому вне RLS; читает его команда в нашей
+    панели. В Telegram команды уходит только номер и тема — без текста и
+    почты (персональные данные — не в зарубежный мессенджер)."""
+
+    __tablename__ = "support_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "topic IN ('login', 'documents', 'answers', 'billing', 'other')",
+            name="ck_support_requests_topic",
+        ),
+        CheckConstraint(
+            "status IN ('new', 'answered', 'closed')",
+            name="ck_support_requests_status",
+        ),
+        Index("ix_support_requests_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
+    )
+    topic: Mapped[str] = mapped_column(String(16))
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FolderDepartment(TenantMixin, Base):
+    """Отдел, которому открыта закрытая папка. Удалили отдел — пропал и
+    доступ (CASCADE)."""
+
+    __tablename__ = "folder_departments"
+
+    folder_id: Mapped[UUID] = mapped_column(
+        ForeignKey("folders.id", ondelete="CASCADE"), primary_key=True
+    )
+    department_id: Mapped[UUID] = mapped_column(
+        ForeignKey("departments.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+
+
+class User(TenantMixin, Base):
+    """Членство учётки в компании (ТЗ §2).
+
+    Таблица и класс называются по-старому: на users.id ссылаются журнал
+    вопросов, доступы к документам, подключения сотрудников — для них
+    «пользователь» и был человеком внутри одной компании. Личное (почта,
+    пароль, имя) — в Account.
+    """
+
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "account_id", name="uq_user_tenant_account"),
+        CheckConstraint(
+            "status IN ('active', 'blocked', 'pending', 'left')",
+            name="ck_users_status",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    # NULL — учётку удалили: членство остаётся ради ссылок журнала
+    # вопросов и показывается как «удалённый пользователь».
+    account_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), index=True
+    )
+    role: Mapped[UserRole]
+    status: Mapped[MemberStatus] = mapped_column(
+        SAEnum(
+            MemberStatus,
+            native_enum=False,
+            length=16,
+            values_callable=lambda members: [m.value for m in members],
+        ),
+        default=MemberStatus.ACTIVE,
+        server_default=MemberStatus.ACTIVE.value,
+    )
+    # Версия членства: смена роли, блокировка и удаление из компании
+    # увеличивают её — access-токены этой компании отвергаются сразу.
+    token_version: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Должность и отдел — свои в каждой компании (ТЗ §4): заполняет сам
+    # человек, администратор может поправить.
+    position: Mapped[str | None] = mapped_column(String(100))
+    department_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("departments.id", ondelete="SET NULL"), index=True
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Первые шаги (ТЗ §8): подсказки сотруднику показаны, чек-лист
+    # администратора скрыт — в членстве, чтобы не всплывали на каждом
+    # новом устройстве.
+    tips_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checklist_hidden_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # joined: имя и почта нужны почти везде, где есть членство; accounts
+    # не тенантская, фильтр по тенанту на соединение не влияет.
+    account: Mapped[Account | None] = relationship(lazy="joined", innerjoin=False)
+
+    @property
+    def is_active(self) -> bool:
+        return self.status is MemberStatus.ACTIVE
+
+    @property
+    def email(self) -> str | None:
+        return self.account.email if self.account else None
+
+    @property
+    def full_name(self) -> str | None:
+        return self.account.full_name if self.account else None
+
 
 class Invite(TenantMixin, Base):
-    """Ссылка-приглашение в компанию (решение 28.09).
+    """Приглашение в компанию: ссылка и код (решения 28.09 и 03.10).
 
-    Админ отправляет ссылку куда угодно (мессенджер, почта); по ней человек
-    сам заводит учётку сотрудника в этой компании. Хранится только sha256
-    токена, как у refresh-токенов: утечка таблицы не даёт действующих
-    ссылок. Под RLS: ссылка ищется в контексте компании из адреса
-    (/join/<код>#<токен>).
+    Админ отправляет ссылку или код куда угодно (рабочий чат, почта); по
+    ним человек со своей учёткой kronto вступает в компанию. Хранятся
+    только sha256 токена ссылки и кода, как у refresh-токенов: утечка
+    таблицы не даёт действующих приглашений. Под RLS; компания по хешу
+    находится через InviteLookup.
     """
 
     __tablename__ = "invites"
@@ -158,12 +513,254 @@ class Invite(TenantMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # sha256 кода приглашения (K7QM-4XPA) — той же ссылки в короткой
+    # форме, чтобы продиктовать (ТЗ §2). NULL у ссылок до 03.10.
+    code_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
     max_uses: Mapped[int]
     uses: Mapped[int] = mapped_column(default=0, server_default="0")
     # Почта присоединяющегося — только в этом домене (и его поддоменах);
     # пусто — любая. Хранится в нижнем регистре, без «@».
     email_domain: Mapped[str | None] = mapped_column(String(253))
+    # Вступивший ждёт одобрения администратора (по умолчанию — нет).
+    requires_approval: Mapped[bool] = mapped_column(
+        default=False, server_default=false()
+    )
+    # Роль вступающего. ADMIN — только у приглашения первого
+    # администратора, которое выдаёт команда Kronto (cli); админ компании
+    # создаёт приглашения сотрудников.
+    role: Mapped[UserRole] = mapped_column(
+        default=UserRole.EMPLOYEE, server_default=UserRole.EMPLOYEE.name
+    )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class InviteLookup(Base):
+    """Хеш ссылки или кода приглашения → компания.
+
+    Приглашения под RLS, а человек со ссылкой или кодом компанию ещё не
+    знает (в ссылке с 03.10 её нет, код — 8 символов). Эта таблица —
+    только хеши и идентификаторы, без данных компании; по найденному
+    tenant_id приглашение читается уже в его контексте.
+    """
+
+    __tablename__ = "invite_lookups"
+
+    hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    invite_id: Mapped[UUID] = mapped_column(
+        ForeignKey("invites.id", ondelete="CASCADE"), index=True
+    )
+
+
+class CompanyRequest(Base):
+    """Заявка «Подключить компанию» от учётки без компании (ТЗ §2).
+
+    Одобряет команда Kronto: создаётся компания, заявитель становится
+    её администратором. Не тенантская: компании ещё нет.
+    """
+
+    __tablename__ = "company_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('new', 'approved', 'rejected', 'cancelled')",
+            name="ck_company_requests_status",
+        ),
+        CheckConstraint(
+            "seats IS NULL OR seats > 0", name="ck_company_requests_seats_positive"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    company_name: Mapped[str] = mapped_column(String(200))
+    seats: Mapped[int | None]
+    comment: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailTokenPurpose(enum.Enum):
+    VERIFY_EMAIL = "verify_email"
+    RESET_PASSWORD = "reset_password"  # noqa: S105 — назначение, не пароль
+    CHANGE_EMAIL = "change_email"
+    # Код на прежний адрес — второй фактор смены почты без приложения.
+    CHANGE_EMAIL_CODE = "change_email_code"
+    REVERT_EMAIL = "revert_email"
+
+
+class EmailToken(Base):
+    """Одноразовая ссылка или код из письма (ТЗ §3).
+
+    Хранятся только sha256 ссылки и кода. Код из 6 цифр — для
+    подтверждения почты с телефона; его перебор ограничен попытками на
+    сам токен и частотой запросов.
+    """
+
+    __tablename__ = "email_tokens"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('verify_email', 'reset_password', 'change_email', "
+            "'change_email_code', 'revert_email')",
+            name="ck_email_tokens_purpose",
+        ),
+        Index("ix_email_tokens_account_purpose", "account_id", "purpose"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE")
+    )
+    purpose: Mapped[str] = mapped_column(String(32))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    code_hash: Mapped[str | None] = mapped_column(String(64))
+    # Смена почты: новый адрес (change_email) или прежний (revert_email).
+    email: Mapped[str | None] = mapped_column(String(254))
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class OutboxEmail(Base):
+    """Письмо в очереди на отправку (ТЗ §3).
+
+    Запрос только кладёт письмо сюда в своей транзакции, отправляет
+    воркер: сбой почты не ломает регистрацию, письмо уйдёт повторной
+    попыткой. Текст после отправки стирается — в нём ссылки и коды.
+    """
+
+    __tablename__ = "outbox_emails"
+    __table_args__ = (Index("ix_outbox_emails_pending", "sent_at", "next_attempt_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    to_email: Mapped[str] = mapped_column(String(254))
+    kind: Mapped[str] = mapped_column(String(32))
+    subject: Mapped[str] = mapped_column(String(200))
+    text_body: Mapped[str] = mapped_column(Text)
+    html_body: Mapped[str] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class BackupCode(Base):
+    """Резервный код второго фактора (ТЗ §3): 10 штук, каждый — один раз.
+
+    На случай потерянного телефона. Хранится sha256 с солью учётки.
+    """
+
+    __tablename__ = "backup_codes"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[str] = mapped_column(String(64))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Passkey(Base):
+    """Ключ доступа (WebAuthn, ТЗ §3): отпечаток, Face ID, Windows Hello,
+    аппаратный ключ. Хранится открытый ключ — секрета у нас нет."""
+
+    __tablename__ = "passkeys"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    credential_id: Mapped[bytes] = mapped_column(LargeBinary, unique=True)
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    transports: Mapped[list[str]] = mapped_column(
+        ARRAY(String(32)), default=list, server_default="{}"
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TrustedDevice(Base):
+    """«Запомнить это устройство» (ТЗ §3): 30 дней без второго фактора.
+
+    Браузер держит случайный токен в httpOnly-cookie, здесь — sha256.
+    «Выйти везде» и смена пароля забывают все устройства.
+    """
+
+    __tablename__ = "trusted_devices"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class AuthChallenge(Base):
+    """Незавершённый шаг входа или настройки второго фактора (ТЗ §3).
+
+    login — пароль верный, ждём второй фактор (браузер держит токен,
+    здесь — sha256); totp_setup — секрет приложения до подтверждения
+    кодом; passkey_setup — challenge регистрации ключа. Короткий срок,
+    одноразовый.
+    """
+
+    __tablename__ = "auth_challenges"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('login', 'totp_setup', 'passkey_setup')",
+            name="ck_auth_challenges_purpose",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    purpose: Mapped[str] = mapped_column(String(16))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # Код на почту для входа — sha256 с солью учётки.
+    email_code_hash: Mapped[str | None] = mapped_column(String(64))
+    webauthn_challenge: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # Секрет TOTP до подтверждения — зашифрован SecretBox.
+    payload: Mapped[str | None] = mapped_column(Text)
+    remember: Mapped[bool] = mapped_column(default=False, server_default=false())
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -215,9 +812,13 @@ class Lead(Base):
 class RefreshToken(Base):
     """Выданный refresh-токен (хранится только sha256).
 
+    Принадлежит учётке, не компании: вход — один на человека. tenant_id
+    и user_id — компания, выбранная в этой сессии, и членство в ней
+    (NULL — человек без компании или ещё не выбрал). Переключение
+    компании выдаёт новую пару с другим tenant_id.
+
     Не TenantMixin намеренно: токен предъявляют до того, как известен
-    тенант, — поиск идёт по хешу, и уже из найденной строки берутся
-    пользователь и тенант. tenant_id хранится для аудита и каскадов.
+    тенант, — поиск идёт по хешу.
 
     family_id объединяет цепочку ротаций одного входа. Повторное
     предъявление уже использованного токена — признак кражи: отзывается
@@ -227,14 +828,23 @@ class RefreshToken(Base):
     __tablename__ = "refresh_tokens"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    tenant_id: Mapped[UUID] = mapped_column(
+    tenant_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("tenants.id", ondelete="CASCADE"), index=True
     )
     family_id: Mapped[UUID] = mapped_column(index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # «Запомнить это устройство» не отмечено: cookie без срока, сессия
+    # кончается с браузером (ТЗ §3).
+    remember: Mapped[bool] = mapped_column(default=True, server_default=true())
+    # Для списка сеансов в настройках (ТЗ §3): браузер и адрес при выдаче.
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+    ip: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -300,6 +910,11 @@ class Material(TenantMixin, Base):
     # (MaterialVisibility). Проверяется в поиске чанков.
     visibility: Mapped[str] = mapped_column(
         String(16), default="tenant", server_default="tenant"
+    )
+    # Папка загруженного документа (ТЗ §5): закрытая папка сужает круг
+    # тех, кто видит документ, до своих отделов и администраторов.
+    folder_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("folders.id", ondelete="RESTRICT"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -500,6 +1115,13 @@ class QaLog(TenantMixin, Base):
     output_tokens: Mapped[int] = mapped_column(default=0, server_default="0")
     credits: Mapped[int] = mapped_column(default=0, server_default="0")
     feedback: Mapped[int | None] = mapped_column(SmallInteger)
+    # Что не так с ответом (ТЗ §6): причина из списка и комментарий —
+    # после mask_pii, как вопрос. Видны только обезличенно.
+    feedback_reason: Mapped[str | None] = mapped_column(String(32))
+    feedback_comment: Mapped[str | None] = mapped_column(Text)
+    # Сколько выдержек из вложения сотрудника ушло в промпт (ТЗ §6): такие
+    # ответы — не по базе компании, eval и отчёт о пробелах их различают.
+    attachment_chunks: Mapped[int] = mapped_column(default=0, server_default="0")
     # Заполняет ночная задача отчёта о пробелах (classify_miss).
     miss_kind: Mapped[str | None] = mapped_column(String(32))
     # Память диалога (BH-28). Сами реплики — в Redis, не здесь
@@ -780,4 +1402,167 @@ class ConnectorSyncJob(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+# --- Чат (ТЗ §6) ------------------------------------------------------------
+
+
+class Conversation(TenantMixin, Base):
+    """Диалог сотрудника с ассистентом (ТЗ §6): список слева, как в Claude.
+
+    Видит только сам человек (user_id — его членство в компании) и те, с
+    кем он поделился ссылкой внутри компании (share_token). Администратор
+    чужих диалогов не видит: у него только обезличенная статистика.
+
+    Сообщения — дерево (parent_id): правка вопроса и «Ответить заново»
+    добавляют ветку, прежняя остаётся и переключается стрелками.
+    current_message_id — лист показанной ветки; без внешнего ключа:
+    сообщения ссылаются на диалог, и круговая зависимость таблиц мешала
+    бы вставке и удалению.
+    """
+
+    __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_owner_updated", "user_id", "updated_at"),
+        UniqueConstraint("share_token", name="uq_conversations_share_token"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(120))
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_message_id: Mapped[UUID | None] = mapped_column(Uuid)
+    # Ссылка «поделиться»: случайный токен; снимок — ветка до
+    # shared_message_id на момент, когда поделились (как в ChatGPT).
+    share_token: Mapped[str | None] = mapped_column(String(64))
+    shared_message_id: Mapped[UUID | None] = mapped_column(Uuid)
+    shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChatMessage(TenantMixin, Base):
+    """Вопрос (role=user) или ответ (role=assistant) в диалоге.
+
+    Текст ответа хранится — иначе диалог не открыть снова; это решение
+    ТЗ от 03.10 вместо реплик только в Redis (BH-28). Журнал qa_log
+    по-прежнему без ответа: в нём обезличенная статистика.
+
+    sources — снимок выдержек ответа: при показе фрагмент документа
+    открывается, только если документ жив и доступен смотрящему.
+    """
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_chat_messages_role"),
+        CheckConstraint(
+            "status IN ('complete', 'generating', 'stopped', 'failed')",
+            name="ck_chat_messages_status",
+        ),
+        CheckConstraint(
+            "origin IS NULL OR origin IN ('documents', 'general_knowledge', 'none')",
+            name="ck_chat_messages_origin",
+        ),
+        CheckConstraint("feedback IN (-1, 1)", name="ck_chat_messages_feedback"),
+        Index("ix_chat_messages_conversation", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    conversation_id: Mapped[UUID] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    parent_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    status: Mapped[str] = mapped_column(
+        String(16), default="complete", server_default="complete"
+    )
+    origin: Mapped[str | None] = mapped_column(String(32))
+    sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]"
+    )
+    # Вложения вопроса (chat_attachments.id); правка вопроса их наследует.
+    attachment_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, server_default="{}"
+    )
+    qa_log_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("qa_log.id", ondelete="SET NULL")
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    feedback: Mapped[int | None] = mapped_column(SmallInteger)
+    feedback_reason: Mapped[str | None] = mapped_column(String(32))
+    feedback_comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChatAttachment(TenantMixin, Base):
+    """Файл к вопросу («спроси по этому договору», ТЗ §6).
+
+    В базу компании не попадает: ни в поиск коллег, ни в документы.
+    Хранится только извлечённый текст по фрагментам — исходный файл нет.
+    conversation_id пуст, пока вопрос с файлом не отправлен; такие
+    вложения удаляет purge через сутки. Удаление диалога удаляет и их.
+    """
+
+    __tablename__ = "chat_attachments"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255))
+    source_format: Mapped[str] = mapped_column(String(16))
+    size: Mapped[int]
+    tokens: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChatAttachmentChunk(TenantMixin, Base):
+    """Фрагмент вложения. Эмбеддинг — только у файлов больше бюджета
+    выдержек: маленький файл целиком уходит в промпт."""
+
+    __tablename__ = "chat_attachment_chunks"
+    __table_args__ = (
+        UniqueConstraint(
+            "attachment_id", "position", name="uq_chat_attachment_chunk_position"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    attachment_id: Mapped[UUID] = mapped_column(
+        ForeignKey("chat_attachments.id", ondelete="CASCADE")
+    )
+    position: Mapped[int]
+    heading_path: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
+    embed_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+
+
+class ChatSuggestion(TenantMixin, Base):
+    """Подсказка вопроса на пустом экране чата, заданная админом (ТЗ §6)."""
+
+    __tablename__ = "chat_suggestions"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    text: Mapped[str] = mapped_column(String(200))
+    position: Mapped[int] = mapped_column(default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

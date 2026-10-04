@@ -1,9 +1,10 @@
 """Места компании: сколько учёток можно держать активными и что будет с
 пулом кредитов при смене числа мест (решения владельца продукта 28.09).
 
-- П-2д: активных учёток не больше оплаченных мест; заблокированные не
-  считаются. Место — сотрудник за компьютером (досье 5.2), цена — за
-  место (10.4): сто человек на тридцати местах расходятся с моделью.
+- П-2д: активных членств не больше оплаченных мест; заблокированные,
+  ждущие одобрения и ушедшие не считаются. Место — сотрудник за
+  компьютером (досье 5.2), цена — за место (10.4): сто человек на
+  тридцати местах расходятся с моделью.
 - П-2г: сокращение мест ниже уже потраченного за месяц останавливает
   вопросы до 1-го числа — `cli set-seats` предупреждает и просит --yes.
 """
@@ -19,12 +20,13 @@ from corp_ed.core.config import get_billing_settings
 from corp_ed.core.exceptions import SeatsLimitError
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.credits import billing_period
-from corp_ed.domain.models import Tenant, User
+from corp_ed.domain.models import MemberStatus, Tenant, User
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 
 ADMIN_SEATS_MESSAGE = (
-    "Все места заняты: активных сотрудников {active} из {seats}. Заблокируйте "
-    "тех, кто больше не работает, или напишите нам, чтобы добавить места."
+    "Все места заняты: активных сотрудников {active} из {seats}. Уберите из "
+    "компании тех, кто больше не работает, или напишите нам, чтобы добавить "
+    "места."
 )
 JOIN_SEATS_MESSAGE = "В компании закончились места — сообщите администратору."
 
@@ -33,7 +35,7 @@ async def count_active_users(session: AsyncSession, tenant_id: UUID) -> int:
     result = await session.scalar(
         select(func.count())
         .select_from(User)
-        .where(User.tenant_id == tenant_id, User.is_active.is_(True))
+        .where(User.tenant_id == tenant_id, User.status == MemberStatus.ACTIVE)
     )
     return int(result or 0)
 
@@ -92,8 +94,8 @@ async def seats_check(
         )
     if active > seats:
         notes.append(
-            f"активных учёток {active} — больше мест: новых сотрудников завести "
-            "нельзя, пока лишние не заблокированы."
+            f"активных сотрудников {active} — больше мест: новых пустить нельзя, "
+            "пока лишние не убраны из компании."
         )
     return SeatsCheck(stops_pool=stops, message=" ".join(notes) or None)
 

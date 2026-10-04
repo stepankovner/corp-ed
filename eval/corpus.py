@@ -6,8 +6,14 @@ docx — mammoth + markdownify, pdf — pymupdf4llm постранично че�
 xlsx, pptx, doc — `corp_ed.ingest.xlsx` / `pptx` / `doc` (Р-5, BH-33…35). md
 и txt читаются как есть. Библиотеки извлечения нужны, только если в папке
 есть docx/pdf (eval/requirements.txt).
+
+PDF без AGPL (П-12, BH-39): `EVAL_PDF_PARSER=pdfplumber` — разбор
+`corp_ed.ingest.pdf`. По умолчанию — pymupdf4llm, как в продукте сейчас:
+финальный прогон меряет продукт как есть (конфигурация A), новый разбор —
+отдельной конфигурацией F (`docs/ml-holdout-protocol.md`).
 """
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -81,7 +87,11 @@ def extract_markdown(path: Path) -> str:
 
         with path.open("rb") as file:
             html = mammoth.convert_to_html(file).value
-        return str(markdownify.markdownify(html, heading_style="ATX"))
+        # sup_symbol — как предложено бэкенду (BH-36): верхний индекс
+        # остаётся тегом, `preprocess` решает, что с ним делать.
+        return str(
+            markdownify.markdownify(html, heading_style="ATX", sup_symbol="<sup>")
+        )
     if suffix == ".xlsx":
         from corp_ed.ingest.xlsx import xlsx_to_markdown
 
@@ -94,6 +104,10 @@ def extract_markdown(path: Path) -> str:
         from corp_ed.ingest.pptx import pptx_to_markdown
 
         return pptx_to_markdown(path.read_bytes())
+    if suffix == ".pdf" and os.environ.get("EVAL_PDF_PARSER") == "pdfplumber":
+        from corp_ed.ingest.pdf import pdf_to_markdown
+
+        return pdf_to_markdown(path.read_bytes())
     if suffix == ".pdf":
         import pymupdf4llm
 

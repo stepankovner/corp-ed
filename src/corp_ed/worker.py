@@ -1,10 +1,11 @@
 """Воркер фоновых задач: python -m corp_ed.worker
 
-Два цикла в одном процессе:
+Три цикла в одном процессе:
 - IngestWorker — задачи ingest_jobs (нарезка, эмбеддинги, замена чанков);
 - SyncWorker — задачи connector_sync_jobs (синхронизация коннекторов) и
   планировщик, который раз в минуту ставит в очередь подключения с
-  истёкшим интервалом.
+  истёкшим интервалом;
+- MailWorker — письма из outbox_emails (services/mail_worker.py).
 
 Каждая задача выполняется в контексте своего тенанта, временные сбои
 повторяются с растущей паузой. Останавливается по SIGTERM/SIGINT после
@@ -41,13 +42,16 @@ from corp_ed.connectors.registry import default_registry
 from corp_ed.core.config import (
     LLMSettings,
     RagSettings,
+    get_billing_settings,
     get_connector_settings,
     get_http_settings,
+    get_mail_settings,
     get_team_notify_settings,
 )
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.mail import build_sender
 from corp_ed.core.metrics import WORKER_HEARTBEAT, WORKER_JOBS, WORKER_QUEUE
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.core.readiness import WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL
@@ -72,7 +76,9 @@ from corp_ed.repositories.ingest_job_repository import (
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.connector_sync_service import ConnectorSyncService
+from corp_ed.services.digest_service import DigestService
 from corp_ed.services.ingest_service import IngestService
+from corp_ed.services.mail_worker import MailWorker
 from corp_ed.services.team_notify import build_team_notifier
 from corp_ed.services.team_notify import drain as drain_team_notifier
 
@@ -325,6 +331,27 @@ class SyncWorker:
         logger.info("sync_worker_stopped")
 
 
+DIGEST_EVERY = 900.0
+"""Как часто проверять, не пора ли разослать недельные сводки."""
+
+
+async def digest_loop(
+    stop: asyncio.Event,
+    service: DigestService,
+    every: float = DIGEST_EVERY,
+) -> None:
+    """Недельная сводка администраторам (ТЗ §8): по понедельникам с 9:00.
+    В воркере, а не в cron: на стенде cron ставит только первичная
+    настройка сервера, а воркер обновляется с каждой выкаткой."""
+    while not stop.is_set():
+        try:
+            await service.send_due()
+        except Exception:
+            logger.exception("digest_loop_error")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)
+
+
 async def heartbeat(
     stop: asyncio.Event,
     path: Path = HEARTBEAT_PATH,
@@ -425,10 +452,19 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
         )
         ingest_worker = IngestWorker(get_session_maker(), gateway, rag)
         sync_worker = SyncWorker(get_session_maker(), sync_service)
+        mail_worker = MailWorker(get_session_maker(), build_sender(get_mail_settings()))
         try:
             await asyncio.gather(
                 ingest_worker.run_forever(stop),
                 sync_worker.run_forever(stop),
+                mail_worker.run_forever(stop),
+                digest_loop(
+                    stop,
+                    DigestService(
+                        get_session_maker(),
+                        zone=get_billing_settings().billing_timezone,
+                    ),
+                ),
                 heartbeat(stop, redis=redis, session_maker=get_session_maker()),
             )
         finally:

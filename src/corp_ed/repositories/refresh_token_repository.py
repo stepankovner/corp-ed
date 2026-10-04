@@ -11,9 +11,8 @@ class RefreshTokenRepository:
     """Хранилище refresh-токенов.
 
     Таблица не тенант-скоупная (см. RefreshToken): выборка по хешу
-    токена, которого у атакующего нет. Отзыв — bulk UPDATE по
-    пользователю или семье, фильтр по тенанту здесь не нужен: ключ
-    уже однозначно принадлежит одному тенанту.
+    токена, которого у атакующего нет. Отзыв — bulk UPDATE по учётке
+    или семье: вход один на человека, а не на компанию.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -34,6 +33,24 @@ class RefreshTokenRepository:
         )
         return result.scalar_one_or_none()
 
+    async def family_revoked(self, family_id: UUID) -> bool:
+        """Сеанс закрыт: «Выйти», «Завершить» в списке сеансов, повтор
+        украденного токена, «выйти везде». revoked_at пишут только
+        revoke_family и revoke_account, и всей цепочке сразу, поэтому одна
+        отозванная запись значит закрытый сеанс. Сеанс без записей — не
+        отозван, поэтому отозванные записи нельзя удалять раньше, чем
+        истекут access-токены (ACCESS_TOKEN_TTL_MINUTES): сейчас их не
+        удаляет никто, кроме удаления самой учётки."""
+        result = await self.session.execute(
+            select(RefreshToken.id)
+            .where(
+                RefreshToken.family_id == family_id,
+                RefreshToken.revoked_at.is_not(None),
+            )
+            .limit(1)
+        )
+        return result.first() is not None
+
     async def revoke_family(self, family_id: UUID, now: datetime) -> None:
         await self.session.execute(
             update(RefreshToken)
@@ -43,9 +60,12 @@ class RefreshTokenRepository:
             .values(revoked_at=now)
         )
 
-    async def revoke_user(self, user_id: UUID, now: datetime) -> None:
+    async def revoke_account(self, account_id: UUID, now: datetime) -> None:
         await self.session.execute(
             update(RefreshToken)
-            .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
+            .where(
+                RefreshToken.account_id == account_id,
+                RefreshToken.revoked_at.is_(None),
+            )
             .values(revoked_at=now)
         )

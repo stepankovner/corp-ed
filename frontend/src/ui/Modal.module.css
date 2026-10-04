@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgba(22, 22, 26, 0.4);
+  background: var(--overlay);
   animation: fade 0.2s var(--ease);
 }
 .content {
@@ -14,7 +14,8 @@
   width: min(560px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
-  background: var(--bg);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-pop);
   padding: var(--s-5);
@@ -33,6 +34,7 @@
 .title {
   font-size: 1.3125rem;
   margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 .description {
   color: var(--muted);
@@ -46,6 +48,23 @@
   gap: var(--s-3);
   margin-top: var(--s-5);
 }
+/* На телефоне окно — шторкой снизу: до кнопок дотянуться большим пальцем. */
+@media (max-width: 640px) {
+  .content {
+    top: auto;
+    bottom: 0;
+    transform: translateX(-50%);
+    width: 100vw;
+    max-height: calc(100dvh - 24px);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    border-bottom: 0;
+    padding: var(--s-5) var(--gutter) calc(var(--s-5) + env(safe-area-inset-bottom));
+    animation-name: sheet;
+  }
+  .footer > * {
+    flex: 1;
+  }
+}
 @keyframes fade {
   from {
     opacity: 0;
@@ -55,5 +74,11 @@
   from {
     opacity: 0;
     transform: translate(-50%, calc(-50% + 12px));
+  }
+}
+@keyframes sheet {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 24px);
   }
 }

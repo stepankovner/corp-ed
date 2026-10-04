@@ -4,6 +4,7 @@ import { Link, Navigate } from "react-router";
 import { errorMessage } from "../api/errors";
 import { useAuth, useMe } from "../auth/context";
 import { MIN_PASSWORD, passwordProblem } from "../auth/password";
+import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
@@ -14,6 +15,7 @@ export function ChangePasswordPage() {
   const me = useMe();
   const { changePassword, logout } = useAuth();
   const forced = me.must_change_password;
+  useDocumentTitle(forced ? "Задайте свой пароль" : "Смена пароля");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -44,11 +46,11 @@ export function ChangePasswordPage() {
 
   return (
     <AuthLayout
-      bar={me.company_name}
+      bar="kronto"
       title={forced ? "Задайте свой пароль" : "Смена пароля"}
       lead={
         forced
-          ? "Вы вошли по временному паролю от администратора. Придумайте свой — временный он знает."
+          ? "Вы вошли по временному паролю от команды kronto. Придумайте свой — временный видел кто-то кроме вас."
           : "После смены пароля остальные сеансы завершатся."
       }
     >

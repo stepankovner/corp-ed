@@ -68,9 +68,24 @@ UNMATCHED = "unmatched"
 
 
 def _route(scope: Scope) -> str:
+    """Шаблон маршрута целиком: «/api/v1/materials/{material_id}».
+
+    С FastAPI 0.142 в scope["route"] — маршрут без префикса
+    include_router («/materials/{material_id}»), а префикс подключённого
+    роутера — во внутренних структурах FastAPI. Префиксы подключения у нас
+    статичные (/api/v1, main.py), поэтому недостающее начало берётся из
+    пути запроса: столько первых сегментов, сколько не покрывает шаблон.
+    Значения параметров в метку не попадают — они внутри шаблона.
+    """
     route = scope.get("route")
-    path = getattr(route, "path", None)
-    return path if isinstance(path, str) else UNMATCHED
+    template = getattr(route, "path", None)
+    if not isinstance(template, str):
+        return UNMATCHED
+    path = str(scope.get("path", ""))
+    missing = path.rstrip("/").count("/") - template.rstrip("/").count("/")
+    if missing <= 0:
+        return template
+    return "/".join(path.split("/")[: missing + 1]) + template
 
 
 class MetricsMiddleware:

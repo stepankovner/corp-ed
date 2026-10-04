@@ -115,6 +115,10 @@ class ConnectorResponse(BaseModel):
     credentials_set_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    grants_active: int | None = None
+    """per_user: сколько сотрудников подключились сами («5 из 12», ТЗ §5)."""
+    members_active: int | None = None
+    """Сколько людей работает в компании — второе число в «5 из 12»."""
 
 
 class ConnectorTestResponse(BaseModel):

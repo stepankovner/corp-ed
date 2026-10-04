@@ -18,6 +18,10 @@ from corp_ed.main import app
         ("GET", "/api/v1/auth/manager-only"),
         ("POST", "/api/v1/programs/generate"),
         ("GET", "/api/v1/programs/00000000-0000-0000-0000-000000000000"),
+        # Сеансы переехали в /auth/sessions (этап 11): под /account
+        # refresh-cookie не приходила, и «это устройство» не отмечалось.
+        ("GET", "/api/v1/account/sessions"),
+        ("POST", "/api/v1/account/sessions/00000000-0000-0000-0000-000000000000/end"),
     ],
 )
 async def test_removed_endpoint_is_not_routed(
@@ -31,7 +35,16 @@ async def test_removed_endpoint_is_not_routed(
 
 
 def test_no_route_mentions_old_concept() -> None:
-    paths = [getattr(route, "path", "") for route in app.routes]
+    # Пути ручек — из схемы OpenAPI: с FastAPI 0.142 app.routes отдаёт
+    # подключённые роутеры целиком, без путей их ручек.
+    paths = {getattr(route, "path", "") for route in app.routes}
+    paths |= set(app.openapi()["paths"])
 
-    for word in ("program", "brief", "intern", "register"):
+    for word in ("program", "brief", "intern"):
         assert not any(word in path for path in paths), word
+    # Регистрация вернулась одна и намеренно (ТЗ §2, 03.10): учётка без
+    # компании, подтверждение почты, лимит по IP. Старая /users/register
+    # пускала в компанию без проверки — её быть не должно.
+    assert [path for path in sorted(paths) if "register" in path] == [
+        "/api/v1/auth/register"
+    ]

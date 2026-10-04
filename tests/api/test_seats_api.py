@@ -1,5 +1,5 @@
 """Места компании (решения владельца продукта 28.09):
-активных учёток не больше мест (П-2д); set-seats предупреждает, если
+активных членств не больше мест (П-2д); set-seats предупреждает, если
 новый пул меньше потраченного (П-2г)."""
 
 from uuid import uuid4
@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.cli import _parser
 from corp_ed.core.security import hash_password
-from corp_ed.domain.models import Tenant, User, UserRole
+from corp_ed.domain.models import MemberStatus, Tenant, User, UserRole
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.seats import seats_check
 from corp_ed.services.tenant_service import TenantService
-from tests.api.conftest import bearer
+from tests.api.conftest import account_bearer, bearer
+from tests.factories import make_account, make_user
 from tests.test_credits import spend
 
 
@@ -29,11 +30,11 @@ async def _fill_seats(session: AsyncSession, tenant: Tenant, seats: int) -> None
     active = await session.scalar(
         select(func.count())
         .select_from(User)
-        .where(User.tenant_id == tenant.id, User.is_active.is_(True))
+        .where(User.tenant_id == tenant.id, User.status == MemberStatus.ACTIVE)
     )
     for n in range(seats - int(active or 0)):
         session.add(
-            User(
+            make_user(
                 id=uuid4(),
                 tenant_id=tenant.id,
                 email=f"filler{n}@test.com",
@@ -47,24 +48,6 @@ async def _fill_seats(session: AsyncSession, tenant: Tenant, seats: int) -> None
 # --- П-2д: активных учёток не больше мест -------------------------------------------
 
 
-async def test_admin_cannot_add_user_beyond_seats(
-    api: httpx.AsyncClient,
-    admin_account: User,
-    tenant_ctx: Tenant,
-    session: AsyncSession,
-) -> None:
-    await _fill_seats(session, tenant_ctx, 3)
-
-    response = await api.post(
-        "/api/v1/users",
-        json={"email": "extra@test.com", "role": "employee"},
-        headers=bearer(admin_account),
-    )
-
-    assert response.status_code == 409
-    assert "Все места заняты: активных сотрудников 3 из 3" in response.json()["detail"]
-
-
 async def test_blocked_users_free_their_seats(
     api: httpx.AsyncClient,
     admin_account: User,
@@ -73,24 +56,31 @@ async def test_blocked_users_free_their_seats(
     session: AsyncSession,
 ) -> None:
     await _fill_seats(session, tenant_ctx, 3)
+    waiting = make_user(email="newcomer@test.com", status=MemberStatus.PENDING)
+    session.add(waiting)
+    await session.commit()
+
+    full = await api.post(
+        f"/api/v1/users/{waiting.id}/approve", headers=bearer(admin_account)
+    )
+    assert full.status_code == 409
+    assert "Все места заняты: активных сотрудников 3 из 3" in full.json()["detail"]
+
     block = await api.patch(
         f"/api/v1/users/{account.id}",
-        json={"is_active": False},
+        json={"blocked": True},
         headers=bearer(admin_account),
     )
     assert block.status_code == 200
-
-    created = await api.post(
-        "/api/v1/users",
-        json={"email": "newcomer@test.com", "role": "employee"},
-        headers=bearer(admin_account),
+    approved = await api.post(
+        f"/api/v1/users/{waiting.id}/approve", headers=bearer(admin_account)
     )
-    assert created.status_code == 201
+    assert approved.status_code == 200
 
     # Место снова занято — разблокировать прежнего нельзя.
     unblock = await api.patch(
         f"/api/v1/users/{account.id}",
-        json={"is_active": True},
+        json={"blocked": False},
         headers=bearer(admin_account),
     )
     assert unblock.status_code == 409
@@ -108,14 +98,13 @@ async def test_invite_join_stops_when_seats_are_full(
     token = created.json()["token"]
     await _fill_seats(session, tenant_ctx, 2)
 
+    late = make_account("late@test.com")
+    session.add(late)
+    await session.commit()
     response = await api.post(
         "/api/v1/invites/accept",
-        json={
-            "company_code": "test",
-            "token": token,
-            "email": "late@test.com",
-            "password": "длинная фраза для входа",
-        },
+        json={"secret": token},
+        headers=account_bearer(late),
     )
 
     assert response.status_code == 409
@@ -150,7 +139,7 @@ async def test_seats_check_mentions_extra_active_users(
 
     assert check.stops_pool is False
     assert check.message is not None
-    assert "активных учёток 2 — больше мест" in check.message
+    assert "активных сотрудников 2 — больше мест" in check.message
 
 
 async def test_seats_check_for_unknown_company_is_silent(session: AsyncSession) -> None:

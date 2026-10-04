@@ -29,6 +29,7 @@ OAUTH_STATE_TYPE = "connector_oauth"  # noqa: S105 — значение claim ty
 REFRESH_TOKEN_BYTES = 32
 
 _REQUIRED_CLAIMS = ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]
+_ACCESS_CLAIMS = [*_REQUIRED_CLAIMS, "sid"]
 _OAUTH_STATE_CLAIMS = [*_REQUIRED_CLAIMS, "tenant_id", "connector_id"]
 
 # Параметры argon2-cffi по умолчанию (RFC 9106, «низкая память»):
@@ -75,23 +76,32 @@ def password_needs_rehash(hashed_password: str) -> bool:
 
 
 def create_access_token(
-    user_id: UUID, tenant_id: UUID, role: str, token_version: int
+    account_id: UUID,
+    account_version: int,
+    *,
+    session_id: UUID,
+    tenant_id: UUID | None = None,
+    member_id: UUID | None = None,
+    role: str | None = None,
+    member_version: int | None = None,
 ) -> str:
-    """Подписанный access-токен.
+    """Подписанный access-токен учётки (ТЗ §2).
 
+    sub — учётка, ver — её версия сессий (смена пароля, «выйти везде»),
+    sid — сеанс (цепочка refresh-токенов входа): «Выйти» и «Завершить» в
+    списке сеансов закрывают его, и токен перестаёт действовать сразу, а
+    не когда истечёт.
+    Если выбрана компания — tenant_id, member_id (членство) и mver —
+    версия членства (смена роли, блокировка, удаление из компании): её
+    рост отзывает токены этой компании, не трогая вход в остальные.
     role кладётся для удобства клиента и НЕ используется для проверки
     прав: роль читается из базы на каждый запрос (get_current_user).
-    ver — версия токенов пользователя: смена пароля, блокировка или
-    смена роли увеличивают её в базе, и все выданные ранее токены
-    перестают приниматься, не дожидаясь exp.
     """
     settings = get_settings()
     now = datetime.now(UTC)
-    payload = {
-        "sub": str(user_id),
-        "tenant_id": str(tenant_id),
-        "role": role,
-        "ver": token_version,
+    payload: dict[str, Any] = {
+        "sub": str(account_id),
+        "ver": account_version,
         "typ": ACCESS_TOKEN_TYPE,
         "iss": ISSUER,
         "aud": AUDIENCE,
@@ -99,7 +109,15 @@ def create_access_token(
         "nbf": now,
         "exp": now + timedelta(minutes=settings.access_token_ttl_minutes),
         "jti": uuid4().hex,
+        "sid": str(session_id),
     }
+    if tenant_id is not None:
+        payload |= {
+            "tenant_id": str(tenant_id),
+            "member_id": str(member_id),
+            "role": role,
+            "mver": member_version,
+        }
     return jwt.encode(
         payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM
     )
@@ -118,7 +136,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
         algorithms=[ALGORITHM],
         audience=AUDIENCE,
         issuer=ISSUER,
-        options={"require": _REQUIRED_CLAIMS},
+        options={"require": _ACCESS_CLAIMS},
     )
     if payload.get("typ") != ACCESS_TOKEN_TYPE:
         raise jwt.InvalidTokenError("wrong token type")
@@ -184,10 +202,52 @@ def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def generate_temporary_password() -> str:
-    """Пароль, который команда или админ выдаёт новому пользователю.
+# Код приглашения: 8 знаков base32 Крокфорда (без I, L, O, U — их путают
+# с 1, 0 и V). 40 бит; перебор упирается в лимит запросов по IP задолго
+# до попадания в одно из живых приглашений.
+_CODE_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+INVITE_CODE_LENGTH = 8
 
-    ~120 бит энтропии. Пользователь обязан сменить его при первом входе
-    (users.must_change_password).
+
+def new_invite_code() -> str:
+    """Код приглашения для диктовки: K7QM-4XPA."""
+    raw = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(INVITE_CODE_LENGTH))
+    return f"{raw[:4]}-{raw[4:]}"
+
+
+def normalize_invite_code(code: str) -> str | None:
+    """Код в каноническом виде или None, если это не код.
+
+    Регистр, пробелы и дефисы не важны; O читается как 0, I и L — как 1:
+    так код, продиктованный по телефону, всё равно сработает.
+    """
+    cleaned = code.strip().upper().replace("-", "").replace(" ", "")
+    cleaned = cleaned.translate(str.maketrans("OIL", "011"))
+    if len(cleaned) != INVITE_CODE_LENGTH:
+        return None
+    if any(ch not in _CODE_ALPHABET for ch in cleaned):
+        return None
+    return cleaned
+
+
+def new_numeric_code(digits: int = 6) -> str:
+    """Код из письма: 6 цифр с ведущими нулями."""
+    return f"{secrets.randbelow(10**digits):0{digits}d}"
+
+
+def hash_secret(value: str) -> str:
+    """sha256 короткого секрета (код письма, код приглашения).
+
+    Соль не нужна для кодов с ограниченным числом попыток: перебор
+    упирается в счётчик попыток и лимит запросов, а не в хеш.
+    """
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def generate_temporary_password() -> str:
+    """Пароль, который команда выдаёт из CLI (cli reset-password).
+
+    ~120 бит энтропии. Человек обязан сменить его при первом входе
+    (accounts.must_change_password).
     """
     return secrets.token_urlsafe(15)

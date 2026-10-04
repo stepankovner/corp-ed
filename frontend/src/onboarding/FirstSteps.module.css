@@ -1,0 +1,128 @@
+/*
+ * Первые шаги на пустом экране чата — под приветствием, шириной с плашку
+ * подключения (.connect в Chat.module.css): лёгкая карточка, текст слева.
+ */
+.box {
+  display: grid;
+  gap: var(--s-3);
+  width: 100%;
+  max-width: 560px;
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  text-align: left;
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--control-sm);
+}
+.title {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+.count {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.hide {
+  margin-left: auto;
+  margin-right: calc(-1 * var(--s-2));
+}
+
+.bar {
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  overflow: hidden;
+}
+.bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.4s var(--ease);
+}
+
+.steps {
+  display: grid;
+  gap: var(--s-2);
+}
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+/* Кружок с номером шага; сделанный — галочка в тон «успеха». */
+.mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+}
+.done .mark {
+  border-color: transparent;
+  background: var(--success-bg);
+  color: var(--success);
+}
+.stepText {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.done .stepText {
+  color: var(--muted);
+}
+
+/* Подсказки сотруднику: две колонки плиток, на телефоне — простой список. */
+.tips {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.tip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+.tipIcon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-3);
+}
+
+@media (max-width: 480px) {
+  .box {
+    padding: var(--s-3) var(--s-4);
+  }
+  .tips {
+    grid-template-columns: 1fr;
+  }
+  .tip {
+    padding: 0;
+    background: none;
+  }
+}

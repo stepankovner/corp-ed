@@ -4,6 +4,8 @@
 numpy>=2.0            # офлайн-стенд: косинусная близость (eval/bench.py)
 mammoth>=1.8          # docx -> HTML (извлечение, как предложено бэкенду)
 markdownify>=0.13     # HTML -> Markdown
-pymupdf4llm>=0.0.17   # pdf -> Markdown постранично
+pymupdf4llm>=0.0.17   # pdf -> Markdown постранично (как в продукте до BH-39)
+# pdfplumber — уже в зависимостях проекта: разбор PDF без AGPL (ingest.pdf),
+# в eval — EVAL_PDF_PARSER=pdfplumber
 # Только для замера реранкера (M3), ставить отдельно — тянет torch:
 # sentence-transformers>=3.0

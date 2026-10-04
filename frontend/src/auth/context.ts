@@ -3,24 +3,43 @@ import { createContext, useContext } from "react";
 import type { Schemas } from "../api/client";
 
 export type Me = Schemas["MeResponse"];
+/** Выбранная компания учётки. */
+export type Company = NonNullable<Me["company"]>;
+export type MfaChallenge = Schemas["MfaChallenge"];
+export type MfaMethod = MfaChallenge["methods"][number];
+export type Tokens = Schemas["TokenResponse"];
 
 export type AuthState =
   { status: "loading" } | { status: "anonymous" } | { status: "authenticated"; user: Me };
 
-export interface AuthApi {
-  state: AuthState;
-  login: (company: string, email: string, password: string) => Promise<Me>;
-  logout: () => Promise<void>;
-  changePassword: (current: string, next: string) => Promise<Me>;
-  acceptInvite: (invite: InviteAcceptance) => Promise<Me>;
+/** Пароль верный: либо сразу вход (доверенное устройство), либо второй шаг. */
+export type LoginOutcome =
+  { status: "signed-in"; me: Me } | { status: "mfa"; challenge: MfaChallenge };
+
+export interface SecondFactor {
+  token: string;
+  method: MfaMethod;
+  code?: string;
+  credential?: Record<string, unknown>;
 }
 
-export interface InviteAcceptance {
-  company: string;
-  token: string;
-  email: string;
-  fullName: string;
-  password: string;
+export interface AuthApi {
+  state: AuthState;
+  /** Первый шаг входа: почта и пароль. remember — доверить устройство на 30 дней. */
+  login: (email: string, password: string, remember: boolean) => Promise<LoginOutcome>;
+  /** Второй шаг: код из письма или приложения, резервный код, ключ доступа. */
+  verifySecondFactor: (factor: SecondFactor) => Promise<Me>;
+  /**
+   * Сессия, которую выдала другая ручка: подтверждение почты, новый
+   * пароль, вступление в компанию.
+   */
+  signIn: (tokens: Tokens) => Promise<Me>;
+  /** Перейти в другую свою компанию; null — без компании. */
+  switchCompany: (tenantId: string | null) => Promise<Me>;
+  /** Перечитать профиль после изменений учётки (имя, защита, компании). */
+  reloadMe: () => Promise<Me>;
+  logout: () => Promise<void>;
+  changePassword: (current: string, next: string) => Promise<Me>;
 }
 
 export const AuthContext = createContext<AuthApi | null>(null);
@@ -38,20 +57,26 @@ export function useMe(): Me {
   return state.user;
 }
 
-const COMPANY_KEY = "kronto.company";
-
-export function rememberedCompany(): string {
-  try {
-    return localStorage.getItem(COMPANY_KEY) ?? "";
-  } catch {
-    return "";
-  }
+/** Выбранная компания; только внутри маршрутов компании (RequireCompany). */
+export function useCompany(): Company {
+  const { company } = useMe();
+  if (!company) throw new Error("useCompany outside RequireCompany");
+  return company;
 }
 
-export function rememberCompany(code: string): void {
-  try {
-    localStorage.setItem(COMPANY_KEY, code);
-  } catch {
-    // Не запомнили — введёт ещё раз.
-  }
+export function isAdmin(me: Me): boolean {
+  return me.company?.role === "admin";
+}
+
+/**
+ * Надёжный второй фактор обязателен (администратор хоть в одной компании
+ * или правило компании), а его нет: данные компании сервер не отдаст
+ * (403 mfa_setup_required) — сначала настройка защиты.
+ */
+export function needsStrongFactor(me: Me): boolean {
+  return me.mfa.strong_required && !me.mfa.strong;
+}
+
+export function displayName(me: Pick<Me, "full_name" | "email">): string {
+  return me.full_name || me.email;
 }

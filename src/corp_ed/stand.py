@@ -40,9 +40,14 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+from corp_ed.core import totp
+
+if TYPE_CHECKING:
+    from corp_ed.stand_scenarios import Credentials
 
 API = "/api/v1"
 DEFAULT_BASE_URL = "http://localhost:8000"
@@ -125,15 +130,48 @@ class StandClient:
         url = path if path.startswith("/health") else f"{API}{path}"
         return await self.http.request(method, url, headers=self._headers(), **kwargs)
 
-    async def login(self, company: str, email: str, password: str) -> None:
+    async def login(
+        self, email: str, password: str, totp_secret: str | None = None
+    ) -> None:
+        # Код компании во входе больше не нужен (ТЗ §2): после входа
+        # выбрана последняя компания учётки. Администратору нужен второй
+        # фактор — код приложения из секрета служебной учётки (check.sh).
         response = await self.request(
             "POST",
             "/auth/login",
-            json={"company_code": company, "email": email, "password": password},
+            json={"email": email, "password": password, "remember": False},
         )
         if response.status_code != 200:
             raise StandError(f"вход: HTTP {response.status_code} {_code(response)}")
-        self.token = response.json()["access_token"]
+        body = response.json()
+        if body.get("status") == "mfa_required":
+            methods = body["mfa"]["methods"]
+            if "totp" not in methods or not totp_secret:
+                raise StandError(
+                    "вход: нужен второй фактор — CORP_ED_TOTP_SECRET "
+                    f"(способы: {', '.join(methods)})"
+                )
+            # Код текущего шага, затем следующего: два запуска проверки за
+            # 30 секунд — тот же код, а повтор кода сервер отвергает.
+            step = totp.current_step()
+            for candidate in (step, step + 1):
+                response = await self.request(
+                    "POST",
+                    "/auth/mfa/verify",
+                    json={
+                        "token": body["mfa"]["token"],
+                        "method": "totp",
+                        "code": totp.code_at(totp_secret, candidate),
+                    },
+                )
+                if response.status_code == 200:
+                    break
+            if response.status_code != 200:
+                raise StandError(
+                    f"второй фактор: HTTP {response.status_code} {_code(response)}"
+                )
+            body = response.json()
+        self.token = body["access_token"]
 
     async def change_password(self, current: str, new: str) -> None:
         response = await self.request(
@@ -206,22 +244,33 @@ async def _wait_ready(
         await sleep(poll_interval)
 
 
+def _company(me: dict[str, Any]) -> dict[str, Any]:
+    """Выбранная компания из /auth/me (с 03.10 — вложенный объект)."""
+    company = me.get("company")
+    return company if isinstance(company, dict) else {}
+
+
 async def run_check(
     http: httpx.AsyncClient,
     *,
-    company: str,
     email: str,
+    company: str | None = None,
     password: str | None = None,
     token: str | None = None,
     new_password: str | None = None,
+    totp_secret: str | None = None,
     nonce: str | None = None,
     timeout: float = INDEX_TIMEOUT,
     poll_interval: float = POLL_INTERVAL,
     before_poll: Hook | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    scenarios: bool = False,
+    employee: "Credentials | None" = None,
 ) -> Report:
     """Сквозной сценарий против API. before_poll — для тестов: запустить
-    воркер индексации в том же процессе перед очередным опросом статуса."""
+    воркер индексации в том же процессе перед очередным опросом статуса.
+    scenarios — ещё шаги этапов 1–10 (stand_scenarios.py), employee —
+    вторая служебная учётка для шагов сотрудника."""
     report = Report()
     client = StandClient(http)
     nonce = nonce or secrets.token_hex(4)
@@ -233,7 +282,7 @@ async def run_check(
         if token:
             client.token = token
         elif password:
-            await client.login(company, email, password)
+            await client.login(email, password, totp_secret)
         else:
             raise StandError("нужен CORP_ED_PASSWORD или CORP_ED_TOKEN")
         me = (await client.request("GET", "/auth/me")).json()
@@ -246,8 +295,8 @@ async def run_check(
             me = (await client.request("GET", "/auth/me")).json()
         report.add(
             "вход администратора",
-            me.get("role") == "admin",
-            f"роль {me.get('role')}, компания {me.get('company_name')}",
+            _company(me).get("role") == "admin",
+            f"роль {_company(me).get('role')}, компания {_company(me).get('name')}",
         )
 
         usage_before = (await client.request("GET", "/usage")).json()
@@ -314,6 +363,20 @@ async def run_check(
             f"списано {spent}, осталось {usage_after['remaining']} "
             f"из {usage_after['pool']}",
         )
+
+        if scenarios:
+            from corp_ed.stand_scenarios import SmokeDocument, run_scenarios
+
+            await run_scenarios(
+                client,
+                report,
+                SmokeDocument(material_id, title, question, nonce),
+                employee=employee,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                before_poll=before_poll,
+                sleep=sleep,
+            )
     except StandError as exc:
         report.add("сценарий прерван", False, str(exc))
     except (httpx.HTTPError, KeyError, ValueError) as exc:
@@ -383,11 +446,12 @@ async def upload_directory(
     http: httpx.AsyncClient,
     directory: Path,
     *,
-    company: str,
     email: str,
+    company: str | None = None,
     password: str | None = None,
     token: str | None = None,
     titles: dict[str, str] | None = None,
+    totp_secret: str | None = None,
 ) -> Report:
     """Загрузить все поддерживаемые файлы папки. Дубликат (тот же sha256
     уже есть в компании) — не ошибка: повторный запуск ничего не ломает."""
@@ -396,7 +460,7 @@ async def upload_directory(
     if token:
         client.token = token
     elif password:
-        await client.login(company, email, password)
+        await client.login(email, password, totp_secret)
     else:
         raise StandError("нужен CORP_ED_PASSWORD или CORP_ED_TOKEN")
     files = sorted(
@@ -433,6 +497,11 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="сквозной сценарий: документ → ответ")
     check.add_argument("--timeout", type=float, default=INDEX_TIMEOUT)
+    check.add_argument(
+        "--basic",
+        action="store_true",
+        help="только основной сценарий, без шагов этапов 1–10",
+    )
     upload = commands.add_parser("upload", help="загрузить папку документов")
     upload.add_argument("--dir", required=True, type=Path)
     upload.add_argument(
@@ -441,15 +510,33 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _employee(env: "os._Environ[str]") -> "Credentials | None":
+    """Вторая служебная учётка для шагов сотрудника (CORP_ED_EMPLOYEE_*)."""
+    from corp_ed.stand_scenarios import Credentials
+
+    email = env.get("CORP_ED_EMPLOYEE_EMAIL")
+    password = env.get("CORP_ED_EMPLOYEE_PASSWORD")
+    if not (email and password):
+        return None
+    return Credentials(
+        email=email,
+        password=password,
+        totp_secret=env.get("CORP_ED_EMPLOYEE_TOTP_SECRET") or None,
+        new_password=env.get("CORP_ED_EMPLOYEE_NEW_PASSWORD") or None,
+    )
+
+
 async def _main(args: argparse.Namespace) -> int:
     env = os.environ
     base_url = env.get("CORP_ED_BASE_URL", DEFAULT_BASE_URL)
-    company = env.get("CORP_ED_COMPANY", "")
+    # CORP_ED_COMPANY с 03.10 не нужен (вход по почте), но не мешает:
+    # старые скрипты стенда его передают.
+    company = env.get("CORP_ED_COMPANY") or None
     email = env.get("CORP_ED_EMAIL", "")
     token = env.get("CORP_ED_TOKEN") or None
-    if not token and not (company and email):
+    if not token and not email:
         print(
-            "Ошибка: задайте CORP_ED_COMPANY и CORP_ED_EMAIL (или CORP_ED_TOKEN)",
+            "Ошибка: задайте CORP_ED_EMAIL (или CORP_ED_TOKEN)",
             file=sys.stderr,
         )
         return 2
@@ -462,7 +549,10 @@ async def _main(args: argparse.Namespace) -> int:
                 password=env.get("CORP_ED_PASSWORD") or None,
                 token=token,
                 new_password=env.get("CORP_ED_NEW_PASSWORD") or None,
+                totp_secret=env.get("CORP_ED_TOTP_SECRET") or None,
                 timeout=args.timeout,
+                scenarios=not args.basic,
+                employee=_employee(env),
             )
         else:
             titles = json.loads(args.titles.read_text("utf-8")) if args.titles else None
@@ -475,6 +565,7 @@ async def _main(args: argparse.Namespace) -> int:
                     password=env.get("CORP_ED_PASSWORD") or None,
                     token=token,
                     titles=titles,
+                    totp_secret=env.get("CORP_ED_TOTP_SECRET") or None,
                 )
             except StandError as exc:
                 print(f"Ошибка: {exc}", file=sys.stderr)

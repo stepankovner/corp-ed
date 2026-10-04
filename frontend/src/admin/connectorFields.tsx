@@ -126,7 +126,7 @@ export function OAuthInstructions({ kind }: { kind: Kind }) {
       <p style={{ fontWeight: 500 }}>Приложение в {kind.title}</p>
       <p className="muted" style={{ fontSize: "var(--fs-small)" }}>
         Зарегистрируйте приложение на стороне {kind.title} и перенесите сюда его код и секрет.
-        Каждый сотрудник потом подключит свой аккаунт в разделе «Мои источники» — Kronto видит
+        Каждый сотрудник потом подключит свой аккаунт в «Настройки → Мои подключения» — kronto видит
         только то, что доступно ему.
       </p>
       <dl className={styles.kv}>

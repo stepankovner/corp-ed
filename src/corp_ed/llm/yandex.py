@@ -35,6 +35,7 @@ class YandexAdapter(LLMGateway):
         self._client = client
         self._api_key = api_key
         self._model = model
+        self.model_name = model
         self._max_attempts = max_attempts
         self._base_delay = base_delay
         self._read_timeout = read_timeout

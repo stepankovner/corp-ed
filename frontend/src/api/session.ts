@@ -71,6 +71,29 @@ export function sessionFromTokens(tokens: { access_token: string; expires_in: nu
   };
 }
 
+/**
+ * Кто и где вошёл — по полезной нагрузке access-токена: учётка, компания,
+ * членство, роль. Подписи не проверяем: это ключ кэша интерфейса, а не
+ * доступ (доступ решает сервер). Сменилась область — профиль и данные
+ * компании запрашиваются заново (переключение компании, исключение из неё,
+ * смена роли). Токен не JWT (тесты) — пустая строка.
+ */
+export function tokenScope(accessToken: string): string {
+  const payload = accessToken.split(".")[1];
+  if (!payload) return "";
+  try {
+    const claims = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as Record<
+      string,
+      unknown
+    >;
+    return [claims.sub, claims.tenant_id, claims.member_id, claims.role]
+      .map((value) => (typeof value === "string" ? value : ""))
+      .join(":");
+  } catch {
+    return "";
+  }
+}
+
 /** Что одна вкладка сообщает остальным. */
 export type SessionEvent = "signed-in" | "signed-out";
 

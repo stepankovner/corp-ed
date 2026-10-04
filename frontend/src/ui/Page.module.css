@@ -12,12 +12,18 @@
   gap: var(--s-4);
   margin-bottom: var(--s-5);
 }
+/* Заголовок с описанием уступает место кнопкам справа, а не сталкивает их вниз. */
+.head > :first-child {
+  flex: 1 1 26rem;
+  min-width: 0;
+}
 .label {
   color: var(--muted);
   margin-bottom: 6px;
 }
 .title {
   font-size: var(--fs-h3);
+  letter-spacing: -0.025em;
 }
 .description {
   color: var(--muted);
@@ -31,7 +37,7 @@
   gap: var(--s-3);
 }
 .section {
-  margin-top: var(--s-6);
+  margin-top: var(--s-7);
 }
 .sectionTitle {
   font-size: 1.1875rem;
@@ -53,18 +59,36 @@
   justify-items: center;
   gap: var(--s-3);
   text-align: center;
-  padding: var(--s-7) var(--s-4);
+  padding: var(--s-7) var(--s-5);
   color: var(--muted);
   border: 1px dashed var(--line-strong);
   border-radius: var(--r-lg);
   background: var(--surface-2);
 }
-.empty svg {
-  color: var(--line-strong);
+.empty p {
+  max-width: 52ch;
+}
+/* Значок пустого состояния — в кружке, как значки на лендинге. */
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--s-1);
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  box-shadow: var(--shadow-xs);
+}
+.emptyIcon svg {
+  width: 24px;
+  height: 24px;
 }
 .emptyTitle {
   color: var(--ink);
   font-weight: 500;
+  font-size: 1.0625rem;
 }
 .stack {
   display: grid;
@@ -91,5 +115,11 @@
   }
   .page {
     padding-top: var(--s-5);
+  }
+  .head {
+    align-items: stretch;
+  }
+  .actions > * {
+    flex: 1 1 auto;
   }
 }

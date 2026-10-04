@@ -59,6 +59,7 @@ from corp_ed.domain.context import (
 )
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
+from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import (
@@ -138,13 +139,28 @@ class OfflineMatch:
 
 
 def relevant_matches(
-    matches: Sequence[OfflineMatch], max_distance: float
+    matches: Sequence[OfflineMatch],
+    max_distance: float,
+    *,
+    gate_distance: float | None = None,
+    near_margin: float = 0.0,
 ) -> list[OfflineMatch]:
-    """Как faq_service: отбросить всё дальше порога, порядок сохранить."""
+    """Как faq_service: отбросить всё дальше порога, порядок сохранить.
+
+    gate_distance (BH-37, замер 04.10): если ближайшая выдержка дальше
+    max_distance, но не дальше gate_distance, в модель идут она и выдержки
+    не дальше неё + near_margin (`domain.threshold.relevance_limit`).
+    """
+    known = [m.distance for m in matches if m.distance is not None]
+    limit = relevance_limit(
+        min(known) if known else None, max_distance, gate_distance, near_margin
+    )
+    if limit is None:
+        return []
     return [
         match
         for match in matches
-        if match.distance is not None and match.distance <= max_distance
+        if match.distance is not None and match.distance <= limit
     ]
 
 
@@ -355,7 +371,8 @@ def _parser() -> argparse.ArgumentParser:
         "--temperature",
         type=float,
         default=0.0,
-        help="0 — воспроизводимо; при 0.3 (как сейчас у бэкенда) ответы гуляют",
+        help="0 — как в продукте (RAG_FAQ_TEMPERATURE); текст у Flash и при 0 "
+        "немного гуляет (69/91 одинаковых, 25.09), при 0.3 — заметно",
     )
     parser.add_argument(
         "--api",
@@ -378,6 +395,15 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_MAX_DISTANCE,
         help="0.59 — для v2-768 (30.09, ML-4; было 0.51); для text-search — 0.65",
     )
+    parser.add_argument(
+        "--gate-distance",
+        type=float,
+        default=None,
+        help="отвечать по документам, если ближайшая выдержка не дальше этого "
+        "(замер 04.10); выдержки — до --max-distance, а если ближайшая дальше "
+        "него — до ближайшей + --near-margin",
+    )
+    parser.add_argument("--near-margin", type=float, default=0.05)
     parser.add_argument("--context-tokens", type=int, default=3000)
     parser.add_argument(
         "--context",
@@ -562,7 +588,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         # С multi-query у чанка из переформулировки нет расстояния до вопроса,
         # поэтому порог — по лучшему расстоянию исходного вопроса (как M1).
         relevant = (
-            relevant_matches(found, args.max_distance)
+            relevant_matches(
+                found,
+                args.max_distance,
+                gate_distance=args.gate_distance,
+                near_margin=args.near_margin,
+            )
             if retriever == "vector" and not args.multi_query
             else gate_by_best_distance(found, best, args.max_distance)
         )

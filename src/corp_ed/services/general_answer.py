@@ -13,7 +13,8 @@
   его без своей логики.
 """
 
-from typing import Protocol
+from collections.abc import AsyncGenerator
+from typing import Protocol, runtime_checkable
 
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion
@@ -50,6 +51,16 @@ class GeneralAnswerSource(Protocol):
         ...
 
 
+@runtime_checkable
+class StreamingGeneralSource(Protocol):
+    """Источник, который умеет отдавать ответ по мере генерации (ТЗ §6).
+    Без этого метода ответ источника показывается целиком в конце."""
+
+    def stream(self, question: str) -> AsyncGenerator[str | Completion, None]:
+        """Куски текста, последним — Completion (как LLMGateway.stream)."""
+        ...
+
+
 class ModelKnowledgeSource:
     """Общий ответ из знаний модели — промпт ML без выдержек (Р1)."""
 
@@ -63,6 +74,11 @@ class ModelKnowledgeSource:
         return await self.llm_gateway.generate(
             messages=build_general_messages(question),
             temperature=self.temperature,
+        )
+
+    def stream(self, question: str) -> AsyncGenerator[str | Completion, None]:
+        return self.llm_gateway.stream(
+            build_general_messages(question), temperature=self.temperature
         )
 
 

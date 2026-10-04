@@ -8,6 +8,7 @@ from corp_ed.core.exceptions import TenantContextMissingError, TenantMismatchErr
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
 from corp_ed.domain.models import Tenant, User, UserRole
 from corp_ed.repositories.user_repository import UserRepository
+from tests.factories import make_user
 
 
 async def test_tenant_context_is_required(session: AsyncSession) -> None:
@@ -18,7 +19,7 @@ async def test_tenant_context_is_required(session: AsyncSession) -> None:
 async def test_user_is_visible_within_tenant(
     tenant_ctx: Tenant, session: AsyncSession
 ) -> None:
-    user = User(
+    user = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="a@b.c",
@@ -40,7 +41,7 @@ async def test_write_with_foreign_tenant_id_is_rejected(
     session.add(foreign_tenant)
     await session.commit()
 
-    user = User(
+    user = make_user(
         id=uuid4(),
         tenant_id=foreign_tenant.id,  # ← чужой, контекст указывает на другого
         email="a@b.c",
@@ -57,7 +58,7 @@ async def test_write_with_foreign_tenant_id_is_rejected(
 async def test_tenant_id_inferred_from_context(
     tenant_ctx: Tenant, session: AsyncSession
 ) -> None:
-    user = User(
+    user = make_user(
         id=uuid4(),
         email="a@b.c",
         hashed_password="x",
@@ -74,7 +75,7 @@ async def test_tenant_id_inferred_from_context(
 
 
 async def test_write_without_tenant_context_is_rejected(session: AsyncSession) -> None:
-    user = User(
+    user = make_user(
         id=uuid4(),
         email="a@b.c",
         hashed_password="x",
@@ -89,7 +90,7 @@ async def test_write_without_tenant_context_is_rejected(session: AsyncSession) -
 async def test_tenant_id_cannot_be_changed(
     tenant_ctx: Tenant, session: AsyncSession
 ) -> None:
-    user1 = User(
+    user1 = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="a@b.c",
@@ -119,7 +120,7 @@ async def test_get_by_id_does_not_bypass_filter_via_identity_map(
     загружен в сессию, и get вернул его для другого тенанта.
     Репозитории ищут по id через select, и фильтр применяется всегда.
     """
-    user = User(
+    user = make_user(
         id=uuid4(),
         tenant_id=tenant_ctx.id,
         email="a@b.c",

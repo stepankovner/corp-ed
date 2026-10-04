@@ -62,13 +62,20 @@ for svc in api worker web; do
     done
 done
 
+echo "==> песочница сайта"
+# Вымышленная компания для /demo (ТЗ §1): заводится один раз, дальше —
+# только изменённые документы из src/corp_ed/demo. Идемпотентно.
+"${compose[@]}" run --rm --no-deps -T api python -m corp_ed.cli demo setup
+
 echo "==> проверка через nginx"
 # Тот же путь, что у пользователя: TLS, прокси, TrustedHost. Мимо
 # HTTPS_PROXY, если он есть в окружении (DEPLOY.md §9a): --resolve его
 # не обходит, и проверка ушла бы наружу.
 local_https=(curl -fsS --max-time 10 --noproxy '*' --resolve "$DOMAIN:443:127.0.0.1")
 "${local_https[@]}" "https://$DOMAIN/health" >/dev/null
-"${local_https[@]}" -o /dev/null "https://$DOMAIN/"
+# Главная — готовый HTML сайта (предрендер, ТЗ §1), а не пустая оболочка.
+home=$("${local_https[@]}" "https://$DOMAIN/")
+grep -q 'data-prerender' <<<"$home" || { echo "главная без готового HTML" >&2; exit 1; }
 
 # Мониторинг (deploy/monitoring, П-9) — из того же коммита, что приложение:
 # правила тревог и дашборд едут вместе с кодом. Его сбой выкатку не

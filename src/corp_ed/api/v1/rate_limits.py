@@ -42,17 +42,40 @@ class RatePolicy:
 
 
 LOGIN_PER_IP = RatePolicy("login-ip", limit=30, window=900, fail_open=False)
-# Считаются только НЕУДАЧНЫЕ попытки на пару «компания + почта», в том
-# числе несуществующую: блокировка есть для любого адреса, поэтому по
-# ней нельзя узнать, существует ли учётка.
+# Считаются только НЕУДАЧНЫЕ попытки на почту, в том числе несуществующую:
+# блокировка есть для любого адреса, поэтому по ней нельзя узнать,
+# существует ли учётка.
 LOGIN_FAILURES_PER_ACCOUNT = RatePolicy(
     "login-account", limit=10, window=900, fail_open=False
 )
 REFRESH_PER_IP = RatePolicy("refresh-ip", limit=60, window=60, fail_open=False)
-# Ссылка-приглашение: предпросмотр и присоединение без входа. Запас — на
-# офис за одним NAT, где вся команда присоединяется в один час; перебор
-# токена бессмыслен (256 бит), лимит — против засорения учётками.
+# Приглашение: предпросмотр и вступление. Запас — на офис за одним NAT,
+# где вся команда вступает в один час. Перебор токена ссылки бессмыслен
+# (256 бит); код — 40 бит, и 60 попыток за 15 минут с адреса — миллионы
+# лет на одно живое приглашение.
 INVITE_PER_IP = RatePolicy("invite-ip", limit=60, window=900, fail_open=False)
+# Регистрация и письма (ТЗ §3). Письма — ещё и против «почтовой бомбы» на
+# чужой адрес и лимита ящика Яндекс 360 (300 писем в сутки).
+REGISTER_PER_IP = RatePolicy("register-ip", limit=10, window=3600, fail_open=False)
+MAIL_PER_ADDRESS = RatePolicy("mail-address", limit=5, window=3600, fail_open=False)
+MAIL_PER_IP = RatePolicy("mail-ip", limit=20, window=3600, fail_open=False)
+# Ввод кода из письма: у самого кода 5 попыток, лимит по IP — против
+# перебора по многим адресам сразу.
+VERIFY_PER_IP = RatePolicy("verify-ip", limit=30, window=900, fail_open=False)
+EMAIL_CHANGE_PER_ACCOUNT = RatePolicy(
+    "email-change", limit=10, window=3600, fail_open=False
+)
+# Фото профиля: перекодирование занимает CPU — не чаще пары раз в минуту.
+AVATAR_PER_ACCOUNT = RatePolicy("avatar", limit=20, window=3600, fail_open=False)
+# Отдача фото по подписанной ссылке: списки коллег грузят десятки сразу.
+AVATAR_FETCH_PER_IP = RatePolicy("avatar-ip", limit=600, window=60, fail_open=True)
+# Отделы и должности: правит человек или админ, сотни в час — уже не люди.
+PEOPLE_EDIT_PER_TENANT = RatePolicy(
+    "people-edit", limit=300, window=3600, fail_open=False
+)
+COMPANY_REQUEST_PER_ACCOUNT = RatePolicy(
+    "company-request", limit=5, window=86400, fail_open=False
+)
 # Заявка на созвон со страницы тарифов: человек отправляет одну-две. Общий
 # суточный потолок — против засорения базы персональными данными с многих
 # адресов.
@@ -63,6 +86,44 @@ PASSWORD_CHANGE_PER_USER = RatePolicy(
 )
 FAQ_PER_USER = RatePolicy("faq-user", limit=30, window=60, fail_open=True)
 SEARCH_PER_USER = RatePolicy("search-user", limit=60, window=60, fail_open=True)
+# Чат (ТЗ §6): вложения разбираются в песочнице и считают эмбеддинги;
+# правки диалогов (переименовать, закрепить, оценить) — дешёвые.
+ATTACHMENT_PER_USER = RatePolicy(
+    "attachment-user", limit=30, window=3600, fail_open=True
+)
+CHAT_EDIT_PER_USER = RatePolicy(
+    "chat-edit-user", limit=240, window=3600, fail_open=True
+)
+# Админка (ТЗ §7): настройки и папки — редкие правки; заявка на тариф
+# уходит людям в Telegram — несколько в сутки.
+COMPANY_EDIT_PER_TENANT = RatePolicy(
+    "company-edit", limit=60, window=3600, fail_open=True
+)
+FOLDER_EDIT_PER_TENANT = RatePolicy(
+    "folder-edit", limit=120, window=3600, fail_open=True
+)
+TARIFF_REQUEST_PER_TENANT = RatePolicy(
+    "tariff-request", limit=5, window=86400, fail_open=False
+)
+# Наша панель (ТЗ §9): правки команды — сотни в час уже не люди, а
+# украденная сессия; письма о новом пароле — не рассылка.
+STAFF_EDIT_PER_ACCOUNT = RatePolicy(
+    "staff-edit", limit=300, window=3600, fail_open=False
+)
+STAFF_RESET_PER_ACCOUNT = RatePolicy(
+    "staff-reset", limit=20, window=3600, fail_open=False
+)
+# «Написать в поддержку»: человеку хватит пяти обращений в час, больше —
+# уже рассылка в Telegram команды.
+SUPPORT_PER_ACCOUNT = RatePolicy("support", limit=5, window=3600, fail_open=False)
+# Песочница на сайте (ТЗ §1): вопрос без входа стоит вызова модели.
+# Посетителю хватит десятка вопросов в час; общий суточный потолок — против
+# раздачи модели всему интернету с многих адресов. Без Redis — отказ.
+DEMO_PER_IP = RatePolicy("demo-ip", limit=10, window=3600, fail_open=False)
+DEMO_PER_DAY = RatePolicy("demo-all", limit=300, window=86400, fail_open=False)
+SUGGESTION_EDIT_PER_TENANT = RatePolicy(
+    "suggestion-edit", limit=120, window=3600, fail_open=True
+)
 UPLOAD_PER_TENANT = RatePolicy("upload-tenant", limit=60, window=3600, fail_open=True)
 # Создание и переиндексация материалов: каждый запрос — пачка платных
 # эмбеддингов в воркере.

@@ -7,8 +7,14 @@ from typing import Any
 import httpx
 import pytest
 
+from corp_ed.core import totp
 from eval import run_eval
-from eval.api_client import CorpEdClient, parse_search_response
+from eval.api_client import (
+    MAX_RETRIES,
+    CorpEdClient,
+    parse_search_response,
+    retry_after,
+)
 from eval.datasets import GOLDEN_COLUMNS
 from eval.results import read_csv, write_csv
 
@@ -69,7 +75,7 @@ def _api(request: httpx.Request) -> httpx.Response:
 def client(monkeypatch: pytest.MonkeyPatch) -> CorpEdClient:
     http = httpx.Client(base_url="http://test", transport=httpx.MockTransport(_api))
     api = CorpEdClient(http=http)
-    api.login("acme", "admin@acme.ru", "secret")
+    api.login("admin@acme.ru", "secret")
     monkeypatch.setattr(CorpEdClient, "from_env", classmethod(lambda cls: api))
     return api
 
@@ -266,3 +272,103 @@ def test_score_rows_rejects_bad_label() -> None:
 
     with pytest.raises(ValueError):
         run_eval.score_rows(rows)
+
+
+SECRET = "JBSWY3DPEHPK3PXP"
+
+
+def test_login_with_second_factor_and_relogin_on_expired_token() -> None:
+    calls: list[str] = []
+    tokens = iter(["t1", "t2"])
+    used_codes: set[str] = set()
+
+    def api(request: httpx.Request) -> httpx.Response:
+        body: Any = json.loads(request.content or b"{}")
+        path = request.url.path
+        calls.append(path)
+        if path == "/api/v1/auth/login":
+            # Код компании во входе больше не нужен — лишнее поле дало бы 422.
+            assert set(body) == {"email", "password", "remember"}
+            return httpx.Response(
+                200,
+                json={
+                    "status": "mfa_required",
+                    "mfa": {"token": "m", "methods": ["totp"]},
+                },
+            )
+        if path == "/api/v1/auth/mfa/verify":
+            code = body["code"]
+            valid = {totp.code_at(SECRET, totp.current_step() + d) for d in (-1, 0, 1)}
+            if code not in valid or code in used_codes:
+                return httpx.Response(400, json={"code": "invalid_code"})
+            used_codes.add(code)
+            return httpx.Response(200, json={"access_token": next(tokens)})
+        if request.headers["Authorization"] == "Bearer t1":
+            return httpx.Response(401)
+        return httpx.Response(200, json={"matches": [VACATION_CHUNK]})
+
+    http = httpx.Client(base_url="http://test", transport=httpx.MockTransport(api))
+    client = CorpEdClient(http=http)
+    client.login("admin@acme.ru", "secret", SECRET)
+
+    chunks, _ = client.search("отпуск", 5)
+
+    assert [c.id for c in chunks] == ["c-31"]
+    # Токен t1 «истёк» — второй вход тем же секретом (повтор кода сервер
+    # отвергает, поэтому годится код следующего шага) и повтор запроса.
+    assert calls.count("/api/v1/auth/login") == 2
+    assert calls[-1] == "/api/v1/faq/search"
+
+
+def test_login_without_secret_when_second_factor_required() -> None:
+    def api(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"status": "mfa_required", "mfa": {"token": "m", "methods": ["totp"]}},
+        )
+
+    http = httpx.Client(base_url="http://test", transport=httpx.MockTransport(api))
+
+    with pytest.raises(SystemExit, match="CORP_ED_TOTP_SECRET"):
+        CorpEdClient(http=http).login("admin@acme.ru", "secret")
+
+
+def test_rate_limited_request_waits_and_retries() -> None:
+    # /faq/ask — 30 вопросов в минуту на пользователя: прогон набора в это
+    # упирается, и 429 не должен ронять run_eval.
+    answers = iter(
+        [
+            httpx.Response(429, headers={"Retry-After": "7"}),
+            httpx.Response(503, headers={"Retry-After": "30"}),
+            httpx.Response(200, json={"matches": [VACATION_CHUNK]}),
+        ]
+    )
+    waits: list[float] = []
+    http = httpx.Client(
+        base_url="http://test", transport=httpx.MockTransport(lambda r: next(answers))
+    )
+
+    chunks, _ = CorpEdClient(http=http, sleep=waits.append).search("отпуск", 5)
+
+    assert [c.id for c in chunks] == ["c-31"]
+    assert waits == [7.0, 30.0]
+
+
+def test_rate_limit_gives_up_after_max_retries() -> None:
+    waits: list[float] = []
+    http = httpx.Client(
+        base_url="http://test",
+        transport=httpx.MockTransport(lambda r: httpx.Response(429)),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        CorpEdClient(http=http, sleep=waits.append).search("отпуск", 5)
+
+    # Без Retry-After — 10 с; попыток — MAX_RETRIES + первая.
+    assert waits == [10.0] * MAX_RETRIES
+
+
+def test_retry_after_is_bounded() -> None:
+    assert retry_after(httpx.Response(429, headers={"Retry-After": "3600"})) == 120.0
+    assert retry_after(httpx.Response(429, headers={"Retry-After": "0"})) == 1.0
+    assert retry_after(httpx.Response(429, headers={"Retry-After": "soon"})) == 10.0

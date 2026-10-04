@@ -118,7 +118,9 @@ def split_into_chunks(
 
 BREADCRUMB_SEPARATOR = " > "
 
-_FILE_EXTENSION = re.compile(r"\.(?:docx?|pdf|txt|md|markdown|rtf|odt)$", re.IGNORECASE)
+_FILE_EXTENSION = re.compile(
+    r"\.(?:docx?|xlsx|pptx|pdf|txt|md|markdown|rtf|odt)$", re.IGNORECASE
+)
 _LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+(?:\.\d+)*[.)])\s+")
 _KEY_VALUE_ROW = re.compile(r"^[^:;]{1,120}: [^;]*(?:; [^:;]{1,120}: [^;]*)+$")
 

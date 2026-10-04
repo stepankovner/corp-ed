@@ -1,0 +1,257 @@
+/*
+ * Помощь: статьи с поиском слева, «Написать в поддержку» справа. Колонки —
+ * по ширине рабочей области (контейнерный запрос), а не окна: рядом может
+ * быть развёрнутая боковая панель.
+ */
+.container {
+  container-type: inline-size;
+}
+.layout {
+  display: grid;
+  gap: var(--s-6);
+  align-items: start;
+}
+@container (min-width: 880px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+.main {
+  display: grid;
+  gap: var(--s-5);
+  min-width: 0;
+}
+
+/* ——— поиск ——— */
+.search {
+  position: relative;
+}
+.searchIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.searchInput {
+  width: 100%;
+  min-height: var(--control-lg);
+  padding: 0 14px 0 42px;
+  border: 1px solid var(--line-control);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1rem;
+  transition:
+    border-color 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.searchInput::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+}
+.searchInput:hover:not(:focus) {
+  border-color: var(--muted);
+}
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+/* ——— группы и статьи ——— */
+.group {
+  display: grid;
+  gap: var(--s-3);
+}
+.groupHead {
+  display: grid;
+  gap: 2px;
+}
+.groupTitle {
+  font-size: 1.1875rem;
+}
+.groupNote {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.articles {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg);
+  overflow: hidden;
+}
+.article + .article {
+  border-top: 1px solid var(--line);
+}
+/* Якорь статьи не прячется под край прокрутки. */
+.article {
+  scroll-margin-top: var(--s-5);
+}
+.articleTitle {
+  font-size: inherit;
+  letter-spacing: normal;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--control-lg);
+  padding: 12px var(--s-4);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  transition: background-color 0.15s var(--ease);
+}
+.toggle:hover {
+  background: var(--fill-hover);
+}
+.toggle:focus-visible {
+  outline-offset: -3px;
+}
+.chevron {
+  color: var(--muted);
+  transition: transform 0.2s var(--ease);
+}
+.toggle[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+.body {
+  display: grid;
+  gap: var(--s-3);
+  padding: 0 var(--s-4) var(--s-4);
+  overflow-wrap: anywhere;
+}
+.body[hidden] {
+  display: none;
+}
+.body ul,
+.body ol {
+  display: grid;
+  gap: 6px;
+  padding-left: 1.3em;
+  list-style: disc;
+}
+.body ol {
+  list-style: decimal;
+}
+.body li::marker {
+  color: var(--muted);
+}
+.body kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 0.8125em;
+  white-space: nowrap;
+}
+.copy {
+  margin-left: -12px;
+}
+
+/* ——— поддержка ——— */
+.support {
+  display: grid;
+  gap: var(--s-4);
+  min-width: 0;
+  padding: clamp(16px, 2.5vw, 24px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  scroll-margin-top: var(--s-5);
+}
+.supportTitle {
+  font-size: 1.1875rem;
+}
+.supportTitle:focus {
+  outline: none;
+}
+.supportText {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.form {
+  display: grid;
+  gap: var(--s-4);
+}
+/* Подсказка и счётчик в строку; в узкой колонке счётчик уходит вниз, вправо. */
+.hintRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px var(--s-3);
+}
+.hintRow > :first-child {
+  flex: 1 1 18rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.counter {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.over {
+  color: var(--error);
+}
+
+.mine {
+  display: grid;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+.mineTitle {
+  font-size: 1rem;
+}
+.requests {
+  display: grid;
+  gap: var(--s-2);
+}
+.request {
+  display: grid;
+  gap: 4px;
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+.requestHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px var(--s-2);
+}
+.requestTopic {
+  font-weight: 500;
+}
+/* Текст обращения — две строки, полностью он в письме и у команды. */
+.requestText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.requestMeta {
+  font-size: 12px;
+}
+.small {
+  font-size: var(--fs-small);
+}

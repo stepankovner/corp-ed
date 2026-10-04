@@ -1,11 +1,29 @@
+from collections.abc import Iterable
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, delete, exists, func, literal_column, or_, select
+from sqlalchemy import (
+    ColumnElement,
+    and_,
+    delete,
+    exists,
+    func,
+    literal_column,
+    or_,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnClause
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Chunk, Material, MaterialAccess
+from corp_ed.domain.models import (
+    Chunk,
+    Folder,
+    FolderDepartment,
+    Material,
+    MaterialAccess,
+    User,
+    UserRole,
+)
 from corp_ed.domain.types import ChunkMatch, MaterialVisibility
 
 # Та же конфигурация, что у генерируемой колонки chunks.fts: иначе
@@ -14,15 +32,38 @@ from corp_ed.domain.types import ChunkMatch, MaterialVisibility
 _TS_CONFIG: ColumnClause[str] = literal_column("'russian'::regconfig")
 
 
-def _visible_to(viewer: UUID, tenant_id: UUID) -> ColumnElement[bool]:
-    """Условие видимости документа сотруднику (права источника).
+def visible_to(viewer: UUID, tenant_id: UUID) -> ColumnElement[bool]:
+    """Условие видимости документа сотруднику.
 
-    visibility = tenant — виден всем; restricted — только при строке в
-    material_access. Обязательный аргумент viewer, а не флаг: поиск без
-    зрителя — это поиск по чужим правам, такого вызова быть не должно.
+    visibility = tenant — виден всем, если он не в закрытой папке;
+    restricted — только при строке в material_access (права источника).
+    Закрытая папка (ТЗ §5) открыта своим отделам и администраторам
+    компании: админ загружает документы и отвечает за них. Обязательный
+    аргумент viewer, а не флаг: поиск без зрителя — это поиск по чужим
+    правам, такого вызова быть не должно.
     """
+    in_open_folder = or_(
+        Material.folder_id.is_(None),
+        exists().where(
+            Folder.id == Material.folder_id,
+            Folder.tenant_id == tenant_id,
+            Folder.restricted.is_(False),
+        ),
+        exists().where(
+            FolderDepartment.folder_id == Material.folder_id,
+            FolderDepartment.tenant_id == tenant_id,
+            User.id == viewer,
+            User.tenant_id == tenant_id,
+            User.department_id == FolderDepartment.department_id,
+        ),
+        exists().where(
+            User.id == viewer,
+            User.tenant_id == tenant_id,
+            User.role == UserRole.ADMIN,
+        ),
+    )
     return or_(
-        Material.visibility == MaterialVisibility.TENANT.value,
+        and_(Material.visibility == MaterialVisibility.TENANT.value, in_open_folder),
         exists().where(
             MaterialAccess.material_id == Material.id,
             MaterialAccess.user_id == viewer,
@@ -53,6 +94,27 @@ class ChunkRepository:
             Chunk.tenant_id == require_tenant(),
         )
         await self.session.execute(stmt)
+
+    async def visible_material_ids(
+        self, material_ids: Iterable[UUID], *, viewer: UUID
+    ) -> set[UUID]:
+        """Какие из документов сейчас есть и видны сотруднику.
+
+        Источники сохранённого ответа (ТЗ §6) показываются по этому
+        правилу: документ удалён или доступ к нему снят — фрагмента нет.
+        """
+        ids = set(material_ids)
+        if not ids:
+            return set()
+        tenant_id = require_tenant()
+        result = await self.session.scalars(
+            select(Material.id).where(
+                Material.id.in_(ids),
+                Material.tenant_id == tenant_id,
+                visible_to(viewer, tenant_id),
+            )
+        )
+        return set(result.all())
 
     async def search(
         self, embedding: list[float], limit: int = 5, *, viewer: UUID
@@ -85,7 +147,7 @@ class ChunkRepository:
             .where(
                 Chunk.tenant_id == tenant_id,
                 Material.tenant_id == tenant_id,
-                _visible_to(viewer, tenant_id),
+                visible_to(viewer, tenant_id),
             )
             .order_by(distance)
             .limit(limit)
@@ -148,7 +210,7 @@ class ChunkRepository:
                 Chunk.tenant_id == tenant_id,
                 Material.tenant_id == tenant_id,
                 Chunk.fts.op("@@")(ts_query),
-                _visible_to(viewer, tenant_id),
+                visible_to(viewer, tenant_id),
             )
             # id — второй ключ: при равном ранге порядок детерминирован.
             .order_by(rank.desc(), Chunk.id)

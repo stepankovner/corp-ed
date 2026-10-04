@@ -4,6 +4,7 @@
   align-items: flex-start;
   padding: 12px 16px;
   border-radius: var(--r-md);
+  border: 1px solid transparent;
   font-size: var(--fs-small);
   line-height: 1.5;
 }
@@ -18,9 +19,19 @@
 .title {
   font-weight: 500;
 }
+/* Ссылки внутри цветной плашки — её цветом: акцент на ней теряет контраст. */
+.warn a,
+.error a,
+.ok a {
+  color: inherit;
+  text-decoration: underline;
+}
 .info {
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  border-color: var(--line);
+}
+.info svg {
+  color: var(--accent);
 }
 .warn {
   background: var(--warn-bg);
@@ -29,8 +40,9 @@
 .error {
   background: var(--error-bg);
   color: var(--error);
+  border-color: var(--error-line);
 }
 .ok {
-  background: var(--ok-bg);
-  color: var(--ok-ink);
+  background: var(--success-bg);
+  color: var(--success);
 }

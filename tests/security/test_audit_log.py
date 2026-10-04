@@ -19,6 +19,7 @@ from tests.api.conftest import (
     refresh_token_of,
     refresh_with,
 )
+from tests.factories import make_user
 
 
 async def _events(session: AsyncSession, action: AuditAction) -> list[AuditEvent]:
@@ -54,18 +55,16 @@ async def test_failed_login_is_audited_without_password(
     assert "password" not in event.details
 
 
-async def test_failed_login_for_unknown_company_is_kept(
+async def test_failed_login_for_unknown_account_is_kept(
     api: httpx.AsyncClient, session: AsyncSession
 ) -> None:
-    """Тенант неизвестен, но след попытки остаться обязан."""
-    await api.post(
-        "/api/v1/auth/login",
-        json={"company_code": "nope", "email": "a@b.ru", "password": PASSWORD},
-    )
+    """Учётки нет, но след попытки остаться обязан."""
+    await api.post("/api/v1/auth/login", json={"email": "A@b.ru", "password": PASSWORD})
 
     [event] = await _events(session, AuditAction.LOGIN_FAILED)
     assert event.tenant_id is None
-    assert event.details["reason"] == "unknown_or_inactive_company"
+    assert event.details["reason"] == "unknown_account"
+    assert event.details["email"] == "a@b.ru"
 
 
 async def test_admin_actions_are_audited(
@@ -75,25 +74,18 @@ async def test_admin_actions_are_audited(
     session: AsyncSession,
 ) -> None:
     headers = bearer(admin_account)
-    created = await api.post(
-        "/api/v1/users", json={"email": "new@test.com"}, headers=headers
-    )
     await api.patch(
-        f"/api/v1/users/{account.id}", json={"is_active": False}, headers=headers
+        f"/api/v1/users/{account.id}", json={"blocked": True}, headers=headers
     )
-    await api.post(f"/api/v1/users/{account.id}/reset-password", headers=headers)
+    await api.delete(f"/api/v1/users/{account.id}", headers=headers)
 
-    [made] = await _events(session, AuditAction.USER_CREATED)
     [changed] = await _events(session, AuditAction.USER_UPDATED)
-    [reset] = await _events(session, AuditAction.USER_PASSWORD_RESET)
+    [removed] = await _events(session, AuditAction.USER_REMOVED)
 
-    assert made.actor_user_id == admin_account.id
-    assert made.target_id == created.json()["user"]["id"]
-    assert changed.details["before"]["is_active"] is True
-    assert changed.details["after"]["is_active"] is False
-    assert reset.target_id == str(account.id)
-    # Временный пароль в журнал не попадает.
-    assert created.json()["temporary_password"] not in str(made.details)
+    assert changed.actor_user_id == admin_account.id
+    assert changed.details["before"]["status"] == "active"
+    assert changed.details["after"]["status"] == "blocked"
+    assert removed.target_id == str(account.id)
 
 
 async def test_refresh_reuse_is_audited(
@@ -197,7 +189,7 @@ async def test_deleting_user_only_nulls_actor(
 ) -> None:
     """ON DELETE SET NULL — единственное разрешённое изменение записи."""
     with tenant_scope(tenant_ctx.id):
-        user = User(
+        user = make_user(
             tenant_id=tenant_ctx.id,
             email="gone@test.com",
             role=UserRole.EMPLOYEE,

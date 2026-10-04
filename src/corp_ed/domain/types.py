@@ -128,6 +128,8 @@ class FaqAnswer:
     diagnostics: AnswerDiagnostics | None = None
     conversation_id: UUID | None = None
     """Диалог (BH-28): клиент присылает его со следующим вопросом."""
+    stopped: bool = False
+    """Сотрудник остановил ответ (ТЗ §6): content — то, что успело прийти."""
 
 
 class GapStatus(StrEnum):

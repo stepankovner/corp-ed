@@ -146,8 +146,10 @@ class FakeAdapter:
         return content
 
 
-def make_registry(source: FakeSource) -> AdapterRegistry:
-    registry = AdapterRegistry()
+def make_registry(
+    source: FakeSource, hidden_kinds: frozenset[str] = frozenset()
+) -> AdapterRegistry:
+    registry = AdapterRegistry(hidden_kinds=hidden_kinds)
 
     def factory(
         spec: KindSpec,

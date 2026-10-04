@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.domain.types import AnswerOrigin, Retriever
 
-MAX_QUESTION_LENGTH = 1000
+MAX_QUESTION_LENGTH = 4000
+"""Вопрос до 4 000 символов (ТЗ §6), как в чате."""
 MAX_SEARCH_LIMIT = 50
 
 

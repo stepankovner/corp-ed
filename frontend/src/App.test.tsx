@@ -1,11 +1,11 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import type { Schemas } from "./api/client";
 import { getSession } from "./api/session";
-import { answer, me, tokens } from "./test/fixtures";
+import { adminMe, me, tokens } from "./test/fixtures";
 import { renderApp } from "./test/render";
 import { server } from "./test/server";
 
@@ -13,16 +13,125 @@ function signedInAs(overrides: Parameters<typeof me>[0] = {}) {
   server.use(http.get("/api/v1/auth/me", () => HttpResponse.json(me(overrides))));
 }
 
+function signedInAsAdmin() {
+  server.use(http.get("/api/v1/auth/me", () => HttpResponse.json(adminMe())));
+}
+
+const SITE_HEADING = /Спросите — и получите ответ по документам компании/;
+
 describe("вход", () => {
-  it("ведёт с временным паролем на его смену, а затем в чат", async () => {
+  async function fillPassword(user: ReturnType<typeof userEvent.setup>, remember = false) {
+    await user.type(await screen.findByLabelText("Почта"), "anna@meridian-stroy.ru");
+    await user.type(screen.getByLabelText("Пароль"), "длинная фраза для входа");
+    if (remember) await user.click(screen.getByLabelText("Запомнить это устройство на 30 дней"));
+    await user.click(screen.getByRole("button", { name: "Войти" }));
+  }
+
+  it("в два шага: пароль, затем код из письма — и сразу к вопросам", async () => {
     const user = userEvent.setup();
-    let mustChange = true;
     let loginBody: unknown;
+    let verifyBody: unknown;
     server.use(
       http.post("/api/v1/auth/login", async ({ request }) => {
         loginBody = await request.json();
+        return HttpResponse.json({
+          status: "mfa_required",
+          token_type: "bearer",
+          mfa: { token: "step-1", methods: ["email"], email_hint: "a***@meridian-stroy.ru" },
+        });
+      }),
+      http.post("/api/v1/auth/mfa/verify", async ({ request }) => {
+        verifyBody = await request.json();
         return HttpResponse.json(tokens(1));
       }),
+      http.get("/api/v1/auth/me", () => HttpResponse.json(me())),
+    );
+    renderApp("/login", { signedIn: false });
+
+    await fillPassword(user, true);
+    expect(loginBody).toEqual({
+      email: "anna@meridian-stroy.ru",
+      password: "длинная фраза для входа",
+      remember: true,
+    });
+    expect(await screen.findByRole("heading", { name: "Код из письма" })).toBeInTheDocument();
+    expect(screen.getByText(/a\*\*\*@meridian-stroy\.ru/)).toBeInTheDocument();
+
+    // Шесть цифр уходят сами, без кнопки.
+    await user.type(screen.getByLabelText("Код из 6 цифр"), "123456");
+    expect(await screen.findByRole("log", { name: "Переписка" })).toBeInTheDocument();
+    expect(verifyBody).toEqual({
+      token: "step-1",
+      method: "email",
+      code: "123456",
+      credential: null,
+    });
+    expect(getSession()?.accessToken).toBe("access-1");
+  });
+
+  it("неверный код — сообщение и пустое поле, шаг не сбрасывается", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("/api/v1/auth/login", () =>
+        HttpResponse.json({
+          status: "mfa_required",
+          token_type: "bearer",
+          mfa: { token: "step-1", methods: ["totp", "backup"], email_hint: null },
+        }),
+      ),
+      http.post("/api/v1/auth/mfa/verify", () =>
+        HttpResponse.json(
+          {
+            detail: "Код не подошёл или устарел — попробуйте ещё раз",
+            code: "invalid_second_factor",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderApp("/login", { signedIn: false });
+
+    await fillPassword(user);
+    expect(await screen.findByRole("heading", { name: "Код из приложения" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Код из 6 цифр"), "000000");
+    expect(await screen.findByText(/Код не подошёл/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Код из 6 цифр")).toHaveValue("");
+
+    // Приложения под рукой нет — резервный код.
+    await user.click(screen.getByRole("button", { name: "Резервный код" }));
+    expect(screen.getByRole("heading", { name: "Резервный код" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Код вида K7QM-4XPA")).toBeInTheDocument();
+  });
+
+  it("истёкший шаг возвращает к паролю с пояснением", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("/api/v1/auth/login", () =>
+        HttpResponse.json({
+          status: "mfa_required",
+          token_type: "bearer",
+          mfa: { token: "step-1", methods: ["totp"], email_hint: null },
+        }),
+      ),
+      http.post("/api/v1/auth/mfa/verify", () =>
+        HttpResponse.json(
+          { detail: "Время на подтверждение вышло — войдите заново", code: "login_expired" },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderApp("/login", { signedIn: false });
+    await fillPassword(user);
+    await user.type(await screen.findByLabelText("Код из 6 цифр"), "123456");
+    expect(await screen.findByText(/Время на подтверждение вышло/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Пароль")).toBeInTheDocument();
+  });
+
+  it("на доверенном устройстве — без второго шага; временный пароль — сначала смена", async () => {
+    const user = userEvent.setup();
+    let mustChange = true;
+    server.use(
+      http.post("/api/v1/auth/login", () => HttpResponse.json({ status: "ok", ...tokens(1) })),
       http.get("/api/v1/auth/me", () =>
         HttpResponse.json(me({ must_change_password: mustChange })),
       ),
@@ -31,27 +140,34 @@ describe("вход", () => {
         return HttpResponse.json(tokens(2));
       }),
     );
-    renderApp("/", { signedIn: false });
+    renderApp("/login", { signedIn: false });
 
-    await user.type(await screen.findByLabelText("Код компании"), "meridian");
-    await user.type(screen.getByLabelText("Рабочая почта"), "anna@meridian-stroy.ru");
-    await user.type(screen.getByLabelText("Пароль"), "временный-пароль");
-    await user.click(screen.getByRole("button", { name: "Войти" }));
-
-    expect(loginBody).toEqual({
-      company_code: "meridian",
-      email: "anna@meridian-stroy.ru",
-      password: "временный-пароль",
-    });
+    await fillPassword(user);
     expect(await screen.findByRole("heading", { name: "Задайте свой пароль" })).toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("Временный пароль"), "временный-пароль");
-    await user.type(screen.getByLabelText("Новый пароль"), "длинная фраза для входа");
-    await user.type(screen.getByLabelText("Повторите новый пароль"), "длинная фраза для входа");
+    await user.type(screen.getByLabelText("Временный пароль"), "длинная фраза для входа");
+    await user.type(screen.getByLabelText("Новый пароль"), "другая длинная фраза");
+    await user.type(screen.getByLabelText("Повторите новый пароль"), "другая длинная фраза");
     await user.click(screen.getByRole("button", { name: "Сохранить пароль" }));
 
     expect(await screen.findByRole("log", { name: "Переписка" })).toBeInTheDocument();
     expect(getSession()?.accessToken).toBe("access-2");
+  });
+
+  it("неподтверждённая почта ведёт на ввод кода", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("/api/v1/auth/login", () =>
+        HttpResponse.json(
+          { detail: "Почта не подтверждена — введите код из письма", code: "email_not_verified" },
+          { status: 403 },
+        ),
+      ),
+    );
+    const { router } = renderApp("/login", { signedIn: false });
+    await fillPassword(user);
+    expect(await screen.findByRole("heading", { name: "Подтвердите почту" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/verify-email");
+    expect(screen.getByText(/Почта ещё не подтверждена/)).toBeInTheDocument();
   });
 
   it("показывает ошибку неверного пароля", async () => {
@@ -61,11 +177,8 @@ describe("вход", () => {
         HttpResponse.json({ detail: "Неверный логин или пароль" }, { status: 401 }),
       ),
     );
-    renderApp("/", { signedIn: false });
-    await user.type(await screen.findByLabelText("Код компании"), "meridian");
-    await user.type(screen.getByLabelText("Рабочая почта"), "anna@meridian-stroy.ru");
-    await user.type(screen.getByLabelText("Пароль"), "не тот");
-    await user.click(screen.getByRole("button", { name: "Войти" }));
+    renderApp("/login", { signedIn: false });
+    await fillPassword(user);
     expect(await screen.findByText("Неверный логин или пароль")).toBeInTheDocument();
   });
 
@@ -80,10 +193,22 @@ describe("вход", () => {
     expect(getSession()?.accessToken).toBe("access-3");
   });
 
-  it("без признака входа не дёргает refresh и показывает форму", async () => {
+  it("гость на главной видит сайт, refresh не дёргается", async () => {
     // Обработчика /auth/refresh нет: запрос уронил бы тест (onUnhandledRequest).
     renderApp("/", { signedIn: false });
-    expect(await screen.findByLabelText("Код компании")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: SITE_HEADING })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Войти" })).toHaveAttribute("href", "/login");
+    expect(document.title).toBe("kronto — ИИ-ассистент по документам компании");
+  });
+
+  it("гость на адресе приложения — к входу, на неизвестном — 404 сайта", async () => {
+    const { router } = renderApp("/admin/users", { signedIn: false });
+    expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?next=%2Fadmin%2Fusers");
+
+    await router.navigate("/no-such-page");
+    expect(await screen.findByRole("heading", { name: "Такой страницы нет" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "kronto — на главную" })).toBeInTheDocument();
   });
 
   it("выходит, когда соседняя вкладка сообщила о выходе", async () => {
@@ -93,7 +218,8 @@ describe("вход", () => {
     const otherTab = new BroadcastChannel("kronto.session");
     otherTab.postMessage("signed-out");
     otherTab.close();
-    expect(await screen.findByLabelText("Код компании")).toBeInTheDocument();
+    // Вышли — на главной снова сайт для гостя.
+    expect(await screen.findByRole("heading", { level: 1, name: SITE_HEADING })).toBeVisible();
     expect(getSession()).toBeNull();
   });
 
@@ -103,183 +229,6 @@ describe("вход", () => {
     await screen.findByRole("log", { name: "Переписка" });
     expect(router.state.location.pathname).toBe("/");
     expect(screen.queryByRole("link", { name: "Управление" })).not.toBeInTheDocument();
-  });
-});
-
-describe("чат", () => {
-  async function ask(question: string) {
-    const user = userEvent.setup();
-    const input = await screen.findByLabelText("Ваш вопрос");
-    await user.type(input, question);
-    await user.keyboard("{Enter}");
-    return user;
-  }
-
-  it("отвечает со ссылками на источники и открывает фрагмент", async () => {
-    signedInAs();
-    let asked: unknown;
-    server.use(
-      http.post("/api/v1/faq/ask", async ({ request }) => {
-        asked = await request.json();
-        return HttpResponse.json(answer());
-      }),
-    );
-    renderApp("/");
-    const user = await ask("Какие суточные?");
-
-    expect(await screen.findByText(/Суточные по России — 700 рублей/)).toBeInTheDocument();
-    expect(asked).toEqual({ question: "Какие суточные?" });
-
-    const marker = screen.getByRole("button", {
-      name: "Источник 1: Положение о командировках.docx",
-    });
-    await user.click(marker);
-    const panel = await screen.findByRole("dialog");
-    expect(within(panel).getByText("Положение о командировках › 2. Суточные")).toBeInTheDocument();
-    expect(
-      within(panel).getByText("Суточные при командировках по России — 700 рублей в сутки."),
-    ).toBeInTheDocument();
-    expect(within(panel).queryByText(/Положение о командировках > 2/)).not.toBeInTheDocument();
-    expect(within(panel).getByRole("link", { name: /Открыть документ/ })).toHaveAttribute(
-      "href",
-      "https://portal.example.ru/docs/42",
-    );
-
-    await user.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-  });
-
-  it("продолжает диалог и начинает новый по кнопке", async () => {
-    signedInAs();
-    const asked: unknown[] = [];
-    server.use(
-      http.post("/api/v1/faq/ask", async ({ request }) => {
-        asked.push(await request.json());
-        return HttpResponse.json(answer({ conversation_id: "c-1" }));
-      }),
-    );
-    renderApp("/");
-    const user = await ask("Какие суточные?");
-    await screen.findAllByText(/Суточные по России — 700 рублей/);
-    await user.type(screen.getByLabelText("Ваш вопрос"), "А за рубежом?");
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(asked).toHaveLength(2));
-
-    await user.click(await screen.findByRole("button", { name: "Новый диалог" }));
-    await user.type(screen.getByLabelText("Ваш вопрос"), "Сколько дней отпуска?");
-    await user.keyboard("{Enter}");
-    await waitFor(() => expect(asked).toHaveLength(3));
-
-    expect(asked).toEqual([
-      { question: "Какие суточные?" },
-      { question: "А за рубежом?", conversation_id: "c-1" },
-      { question: "Сколько дней отпуска?" },
-    ]);
-  });
-
-  it("отправляет оценку ответа", async () => {
-    signedInAs();
-    let vote: unknown;
-    server.use(
-      http.post("/api/v1/faq/ask", () => HttpResponse.json(answer())),
-      http.patch("/api/v1/faq/answers/a-1", async ({ request }) => {
-        vote = await request.json();
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    renderApp("/");
-    const user = await ask("Какие суточные?");
-    await user.click(await screen.findByRole("button", { name: "Ответ помог" }));
-    expect(await screen.findByText("Спасибо за оценку")).toBeInTheDocument();
-    expect(vote).toEqual({ value: 1 });
-    expect(screen.getByRole("button", { name: "Ответ помог" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-
-  it("помечает общий ответ как не из документов", async () => {
-    signedInAs();
-    server.use(
-      http.post("/api/v1/faq/ask", () =>
-        HttpResponse.json(
-          answer({
-            origin: "general_knowledge",
-            answer_given: false,
-            sources: [],
-            content:
-              "В документах компании ответа нет. Ниже — общая информация, не из документов компании:\nСтолица Австралии — Канберра.",
-          }),
-        ),
-      ),
-    );
-    renderApp("/");
-    await ask("Столица Австралии?");
-    expect(await screen.findByText("Столица Австралии — Канберра.")).toBeInTheDocument();
-    expect(
-      screen.getByText("Ниже — общая информация, не из документов компании"),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/Ниже — общая информация, не из документов компании:/),
-    ).not.toBeInTheDocument();
-  });
-
-  it("честно отказывает, когда ответа нет", async () => {
-    signedInAs();
-    server.use(
-      http.post("/api/v1/faq/ask", () =>
-        HttpResponse.json(
-          answer({
-            origin: "none",
-            answer_given: false,
-            sources: [],
-            content: "В документах компании ответа нет.",
-          }),
-        ),
-      ),
-    );
-    renderApp("/");
-    await ask("Сколько дней удалёнки?");
-    expect(
-      await screen.findByText("В документах компании нет ответа на этот вопрос."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Вопрос попадёт в отчёт о пробелах в документах")).toBeInTheDocument();
-  });
-
-  it("показывает исчерпанный лимит отдельным сообщением", async () => {
-    signedInAs();
-    server.use(
-      http.post("/api/v1/faq/ask", () =>
-        HttpResponse.json({ detail: "Лимит", code: "credits_exhausted" }, { status: 402 }),
-      ),
-    );
-    renderApp("/");
-    await ask("Вопрос");
-    expect(
-      await screen.findByText("Лимит вопросов компании на этот месяц исчерпан."),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Повторить/ })).not.toBeInTheDocument();
-  });
-
-  it("предлагает повторить после сбоя", async () => {
-    signedInAs();
-    let calls = 0;
-    server.use(
-      http.post("/api/v1/faq/ask", () => {
-        calls += 1;
-        return calls === 1
-          ? HttpResponse.json(
-              { detail: "Сервис языковой модели недоступен, попробуйте позже" },
-              { status: 502 },
-            )
-          : HttpResponse.json(answer());
-      }),
-    );
-    renderApp("/");
-    const user = await ask("Какие суточные?");
-    await user.click(await screen.findByRole("button", { name: /Повторить/ }));
-    expect(await screen.findByText(/Суточные по России — 700 рублей/)).toBeInTheDocument();
-    expect(calls).toBe(2);
   });
 });
 
@@ -332,7 +281,7 @@ describe("плашка лимита вопросов", () => {
   }
 
   it("администратор видит предупреждение с порога из API", async () => {
-    signedInAs({ role: "admin" });
+    signedInAsAdmin();
     server.use(
       http.get("/api/v1/usage", () =>
         HttpResponse.json(usage({ used: 340, remaining: 80, warning: true })),
@@ -342,11 +291,14 @@ describe("плашка лимита вопросов", () => {
 
     expect(await screen.findByText("Лимит вопросов скоро закончится")).toBeInTheDocument();
     expect(screen.getByText(/Израсходовано 81 %/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute("href", "/admin/usage");
+    expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute(
+      "href",
+      "/admin/tariff",
+    );
   });
 
   it("администратор видит исчерпанный лимит", async () => {
-    signedInAs({ role: "admin" });
+    signedInAsAdmin();
     server.use(
       http.get("/api/v1/usage", () =>
         HttpResponse.json(usage({ used: 420, remaining: 0, warning: true, exhausted: true })),
@@ -365,14 +317,14 @@ describe("плашка лимита вопросов", () => {
         return HttpResponse.json(usage());
       }),
     );
-    signedInAs({ role: "admin" });
+    signedInAsAdmin();
     const admin = renderApp("/");
     await screen.findByRole("log", { name: "Переписка" });
     await waitFor(() => expect(requests).toBe(1));
     expect(screen.queryByText(/Лимит вопросов/)).not.toBeInTheDocument();
     admin.unmount();
 
-    signedInAs({ role: "employee" });
+    signedInAs();
     renderApp("/");
     await screen.findByRole("log", { name: "Переписка" });
     expect(requests).toBe(1);

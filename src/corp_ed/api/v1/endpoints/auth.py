@@ -1,18 +1,33 @@
+import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import (
+    Principal,
+    get_account_service,
     get_auth_service,
-    get_current_user,
-    get_current_user_allow_password_change,
+    get_avatar_service,
+    get_company_service,
+    get_department_repository,
+    get_invite_service,
+    get_mfa_service,
+    get_principal,
+    get_principal_allow_password_change,
+    get_relying_party,
     get_tenant_repository,
+    get_user_repository,
 )
 from corp_ed.api.v1.rate_limits import (
     LOGIN_FAILURES_PER_ACCOUNT,
     LOGIN_PER_IP,
+    MAIL_PER_ADDRESS,
+    MAIL_PER_IP,
     PASSWORD_CHANGE_PER_USER,
     REFRESH_PER_IP,
+    REGISTER_PER_IP,
+    VERIFY_PER_IP,
     client_ip,
     enforce,
     ensure_not_locked,
@@ -22,79 +37,338 @@ from corp_ed.api.v1.rate_limits import (
 )
 from corp_ed.api.v1.schemas.auth import (
     ChangePasswordRequest,
+    CurrentCompany,
+    DepartmentRef,
+    EmailRequest,
+    EmailSentResponse,
     LoginRequest,
+    LoginResponse,
+    MembershipItem,
     MeResponse,
+    MfaChallenge,
+    MfaState,
+    MfaTokenRequest,
+    MfaVerifyRequest,
+    PasskeyOptionsResponse,
+    RegisterRequest,
+    ResetPasswordRequest,
+    SwitchCompanyRequest,
+    TokenRequest,
     TokenResponse,
+    VerifyCodeRequest,
 )
 from corp_ed.api.v1.session_cookie import (
     clear_refresh_cookie,
     ensure_same_origin,
+    read_device_cookie,
     read_refresh_cookie,
     session_response,
+    set_device_cookie,
 )
+from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import InvalidCredentialsError, NotAuthenticatedError
 from corp_ed.core.password_policy import validate_password
 from corp_ed.core.rate_limit import RateLimiter
-from corp_ed.domain.models import User
+from corp_ed.core.tenant_context import account_scope
+from corp_ed.domain.models import StaffMember
+from corp_ed.repositories.account_repository import normalize_email
+from corp_ed.repositories.department_repository import DepartmentRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.account_service import AccountService
 from corp_ed.services.auth_service import AuthService
+from corp_ed.services.avatar_service import AvatarService
+from corp_ed.services.company_service import CompanyService
+from corp_ed.services.invite_service import InviteService
+from corp_ed.services.mfa_service import MfaService, RelyingParty
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/me", response_model=MeResponse)
 async def read_me(
-    current_user: Annotated[User, Depends(get_current_user_allow_password_change)],
+    principal: Annotated[Principal, Depends(get_principal_allow_password_change)],
     tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    mfa: Annotated[MfaService, Depends(get_mfa_service)],
+    avatars: Annotated[AvatarService, Depends(get_avatar_service)],
+    departments: Annotated[DepartmentRepository, Depends(get_department_repository)],
+    company_service: Annotated[CompanyService, Depends(get_company_service)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MeResponse:
-    """Кто вошёл. Доступна и до смены временного пароля: фронту нужно
-    знать must_change_password, чтобы показать форму смены."""
-    tenant = await tenant_repo.get_by_id(current_user.tenant_id)
+    """Кто вошёл: учётка, выбранная компания и все компании человека.
+    Доступна и до смены временного пароля: фронту нужно знать
+    must_change_password, чтобы показать форму смены."""
+    account, member = principal.account, principal.member
+    with account_scope(account.id):
+        memberships = await user_repo.memberships_of_account(account.id)
+    logos = await company_service.logo_urls([m.tenant_id for m in memberships])
+    companies: list[MembershipItem] = []
+    for membership in memberships:
+        tenant = await tenant_repo.get_by_id(membership.tenant_id)
+        if tenant is None or not tenant.is_active:
+            continue
+        companies.append(
+            MembershipItem(
+                tenant_id=tenant.id,
+                company_name=tenant.name,
+                role=membership.role,
+                status=membership.status,
+                logo_url=logos.get(tenant.id),
+            )
+        )
+    company = None
+    if member is not None:
+        tenant = await tenant_repo.get_by_id(member.tenant_id)
+        # Отдел ищется под RLS компании из токена — чужой не найдётся.
+        department = (
+            await departments.get_by_id(member.department_id)
+            if member.department_id
+            else None
+        )
+        company = CurrentCompany(
+            tenant_id=member.tenant_id,
+            member_id=member.id,
+            name=tenant.name if tenant else "",
+            role=member.role,
+            position=member.position,
+            department=DepartmentRef(id=department.id, name=department.name)
+            if department
+            else None,
+            logo_url=logos.get(member.tenant_id),
+        )
     return MeResponse(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=current_user.full_name,
-        role=current_user.role,
-        tenant_id=current_user.tenant_id,
-        company_name=tenant.name if tenant else "",
-        company_code=tenant.company_code if tenant else "",
-        must_change_password=current_user.must_change_password,
-        last_login_at=current_user.last_login_at,
+        id=account.id,
+        email=account.email,
+        first_name=account.first_name,
+        last_name=account.last_name,
+        patronymic=account.patronymic,
+        full_name=account.full_name,
+        phone=account.phone,
+        telegram=account.telegram,
+        avatar_url=await avatars.url_for(account.id),
+        must_change_password=account.must_change_password,
+        last_login_at=account.last_login_at,
+        company=company,
+        companies=companies,
+        mfa=MfaState(
+            strong=await mfa.has_strong(account),
+            strong_required=await mfa.strong_required(account),
+        ),
+        staff=await session.get(StaffMember, account.id) is not None,
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=LoginResponse)
 async def login(
     request: Request,
     response: Response,
     data: LoginRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    mfa: Annotated[MfaService, Depends(get_mfa_service)],
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
-) -> TokenResponse:
-    """Вход. Два лимита против перебора (ASVS 6.3.1):
+) -> LoginResponse:
+    """Вход по почте и паролю (ТЗ §2–3). Верный пароль даёт сессию сразу,
+    только если браузер — доверенное устройство учётки; иначе — шаг
+    второго фактора (/auth/mfa/verify).
 
+    Два лимита против перебора (ASVS 6.3.1):
     - на IP — все попытки: один адрес не перебирает много учёток;
-    - на учётку — только неудачные: распределённый перебор одной учётки
+    - на почту — только неудачные: распределённый перебор одной учётки
       с многих адресов. Успешный вход счётчик обнуляет.
     """
     await enforce(limiter, LOGIN_PER_IP, client_ip(request))
-    account = f"{data.company_code.casefold()}:{data.email.casefold()}"
-    await ensure_not_locked(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
+    account_key = normalize_email(str(data.email))
+    await ensure_not_locked(limiter, LOGIN_FAILURES_PER_ACCOUNT, account_key)
 
     try:
-        pair = await auth_service.login(data.company_code, data.email, data.password)
+        account = await auth_service.check_password(str(data.email), data.password)
     except InvalidCredentialsError:
-        await record(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
+        await record(limiter, LOGIN_FAILURES_PER_ACCOUNT, account_key)
         raise
+    await forget(limiter, LOGIN_FAILURES_PER_ACCOUNT, account_key)
 
-    await forget(limiter, LOGIN_FAILURES_PER_ACCOUNT, account)
+    if await mfa.is_trusted(account, read_device_cookie(request)):
+        remember = data.remember and await mfa.remember_allowed(account)
+        pair = await auth_service.login_session(account, remember=remember)
+        token = session_response(response, pair)
+        return LoginResponse(
+            status="ok", access_token=token.access_token, expires_in=token.expires_in
+        )
+
+    step = await mfa.start_login(account, remember=data.remember)
+    return LoginResponse(
+        status="mfa_required",
+        mfa=MfaChallenge(
+            token=step.token, methods=step.methods, email_hint=step.email_hint
+        ),
+    )
+
+
+@router.post("/mfa/verify", response_model=TokenResponse)
+async def verify_second_factor(
+    request: Request,
+    response: Response,
+    data: MfaVerifyRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    mfa: Annotated[MfaService, Depends(get_mfa_service)],
+    rp: Annotated[RelyingParty, Depends(get_relying_party)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> TokenResponse:
+    """Второй шаг входа: код из письма, приложения, резервный или ключ
+    доступа. «Запомнить» — доверенное устройство на 30 дней, если ни одна
+    компания человека это не запретила."""
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    done = await mfa.complete_login(
+        data.token, data.method, code=data.code, credential=data.credential, rp=rp
+    )
+    remember = done.remember and await mfa.remember_allowed(done.account)
+    device = mfa.trust_device(done.account) if remember else None
+    pair = await auth_service.login_session(done.account, remember=remember)
+    if device is not None:
+        set_device_cookie(response, device)
+    return session_response(response, pair)
+
+
+@router.post("/mfa/resend", status_code=status.HTTP_202_ACCEPTED)
+async def resend_login_code(
+    request: Request,
+    data: MfaTokenRequest,
+    mfa: Annotated[MfaService, Depends(get_mfa_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> None:
+    """Новый код на почту для того же шага входа."""
+    await enforce(limiter, MAIL_PER_IP, client_ip(request))
+    await enforce(limiter, MAIL_PER_ADDRESS, f"mfa:{data.token[:16]}")
+    await mfa.resend_login_code(data.token)
+
+
+@router.post("/mfa/passkey-options", response_model=PasskeyOptionsResponse)
+async def passkey_login_options(
+    request: Request,
+    data: MfaTokenRequest,
+    mfa: Annotated[MfaService, Depends(get_mfa_service)],
+    rp: Annotated[RelyingParty, Depends(get_relying_party)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> PasskeyOptionsResponse:
+    """Параметры для navigator.credentials.get() на шаге входа."""
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    options = await mfa.passkey_login_options(data.token, rp)
+    return PasskeyOptionsResponse(options=json.loads(options))
+
+
+@router.post(
+    "/register",
+    response_model=EmailSentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def register(
+    request: Request,
+    data: RegisterRequest,
+    service: Annotated[AccountService, Depends(get_account_service)],
+    invites: Annotated[InviteService, Depends(get_invite_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> EmailSentResponse:
+    """Регистрация (ТЗ §2): учётка без компании и письмо с кодом. Ответ
+    одинаковый, есть ли уже учётка с этой почтой."""
+    email = normalize_email(str(data.email))
+    await enforce(limiter, REGISTER_PER_IP, client_ip(request))
+    validate_password(data.password, email=email)
+    await enforce(limiter, MAIL_PER_ADDRESS, email)
+    invited = data.invite is not None and await invites.is_valid(data.invite)
+    await service.register(
+        first_name=data.first_name,
+        last_name=data.last_name,
+        email=email,
+        password=data.password,
+        invited=invited,
+    )
+    return EmailSentResponse(email=email)
+
+
+@router.post(
+    "/verify-email/resend",
+    response_model=EmailSentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def resend_verification(
+    request: Request,
+    data: EmailRequest,
+    service: Annotated[AccountService, Depends(get_account_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> EmailSentResponse:
+    email = normalize_email(str(data.email))
+    await enforce(limiter, MAIL_PER_IP, client_ip(request))
+    await enforce(limiter, MAIL_PER_ADDRESS, email)
+    await service.resend_verification(email)
+    return EmailSentResponse(email=email)
+
+
+@router.post("/verify-email", response_model=TokenResponse)
+async def verify_email_code(
+    request: Request,
+    response: Response,
+    data: VerifyCodeRequest,
+    service: Annotated[AccountService, Depends(get_account_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> TokenResponse:
+    """Подтвердить почту кодом из письма и сразу войти."""
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    pair = await service.verify_by_code(str(data.email), data.code)
+    return session_response(response, pair)
+
+
+@router.post("/verify-email/link", response_model=TokenResponse)
+async def verify_email_link(
+    request: Request,
+    response: Response,
+    data: TokenRequest,
+    service: Annotated[AccountService, Depends(get_account_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> TokenResponse:
+    """Подтвердить почту по ссылке из письма и сразу войти."""
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    pair = await service.verify_by_link(data.token)
     return session_response(response, pair)
 
 
 @router.post(
-    "/refresh",
-    response_model=TokenResponse,
+    "/forgot-password",
+    response_model=EmailSentResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
+async def forgot_password(
+    request: Request,
+    data: EmailRequest,
+    service: Annotated[AccountService, Depends(get_account_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> EmailSentResponse:
+    """Ссылка для нового пароля. Ответ одинаковый, есть учётка или нет."""
+    email = normalize_email(str(data.email))
+    await enforce(limiter, MAIL_PER_IP, client_ip(request))
+    await enforce(limiter, MAIL_PER_ADDRESS, email)
+    await service.forgot_password(email)
+    return EmailSentResponse(email=email)
+
+
+@router.post("/reset-password", response_model=TokenResponse)
+async def reset_password(
+    request: Request,
+    response: Response,
+    data: ResetPasswordRequest,
+    service: Annotated[AccountService, Depends(get_account_service)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> TokenResponse:
+    """Новый пароль по ссылке из письма: прежние сессии закрываются,
+    открывается новая."""
+    await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    pair = await service.reset_password(
+        data.token, data.new_password, data.second_factor
+    )
+    return session_response(response, pair)
+
+
+@router.post("/refresh", response_model=TokenResponse)
 async def refresh(
     request: Request,
     response: Response,
@@ -112,16 +386,37 @@ async def refresh(
     return session_response(response, await auth_service.refresh(raw))
 
 
+@router.post("/switch-company", response_model=TokenResponse)
+async def switch_company(
+    request: Request,
+    response: Response,
+    data: SwitchCompanyRequest,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    principal: Annotated[Principal, Depends(get_principal)],
+) -> TokenResponse:
+    """Перейти в другую свою компанию — новая пара токенов."""
+    ensure_same_origin(request)
+    pair = await auth_service.switch_company(
+        principal.account, data.tenant_id, read_refresh_cookie(request)
+    )
+    return session_response(response, pair)
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     request: Request,
     response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-    current_user: Annotated[User, Depends(get_current_user_allow_password_change)],
+    principal: Annotated[Principal, Depends(get_principal_allow_password_change)],
 ) -> None:
-    """Отозвать цепочку текущего входа и стереть cookie."""
+    """Закрыть текущий сеанс и стереть cookie."""
     ensure_same_origin(request)
-    await auth_service.logout(current_user, read_refresh_cookie(request))
+    await auth_service.logout(
+        principal.account,
+        principal.member,
+        principal.session_id,
+        read_refresh_cookie(request),
+    )
     clear_refresh_cookie(response)
 
 
@@ -129,9 +424,9 @@ async def logout(
 async def logout_everywhere(
     response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    principal: Annotated[Principal, Depends(get_principal)],
 ) -> None:
-    await auth_service.logout_everywhere(current_user)
+    await auth_service.logout_everywhere(principal.account, principal.member)
     clear_refresh_cookie(response)
 
 
@@ -140,7 +435,7 @@ async def change_password(
     response: Response,
     data: ChangePasswordRequest,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-    current_user: Annotated[User, Depends(get_current_user_allow_password_change)],
+    principal: Annotated[Principal, Depends(get_principal_allow_password_change)],
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> TokenResponse:
     """Сменить пароль. Все прежние сессии закрываются, возвращается
@@ -152,9 +447,9 @@ async def change_password(
     запросов» (стенд 02.10). Политика не трогает текущий пароль, так что
     перебору это ничего не даёт.
     """
-    validate_password(data.new_password, email=current_user.email)
-    await enforce(limiter, PASSWORD_CHANGE_PER_USER, str(current_user.id))
+    validate_password(data.new_password, email=principal.account.email)
+    await enforce(limiter, PASSWORD_CHANGE_PER_USER, str(principal.account.id))
     pair = await auth_service.change_password(
-        current_user, data.current_password, data.new_password
+        principal.account, principal.member, data.current_password, data.new_password
     )
     return session_response(response, pair)

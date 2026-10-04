@@ -78,14 +78,21 @@ def settings() -> ConnectorSettings:
 
 
 @pytest.fixture
+def hidden_kinds() -> frozenset[str]:
+    """CONNECTOR_HIDDEN_KINDS; тест подменяет параметризацией."""
+    return frozenset()
+
+
+@pytest.fixture
 async def connectors_api(
     api: httpx.AsyncClient,
     session: AsyncSession,
     source: FakeSource,
     secrets: SecretBox,
     settings: ConnectorSettings,
+    hidden_kinds: frozenset[str],
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    registry = make_registry(source)
+    registry = make_registry(source, hidden_kinds)
 
     def build(session: AsyncSession, audit: AuditRepository) -> ConnectorService:
         return ConnectorService(
@@ -154,6 +161,38 @@ async def test_kinds_describe_the_form(
     assert spec["credential_fields"] == [
         {"name": "token", "title": "Токен", "required": True, "secret": True}
     ]
+
+
+@pytest.mark.parametrize("hidden_kinds", [frozenset({FAKE_KIND})])
+async def test_hidden_kind_is_not_offered_but_existing_ones_work(
+    connectors_api: httpx.AsyncClient, admin_account: User, session: AsyncSession
+) -> None:
+    """CONNECTOR_HIDDEN_KINDS: вида нет в каталоге и новое не создать;
+    заведённое раньше — в списке и проверяется, как прежде."""
+    with tenant_scope(admin_account.tenant_id):
+        existing = Connector(
+            kind=FAKE_KIND,
+            name="Заведён до скрытия",
+            mode="organization",
+            modules=["docs"],
+            config={"base_url": "https://portal.example.com/rest/"},
+        )
+        session.add(existing)
+        await session.commit()
+
+    kinds = await connectors_api.get(f"{URL}/kinds", headers=bearer(admin_account))
+    assert [k["kind"] for k in kinds.json()] == [FAKE_PER_USER_KIND]
+
+    created = await _create(connectors_api, admin_account)
+    assert created.status_code == 422
+    assert created.json()["code"] == "kind_unknown"
+
+    listed = await connectors_api.get(URL, headers=bearer(admin_account))
+    assert [c["id"] for c in listed.json()] == [str(existing.id)]
+    tested = await connectors_api.post(
+        f"{URL}/{existing.id}/test", headers=bearer(admin_account)
+    )
+    assert tested.status_code == 200, tested.text
 
 
 @pytest.mark.parametrize(
@@ -667,3 +706,32 @@ async def test_check_on_kind_without_adapter_is_422_not_500(
     )
     assert response.status_code == 422
     assert response.json()["code"] == "kind_unknown"
+
+
+async def test_admin_sees_how_many_connected_and_employee_sees_sources(
+    connectors_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+) -> None:
+    """«5 из 12» у администратора и «где ищет ассистент» у сотрудника (ТЗ §5)."""
+    per_user = await _create(
+        connectors_api, admin_account, {**CREATE, "kind": FAKE_PER_USER_KIND}
+    )
+    connector_id = per_user.json()["id"]
+    await connectors_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "my-token"}},
+        headers=bearer(account),
+    )
+
+    listed = await connectors_api.get(URL, headers=bearer(admin_account))
+    [item] = [c for c in listed.json() if c["id"] == connector_id]
+    assert item["grants_active"] == 1
+    assert item["members_active"] == 2
+
+    mine = await connectors_api.get("/api/v1/sources/mine", headers=bearer(account))
+    assert mine.status_code == 200
+    [source] = mine.json()["connectors"]
+    assert source["id"] == connector_id
+    assert source["mode"] == "per_user"
+    assert source["grant_status"] == "active"

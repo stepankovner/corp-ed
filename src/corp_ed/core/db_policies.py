@@ -72,6 +72,9 @@ TENANT_SETTING = "app.tenant_id"
 через set_config(..., is_local => true): значение живёт до конца
 транзакции и не переезжает с соединением пула в чужой запрос."""
 
+ACCOUNT_SETTING = "app.account_id"
+"""Параметр сессии с учёткой из токена — для правила own_membership."""
+
 TENANT_TABLES = (
     "users",
     "materials",
@@ -85,6 +88,16 @@ TENANT_TABLES = (
     "connector_sync_runs",
     "material_access",
     "invites",
+    "departments",
+    "conversations",
+    "chat_messages",
+    "chat_attachments",
+    "chat_attachment_chunks",
+    "chat_suggestions",
+    "folders",
+    "folder_departments",
+    "notifications",
+    "notification_settings",
 )
 """Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
 проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,
@@ -92,7 +105,13 @@ TENANT_TABLES = (
 по хешу до входа), audit_events (пишется и без тенанта), ingest_jobs и
 connector_sync_jobs (очереди: воркер берёт задачу до того, как знает
 тенанта; в них только идентификаторы), leads (заявки на созвон: клиента
-ещё нет, читает только команда из CLI)."""
+ещё нет, читает только команда из CLI), account_avatars (фото учётки,
+как и сама учётка, — вне компаний; отдаётся по подписанной ссылке),
+tenant_logos (логотип: переключатель показывает логотипы всех компаний
+человека; тоже по подписанной ссылке), staff_members (команда kronto:
+наша панель видит все компании; заводит только CLI), support_requests
+(обращения в поддержку — от учётки, у которой может не быть компании;
+читает команда)."""
 
 # NULLIF: пустая строка (тенант не выставлен) превращается в NULL, и
 # сравнение даёт NULL — ни одной строки. Приведение ''::uuid упало бы с
@@ -131,8 +150,34 @@ def rls_statements(tables: tuple[str, ...] = TENANT_TABLES) -> list[str]:
     return statements
 
 
+_CURRENT_ACCOUNT = f"NULLIF(current_setting('{ACCOUNT_SETTING}', true), '')::uuid"
+
+
+def own_membership_statements() -> list[str]:
+    """Свои членства видны во всех компаниях (ТЗ §2, решение 03.10).
+
+    Учётка не привязана к компании: на входе и в переключателе нужен
+    список компаний человека. Политики RLS складываются через OR, поэтому
+    это правило добавляет к tenant_isolation только чтение строк users с
+    account_id из токена. Писать в чужую компанию оно не даёт (только
+    SELECT), данные компаний (документы, вопросы) не открывает — у них
+    своя tenant_isolation.
+    """
+    return [
+        "DROP POLICY IF EXISTS own_membership ON users",
+        f"""
+        CREATE POLICY own_membership ON users FOR SELECT
+        USING (account_id = {_CURRENT_ACCOUNT})
+        """,
+    ]
+
+
 def all_statements() -> list[str]:
-    return [*audit_append_only_statements(), *rls_statements()]
+    return [
+        *audit_append_only_statements(),
+        *rls_statements(),
+        *own_membership_statements(),
+    ]
 
 
 def apply_all(connection: Connection) -> None:
