@@ -208,6 +208,11 @@ class ConnectorService:
         config: Mapping[str, str],
         sync_interval_minutes: int | None,
     ) -> Connector:
+        if not self.registry.offered(kind):
+            # Скрытый вид (CONNECTOR_HIDDEN_KINDS) — как неизвестный.
+            raise InvalidConnectorConfigError(
+                "kind_unknown", f"Неизвестный вид подключения: {kind}"
+            )
         spec = self._spec(kind)
         await self._check_tariff(spec)
         clean_modules = _validate_modules(spec, modules)

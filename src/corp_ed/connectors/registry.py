@@ -14,10 +14,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
+import structlog
+
 from corp_ed.connectors.base import AdapterOptions, OAuthFlow, SourceAdapter
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.domain.types import ConnectorMode
+
+logger = structlog.get_logger()
 
 
 @dataclass(frozen=True)
@@ -116,8 +120,13 @@ class OAuthNotSupportedError(KeyError):
 
 
 class AdapterRegistry:
-    def __init__(self, enabled_preview: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self,
+        enabled_preview: frozenset[str] = frozenset(),
+        hidden_kinds: frozenset[str] = frozenset(),
+    ) -> None:
         self._enabled_preview = enabled_preview
+        self._hidden_kinds = hidden_kinds
         self._specs: dict[str, KindSpec] = {}
         self._factories: dict[str, AdapterFactory] = {}
         self._oauth: dict[str, OAuthFactory] = {}
@@ -148,7 +157,20 @@ class AdapterRegistry:
             self._oauth[spec.kind] = oauth
 
     def kinds(self) -> list[KindSpec]:
-        return sorted(self._specs.values(), key=lambda spec: spec.kind)
+        """Каталог: что компании можно подключить. Скрытых видов в нём нет."""
+        return sorted(
+            (spec for spec in self._specs.values() if self.offered(spec.kind)),
+            key=lambda spec: spec.kind,
+        )
+
+    def offered(self, kind: str) -> bool:
+        """Можно ли завести новое подключение этого вида. Уже заведённые
+        скрытых видов работают: spec() и build() их не различают."""
+        return kind in self._specs and kind not in self._hidden_kinds
+
+    def unknown_hidden(self) -> frozenset[str]:
+        """Скрытые настройкой имена, которых нет среди видов, — опечатка."""
+        return self._hidden_kinds - self._specs.keys()
 
     def spec(self, kind: str) -> KindSpec:
         try:
@@ -194,8 +216,14 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.confluence import register as register_confluence
     from corp_ed.connectors.yandex import register as register_yandex
 
-    registry = AdapterRegistry(settings.enabled_preview_modules)
+    registry = AdapterRegistry(
+        settings.enabled_preview_modules, settings.hidden_kind_names
+    )
     register_bitrix24(registry, settings)
     register_confluence(registry, settings)
     register_yandex(registry, settings)
+    if unknown := registry.unknown_hidden():
+        # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
+        # все ручки подключений: реестр собирается при первом запросе.
+        logger.warning("connector_hidden_kind_unknown", kinds=sorted(unknown))
     return registry
