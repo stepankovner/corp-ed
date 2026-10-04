@@ -1,3 +1,7 @@
+# Корпус проверки стенда: байты файлов — часть проверки (CRLF, пробелы,
+# размер), хуки их не трогают.
+exclude: ^tests/fixtures/stand_quality/
+
 repos:
   # Базовые хуки общего назначения
   - repo: https://github.com/pre-commit/pre-commit-hooks

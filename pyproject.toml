@@ -54,7 +54,8 @@ dev = [
 [tool.ruff]
 line-length = 88
 target-version = "py312"
-extend-exclude = ["migrations/versions"]
+# Генератор корпуса проверки стенда — скрипт данных, не код продукта.
+extend-exclude = ["migrations/versions", "tests/fixtures/stand_quality"]
 
 [tool.ruff.lint]
 select = [

@@ -52,3 +52,4 @@ eval/private/
 dump.rdb
 # кэш стенда: эмбеддинги и переформулировки (eval.bench, eval.multi_query)
 eval/.cache/
+tests/fixtures/stand_quality/_build/

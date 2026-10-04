@@ -1,0 +1,3 @@
+# Корпус проверки стенда: байты как есть (Windows-1251 с CRLF, файл из пробелов).
+tests/fixtures/stand_quality/docs/** -text
+tests/fixtures/stand_quality/edge/** -text
