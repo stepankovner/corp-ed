@@ -114,6 +114,34 @@ describe("песочница", () => {
     expect(screen.getByRole("button", { name: "Спросить" })).toBeEnabled();
   });
 
+  it("два фрагмента одного раздела — одна карточка с обоими", async () => {
+    const user = userEvent.setup();
+    demoInfo();
+    const [only] = ANSWER.sources;
+    const answer: Schemas["DemoAnswerResponse"] = {
+      content: "Суточные — 700 ₽ [1], отчёт — за три дня [2].",
+      origin: "documents",
+      sources: [
+        only!,
+        { ...only!, content: "4.5. Авансовый отчёт сдаётся в течение трёх рабочих дней." },
+      ],
+    };
+    server.use(http.post("/api/v1/demo/ask/stream", () => demoStream([{ type: "done", answer }])));
+    renderApp("/demo", { signedIn: false });
+    await user.type(await screen.findByLabelText("Ваш вопрос"), "Какие суточные?{Enter}");
+
+    const card = await screen.findByRole("button", {
+      name: /^1, 2\s?Положение о служебных командировках › Раздел 4/,
+    });
+    expect(
+      screen.getAllByRole("button", { name: /Положение о служебных командировках/ }),
+    ).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Источник 2" }));
+    expect(card).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/Бухгалтерия перечисляет аванс/)).toBeVisible();
+    expect(screen.getByText(/Авансовый отчёт сдаётся/)).toBeVisible();
+  });
+
   it("готовый вопрос, честный отказ, лимит и ошибка в потоке", async () => {
     const user = userEvent.setup();
     demoInfo();

@@ -5,28 +5,41 @@ import { IconButton } from "../ui/IconButton";
 import styles from "./Chat.module.css";
 import { safeHttpUrl } from "../lib/url";
 import { Markdown } from "./Markdown";
-import { fragmentText, sourceSection, type Source } from "./sources";
+import { fragmentText, sourceGroupOf, sourceSection, type Source } from "./sources";
 
 interface Props {
-  source: Source;
-  number: number;
+  /** Все источники ответа: панель показывает раздел целиком. */
+  sources: readonly Source[];
+  /** Источник, который открыли (индекс с нуля). */
+  index: number;
   onClose: () => void;
 }
 
-/** Фрагмент документа, на который опирается ответ. */
-export function SourcePanel({ source, number, onClose }: Props) {
+/**
+ * Фрагменты документа, на которые опирается ответ. Несколько фрагментов
+ * одного раздела — одна карточка (sources.ts), поэтому и панель показывает
+ * их вместе; тот, на который сослались, подсвечен.
+ */
+export function SourcePanel({ sources, index, onClose }: Props) {
   const panel = useRef<HTMLDivElement>(null);
-  const url = safeHttpUrl(source.source_url ?? null);
-  const section = sourceSection(source);
+  const active = useRef<HTMLDivElement>(null);
+  const group = sourceGroupOf(sources, index);
+  const source = sources[index];
 
   useEffect(() => {
     panel.current?.focus();
+    active.current?.scrollIntoView({ block: "nearest" });
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose, source]);
+  }, [onClose, index, sources]);
+
+  if (!group || !source) return null;
+  const url = safeHttpUrl(source.source_url ?? null);
+  const section = sourceSection(source);
+  const several = group.numbers.length > 1;
 
   return (
     <>
@@ -42,7 +55,9 @@ export function SourcePanel({ source, number, onClose }: Props) {
       >
         <div className={styles.panelHead}>
           <div>
-            <p className="mono muted">источник {number}</p>
+            <p className="mono muted">
+              {several ? "источники" : "источник"} {group.numbers.join(", ")}
+            </p>
             <h2 className={styles.panelTitle} id="source-title">
               {source.title}
             </h2>
@@ -59,9 +74,22 @@ export function SourcePanel({ source, number, onClose }: Props) {
           // Документ удалили или доступ к нему закрыли — фрагмент не показываем.
           <p className="muted">Документ удалён или вам недоступен: фрагмент не показываем.</p>
         ) : (
-          <div className={styles.panelText}>
-            <Markdown className={styles.hlBlock}>{fragmentText(source)}</Markdown>
-          </div>
+          group.sources.map((fragment, position) => {
+            const number = group.numbers[position] ?? 0;
+            const current = number === index + 1;
+            return (
+              <div
+                key={number}
+                ref={current ? active : undefined}
+                className={`${styles.panelText} ${styles.fragment}`}
+              >
+                {several ? <p className="mono muted">фрагмент {number}</p> : null}
+                <Markdown className={current ? styles.hlBlock : styles.fragmentBlock}>
+                  {fragmentText(fragment)}
+                </Markdown>
+              </div>
+            );
+          })
         )}
         {url ? (
           <a className={styles.panelLink} href={url} target="_blank" rel="noopener noreferrer">

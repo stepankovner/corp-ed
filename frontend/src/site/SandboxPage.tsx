@@ -6,6 +6,7 @@ import { Link } from "react-router";
 import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { Markdown } from "../chat/Markdown";
+import { groupSources } from "../chat/sources";
 import { readEvents } from "../chat/sse";
 import { buttonClass } from "../ui/buttonClass";
 import { Notice } from "../ui/Notice";
@@ -336,8 +337,8 @@ function TurnAnswer({ turn }: { turn: Turn }) {
       </Markdown>
       {sources.length ? (
         <ol className={styles.sources} aria-label="Источники">
-          {sources.map((source, index) => {
-            const expanded = open === index;
+          {groupSources(sources).map(({ source, index, numbers, sources: fragments }) => {
+            const expanded = open !== null && numbers.includes(open + 1);
             return (
               <li key={index} className={styles.source}>
                 <button
@@ -346,10 +347,21 @@ function TurnAnswer({ turn }: { turn: Turn }) {
                   aria-expanded={expanded}
                   onClick={() => setOpen(expanded ? null : index)}
                 >
-                  <span className={`mono ${styles.sourceNumber}`}>{index + 1}</span>
+                  <span className={`mono ${styles.sourceNumber}`}>{numbers.join(", ")}</span>
                   <span>{[source.title, ...source.heading_path].join(" › ")}</span>
                 </button>
-                {expanded ? <p className={styles.sourceText}>{source.content}</p> : null}
+                {expanded
+                  ? fragments.map((fragment, position) => (
+                      <p key={numbers[position]} className={styles.sourceText}>
+                        {numbers.length > 1 ? (
+                          <span className={`mono ${styles.sourceNumber}`}>
+                            {numbers[position]}{" "}
+                          </span>
+                        ) : null}
+                        {fragment.content}
+                      </p>
+                    ))
+                  : null}
               </li>
             );
           })}

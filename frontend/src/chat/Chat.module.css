@@ -238,6 +238,12 @@ button.src:hover {
   vertical-align: 0;
   margin: 0;
 }
+/* Несколько фрагментов одного раздела — номера рядом на одной карточке. */
+.srcNumbers {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
 
 .sources {
   display: flex;
@@ -841,6 +847,15 @@ button.src:hover {
 /* Найденный фрагмент целиком — подсветка .source-panel__text mark лендинга. */
 .hlBlock {
   background: var(--highlight);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+}
+.fragment + .fragment {
+  margin-top: var(--s-4);
+}
+/* Соседний фрагмент того же раздела — без подсветки. */
+.fragmentBlock {
+  background: var(--surface-2);
   border-radius: var(--r-sm);
   padding: 12px 14px;
 }
