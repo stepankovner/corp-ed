@@ -147,6 +147,29 @@ class Tenant(Base):
     email_domains: Mapped[list[str]] = mapped_column(
         ARRAY(String(253)), default=list, server_default="{}"
     )
+    # Последний день пилота (ТЗ §9): после него команда решает, продлить
+    # или приостановить. Сам по себе доступ не закрывает — напоминание в
+    # нашей панели. NULL — не пилот.
+    pilot_until: Mapped[date | None]
+
+
+class StaffMember(Base):
+    """Команда kronto с доступом к нашей панели (ТЗ §9): заявки на
+    компании, тарифы и места, расход на модели, помощь со входом.
+
+    Не тенантская: панель видит все компании. Заводится только из CLI
+    (`cli staff add`) — через API себя в команду не добавить. Вход в
+    панель — только с приложением или ключом доступа.
+    """
+
+    __tablename__ = "staff_members"
+
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Account(Base):

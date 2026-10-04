@@ -2,6 +2,7 @@ import json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import (
     Principal,
@@ -64,10 +65,12 @@ from corp_ed.api.v1.session_cookie import (
     session_response,
     set_device_cookie,
 )
+from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import InvalidCredentialsError, NotAuthenticatedError
 from corp_ed.core.password_policy import validate_password
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.tenant_context import account_scope
+from corp_ed.domain.models import StaffMember
 from corp_ed.repositories.account_repository import normalize_email
 from corp_ed.repositories.department_repository import DepartmentRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -91,6 +94,7 @@ async def read_me(
     avatars: Annotated[AvatarService, Depends(get_avatar_service)],
     departments: Annotated[DepartmentRepository, Depends(get_department_repository)],
     company_service: Annotated[CompanyService, Depends(get_company_service)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MeResponse:
     """Кто вошёл: учётка, выбранная компания и все компании человека.
     Доступна и до смены временного пароля: фронту нужно знать
@@ -151,6 +155,7 @@ async def read_me(
             strong=await mfa.has_strong(account),
             strong_required=await mfa.strong_required(account),
         ),
+        staff=await session.get(StaffMember, account.id) is not None,
     )
 
 

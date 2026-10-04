@@ -286,6 +286,9 @@ class BillingSettings(BaseSettings):
     # Месяц считается по московскому времени: клиенты и счета — в России.
     billing_timezone: str = "Europe/Moscow"
     warn_at_percent: int = Field(default=80, gt=0, lt=100)
+    # Цена 1 000 токенов модели ответа в рублях — для оценки расхода в
+    # нашей панели (ТЗ §9). Не задана — панель показывает только токены.
+    llm_rub_per_1k_tokens: float | None = Field(default=None, ge=0)
 
     model_config = SettingsConfigDict(
         env_prefix="BILLING_",

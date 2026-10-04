@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.request_context import current_client_ip, current_request_id
+from corp_ed.core.tenant_context import current_staff
 from corp_ed.domain.models import AuditEvent
 
 
@@ -70,6 +71,9 @@ class AuditAction(StrEnum):
     TENANT_SEATS_CHANGED = "tenant.seats_changed"
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
     TENANT_TARIFF_CHANGED = "tenant.tariff_changed"
+    TENANT_PILOT_CHANGED = "tenant.pilot_changed"
+    STAFF_ADDED = "staff.added"
+    STAFF_REMOVED = "staff.removed"
     CREDITS_WARNING = "credits.warning"
     CREDITS_EXHAUSTED = "credits.exhausted"
     CONNECTOR_CREATED = "connector.created"
@@ -120,7 +124,7 @@ class AuditRepository:
                 target_id=str(target_id) if target_id is not None else None,
                 ip=current_client_ip.get(),
                 request_id=current_request_id.get(),
-                details=details or {},
+                details=_with_staff(details),
             )
         )
 
@@ -156,3 +160,11 @@ class AuditRepository:
         stmt = stmt.order_by(AuditEvent.created_at.desc()).limit(limit)
         result = await self.session.scalars(stmt)
         return list(result)
+
+
+def _with_staff(details: dict[str, Any] | None) -> dict[str, Any]:
+    """Действие из нашей панели — с учёткой команды kronto в деталях."""
+    staff = current_staff.get()
+    if staff is None:
+        return details or {}
+    return {**(details or {}), "staff_account_id": str(staff)}

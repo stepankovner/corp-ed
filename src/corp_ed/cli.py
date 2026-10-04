@@ -53,6 +53,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from sqlalchemy import func, select
 
 from corp_ed.connectors.base import AdapterError, AdapterOptions, SourceAdapter
 from corp_ed.connectors.registry import UnknownKindError, default_registry
@@ -76,6 +77,7 @@ from corp_ed.core.outbound import (
 )
 from corp_ed.core.secrets import SecretBox
 from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
+from corp_ed.domain.models import Account, Passkey, StaffMember
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
@@ -201,6 +203,15 @@ def _parser() -> argparse.ArgumentParser:
     set_totp.add_argument("--email", required=True)
     set_totp.add_argument("--secret-stdin", action="store_true", required=True)
 
+    staff = commands.add_parser(
+        "staff", help="команда kronto с доступом к нашей панели (/staff)"
+    )
+    staff_commands = staff.add_subparsers(dest="staff_command", required=True)
+    staff_commands.add_parser("list", help="кто в команде")
+    for name, text in (("add", "открыть панель"), ("remove", "закрыть панель")):
+        staff_command = staff_commands.add_parser(name, help=text)
+        staff_command.add_argument("--email", required=True)
+
     requests = commands.add_parser(
         "requests", help="заявки «Подключить компанию» от учёток без компании"
     )
@@ -324,6 +335,9 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "requests":
         return await _requests(args)
+
+    if args.command == "staff":
+        return await _staff(args)
 
     if args.command == "set-totp":
         return await _set_totp(args.email, sys.stdin.readline().strip())
@@ -507,6 +521,54 @@ async def _set_totp(email: str, secret: str) -> int:
         await session.commit()
     print(f"{email}: приложение-аутентификатор включено.")
     return 0
+
+
+async def _staff(args: argparse.Namespace) -> int:
+    """Наша панель (ТЗ §9): кто в команде. Через API в команду не попасть —
+    только отсюда, с сервера. Вход в панель — с приложением или ключом."""
+    async with get_session_maker()() as session:
+        if args.staff_command == "list":
+            rows = await session.execute(
+                select(Account.email, StaffMember.added_at)
+                .join(StaffMember, StaffMember.account_id == Account.id)
+                .order_by(Account.email)
+            )
+            for email, added in rows:
+                print(f"{email}\t{added:%Y-%m-%d}")
+            return 0
+        account = await AccountRepository(session).get_by_email(args.email)
+        if account is None:
+            raise DomainError(f"Учётки {args.email} нет: сначала регистрация")
+        member = await session.get(StaffMember, account.id)
+        if args.staff_command == "add":
+            if member is None:
+                session.add(StaffMember(account_id=account.id))
+                AuditRepository(session).record(
+                    AuditAction.STAFF_ADDED,
+                    details={"account_id": str(account.id), "source": "cli"},
+                )
+                await session.commit()
+            strong = account.totp_enabled_at is not None or bool(
+                await session.scalar(
+                    select(func.count()).where(Passkey.account_id == account.id)
+                )
+            )
+            print(f"{account.email}: в команде.")
+            if not strong:
+                print(
+                    "Панель откроется после того, как он включит приложение-"
+                    "аутентификатор или ключ доступа (Настройки → Безопасность)."
+                )
+            return 0
+        if member is not None:
+            await session.delete(member)
+            AuditRepository(session).record(
+                AuditAction.STAFF_REMOVED,
+                details={"account_id": str(account.id), "source": "cli"},
+            )
+            await session.commit()
+        print(f"{account.email}: не в команде.")
+        return 0
 
 
 async def _requests(args: argparse.Namespace) -> int:

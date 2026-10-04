@@ -2828,6 +2828,16 @@
         "title": "LeadRequest",
         "type": "object"
       },
+      "LeadStatus": {
+        "enum": [
+          "new",
+          "contacted",
+          "scheduled",
+          "rejected"
+        ],
+        "title": "LeadStatus",
+        "type": "string"
+      },
       "LeaveCompanyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3274,6 +3284,11 @@
               }
             ],
             "title": "Phone"
+          },
+          "staff": {
+            "default": false,
+            "title": "Staff",
+            "type": "boolean"
           },
           "telegram": {
             "anyOf": [
@@ -4563,6 +4578,769 @@
           "messages"
         ],
         "title": "SharedConversationResponse",
+        "type": "object"
+      },
+      "SpendCompanyResponse": {
+        "properties": {
+          "company_code": {
+            "title": "Company Code",
+            "type": "string"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "questions": {
+            "title": "Questions",
+            "type": "integer"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "name",
+          "company_code",
+          "questions",
+          "tokens",
+          "credits"
+        ],
+        "title": "SpendCompanyResponse",
+        "type": "object"
+      },
+      "SpendDayResponse": {
+        "properties": {
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "day": {
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "questions": {
+            "title": "Questions",
+            "type": "integer"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "questions",
+          "tokens",
+          "credits"
+        ],
+        "title": "SpendDayResponse",
+        "type": "object"
+      },
+      "SpendModelResponse": {
+        "properties": {
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "questions": {
+            "title": "Questions",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "questions",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "SpendModelResponse",
+        "type": "object"
+      },
+      "SpendResponse": {
+        "description": "Расход на модель ответа (из журнала ответов). rub — оценка по\nBILLING_LLM_RUB_PER_1K_TOKENS; null — цена не задана.",
+        "properties": {
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/SpendCompanyResponse"
+            },
+            "title": "Companies",
+            "type": "array"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/SpendDayResponse"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/SpendModelResponse"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "questions": {
+            "title": "Questions",
+            "type": "integer"
+          },
+          "rub": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rub"
+          },
+          "rub_per_1k_tokens": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rub Per 1K Tokens"
+          },
+          "since": {
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "format": "date",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "questions",
+          "input_tokens",
+          "output_tokens",
+          "credits",
+          "rub",
+          "rub_per_1k_tokens",
+          "days",
+          "models",
+          "companies"
+        ],
+        "title": "SpendResponse",
+        "type": "object"
+      },
+      "StaffApproveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "pilot_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pilot Until"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/Tariff",
+            "default": "base"
+          }
+        },
+        "title": "StaffApproveRequest",
+        "type": "object"
+      },
+      "StaffCompanyResponse": {
+        "properties": {
+          "admins": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Admins",
+            "type": "array"
+          },
+          "company_code": {
+            "title": "Company Code",
+            "type": "string"
+          },
+          "connectors": {
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "credits_used": {
+            "title": "Credits Used",
+            "type": "integer"
+          },
+          "documents": {
+            "title": "Documents",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_question_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Question At"
+          },
+          "members": {
+            "title": "Members",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "pilot_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pilot Until"
+          },
+          "pool": {
+            "title": "Pool",
+            "type": "integer"
+          },
+          "questions_month": {
+            "title": "Questions Month",
+            "type": "integer"
+          },
+          "seats": {
+            "title": "Seats",
+            "type": "integer"
+          },
+          "tariff": {
+            "$ref": "#/components/schemas/Tariff"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "company_code",
+          "is_active",
+          "tariff",
+          "seats",
+          "pilot_until",
+          "members",
+          "pending",
+          "admins",
+          "credits_used",
+          "pool",
+          "questions_month",
+          "last_question_at",
+          "documents",
+          "connectors"
+        ],
+        "title": "StaffCompanyResponse",
+        "type": "object"
+      },
+      "StaffCompanyUpdate": {
+        "additionalProperties": false,
+        "description": "Что прислано, то и меняется. pilot_until: null — снять срок пилота.",
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "pilot_until": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pilot Until"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats"
+          },
+          "tariff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Tariff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "StaffCompanyUpdate",
+        "type": "object"
+      },
+      "StaffLeadResponse": {
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "contact_name": {
+            "title": "Contact Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "preferred_date": {
+            "format": "date",
+            "title": "Preferred Date",
+            "type": "string"
+          },
+          "preferred_slot": {
+            "title": "Preferred Slot",
+            "type": "string"
+          },
+          "seats": {
+            "title": "Seats",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/LeadStatus"
+          },
+          "tariff": {
+            "title": "Tariff",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "company_name",
+          "contact_name",
+          "phone",
+          "email",
+          "seats",
+          "tariff",
+          "preferred_date",
+          "preferred_slot",
+          "comment",
+          "status",
+          "created_at"
+        ],
+        "title": "StaffLeadResponse",
+        "type": "object"
+      },
+      "StaffLeadUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/LeadStatus"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StaffLeadUpdate",
+        "type": "object"
+      },
+      "StaffOverviewResponse": {
+        "properties": {
+          "accounts": {
+            "title": "Accounts",
+            "type": "integer"
+          },
+          "active_companies": {
+            "title": "Active Companies",
+            "type": "integer"
+          },
+          "companies": {
+            "title": "Companies",
+            "type": "integer"
+          },
+          "pilots_ending": {
+            "title": "Pilots Ending",
+            "type": "integer"
+          },
+          "requests_new": {
+            "title": "Requests New",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "companies",
+          "active_companies",
+          "pilots_ending",
+          "requests_new",
+          "accounts"
+        ],
+        "title": "StaffOverviewResponse",
+        "type": "object"
+      },
+      "StaffPersonCompanyResponse": {
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "company_name",
+          "role",
+          "status",
+          "last_login_at"
+        ],
+        "title": "StaffPersonCompanyResponse",
+        "type": "object"
+      },
+      "StaffPersonResponse": {
+        "description": "Человек для помощи со входом: что настроено, без секретов.",
+        "properties": {
+          "backup_codes": {
+            "title": "Backup Codes",
+            "type": "integer"
+          },
+          "companies": {
+            "items": {
+              "$ref": "#/components/schemas/StaffPersonCompanyResponse"
+            },
+            "title": "Companies",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "must_change_password": {
+            "title": "Must Change Password",
+            "type": "boolean"
+          },
+          "passkeys": {
+            "title": "Passkeys",
+            "type": "integer"
+          },
+          "sessions": {
+            "title": "Sessions",
+            "type": "integer"
+          },
+          "staff": {
+            "title": "Staff",
+            "type": "boolean"
+          },
+          "totp": {
+            "title": "Totp",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "full_name",
+          "email_verified",
+          "created_at",
+          "last_login_at",
+          "must_change_password",
+          "totp",
+          "passkeys",
+          "backup_codes",
+          "sessions",
+          "staff",
+          "companies"
+        ],
+        "title": "StaffPersonResponse",
+        "type": "object"
+      },
+      "StaffRequestResponse": {
+        "properties": {
+          "applicant_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicant Email"
+          },
+          "applicant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicant Name"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "seats": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seats"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "approved",
+              "rejected",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          }
+        },
+        "required": [
+          "id",
+          "company_name",
+          "seats",
+          "comment",
+          "status",
+          "created_at",
+          "decided_at",
+          "tenant_id",
+          "applicant_email",
+          "applicant_name"
+        ],
+        "title": "StaffRequestResponse",
         "type": "object"
       },
       "StreamDelta": {
@@ -10359,6 +11137,630 @@
         "summary": "My Sources",
         "tags": [
           "connectors"
+        ]
+      }
+    },
+    "/api/v1/staff/companies": {
+      "get": {
+        "operationId": "list_companies_api_v1_staff_companies_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffCompanyResponse"
+                  },
+                  "title": "Response List Companies Api V1 Staff Companies Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Companies",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/companies/{tenant_id}": {
+      "get": {
+        "operationId": "read_company_api_v1_staff_companies__tenant_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCompanyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Company",
+        "tags": [
+          "staff"
+        ]
+      },
+      "patch": {
+        "description": "Тариф, места, срок пилота, приостановка — как cli set-tariff,\nset-seats, suspend-tenant, но с журналом от имени команды.",
+        "operationId": "update_company_api_v1_staff_companies__tenant_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCompanyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCompanyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Company",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/leads": {
+      "get": {
+        "operationId": "list_leads_api_v1_staff_leads_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/LeadStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffLeadResponse"
+                  },
+                  "title": "Response List Leads Api V1 Staff Leads Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Leads",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/leads/{lead_id}": {
+      "patch": {
+        "operationId": "update_lead_api_v1_staff_leads__lead_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lead_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Lead Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffLeadUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffLeadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Lead",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/overview": {
+      "get": {
+        "operationId": "overview_api_v1_staff_overview_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Overview",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/people": {
+      "get": {
+        "description": "Почта или имя, от трёх символов.",
+        "operationId": "search_people_api_v1_staff_people_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 254,
+              "title": "Q",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffPersonResponse"
+                  },
+                  "title": "Response Search People Api V1 Staff People Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search People",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/people/{account_id}": {
+      "get": {
+        "operationId": "read_person_api_v1_staff_people__account_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPersonResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Person",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/people/{account_id}/password-reset": {
+      "post": {
+        "description": "Письмо со ссылкой на новый пароль — то же, что «Забыли пароль?».\nПароль команда не видит и не задаёт.",
+        "operationId": "send_password_reset_api_v1_staff_people__account_id__password_reset_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Send Password Reset",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/requests": {
+      "get": {
+        "operationId": "list_requests_api_v1_staff_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "new",
+              "pattern": "^(new|all)$",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffRequestResponse"
+                  },
+                  "title": "Response List Requests Api V1 Staff Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Requests",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/requests/{request_id}/approve": {
+      "post": {
+        "description": "Создать компанию: заявитель — администратор, ему уходит письмо.",
+        "operationId": "approve_request_api_v1_staff_requests__request_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCompanyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Approve Request",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/requests/{request_id}/reject": {
+      "post": {
+        "operationId": "reject_request_api_v1_staff_requests__request_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject Request",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/spend": {
+      "get": {
+        "operationId": "spend_api_v1_staff_spend_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 90,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Spend",
+        "tags": [
+          "staff"
         ]
       }
     },

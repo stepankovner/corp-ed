@@ -29,6 +29,7 @@ from corp_ed.core.exceptions import (
     MfaSetupRequiredError,
     NoCompanyError,
     NotAuthenticatedError,
+    NotFoundError,
     PasswordChangeRequiredError,
     PermissionError,
 )
@@ -36,8 +37,16 @@ from corp_ed.core.outbound import OutboundClient
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.security import decode_access_token
-from corp_ed.core.tenant_context import current_account, current_tenant
-from corp_ed.domain.models import Account, MemberStatus, Passkey, Tenant, User, UserRole
+from corp_ed.core.tenant_context import current_account, current_staff, current_tenant
+from corp_ed.domain.models import (
+    Account,
+    MemberStatus,
+    Passkey,
+    StaffMember,
+    Tenant,
+    User,
+    UserRole,
+)
 from corp_ed.domain.types import Retriever
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
@@ -94,8 +103,10 @@ from corp_ed.services.material_service import MaterialService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 from corp_ed.services.people_service import PeopleService
 from corp_ed.services.sources_service import SourcesService
+from corp_ed.services.staff_service import StaffService
 from corp_ed.services.suggestion_service import SuggestionService
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
+from corp_ed.services.tenant_service import TenantService
 from corp_ed.services.user_service import UserService
 
 # auto_error=False: без заголовка FastAPI отдал бы свой 403. Отсутствие
@@ -299,6 +310,26 @@ async def get_current_user(
     if needs_strong and not await _has_strong_factor(session, principal.account):
         raise MfaSetupRequiredError()
     return member
+
+
+async def get_staff_account(
+    principal: Annotated[Principal, Depends(get_principal)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Account:
+    """Наша панель (ТЗ §9): только команда kronto (staff_members, заводит
+    CLI) и только с приложением или ключом доступа.
+
+    Не из команды — 404, как у несуществующей ручки: панель не выдаёт,
+    что она есть. Учётка команды попадает в журнал действий
+    (current_staff) — членства в чужой компании у неё нет.
+    """
+    account = principal.account
+    if await session.get(StaffMember, account.id) is None:
+        raise NotFoundError("Not Found")
+    if not await _has_strong_factor(session, account):
+        raise MfaSetupRequiredError()
+    current_staff.set(account.id)
+    return account
 
 
 async def _has_strong_factor(session: AsyncSession, account: Account) -> bool:
@@ -754,3 +785,31 @@ def get_connector_service(
         http,
         limiter=limiter,
     )
+
+
+def get_staff_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    session_maker: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    billing: Annotated[BillingSettings, Depends(get_billing_settings)],
+) -> StaffService:
+    return StaffService(
+        session,
+        session_maker,
+        audit,
+        zone=billing.zone,
+        credits_per_seat=billing.credits_per_seat,
+        rub_per_1k_tokens=billing.llm_rub_per_1k_tokens,
+    )
+
+
+def get_tenant_service(
+    tenant_repo: Annotated[TenantRepository, Depends(get_tenant_repository)],
+    user_repo: Annotated[UserRepository, Depends(get_user_repository)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TenantService:
+    """Тариф, места, приостановка — то же, что cli, для нашей панели."""
+    return TenantService(tenant_repo, user_repo, audit, session)

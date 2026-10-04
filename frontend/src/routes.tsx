@@ -1,7 +1,7 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, useLocation, type RouteObject } from "react-router";
 
-import { PublicOnly, RequireAdmin, RequireAuth, RequireCompany } from "./auth/guards";
+import { PublicOnly, RequireAdmin, RequireAuth, RequireCompany, RequireStaff } from "./auth/guards";
 import { ChatPage } from "./chat/ChatPage";
 import { AppShell } from "./layout/AppShell";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
@@ -66,6 +66,17 @@ const SuggestionsPage = lazy(() =>
   import("./admin/SuggestionsPage").then((m) => ({ default: m.SuggestionsPage })),
 );
 const SharedPage = lazy(() => import("./chat/SharedPage").then((m) => ({ default: m.SharedPage })));
+// Наша панель (ТЗ §9): вкладки — вложенные маршруты в staff/.
+const StaffPage = lazy(() => import("./staff/StaffPage").then((m) => ({ default: m.StaffPage })));
+const RequestsTab = lazy(() =>
+  import("./staff/RequestsTab").then((m) => ({ default: m.RequestsTab })),
+);
+const CompaniesTab = lazy(() =>
+  import("./staff/CompaniesTab").then((m) => ({ default: m.CompaniesTab })),
+);
+const SpendTab = lazy(() => import("./staff/SpendTab").then((m) => ({ default: m.SpendTab })));
+const PeopleTab = lazy(() => import("./staff/PeopleTab").then((m) => ({ default: m.PeopleTab })));
+const LeadsTab = lazy(() => import("./staff/LeadsTab").then((m) => ({ default: m.LeadsTab })));
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
@@ -111,6 +122,24 @@ export const routes: RouteObject[] = [
         children: [
           { path: "/", element: <HomePage /> },
           { path: "/settings/*", element: lazyPage(<SettingsPage />) },
+          // Команда kronto — и без своей компании.
+          {
+            path: "/staff",
+            element: <RequireStaff />,
+            children: [
+              {
+                element: lazyPage(<StaffPage />),
+                children: [
+                  { index: true, element: <Navigate to="/staff/requests" replace /> },
+                  { path: "requests", element: lazyPage(<RequestsTab />) },
+                  { path: "companies", element: lazyPage(<CompaniesTab />) },
+                  { path: "spend", element: lazyPage(<SpendTab />) },
+                  { path: "people", element: lazyPage(<PeopleTab />) },
+                  { path: "leads", element: lazyPage(<LeadsTab />) },
+                ],
+              },
+            ],
+          },
           {
             element: <RequireCompany />,
             children: [

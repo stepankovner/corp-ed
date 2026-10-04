@@ -38,6 +38,17 @@ export function RequireAdmin() {
   return <Outlet />;
 }
 
+/**
+ * Наша панель (ТЗ §9): только команда kronto. Без приложения или ключа
+ * доступа сервер панель не отдаст — сначала защита входа.
+ */
+export function RequireStaff() {
+  const me = useMe();
+  if (!me.staff) return <Navigate to="/" replace />;
+  if (!me.mfa.strong) return <Navigate to="/settings/security" replace />;
+  return <Outlet />;
+}
+
 /** Вход, регистрация, восстановление: вошедшего отправляем дальше. */
 export function PublicOnly() {
   const { state } = useAuth();

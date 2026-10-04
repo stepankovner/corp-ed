@@ -76,6 +76,42 @@ describe("боковая панель", () => {
     expect(switcher.querySelector("img")).toHaveAttribute("src", logo);
   });
 
+  it("команде kronto — «Панель kronto», остальных туда не пускает", async () => {
+    signedInAs(adminMe({ staff: true }));
+    server.use(
+      http.get("/api/v1/staff/overview", () =>
+        HttpResponse.json({
+          companies: 3,
+          active_companies: 2,
+          pilots_ending: 1,
+          requests_new: 2,
+          accounts: 40,
+        }),
+      ),
+      http.get("/api/v1/staff/requests", () => HttpResponse.json([])),
+    );
+    const { router } = renderApp("/");
+    const nav = await screen.findByRole("navigation", { name: "Разделы" });
+    await userEvent.setup().click(within(nav).getByRole("link", { name: "Панель kronto" }));
+    expect(await screen.findByRole("heading", { name: "Панель kronto" })).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.pathname).toBe("/staff/requests"));
+    expect(await screen.findByText(/новых заявок: 2/)).toBeInTheDocument();
+  });
+
+  it("не из команды — «Панели kronto» нет, адрес ведёт на главную", async () => {
+    signedInAs(adminMe());
+    const { router } = renderApp("/staff/companies");
+    await screen.findByRole("log", { name: "Переписка" });
+    expect(router.state.location.pathname).toBe("/");
+    expect(screen.queryByRole("link", { name: "Панель kronto" })).not.toBeInTheDocument();
+  });
+
+  it("команда без приложения или ключа — сначала защита входа", async () => {
+    signedInAs(me({ staff: true }));
+    const { router } = renderApp("/staff");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/settings/security"));
+  });
+
   it("у администратора разделы управления раскрыты в панели, второй панели нет", async () => {
     const user = userEvent.setup();
     signedInAs(adminMe());
