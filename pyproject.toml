@@ -56,7 +56,9 @@ dev = [
 line-length = 88
 target-version = "py312"
 # Генератор корпуса проверки стенда — скрипт данных, не код продукта.
-extend-exclude = ["migrations/versions", "tests/fixtures/stand_quality"]
+# Markdown: с 0.16 ruff форматирует примеры кода в документах, а примеры в
+# docs/ — выдержки и псевдокод, их вид задаёт автор документа.
+extend-exclude = ["migrations/versions", "tests/fixtures/stand_quality", "*.md"]
 
 [tool.ruff.lint]
 select = [
