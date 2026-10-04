@@ -34,6 +34,7 @@ from corp_ed.domain.models import ChatMessage, User, UserRole
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.domain.types import AnswerDiagnostics, AnswerOrigin, ChunkMatch
 from corp_ed.llm.errors import LLMError
+from corp_ed.llm.throttle import ThrottleBusyError
 from corp_ed.prompts.dialogue import Turn
 from corp_ed.repositories.chat_repository import AttachmentRepository, MessageRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -95,6 +96,9 @@ ERROR_MESSAGES = {
         "Обратитесь к администратору вашей компании"
     ),
     "llm_unavailable": "Сервис ответов временно недоступен. Попробуйте ещё раз",
+    # Очередь к квоте модели переполнена (docs/LOAD-TEST.md): сервис жив,
+    # вопросов больше, чем квота успевает, — это не сбой поставщика.
+    "busy": "Сейчас очень много вопросов. Попробуйте через минуту",
     "timeout": "Ответ занял слишком много времени. Попробуйте ещё раз",
     "internal": "Не удалось получить ответ. Попробуйте ещё раз",
 }
@@ -350,6 +354,9 @@ class ChatGenerator:
                 )
         except CreditsExhaustedError:
             code = "credits_exhausted"
+        except ThrottleBusyError as exc:
+            logger.warning("chat_answer_busy", error=str(exc))
+            code = "busy"
         except LLMError as exc:
             logger.warning("chat_answer_llm_failed", error=str(exc))
             code = "llm_unavailable"

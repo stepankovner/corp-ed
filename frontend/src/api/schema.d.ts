@@ -3939,7 +3939,7 @@ export interface components {
          *     status: complete; generating — ответ ещё пишется (поток или фоновая
          *     задача; обновите диалог позже); stopped — остановлен сотрудником,
          *     content — что успело прийти; failed — не удалось (error_code:
-         *     credits_exhausted, llm_unavailable, timeout, interrupted, internal).
+         *     credits_exhausted, busy, llm_unavailable, timeout, interrupted, internal).
          *     siblings — версии этого сообщения по порядку, включая его само
          *     (правки вопроса, «Ответить заново»); переключить — PUT …/current.
          *     origin, sources и оценка — только у ответа.

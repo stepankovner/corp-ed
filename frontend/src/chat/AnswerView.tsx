@@ -62,6 +62,7 @@ function CitationButton({
 
 const ERRORS: Record<string, string> = {
   llm_unavailable: "Сервис ответов временно недоступен.",
+  busy: "Сейчас очень много вопросов — подождите минуту.",
   timeout: "Ответ занял слишком много времени.",
   interrupted: "Ответ прервался: сервис перезапускался.",
   internal: "Не удалось получить ответ.",

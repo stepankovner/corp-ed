@@ -3667,7 +3667,7 @@
         "type": "object"
       },
       "MessageResponse": {
-        "description": "Вопрос или ответ.\n\nstatus: complete; generating — ответ ещё пишется (поток или фоновая\nзадача; обновите диалог позже); stopped — остановлен сотрудником,\ncontent — что успело прийти; failed — не удалось (error_code:\ncredits_exhausted, llm_unavailable, timeout, interrupted, internal).\nsiblings — версии этого сообщения по порядку, включая его само\n(правки вопроса, «Ответить заново»); переключить — PUT …/current.\norigin, sources и оценка — только у ответа.",
+        "description": "Вопрос или ответ.\n\nstatus: complete; generating — ответ ещё пишется (поток или фоновая\nзадача; обновите диалог позже); stopped — остановлен сотрудником,\ncontent — что успело прийти; failed — не удалось (error_code:\ncredits_exhausted, busy, llm_unavailable, timeout, interrupted, internal).\nsiblings — версии этого сообщения по порядку, включая его само\n(правки вопроса, «Ответить заново»); переключить — PUT …/current.\norigin, sources и оценка — только у ответа.",
         "properties": {
           "attachments": {
             "items": {

@@ -33,7 +33,7 @@ from corp_ed.main import app
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
 from corp_ed.services.retention_service import RetentionService
 from tests.api.conftest import bearer
-from tests.api.test_faq_api import FailingLLM
+from tests.api.test_faq_api import BusyLLM, FailingLLM
 from tests.factories import make_user
 
 BASE = "/api/v1/conversations"
@@ -270,6 +270,21 @@ async def test_model_failure_keeps_failed_answer_and_regenerate_works(
         error["answer"]["id"],
         again[0]["answer"]["id"],
     ]
+
+
+async def test_overloaded_quota_is_busy_not_model_failure(
+    api: httpx.AsyncClient,
+    employee: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    await _document(session, tenant_ctx)
+    app.dependency_overrides[get_llm_gateway] = lambda: BusyLLM()
+    error = final(await _ask(api, employee, "Сколько дней отпуска?"))
+    assert error["type"] == "error"
+    assert error["code"] == "busy"
+    assert "много вопросов" in error["message"]
+    assert error["answer"]["error_code"] == "busy"
 
 
 async def test_question_limit_is_4000_characters(
