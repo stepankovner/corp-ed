@@ -1,5 +1,5 @@
 import { ChevronDown, Link2, Search, SearchX } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 
 import { plural } from "../lib/format";
@@ -13,7 +13,7 @@ import styles from "./Help.module.css";
 import { matches, searchable, textOf } from "./search";
 import { SupportSection } from "./SupportSection";
 
-const SUPPORT = "support";
+export const SUPPORT = "support";
 
 const GROUPS: { audience: Audience; title: string; note?: string }[] = [
   { audience: "employee", title: "Сотрудникам" },
@@ -46,6 +46,28 @@ function toggleId(slug: string): string {
  */
 export function HelpPage() {
   useDocumentTitle("Помощь");
+  return (
+    <Page>
+      <PageHeader
+        title="Помощь"
+        description="Короткие ответы о том, как устроен kronto. Не нашли нужного — напишите нам."
+        actions={
+          <Link to={`/help#${SUPPORT}`} className={buttonClass("ghost", "sm")}>
+            Написать в поддержку
+          </Link>
+        }
+      />
+      <HelpContent aside={<SupportSection id={SUPPORT} />} />
+    </Page>
+  );
+}
+
+/**
+ * Статьи с поиском и колонка «Написать в поддержку» (aside, id="support"):
+ * в приложении — форма обращения, на сайте для гостя (site/SiteHelpPage) —
+ * как связаться без входа.
+ */
+export function HelpContent({ aside }: { aside: ReactNode }) {
   const { hash } = useLocation();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<ReadonlySet<string>>(() => {
@@ -94,62 +116,51 @@ export function HelpPage() {
   const searching = query.trim() !== "";
 
   return (
-    <Page>
-      <PageHeader
-        title="Помощь"
-        description="Короткие ответы о том, как устроен kronto. Не нашли нужного — напишите нам."
-        actions={
-          <Link to={`/help#${SUPPORT}`} className={buttonClass("ghost", "sm")}>
-            Написать в поддержку
-          </Link>
-        }
-      />
-      <div className={styles.container}>
-        <div className={styles.layout}>
-          <div className={styles.main}>
-            <div role="search" className={styles.search}>
-              <Search size={18} aria-hidden className={styles.searchIcon} />
-              <input
-                type="search"
-                className={styles.searchInput}
-                aria-label="Поиск по статьям"
-                placeholder="Например: пароль или файл"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
-            <p className="visually-hidden" aria-live="polite">
-              {searching
-                ? `Найдено ${found.length} ${plural(found.length, "статья", "статьи", "статей")}`
-                : ""}
-            </p>
-            {found.length === 0 ? (
-              <EmptyState icon={<SearchX size={32} aria-hidden />} title="Ничего не нашлось">
-                <p>
-                  Попробуйте другие слова или{" "}
-                  <Link to={`/help#${SUPPORT}`}>напишите в поддержку</Link>.
-                </p>
-              </EmptyState>
-            ) : (
-              GROUPS.map((group) => {
-                const items = found.filter((article) => article.audience === group.audience);
-                return items.length ? (
-                  <ArticleGroup
-                    key={group.audience}
-                    title={group.title}
-                    note={group.note}
-                    items={items}
-                    open={open}
-                    onToggle={toggle}
-                  />
-                ) : null;
-              })
-            )}
+    <div className={styles.container}>
+      <div className={styles.layout}>
+        <div className={styles.main}>
+          <div role="search" className={styles.search}>
+            <Search size={18} aria-hidden className={styles.searchIcon} />
+            <input
+              type="search"
+              className={styles.searchInput}
+              aria-label="Поиск по статьям"
+              placeholder="Например: пароль или файл"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
-          <SupportSection id={SUPPORT} />
+          <p className="visually-hidden" aria-live="polite">
+            {searching
+              ? `Найдено ${found.length} ${plural(found.length, "статья", "статьи", "статей")}`
+              : ""}
+          </p>
+          {found.length === 0 ? (
+            <EmptyState icon={<SearchX size={32} aria-hidden />} title="Ничего не нашлось">
+              <p>
+                Попробуйте другие слова или{" "}
+                <Link to={`/help#${SUPPORT}`}>напишите в поддержку</Link>.
+              </p>
+            </EmptyState>
+          ) : (
+            GROUPS.map((group) => {
+              const items = found.filter((article) => article.audience === group.audience);
+              return items.length ? (
+                <ArticleGroup
+                  key={group.audience}
+                  title={group.title}
+                  note={group.note}
+                  items={items}
+                  open={open}
+                  onToggle={toggle}
+                />
+              ) : null;
+            })
+          )}
         </div>
+        {aside}
       </div>
-    </Page>
+    </div>
   );
 }
 

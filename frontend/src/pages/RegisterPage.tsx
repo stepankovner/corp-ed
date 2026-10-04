@@ -133,7 +133,15 @@ export function RegisterPage() {
           <Checkbox
             label={
               <>
-                Соглашаюсь на обработку персональных данных по{" "}
+                Принимаю{" "}
+                <a href="/terms" target="_blank" rel="noreferrer">
+                  пользовательское соглашение
+                </a>{" "}
+                и даю{" "}
+                <a href="/consent" target="_blank" rel="noreferrer">
+                  согласие на обработку персональных данных
+                </a>{" "}
+                по{" "}
                 <a href="/privacy" target="_blank" rel="noreferrer">
                   политике
                 </a>

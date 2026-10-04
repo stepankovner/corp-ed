@@ -17,6 +17,8 @@ function signedInAsAdmin() {
   server.use(http.get("/api/v1/auth/me", () => HttpResponse.json(adminMe())));
 }
 
+const SITE_HEADING = /Спросите — и получите ответ по документам компании/;
+
 describe("вход", () => {
   async function fillPassword(user: ReturnType<typeof userEvent.setup>, remember = false) {
     await user.type(await screen.findByLabelText("Почта"), "anna@meridian-stroy.ru");
@@ -44,7 +46,7 @@ describe("вход", () => {
       }),
       http.get("/api/v1/auth/me", () => HttpResponse.json(me())),
     );
-    renderApp("/", { signedIn: false });
+    renderApp("/login", { signedIn: false });
 
     await fillPassword(user, true);
     expect(loginBody).toEqual({
@@ -87,7 +89,7 @@ describe("вход", () => {
         ),
       ),
     );
-    renderApp("/", { signedIn: false });
+    renderApp("/login", { signedIn: false });
 
     await fillPassword(user);
     expect(await screen.findByRole("heading", { name: "Код из приложения" })).toBeInTheDocument();
@@ -118,7 +120,7 @@ describe("вход", () => {
         ),
       ),
     );
-    renderApp("/", { signedIn: false });
+    renderApp("/login", { signedIn: false });
     await fillPassword(user);
     await user.type(await screen.findByLabelText("Код из 6 цифр"), "123456");
     expect(await screen.findByText(/Время на подтверждение вышло/)).toBeInTheDocument();
@@ -138,7 +140,7 @@ describe("вход", () => {
         return HttpResponse.json(tokens(2));
       }),
     );
-    renderApp("/", { signedIn: false });
+    renderApp("/login", { signedIn: false });
 
     await fillPassword(user);
     expect(await screen.findByRole("heading", { name: "Задайте свой пароль" })).toBeInTheDocument();
@@ -175,7 +177,7 @@ describe("вход", () => {
         HttpResponse.json({ detail: "Неверный логин или пароль" }, { status: 401 }),
       ),
     );
-    renderApp("/", { signedIn: false });
+    renderApp("/login", { signedIn: false });
     await fillPassword(user);
     expect(await screen.findByText("Неверный логин или пароль")).toBeInTheDocument();
   });
@@ -191,10 +193,22 @@ describe("вход", () => {
     expect(getSession()?.accessToken).toBe("access-3");
   });
 
-  it("без признака входа не дёргает refresh и показывает форму", async () => {
+  it("гость на главной видит сайт, refresh не дёргается", async () => {
     // Обработчика /auth/refresh нет: запрос уронил бы тест (onUnhandledRequest).
     renderApp("/", { signedIn: false });
+    expect(await screen.findByRole("heading", { level: 1, name: SITE_HEADING })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Войти" })).toHaveAttribute("href", "/login");
+    expect(document.title).toBe("kronto — ИИ-ассистент по документам компании");
+  });
+
+  it("гость на адресе приложения — к входу, на неизвестном — 404 сайта", async () => {
+    const { router } = renderApp("/admin/users", { signedIn: false });
     expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?next=%2Fadmin%2Fusers");
+
+    await router.navigate("/no-such-page");
+    expect(await screen.findByRole("heading", { name: "Такой страницы нет" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "kronto — на главную" })).toBeInTheDocument();
   });
 
   it("выходит, когда соседняя вкладка сообщила о выходе", async () => {
@@ -204,7 +218,8 @@ describe("вход", () => {
     const otherTab = new BroadcastChannel("kronto.session");
     otherTab.postMessage("signed-out");
     otherTab.close();
-    expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
+    // Вышли — на главной снова сайт для гостя.
+    expect(await screen.findByRole("heading", { level: 1, name: SITE_HEADING })).toBeVisible();
     expect(getSession()).toBeNull();
   });
 

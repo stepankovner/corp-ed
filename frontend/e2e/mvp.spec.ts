@@ -127,7 +127,7 @@ async function register(page: Page, email: string, firstName: string) {
   await page.getByLabel("Почта").fill(email);
   await page.getByLabel("Пароль", { exact: true }).fill(employeePassword);
   await page.getByLabel("Повторите пароль").fill(employeePassword);
-  await page.getByRole("checkbox", { name: /Соглашаюсь на обработку/ }).check();
+  await page.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }).check();
   await page.getByRole("button", { name: "Зарегистрироваться" }).click();
   await expect(page.getByRole("heading", { name: "Подтвердите почту" })).toBeVisible();
   const mail = await waitForMail(email, since, /Код подтверждения/);
