@@ -1,11 +1,12 @@
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import (
     Chunk,
     Material,
+    QaLog,
     Tenant,
     User,
 )
@@ -13,7 +14,15 @@ from corp_ed.domain.types import AnswerOrigin, NotFoundMode, Retriever
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.llm.gateway import LLMGateway
-from corp_ed.llm.types import Completion, FinishReason, Message, Role, Usage
+from corp_ed.llm.types import (
+    Completion,
+    EmbeddingResult,
+    FinishReason,
+    Message,
+    Role,
+    Usage,
+)
+from corp_ed.prompts.dialogue import Turn
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
@@ -464,3 +473,71 @@ async def test_model_version_is_kept_next_to_the_alias(
 
     entry = (await session.execute(select(QaLog))).scalar_one()
     assert (entry.llm_model, entry.llm_model_version) == ("fake", "fake")
+
+
+class _HeldLLM(ScriptedLLM):
+    """Запоминает, держит ли сессия транзакцию (значит, и соединение),
+    когда зовут модель."""
+
+    def __init__(self, session: AsyncSession, *answers: str) -> None:
+        super().__init__(*answers)
+        self.session = session
+        self.held: list[bool] = []
+
+    async def generate(self, messages: list[Message], **kwargs: Any) -> Completion:
+        self.held.append(self.session.in_transaction())
+        return await super().generate(messages, **kwargs)
+
+
+class _HeldEmbeddings(FakeEmbeddingAdapter):
+    def __init__(self, session: AsyncSession) -> None:
+        super().__init__()
+        self.session = session
+        self.held: list[bool] = []
+
+    async def embed_query(self, text: str) -> EmbeddingResult:
+        self.held.append(self.session.in_transaction())
+        return await super().embed_query(text)
+
+
+async def test_external_calls_do_not_hold_a_connection(
+    session: AsyncSession,
+    material: Material,
+    chunk_repo: ChunkRepository,
+    employee: User,
+) -> None:
+    """Пока ждём квоту и модель пишет, соединение — в пуле
+    (docs/LOAD-TEST.md): переписывание вопроса, эмбеддинг, ответ."""
+    await chunk_repo.bulk_create([_chunk(material, 0, "Отпуск составляет 28 дней.")])
+    llm = _HeldLLM(session, "Сколько дней отпуска?", "Отпуск — 28 дней [1].")
+    embeddings = _HeldEmbeddings(session)
+    service = _service(chunk_repo, embeddings, llm)
+
+    result = await service.answer_turn(
+        "А сколько дней?",
+        employee,
+        history=[Turn("Есть ли отпуск?", "Да.")],
+        commit=False,
+    )
+
+    assert result.origin is AnswerOrigin.DOCUMENTS
+    assert llm.held == [False, False]
+    assert embeddings.held == [False]
+
+
+async def test_journal_waits_for_caller_commit(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    faq_service: FaqService,
+    employee: User,
+) -> None:
+    """commit=False: журнал пишется вместе с сообщением вызывающего —
+    короткие транзакции чтения этого не меняют."""
+    result = await faq_service.answer_turn("Вопрос", employee, history=[], commit=False)
+
+    assert session.in_transaction()
+    async with session_maker() as other:
+        assert await other.get(QaLog, result.log_id) is None
+    await session.commit()
+    async with session_maker() as other:
+        assert await other.get(QaLog, result.log_id) is not None

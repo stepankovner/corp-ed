@@ -324,9 +324,27 @@ class ChatGenerator:
         self.stop = stop
 
     async def run(self, job: GenerationJob, emit: Callable[[ChatEvent], None]) -> None:
-        with tenant_scope(job.tenant_id):
-            async with self.session_factory() as session:
-                await self._run(session, job, emit)
+        finished = False
+
+        def relay(event: ChatEvent) -> None:
+            nonlocal finished
+            finished = finished or isinstance(event, DoneEvent | ErrorEvent)
+            emit(event)
+
+        try:
+            with tenant_scope(job.tenant_id):
+                async with self.session_factory() as session:
+                    await self._run(session, job, relay)
+        except Exception:
+            # Не сохранились ни ответ, ни ошибка — например, база не отдала
+            # соединение. Сообщение станет «прерван» по STALE_GENERATION.
+            logger.exception("chat_answer_save_failed")
+        finally:
+            # Поток HTTP ждёт итога и до тех пор шлёт «пинг»: без него
+            # сотрудник смотрел бы на «Ищу в документах» вечно
+            # (docs/LOAD-TEST.md).
+            if not finished:
+                emit(ErrorEvent("internal", ERROR_MESSAGES["internal"], None))
 
     async def _run(
         self,
