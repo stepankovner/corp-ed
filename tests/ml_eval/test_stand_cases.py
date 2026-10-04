@@ -131,3 +131,27 @@ def test_rule_matches_backend_verdicts_on_recorded_answers() -> None:
 
     assert len(rows) == 179
     assert mismatched == []
+
+
+def test_long_questions_keep_answers_of_their_stand_cases() -> None:
+    # eval/stand_long.csv: меняется только вопрос — ответ, запрещённые слова
+    # и документ взяты из случая стенда, на который указывает note.
+    long_path = Path(__file__).parents[2] / "eval" / "stand_long.csv"
+    with long_path.open(encoding="utf-8", newline="") as file:
+        origin = {
+            row["id"]: row["note"].removeprefix("длинная версия ")
+            for row in csv.DictReader(file)
+        }
+    source = {case.id: case for case in load_cases(STAND)}
+    long = load_cases(long_path)
+
+    assert len(long) == 15
+    for case in long:
+        stand = source[origin[case.id]]
+        assert (case.groups, case.forbidden, case.materials, case.in_corpus) == (
+            stand.groups,
+            stand.forbidden,
+            stand.materials,
+            stand.in_corpus,
+        )
+        assert len(case.question) > 3 * len(stand.question)
