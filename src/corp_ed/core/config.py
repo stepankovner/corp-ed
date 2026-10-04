@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from corp_ed.domain.rerank import RERANK_MAX_WORDS
+
 EMBEDDING_DIM = 768
 """Размерность эмбеддингов — свойство СХЕМЫ базы (chunks.embedding
 vector(768)), а не только настройка. text-embeddings-v2 с dim=768 —
@@ -223,6 +225,10 @@ class RagSettings(BaseSettings):
     # Не успел — ответ по порядку вектора. 30 кандидатов на 4 vCPU —
     # около 1,9 с (замер 30.09); 3 с — по контракту BH-32.
     rerank_timeout_ms: int = Field(default=3000, ge=100, le=30_000)
+    # BH-40: на вопросах длиннее стольких слов реранкер не зовётся — там он
+    # выталкивает нужный фрагмент из пятёрки (замер ML 04.10); прирост
+    # подтверждён до 24 слов. Пусто — без ограничения.
+    rerank_max_words: int | None = Field(default=RERANK_MAX_WORDS, gt=0)
 
     model_config = SettingsConfigDict(
         env_prefix="RAG_",
@@ -240,10 +246,11 @@ class RagSettings(BaseSettings):
             return self.faq_gate_distance
         return self.faq_max_distance
 
-    @field_validator("faq_gate_distance", mode="before")
+    @field_validator("faq_gate_distance", "rerank_max_words", mode="before")
     @classmethod
     def empty_gate_is_off(cls, value: object) -> object:
-        # RAG_FAQ_GATE_DISTANCE= в .env — выключено, а не ошибка числа.
+        # RAG_FAQ_GATE_DISTANCE= или RAG_RERANK_MAX_WORDS= в .env —
+        # выключено, а не ошибка числа.
         return None if isinstance(value, str) and not value.strip() else value
 
     @model_validator(mode="after")
@@ -653,19 +660,12 @@ EXTRA_FORMAT_NAMES = ("xlsx", "pptx", "doc")
 class IngestSettings(BaseSettings):
     """Разбор файлов в песочнице (API — загрузка, воркер — коннекторы).
 
-    pdf_layout — модель разметки `pymupdf-layout`, которую `pymupdf4llm`
-    1.28 включает сама, если пакет установлен. С ней разбор PDF в ~5 раз
-    дороже по CPU при том же объёме текста (RISKS №40); качество таблиц и
-    заголовков без неё не сравнивалось. По умолчанию — как было (включена),
-    решение команды и ML — одной переменной INGEST_PDF_LAYOUT=false.
-
     extra_formats — форматы Р-5 (решение Артёма 29.09: по одному, после
     приёмки ML; .xlsx, .pptx и .doc приняты 01.10, ml-formats.md), через
     запятую. Убрать формат — он снова отклоняется с подсказкой и не
     скачивается из подключённых систем; уже загруженные файлы остаются.
     """
 
-    pdf_layout: bool = True
     extra_formats: str = "xlsx,pptx,doc"
 
     model_config = SettingsConfigDict(

@@ -66,28 +66,22 @@ def running_part(tag: str, lines: list[str]) -> str:
     return f'<?xml version="1.0" encoding="UTF-8"?><w:{tag} {_W}>{body}</w:{tag}>'
 
 
-def pdf(pages: list[list[tuple[str, int]]], *, password: str | None = None) -> bytes:
-    """PDF из строк (текст, кегль). Латиница: встроенный шрифт Helvetica
-    не содержит кириллицы, а системных шрифтов в CI может не быть."""
-    import pymupdf
+def pdf(pages: list[list[tuple[str, int]]]) -> bytes:
+    """PDF из строк (текст, кегль) — конструктором ML (pdf_samples.py), без
+    pymupdf. Латиница: стандартный шрифт Helvetica без кириллицы.
+    Зашифрованный PDF — готовый файл fixtures/encrypted.pdf."""
+    from tests.ingest.pdf_samples import HEIGHT, Page
+    from tests.ingest.pdf_samples import pdf as build
 
-    document = pymupdf.open()
+    built = []
     for lines in pages:
-        page = document.new_page()
-        y = 72
+        page = Page()
+        y = HEIGHT - 72
         for text, size in lines:
-            page.insert_text((72, y), text, fontsize=size)
-            y += size * 2
-    options = {}
-    if password:
-        options = {
-            "encryption": pymupdf.PDF_ENCRYPT_AES_256,
-            "user_pw": password,
-            "owner_pw": password,
-        }
-    data: bytes = document.tobytes(**options)
-    document.close()
-    return data
+            page.text(72, y, text, size=size)
+            y -= size * 2
+        built.append(page)
+    return build(built)
 
 
 def zip_bomb_docx() -> bytes:

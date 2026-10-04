@@ -263,7 +263,6 @@ docs/             документация, см. ниже
 
 ## Лицензии
 
-Разбор PDF — `pymupdf`/`pymupdf4llm` под AGPL-3.0 (RISKS №24). Замена
-на `pdfplumber` (MIT) уже в коде ML (`ingest/pdf.py`); включается после
-финального прогона ML 12.10 и до закрытия репозитория (BH-39, П-12).
+Разбор PDF — `pdfplumber` / `pdfminer.six` (MIT, `ingest/pdf.py`) вместо
+`pymupdf4llm` под AGPL-3.0 (BH-39, П-12, 04.10; RISKS №24 закрыт).
 Шрифты фронтенда — OFL. Остальные зависимости — MIT/BSD/Apache.

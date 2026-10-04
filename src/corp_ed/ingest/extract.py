@@ -3,9 +3,9 @@
 Выбор библиотек — рекомендация ML по замеру на 6 реальных документах:
 - docx: mammoth → HTML → markdownify (заголовки → #, таблицы, списки);
   колонтитулы mammoth пропускает — их текст читается отдельно;
-- pdf: pymupdf4llm (заголовки и таблицы; markitdown даёт ноль
-  заголовков), страницы склеиваются PAGE_BREAK (\\f) — по ним preprocess
-  находит колонтитулы;
+- pdf: разбор ML — ingest/pdf.py на pdfplumber / pdfminer.six (BH-39,
+  вместо pymupdf4llm под AGPL); заголовки и таблицы, страницы через
+  PAGE_BREAK (\\f) — по ним preprocess находит колонтитулы;
 - txt, md: как есть; UTF-8, а ещё UTF-16 с BOM и Windows-1251;
 - xlsx, pptx, doc (Р-5, BH-33…BH-35): разбор ML — ingest/xlsx.py,
   ingest/pptx.py, ingest/doc.py, только стандартная библиотека. Каждый
@@ -14,13 +14,14 @@
 
 Файл пришёл от клиента и считается враждебным. Здесь — проверки,
 которые дешёво сделать до парсера: формат по сигнатуре, а не по
-расширению; zip-бомба в docx, xlsx и pptx; зашифрованный PDF и
-документ Office с паролем; число страниц.
+расширению; zip-бомба в docx, xlsx и pptx; документ Office с паролем.
+Пароль и число страниц PDF проверяет сам разбор (ingest/pdf.py): чтобы их
+узнать, pdfminer читает файл — это работа песочницы.
 Сам разбор запускается в отдельном процессе с лимитами
 (ingest/sandbox.py), этот модуль не вызывается из API напрямую.
 
-Лицензии: pymupdf и pymupdf4llm — AGPL-3.0 (решение команды 25.09,
-риск записан в RISKS.md). mammoth — BSD-2, markdownify — MIT.
+Лицензии — только разрешительные: pdfplumber и pdfminer.six — MIT,
+pypdfium2 — BSD-3 / Apache-2.0, mammoth — BSD-2, markdownify — MIT.
 """
 
 import io
@@ -32,7 +33,6 @@ from enum import StrEnum
 from pathlib import PurePath
 
 from corp_ed.core.config import get_ingest_settings
-from corp_ed.ingest.preprocess import PAGE_BREAK
 
 
 class SourceFormat(StrEnum):
@@ -147,7 +147,6 @@ def error_message(code: str, filename: str | None = None) -> str:
     return supported
 
 
-MAX_PDF_PAGES = 1000
 # docx — zip. Лимиты на распакованный объём и число файлов закрывают
 # zip-бомбу: 40 КБ архива, которые распаковываются в гигабайты.
 MAX_DOCX_UNCOMPRESSED = 200 * 1024 * 1024
@@ -273,15 +272,12 @@ def _check_docx_container(data: bytes) -> None:
             raise ExtractionError("archive_too_large")
 
 
-def extract(fmt: SourceFormat, data: bytes, *, pdf_layout: bool = True) -> str:
-    """Файл → Markdown до preprocess. Вызывать в песочнице (sandbox.py).
-
-    pdf_layout — модель разметки PDF (INGEST_PDF_LAYOUT, RISKS №40).
-    """
+def extract(fmt: SourceFormat, data: bytes) -> str:
+    """Файл → Markdown до preprocess. Вызывать в песочнице (sandbox.py)."""
     if fmt is SourceFormat.DOCX:
         markdown = _extract_docx(data)
     elif fmt is SourceFormat.PDF:
-        markdown = _extract_pdf(data, layout=pdf_layout)
+        markdown = _extract_pdf(data)
     elif fmt in EXTRA_FORMATS:
         markdown = _office(fmt)[1](data)
     else:
@@ -397,31 +393,15 @@ def _docx_running_text(data: bytes, kind: str) -> list[str]:
     return blocks
 
 
-def _extract_pdf(data: bytes, *, layout: bool = True) -> str:
-    import pymupdf
-    import pymupdf4llm  # type: ignore[import-untyped]
-
-    # Глобальный переключатель библиотеки: песочница — отдельный процесс
-    # на каждый файл, так что состояние не утекает в другие разборы.
-    pymupdf4llm.use_layout(layout)
+def _extract_pdf(data: bytes) -> str:
+    """Разбор ML (BH-39). Импорт внутри: модуль сразу тянет pdfplumber,
+    pdfminer и pypdfium2 с нативной библиотекой — остальным форматам они
+    не нужны. Коды PdfError — те же: format_mismatch, encrypted,
+    corrupted, too_many_pages. Страницы — через PAGE_BREAK, как ждёт
+    preprocess."""
+    from corp_ed.ingest import pdf
 
     try:
-        document = pymupdf.open(stream=data, filetype="pdf")  # type: ignore[no-untyped-call]
-    except Exception as exc:  # noqa: BLE001
-        raise ExtractionError("corrupted") from exc
-
-    with document:
-        if document.needs_pass or document.is_encrypted:
-            raise ExtractionError("encrypted")
-        if document.page_count > MAX_PDF_PAGES:
-            raise ExtractionError("too_many_pages")
-        try:
-            pages = pymupdf4llm.to_markdown(
-                document, page_chunks=True, show_progress=False
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise ExtractionError("corrupted") from exc
-
-    # Договорённость с ML: страницы склеиваются \f — по границам страниц
-    # preprocess находит и удаляет колонтитулы.
-    return PAGE_BREAK.join(str(page["text"]) for page in pages)
+        return pdf.pdf_to_markdown(data)
+    except pdf.PdfError as exc:
+        raise ExtractionError(exc.code) from exc

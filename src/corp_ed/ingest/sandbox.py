@@ -1,8 +1,8 @@
 """Запуск извлечения текста в отдельном процессе с ограничениями.
 
 Почему не в процессе API:
-- парсеры PDF и docx обрабатывают файл, присланный клиентом; MuPDF
-  написан на C, и уязвимость в нём — выполнение кода с правами API,
+- парсеры PDF и docx обрабатывают файл, присланный клиентом; PDFium
+  (pypdfium2) написан на C++, и уязвимость в нём — выполнение кода с правами API,
   где в памяти SECRET_KEY, ключ Yandex Cloud и соединения с базой;
 - «PDF-бомба» или бесконечный цикл в парсере занимали бы воркер API;
 - разбор PDF — секунды CPU; в event loop он остановил бы все запросы.
@@ -21,7 +21,6 @@ import sys
 
 import structlog
 
-from corp_ed.core.config import get_ingest_settings
 from corp_ed.ingest.extract import ERROR_MESSAGES, ExtractionError, SourceFormat
 
 logger = structlog.get_logger()
@@ -36,8 +35,8 @@ _KILLED_BY_LIMIT = frozenset({-signal.SIGKILL, -signal.SIGXCPU})
 def cpu_budget(timeout: float) -> int:
     """CPU-секунды дочернему процессу: таймаут по стене на число ядер.
 
-    Разбор PDF многопоточный (модель разметки на onnxruntime занимает все
-    ядра), поэтому лимит CPU меньше timeout × ядер срабатывал бы на
+    Нативные библиотеки разбора могут занимать несколько ядер, поэтому
+    лимит CPU меньше timeout × ядер срабатывал бы на
     честном документе раньше таймаута.
     """
     return max(1, math.ceil(timeout)) * max(1, os.cpu_count() or 1)
@@ -58,10 +57,7 @@ async def extract_isolated(
     *,
     timeout: float = TIMEOUT_SECONDS,
     cpu_seconds: int | None = None,
-    pdf_layout: bool | None = None,
 ) -> str:
-    if pdf_layout is None:
-        pdf_layout = get_ingest_settings().pdf_layout
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         # -I: без PYTHONPATH, пользовательского site и текущего каталога
@@ -71,7 +67,6 @@ async def extract_isolated(
         "corp_ed.ingest.extract_worker",
         fmt.value,
         str(cpu_seconds or cpu_budget(timeout)),
-        "layout" if pdf_layout else "plain",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
