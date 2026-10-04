@@ -220,8 +220,13 @@ class StaffService:
     async def _company_row(self, tenant: Tenant, month_start: datetime) -> CompanyRow:
         with tenant_scope(tenant.id):
             async with self.session_maker() as session:
+                # Явный фильтр по компании в каждом запросе: учётка команды
+                # в контексте, и правило own_membership открыло бы её
+                # собственные членства в других компаниях.
                 members = await session.execute(
-                    select(User.status, func.count()).group_by(User.status)
+                    select(User.status, func.count())
+                    .where(User.tenant_id == tenant.id)
+                    .group_by(User.status)
                 )
                 by_status = {status: int(count) for status, count in members}
                 admins = (
@@ -229,6 +234,7 @@ class StaffService:
                         select(Account.email)
                         .join(User, User.account_id == Account.id)
                         .where(
+                            User.tenant_id == tenant.id,
                             User.role == UserRole.ADMIN,
                             User.status == MemberStatus.ACTIVE,
                         )
@@ -240,15 +246,22 @@ class StaffService:
                         select(
                             func.coalesce(func.sum(QaLog.credits), 0),
                             func.count(),
-                        ).where(QaLog.created_at >= month_start)
+                        ).where(
+                            QaLog.tenant_id == tenant.id,
+                            QaLog.created_at >= month_start,
+                        )
                     )
                 ).one()
-                last_question = await session.scalar(select(func.max(QaLog.created_at)))
+                last_question = await session.scalar(
+                    select(func.max(QaLog.created_at)).where(
+                        QaLog.tenant_id == tenant.id
+                    )
+                )
                 documents = await session.scalar(
-                    select(func.count()).select_from(Material)
+                    select(func.count()).where(Material.tenant_id == tenant.id)
                 )
                 connectors = await session.scalar(
-                    select(func.count()).select_from(Connector)
+                    select(func.count()).where(Connector.tenant_id == tenant.id)
                 )
         return CompanyRow(
             tenant=tenant,
@@ -289,7 +302,7 @@ class StaffService:
                             func.coalesce(func.sum(tokens), 0),
                             func.coalesce(func.sum(QaLog.credits), 0),
                         )
-                        .where(QaLog.created_at >= since)
+                        .where(QaLog.tenant_id == tenant.id, QaLog.created_at >= since)
                         .group_by(local_day)
                     ):
                         bucket = per_day.setdefault(row[0], [0, 0, 0])
@@ -298,15 +311,15 @@ class StaffService:
                         bucket[2] += int(row[3])
                     for model_row in await session.execute(
                         select(
-                            func.coalesce(QaLog.llm_model, "—"),
+                            QaLog.llm_model,
                             func.count(),
                             func.coalesce(func.sum(QaLog.input_tokens), 0),
                             func.coalesce(func.sum(QaLog.output_tokens), 0),
                         )
-                        .where(QaLog.created_at >= since)
-                        .group_by(func.coalesce(QaLog.llm_model, "—"))
+                        .where(QaLog.tenant_id == tenant.id, QaLog.created_at >= since)
+                        .group_by(QaLog.llm_model)
                     ):
-                        model = per_model.setdefault(str(model_row[0]), [0, 0, 0])
+                        model = per_model.setdefault(model_row[0] or "—", [0, 0, 0])
                         model[0] += int(model_row[1])
                         model[1] += int(model_row[2])
                         model[2] += int(model_row[3])
@@ -316,7 +329,9 @@ class StaffService:
                                 func.count(),
                                 func.coalesce(func.sum(tokens), 0),
                                 func.coalesce(func.sum(QaLog.credits), 0),
-                            ).where(QaLog.created_at >= since)
+                            ).where(
+                                QaLog.tenant_id == tenant.id, QaLog.created_at >= since
+                            )
                         )
                     ).one()
             if total[0]:
