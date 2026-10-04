@@ -43,7 +43,7 @@ BH-33…BH-35). Замер по форматам —
 | эмбеддинги | `text-embeddings-v2`, 768 | `--embedding-model`, `--embedding-dim` |
 | нарезка | 400 токенов, перекрытие 50, крошки с названием документа | `--chunk-tokens`, `--overlap-tokens`; только в `bench`: `--no-crumbs`, `--crumbs-without-title` |
 | поиск | только вектор | `--retriever hybrid --weights 1.0,0.5` (в `bench` ещё `bm25`) |
-| порог отказа | 0,59 (косинусное расстояние; с 30.09, было 0,51) | `--max-distance` (`offline_e2e`) |
+| порог отказа | 0,59 (косинусное расстояние; с 30.09, было 0,51) | `--max-distance` (`offline_e2e`); вариант «отвечать до 0,70, выдержки до 0,59» (BH-37, замер 04.10) — `--gate-distance 0.70 --near-margin 0.05` |
 | фрагментов в ответ | 5, до 3 000 токенов | `--limit`, `--context-tokens` (`offline_e2e`) |
 | промпт | `faq-v2.5` | — (версия в `src/corp_ed/prompts/faq.py`) |
 | ответа в документах нет | общий ответ с пометкой | `--not-found strict` — только отказ |

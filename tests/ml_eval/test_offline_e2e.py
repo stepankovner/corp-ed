@@ -37,6 +37,22 @@ def test_relevant_matches_keeps_order_and_threshold() -> None:
     assert [m.content for m in relevant_matches(matches, 0.6)] == ["a", "c"]
 
 
+def test_gate_distance_takes_nearest_beyond_threshold() -> None:
+    far = [
+        OfflineMatch("a", "Д", distance=0.62),
+        OfflineMatch("b", "Д", distance=0.69),
+        OfflineMatch("c", "Д", distance=0.66),
+    ]
+    near = [OfflineMatch("x", "Д", distance=0.5), OfflineMatch("y", "Д", distance=0.65)]
+
+    gated = relevant_matches(far, 0.59, gate_distance=0.7, near_margin=0.05)
+    assert [m.content for m in gated] == ["a", "c"]
+    # Ближайшая дальше gate — ответа по документам нет, как без флага.
+    assert relevant_matches(far, 0.59, gate_distance=0.6, near_margin=0.05) == []
+    # Ближайшая в пределах порога — дальние выдержки не добавляются.
+    assert relevant_matches(near, 0.59, gate_distance=0.7) == near[:1]
+
+
 def test_citations() -> None:
     answer = "Отпуск 28 дней [1], перенос по заявлению [2][4]."
 
