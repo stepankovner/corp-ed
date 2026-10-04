@@ -77,6 +77,10 @@ const CompaniesTab = lazy(() =>
 const SpendTab = lazy(() => import("./staff/SpendTab").then((m) => ({ default: m.SpendTab })));
 const PeopleTab = lazy(() => import("./staff/PeopleTab").then((m) => ({ default: m.PeopleTab })));
 const LeadsTab = lazy(() => import("./staff/LeadsTab").then((m) => ({ default: m.LeadsTab })));
+const SupportTab = lazy(() =>
+  import("./staff/SupportTab").then((m) => ({ default: m.SupportTab })),
+);
+const HelpPage = lazy(() => import("./help/HelpPage").then((m) => ({ default: m.HelpPage })));
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
@@ -122,6 +126,8 @@ export const routes: RouteObject[] = [
         children: [
           { path: "/", element: <HomePage /> },
           { path: "/settings/*", element: lazyPage(<SettingsPage />) },
+          // Помощь и «Написать в поддержку» (ТЗ §8) — и без компании.
+          { path: "/help", element: lazyPage(<HelpPage />) },
           // Команда kronto — и без своей компании.
           {
             path: "/staff",
@@ -136,6 +142,7 @@ export const routes: RouteObject[] = [
                   { path: "spend", element: lazyPage(<SpendTab />) },
                   { path: "people", element: lazyPage(<PeopleTab />) },
                   { path: "leads", element: lazyPage(<LeadsTab />) },
+                  { path: "support", element: lazyPage(<SupportTab />) },
                 ],
               },
             ],

@@ -160,6 +160,11 @@ docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff remove -
 Безопасность). Действия из панели — в журнале компании с
 `details.staff_account_id`.
 
+**Недельная сводка** администраторам уходит сама: её шлёт воркер по
+понедельникам с 9:00 по `BILLING_TIMEZONE` (раз в неделю на компанию;
+неделя без вопросов — без письма), cron для неё не нужен. Проверить
+письмо — `cli digest --code <компания> --force`.
+
 Остальные команды: `reset-password`, `set-seats`, `set-tariff`, `set-not-found-mode`,
 `suspend-tenant`, `resume-tenant`, `reindex`, `purge`, `gaps`, `leads`
 (заявки на созвон), `rotate-connector-secrets` (раздел 9),

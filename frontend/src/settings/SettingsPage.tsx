@@ -6,22 +6,27 @@ import { Page, PageHeader } from "../ui/Page";
 import { AccountTab } from "./AccountTab";
 import { CompaniesTab } from "./CompaniesTab";
 import { ConnectionsTab } from "./ConnectionsTab";
+import { NotificationsTab } from "./NotificationsTab";
 import { ProfileTab } from "./ProfileTab";
 import { SecurityTab } from "./SecurityTab";
 
-// Уведомления (ТЗ §4) — этапом 9.
 interface Tab {
   path: string;
   label: string;
 }
 
-/** «Мои подключения» — источники компании: только когда она выбрана и открыта. */
+/** «Мои подключения» и «Уведомления» — про компанию: только когда она выбрана и открыта. */
 function tabsFor(me: Me): Tab[] {
   const inCompany = me.company !== null && !needsStrongFactor(me);
   return [
     { path: "profile", label: "Профиль" },
     { path: "security", label: "Безопасность" },
-    ...(inCompany ? [{ path: "connections", label: "Мои подключения" }] : []),
+    ...(inCompany
+      ? [
+          { path: "connections", label: "Мои подключения" },
+          { path: "notifications", label: "Уведомления" },
+        ]
+      : []),
     { path: "companies", label: "Компании" },
     { path: "account", label: "Управление учётной записью" },
   ];
@@ -48,6 +53,7 @@ export function SettingsPage() {
         <Route path="profile" element={<ProfileTab />} />
         <Route path="security" element={<SecurityTab />} />
         {connections ? <Route path="connections" element={<ConnectionsTab />} /> : null}
+        {connections ? <Route path="notifications" element={<NotificationsTab />} /> : null}
         <Route path="companies" element={<CompaniesTab />} />
         <Route path="account" element={<AccountTab />} />
         <Route path="*" element={<Navigate to="/settings/profile" replace />} />

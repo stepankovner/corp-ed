@@ -113,6 +113,9 @@ STAFF_EDIT_PER_ACCOUNT = RatePolicy(
 STAFF_RESET_PER_ACCOUNT = RatePolicy(
     "staff-reset", limit=20, window=3600, fail_open=False
 )
+# «Написать в поддержку»: человеку хватит пяти обращений в час, больше —
+# уже рассылка в Telegram команды.
+SUPPORT_PER_ACCOUNT = RatePolicy("support", limit=5, window=3600, fail_open=False)
 SUGGESTION_EDIT_PER_TENANT = RatePolicy(
     "suggestion-edit", limit=120, window=3600, fail_open=True
 )

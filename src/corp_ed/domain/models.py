@@ -322,6 +322,82 @@ class Folder(TenantMixin, Base):
     )
 
 
+class Notification(TenantMixin, Base):
+    """Колокольчик (ТЗ §8): событие компании для одного человека —
+    остановлено подключение, лимит вопросов, заявка на вступление,
+    недельная сводка. Письмо о том же — по настройкам получателя."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class NotificationSetting(TenantMixin, Base):
+    """Какие письма слать (ТЗ §8). Строки нет — все включены: у нового
+    администратора письма о важном приходят сразу."""
+
+    __tablename__ = "notification_settings"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    email_connectors: Mapped[bool] = mapped_column(default=True, server_default=true())
+    email_credits: Mapped[bool] = mapped_column(default=True, server_default=true())
+    email_join_requests: Mapped[bool] = mapped_column(
+        default=True, server_default=true()
+    )
+    email_weekly_digest: Mapped[bool] = mapped_column(
+        default=True, server_default=true()
+    )
+
+
+class SupportRequest(Base):
+    """«Написать в поддержку» (ТЗ §8). Обращение — от учётки (у человека
+    может не быть компании), поэтому вне RLS; читает его команда в нашей
+    панели. В Telegram команды уходит только номер и тема — без текста и
+    почты (персональные данные — не в зарубежный мессенджер)."""
+
+    __tablename__ = "support_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "topic IN ('login', 'documents', 'answers', 'billing', 'other')",
+            name="ck_support_requests_topic",
+        ),
+        CheckConstraint(
+            "status IN ('new', 'answered', 'closed')",
+            name="ck_support_requests_status",
+        ),
+        Index("ix_support_requests_created_at", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    account_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL")
+    )
+    topic: Mapped[str] = mapped_column(String(16))
+    message: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class FolderDepartment(TenantMixin, Base):
     """Отдел, которому открыта закрытая папка. Удалили отдел — пропал и
     доступ (CASCADE)."""
@@ -382,6 +458,13 @@ class User(TenantMixin, Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Первые шаги (ТЗ §8): подсказки сотруднику показаны, чек-лист
+    # администратора скрыт — в членстве, чтобы не всплывали на каждом
+    # новом устройстве.
+    tips_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checklist_hidden_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -125,9 +125,7 @@ describe("заявки на созвон", () => {
     expect(await screen.findByText("ООО «Ромашка» — перезвонили")).toBeInTheDocument();
     expect(patches).toEqual([{ id: "l-1", body: { status: "contacted" } }]);
     // В «Новых» её больше нет.
-    await waitFor(() =>
-      expect(screen.queryByRole("listitem", { name: "ООО «Ромашка»" })).not.toBeInTheDocument(),
-    );
-    expect(screen.getByText("Новых заявок нет")).toBeInTheDocument();
+    expect(await screen.findByText("Новых заявок нет")).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "ООО «Ромашка»" })).not.toBeInTheDocument();
   });
 });

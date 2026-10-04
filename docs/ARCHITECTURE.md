@@ -340,6 +340,19 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
 `get_staff_account` (`staff_members` + надёжный второй фактор); в
 `/auth/me` — `staff`, по нему фронт показывает «Панель kronto».
 
+**Уведомления, первые шаги, помощь** (ТЗ §8, этап 9):
+`NotificationService.notify_admins` пишет колокольчик каждому работающему
+администратору и ставит письмо в очередь (`OutboxEmail`) — по его
+настройкам (`notification_settings`, строки нет — всё включено). Вызывают
+его сами события: `CreditService.note_spend` (80 % и исчерпан),
+`ConnectorSyncService._stop_connector`, `InviteService.accept` (заявка на
+вступление). Недельную сводку шлёт воркер (`digest_loop` →
+`DigestService.send_due`): понедельник с 9:00 по поясу биллинга, раз в
+неделю на компанию по отметке `digest.sent` в журнале; вручную — `cli
+digest`. Первые шаги — `/onboarding` (чек-лист по данным компании,
+отметки в членстве). «Написать в поддержку» — `/support`, команде —
+`/staff/support`; в Telegram — только номер и тема.
+
 **Вопрос сотрудника** (`POST /faq/ask`):
 токен → тенант в контекст → лимит частоты → `CreditService.ensure_available`
 (402 до платных вызовов) → режим компании → история диалога из Redis
@@ -458,7 +471,9 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 `account_avatars` — учётка человека вне компаний; `tenant_logos` —
 логотип, переключатель показывает логотипы всех компаний человека
 (наружу — только подписанной ссылкой); `staff_members` — команда kronto
-для нашей панели (заводит только CLI).
+для нашей панели (заводит только CLI); `support_requests` — обращения в
+поддержку от учётки (с компанией или без). Под RLS также
+`notifications` и `notification_settings`.
 
 Ловушки, закреплённые в коде: `postgresql.ENUM(...).create(checkfirst=True)`
 для новых enum (и `create_type=False` при переиспользовании существующего); FORCE RLS и массовые правки; генерируемая колонка `fts`;

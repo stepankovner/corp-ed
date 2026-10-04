@@ -384,6 +384,11 @@ test.describe.serial("путь компании", () => {
     await page.getByRole("button", { name: "Вступить" }).click();
     await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Управление" })).toHaveCount(0);
+    // Первые шаги (ТЗ §8): подсказки новому сотруднику — до «Понятно».
+    const tips = page.getByRole("region", { name: "Несколько советов" });
+    await expect(tips).toBeVisible();
+    await tips.getByRole("button", { name: "Понятно" }).click();
+    await expect(tips).toHaveCount(0);
     await ask(page, `Сколько суточных по России? ${codeWord}`);
     await expect(page.getByRole("button", { name: /^Источник 1: / }).first()).toBeVisible({
       timeout: 30_000,
@@ -531,6 +536,24 @@ test.describe.serial("путь компании", () => {
     await page.goto("/admin/audit");
     await expect(page.getByText("Запрошена смена тарифа").first()).toBeVisible();
     await expect(page.getByText("Папка создана").first()).toBeVisible();
+  });
+
+  test("«Написать в поддержку»: обращение видит команда в панели", async ({ page, context }) => {
+    const text = `Не нахожу приказ об отпусках, проверка ${run}`;
+    await loginByMail(page, coderEmail, employeePassword);
+    await page.getByRole("link", { name: "Помощь", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Помощь", level: 1 })).toBeVisible();
+    await page.getByLabel("Тема").selectOption({ label: "Документы и подключения" });
+    await page.getByLabel("Сообщение").fill(text);
+    await page.getByRole("button", { name: "Отправить" }).click();
+    await expect(page.getByText(/Обращение №\w{8} отправлено/)).toBeVisible();
+
+    await page.getByRole("button", { name: /^Профиль/ }).click();
+    await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await loginAdmin(page, context);
+    await page.getByRole("link", { name: "Панель kronto" }).click();
+    await page.getByRole("link", { name: "Обращения", exact: true }).click();
+    await expect(page.getByText(text)).toBeVisible();
   });
 
   test("команда kronto: компании, расход, помощь со входом", async ({ page, context }) => {

@@ -23,6 +23,7 @@ from corp_ed.domain.models import (
     Material,
     MaterialAccess,
     MaterialStatus,
+    Notification,
     Tenant,
     User,
 )
@@ -398,6 +399,7 @@ async def test_deadline_stops_the_run(
 async def test_rejected_credentials_stop_the_connector(
     session: AsyncSession,
     tenant_ctx: Tenant,
+    admin: User,
     secrets: SecretBox,
     source: FakeSource,
     service: ConnectorSyncService,
@@ -421,6 +423,10 @@ async def test_rejected_credentials_stop_the_connector(
         )
     ).all()
     assert len(events) == 1 and events[0].details == {"code": ERROR_AUTH}
+    # Колокольчик администраторам (ТЗ §8): без них подключение не оживёт.
+    [notice] = (await session.scalars(select(Notification))).all()
+    assert (notice.user_id, notice.kind) == (admin.id, "connector_stopped")
+    assert notice.link == f"/admin/sources/connections/{connector.id}"
     # Остановленный не запускается, пока админ не даст новые данные.
     assert (
         await service.run(

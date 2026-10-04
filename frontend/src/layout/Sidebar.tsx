@@ -2,6 +2,7 @@ import {
   BookUser,
   ChevronDown,
   House,
+  LifeBuoy,
   PanelLeftClose,
   PanelLeftOpen,
   Settings2,
@@ -22,6 +23,7 @@ import { useToast } from "../ui/useToast";
 import { AccountMenu } from "./AccountMenu";
 import { CompanySwitcher, type CompanyOption } from "./CompanySwitcher";
 import { ConversationList } from "./ConversationList";
+import { NotificationBell } from "./NotificationBell";
 import { ADMIN_SECTIONS } from "./navigation";
 import styles from "./Sidebar.module.css";
 
@@ -67,6 +69,7 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
             <Logo height={20} />
           </Link>
         )}
+        {collapsed || mode === "drawer" ? null : <NotificationBell />}
         {mode === "drawer" ? (
           <IconButton ref={closeRef} label="Закрыть меню" onClick={onClose} tooltip={false}>
             <X size={20} aria-hidden />
@@ -110,6 +113,7 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
             ) : (
               <NavItem to="/" end icon={House} label="Главная" collapsed={collapsed} />
             )}
+            <NavItem to="/help" icon={LifeBuoy} label="Помощь" collapsed={collapsed} />
             {/* Наша панель (ТЗ §9) — команде kronto, и без своей компании. */}
             {me.staff ? (
               <NavItem to="/staff" icon={ShieldCheck} label="Панель kronto" collapsed={collapsed} />

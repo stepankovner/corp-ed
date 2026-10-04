@@ -86,6 +86,11 @@ from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.notification_service import (
+    Notice,
+    NotificationKind,
+    NotificationService,
+)
 from corp_ed.services.team_notify import (
     NULL_NOTIFIER,
     TeamNotifier,
@@ -604,6 +609,22 @@ class ConnectorSyncService:
             target_type="connector",
             target_id=connector.id,
             details={"code": code},
+        )
+        # Администраторам (ТЗ §8): без человека подключение не оживёт.
+        await NotificationService(session).notify_admins(
+            connector.tenant_id,
+            Notice(
+                kind=NotificationKind.CONNECTOR_STOPPED,
+                title=f"Подключение «{connector.name}» остановлено",
+                lines=[
+                    "Источник отказал в доступе: учётные данные отозваны, "
+                    f"истекли или у них больше нет прав (код {code}).",
+                    "Документы из него перестали обновляться. Откройте "
+                    "подключение и введите учётные данные заново.",
+                ],
+                link=f"/admin/sources/connections/{connector.id}",
+                action="Открыть подключение",
+            ),
         )
         await session.commit()
         tenant = await TenantRepository(session).get_by_id(connector.tenant_id)
