@@ -291,20 +291,17 @@
 }
 .footerInner {
   display: grid;
-  grid-template-columns: minmax(220px, 1.3fr) repeat(3, minmax(160px, 1fr));
+  grid-template-columns: minmax(220px, 1.3fr) 3fr;
   gap: var(--s-6);
   max-width: var(--container);
   margin: 0 auto;
 }
-@media (max-width: 860px) {
-  .footerInner {
-    grid-template-columns: 1fr 1fr;
-  }
-  .footerBrand {
-    grid-column: 1 / -1;
-  }
+.footerNav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: var(--s-6);
 }
-@media (max-width: 480px) {
+@media (max-width: 860px) {
   .footerInner {
     grid-template-columns: 1fr;
   }

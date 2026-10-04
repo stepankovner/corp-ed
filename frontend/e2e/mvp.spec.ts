@@ -672,6 +672,8 @@ test.describe.serial("путь компании", () => {
       .getByRole("region", { name: "Базовый" })
       .getByRole("link", { name: "Записаться на созвон" })
       .click();
+    // Страница записи — отдельным чанком: пока он грузится, на экране тарифы.
+    await expect(page.getByRole("heading", { name: "Запись на созвон" })).toBeVisible();
     await page.getByLabel("Компания").fill(leadCompany);
     await page.getByLabel("Сколько сотрудников работают за компьютером").fill("60");
     await page.getByLabel("Как к вам обращаться").fill("Анна");

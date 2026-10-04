@@ -170,18 +170,22 @@ export function SiteLayout({ children }: { children: ReactNode }) {
               </a>
             </p>
           </div>
-          {FOOTER.map((group) => (
-            <nav key={group.title} aria-label={group.title} className={styles.footerGroup}>
-              <p className={styles.footerTitle}>{group.title}</p>
-              <ul>
-                {group.links.map((link) => (
-                  <li key={link.to}>
-                    <Link to={link.to}>{link.label}</Link>
-                  </li>
-                ))}
-              </ul>
-            </nav>
-          ))}
+          {/* Одна навигация на подвал: подписи групп — текстом, не aria-label,
+              иначе «Компания» совпала бы с полем формы на соседней странице. */}
+          <nav aria-label="Ссылки сайта" className={styles.footerNav}>
+            {FOOTER.map((group) => (
+              <div key={group.title} className={styles.footerGroup}>
+                <p className={styles.footerTitle}>{group.title}</p>
+                <ul>
+                  {group.links.map((link) => (
+                    <li key={link.to}>
+                      <Link to={link.to}>{link.label}</Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
         </div>
         <p className={styles.copyright}>© 2026 kronto</p>
       </footer>
