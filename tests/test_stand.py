@@ -13,7 +13,14 @@ from corp_ed import stand_scenarios
 from corp_ed.core.config import DemoSettings
 from corp_ed.core.security import hash_password
 from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import Department, Folder, Tenant, User, UserRole
+from corp_ed.domain.models import (
+    Department,
+    Folder,
+    Material,
+    Tenant,
+    User,
+    UserRole,
+)
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.types import Completion, Message
 from corp_ed.services.demo_service import DemoService
@@ -270,8 +277,8 @@ async def test_stage_scenarios_pass_with_employee(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Шаги этапов 1–10: чат, обзор, отдел с закрытой папкой, сотрудник по
-    приглашению (папку видит, только когда он в отделе), песочница сайта.
-    За собой сценарий убирает всё."""
+    приглашению (папку видит, только когда он в отделе), песочница сайта,
+    загрузка Word и PDF. За собой сценарий убирает всё."""
     await make_admin(session, tenant_ctx)
     other = Tenant(company_code="stand-employee", name="Вторая компания")
     session.add(other)
@@ -332,7 +339,7 @@ async def test_stage_scenarios_pass_with_employee(
     assert report.ok, "\n".join(report.lines())
     names = [step.name for step in report.steps]
     # Последний шаг — удаление документа основного сценария.
-    assert names[-12:] == [
+    assert names[-13:] == [
         "чат: ответ потоком",
         "чат: список, «поделиться», удаление",
         "уведомления и первые шаги",
@@ -343,18 +350,24 @@ async def test_stage_scenarios_pass_with_employee(
         "сотрудник: общий документ виден, папка отдела — нет",
         "сотрудник в отделе видит папку",
         "песочница сайта",
+        "загрузка Word и PDF",
         "уборка сценариев",
         "удаление документа",
     ]
-    # Убрано: сотрудника в компании нет, отделов и папок не осталось.
-    async with session_maker() as check:
-        members = (
-            await check.scalars(select(User).where(User.tenant_id == tenant_ctx.id))
-        ).all()
-        # Убранный сотрудник — «ушёл»: учётка жива, доступа к компании нет.
-        assert sorted((m.role.value, m.status.value) for m in members) == [
-            ("admin", "active"),
-            ("employee", "left"),
-        ]
-        assert (await check.scalar(select(func.count()).select_from(Folder))) == 0
-        assert (await check.scalar(select(func.count()).select_from(Department))) == 0
+    # Убрано: сотрудника в компании нет, документов, отделов и папок не
+    # осталось.
+    with tenant_scope(tenant_ctx.id):
+        async with session_maker() as check:
+            members = (
+                await check.scalars(select(User).where(User.tenant_id == tenant_ctx.id))
+            ).all()
+            # Убранный сотрудник — «ушёл»: учётка жива, доступа к компании нет.
+            assert sorted((m.role.value, m.status.value) for m in members) == [
+                ("admin", "active"),
+                ("employee", "left"),
+            ]
+            assert (await check.scalar(select(func.count()).select_from(Material))) == 0
+            assert (await check.scalar(select(func.count()).select_from(Folder))) == 0
+            assert (
+                await check.scalar(select(func.count()).select_from(Department))
+            ) == 0

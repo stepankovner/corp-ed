@@ -10,15 +10,19 @@
   он не в отделе папки;
 - приглашение и вступление (§2): вторая служебная учётка вступает по коду
   и отвечает как сотрудник; после проверки её убирают из компании;
-- песочница сайта (§1): ответ по документам вымышленной компании.
+- песочница сайта (§1): ответ по документам вымышленной компании;
+- загрузка Word и PDF: текст из них достаёт песочница извлечения на
+  сервере, чего документ .md основного сценария не проверяет.
 
 Всё, что сценарий создал, он удаляет — повторные запуски не копят данные.
 Учётка сотрудника необязательна: без неё шаги сотрудника пропускаются.
 """
 
+import io
 import json
 import secrets
 import time
+import zipfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -70,6 +74,98 @@ def folder_document(nonce: str) -> tuple[str, str, str, str]:
         "только сотрудники отдела проверки.\n"
     )
     return title, text, f"Какой код двери склада отдела проверки {nonce}?", code
+
+
+_DOCX_PARTS = {
+    "[Content_Types].xml": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/'
+        'vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/word/document.xml" ContentType="application/'
+        'vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+        "</Types>"
+    ),
+    "_rels/.rels": (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+        'relationships"><Relationship Id="rId1" Type="http://schemas.'
+        'openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="word/document.xml"/></Relationships>'
+    ),
+}
+
+
+def _docx(paragraphs: list[str]) -> bytes:
+    body = "".join(f"<w:p><w:r><w:t>{text}</w:t></w:r></w:p>" for text in paragraphs)
+    document = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document '
+        'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        f"<w:body>{body}</w:body></w:document>"
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, xml in _DOCX_PARTS.items():
+            archive.writestr(name, xml)
+        archive.writestr("word/document.xml", document)
+    return buffer.getvalue()
+
+
+def _pdf(lines: list[str]) -> bytes:
+    """Одна страница, встроенный шрифт Helvetica — без кириллицы, зато без
+    библиотек: проверяется извлечение на сервере, а не сборка файла."""
+    text = "".join(
+        f"BT /F1 12 Tf 72 {720 - 24 * i} Td ({line}) Tj ET\n"
+        for i, line in enumerate(lines)
+    ).encode("latin-1")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        b"<< /Length %d >>\nstream\n%sendstream" % (len(text), text),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (number, body)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1,
+        xref,
+    )
+    return bytes(out)
+
+
+def format_files(nonce: str) -> list[tuple[str, bytes, str]]:
+    """Файлы Word и PDF: имя, содержимое, название документа."""
+    return [
+        (
+            f"check-{nonce}.docx",
+            _docx(
+                [
+                    f"Порядок выдачи пропусков {nonce}",
+                    f"Пропуск проверки {nonce} выдаёт охрана на первом этаже.",
+                ]
+            ),
+            f"Проверка Word {nonce}",
+        ),
+        (
+            f"check-{nonce}.pdf",
+            _pdf(
+                [
+                    f"Parking rules {nonce}",
+                    f"Check parking {nonce}: level minus two, places 10 to 20.",
+                ]
+            ),
+            f"Проверка PDF {nonce}",
+        ),
+    ]
 
 
 async def stream_chat(client: StandClient, question: str) -> dict[str, Any]:
@@ -129,6 +225,15 @@ async def run_scenarios(
             sleep=sleep,
         )
         await _sandbox(client, report, before_poll=before_poll, sleep=sleep)
+        await _formats(
+            client,
+            report,
+            created,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            before_poll=before_poll,
+            sleep=sleep,
+        )
     except StandError as exc:
         report.add("сценарии этапов прерваны", False, str(exc))
     finally:
@@ -380,6 +485,51 @@ async def _sandbox(
     )
 
 
+async def _formats(
+    client: StandClient,
+    report: Report,
+    created: dict[str, str],
+    *,
+    timeout: float,
+    poll_interval: float,
+    before_poll: Hook | None,
+    sleep: Callable[[float], Awaitable[None]],
+) -> None:
+    started = time.monotonic()
+    uploaded: list[tuple[str, str]] = []
+    details: list[str] = []
+    files = format_files(secrets.token_hex(3))
+    for filename, data, title in files:
+        extension = filename.rsplit(".", 1)[1]
+        try:
+            material = await client.upload(filename, data, title)
+        except StandError as exc:
+            details.append(str(exc))
+            continue
+        created[f"file:{extension}"] = str(material["id"])
+        uploaded.append((extension, str(material["id"])))
+    ready = 0
+    for extension, material_id in uploaded:
+        material = await _wait_ready(
+            client,
+            material_id,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            before_poll=before_poll,
+            sleep=sleep,
+        )
+        ready += material["status"] == "ready"
+        details.append(
+            f"{extension}: {material['status']}"
+            + (f" ({material['status_error']})" if material.get("status_error") else "")
+        )
+    report.add(
+        "загрузка Word и PDF",
+        ready == len(files),
+        ", ".join(details) + f", {time.monotonic() - started:.0f} с",
+    )
+
+
 async def _clean(client: StandClient, report: Report, created: dict[str, str]) -> None:
     """Убрать за собой; не удалось — шаг красный, данные видно в отчёте."""
     if not client.token:
@@ -395,6 +545,9 @@ async def _clean(client: StandClient, report: Report, created: dict[str, str]) -
         paths.append(("отдел", f"/departments/{created['department']}"))
     if created.get("invite"):
         paths.append(("приглашение", f"/invites/{created['invite']}"))
+    for key, material_id in created.items():
+        if key.startswith("file:"):
+            paths.append((f"файл {key[5:]}", f"/materials/{material_id}"))
     if not paths:
         return
     results = []
