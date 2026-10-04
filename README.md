@@ -247,6 +247,7 @@ docs/             документация, см. ниже
 | [`docs/STAGE.md`](docs/STAGE.md) | тестовый стенд: прерываемый сервер Selectel, первичная настройка, выкатка из GitHub Actions, мониторинг, автовозобновление, правила |
 | [`docs/CI-RUNNER.md`](docs/CI-RUNNER.md) | свой runner GitHub Actions: ВМ Timeweb, `setup.sh`, переключение переменной `RUNS_ON`, откат, безопасность |
 | [`docs/STAGE-TESTING.md`](docs/STAGE-TESTING.md) | тестирование стенда: логика и работоспособность, качество ответов, что исправлено и что открыто |
+| [`docs/LOAD-TEST.md`](docs/LOAD-TEST.md) | нагрузочная проверка: сколько выдерживает сервер и квоты Яндекса, что исправлено, большая компания |
 | [`docs/CONNECTORS-RESEARCH.md`](docs/CONNECTORS-RESEARCH.md) | исследование перед коннекторами: как у других, что API отдают по правам |
 | [`docs/MONITORING-RESEARCH.md`](docs/MONITORING-RESEARCH.md) | исследование перед мониторингом: сценарии отказов, варианты по слоям, ограничения в РФ |
 | [`docs/RESILIENCE-RESEARCH.md`](docs/RESILIENCE-RESEARCH.md) | отказоустойчивость ML-части, выбор хостинга, что ещё сделать |

@@ -12,7 +12,6 @@
               сотрудники берутся по кругу из пула (лимит 30 вопросов в
               минуту на человека)
     burst     N сотрудников спрашивают в одну секунду («понедельник, 9:00»)
-    search    N одновременных /faq/search без пауз — только поиск, без модели
 
 Задержки — от первого байта запроса: «первое слово» — первое событие
 delta потока, «ответ» — событие done. Процессор API и Postgres — psutil,
@@ -250,6 +249,7 @@ async def ask(
     conversation_id: str | None = None,
     parent_id: str | None = None,
 ) -> Asked:
+    body: dict[str, str | None]
     if conversation_id is None:
         path, body = f"{API}/conversations", {"question": question}
     else:
@@ -390,29 +390,6 @@ async def capacity_worker(
         recorder.add(asked.sample)
 
 
-async def search_worker(
-    client: httpx.AsyncClient,
-    company: Company,
-    pool: Iterator[Person],
-    recorder: Recorder,
-    deadline: float,
-) -> None:
-    single, _ = _questions()
-    while time.monotonic() < deadline:
-        headers = next(pool).headers(company.tenant_id)
-        started = time.monotonic()
-        try:
-            response = await client.post(
-                f"{API}/faq/search",
-                json={"question": random.choice(single)},
-                headers=headers,
-            )
-            status = "ok" if response.status_code == 200 else str(response.status_code)
-        except httpx.HTTPError as exc:
-            status = type(exc).__name__
-        recorder.add(Sample("поиск", status, _since(started)))
-
-
 async def level(
     args: argparse.Namespace, company: Company, users: int
 ) -> dict[str, Any]:
@@ -443,11 +420,6 @@ async def level(
         elif args.mode == "capacity":
             tasks = [
                 capacity_worker(client, company, pool, recorder, deadline)
-                for _ in range(users)
-            ]
-        elif args.mode == "search":
-            tasks = [
-                search_worker(client, company, pool, recorder, deadline)
                 for _ in range(users)
             ]
         else:  # burst
@@ -508,9 +480,7 @@ async def corpus(args: argparse.Namespace, company: Company) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument(
-        "mode", choices=["corpus", "cycle", "capacity", "burst", "search"]
-    )
+    parser.add_argument("mode", choices=["corpus", "cycle", "capacity", "burst"])
     parser.add_argument("--users-file", type=Path, required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--levels", default="10", help="через запятую: 10,25,50")

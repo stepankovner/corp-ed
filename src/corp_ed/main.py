@@ -163,7 +163,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     concurrency, query_rps, ingest_rps = _llm_limits()
     app.state.llm_semaphore = asyncio.Semaphore(concurrency)
     # Темп эмбеддингов вопросов — общий с воркером через Redis (квота
-    # каталога одна). Сотрудник ждёт слота не дольше нескольких секунд.
+    # каталога одна). Сотрудник ждёт слота не дольше QUERY_MAX_WAIT.
     app.state.embedding_query_throttle = (
         RedisThrottle(redis, "embedding-query", query_rps, max_wait=QUERY_MAX_WAIT)
         if redis is not None
@@ -200,7 +200,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await redis.aclose()
 
 
-QUERY_MAX_WAIT = 5.0
+# Всплеск («все спросили разом» на показе) проходит, пока очередь к доле
+# вопросов не длиннее этого: при 3 в секунду — ~31 вопрос за 10 с, при 5 с
+# было ~16, остальным — «очень много вопросов» (docs/LOAD-TEST.md, D).
+QUERY_MAX_WAIT = 10.0
 ATTACHMENT_MAX_WAIT = 30.0
 
 
