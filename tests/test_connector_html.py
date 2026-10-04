@@ -4,6 +4,7 @@ import pytest
 
 from corp_ed.connectors.html import MAX_HTML_BYTES, html_to_markdown
 from corp_ed.ingest.extract import ExtractionError
+from corp_ed.ingest.preprocess import preprocess
 
 PAGE = """
 <html><head><title>Регламент</title><style>h1{color:red}</style>
@@ -68,3 +69,14 @@ def test_relative_and_anchor_links_survive_absolute_others_dropped() -> None:
     assert "[якорь](#top)" in markdown
     assert "[почта](mailto:a@b.ru)" in markdown
     assert "file:" not in markdown
+
+
+def test_superscript_stays_a_tag() -> None:
+    """BH-36: верхний индекс — тегом, как в .docx; номер сноски уберёт
+    preprocess, единицу площади сделает «м²»."""
+    markdown = html_to_markdown(
+        "<p>Бюджет 2 500 000<sup>3</sup> ₽, склад 120 м<sup>2</sup></p>"
+    )
+
+    assert "2 500 000<sup>3</sup> ₽" in markdown
+    assert preprocess(markdown) == "Бюджет 2 500 000 ₽, склад 120 м²"

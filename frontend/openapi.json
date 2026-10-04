@@ -7342,79 +7342,6 @@
         ]
       }
     },
-    "/api/v1/account/sessions": {
-      "get": {
-        "description": "Где открыта учётка: браузер, адрес, когда начат сеанс.",
-        "operationId": "list_sessions_api_v1_account_sessions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SessionResponse"
-                  },
-                  "title": "Response List Sessions Api V1 Account Sessions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "List Sessions",
-        "tags": [
-          "account"
-        ]
-      }
-    },
-    "/api/v1/account/sessions/{session_id}/end": {
-      "post": {
-        "description": "Выйти на одном устройстве. Его access-токен доживёт до 15 минут —\nдля немедленного выхода везде есть /auth/logout-all.",
-        "operationId": "end_session_api_v1_account_sessions__session_id__end_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "session_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Session Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "End Session",
-        "tags": [
-          "account"
-        ]
-      }
-    },
     "/api/v1/account/totp/disable": {
       "post": {
         "operationId": "disable_totp_api_v1_account_totp_disable_post",
@@ -8163,6 +8090,79 @@
         "summary": "Reset Password",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "description": "Где открыта учётка: браузер, адрес, когда начат сеанс.",
+        "operationId": "list_sessions_api_v1_auth_sessions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SessionResponse"
+                  },
+                  "title": "Response List Sessions Api V1 Auth Sessions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Sessions",
+        "tags": [
+          "account"
+        ]
+      }
+    },
+    "/api/v1/auth/sessions/{session_id}/end": {
+      "post": {
+        "description": "Выйти на одном устройстве. Его access-токен доживёт до 15 минут —\nдля немедленного выхода везде есть /auth/logout-all.",
+        "operationId": "end_session_api_v1_auth_sessions__session_id__end_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "End Session",
+        "tags": [
+          "account"
         ]
       }
     },

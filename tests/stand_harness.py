@@ -21,6 +21,7 @@ from corp_ed.api.v1.dependencies import (
     get_llm_gateway,
     get_rag_settings,
     get_secret_box,
+    get_session_factory,
 )
 from corp_ed.core.config import RagSettings
 from corp_ed.core.database import get_session
@@ -110,6 +111,8 @@ async def stand_client(
             yield session
 
     app.dependency_overrides[get_session] = per_request
+    # Ответ в чате пишется в фоне своей сессией — к той же базе.
+    app.dependency_overrides[get_session_factory] = lambda: session_maker
     app.dependency_overrides[get_secret_box] = lambda: SecretBox([TEST_SECRETS_KEY])
     app.dependency_overrides[get_embedding_gateway] = lambda: embeddings
     app.dependency_overrides[get_llm_gateway] = lambda: llm

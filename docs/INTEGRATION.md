@@ -42,7 +42,9 @@ BH-1…BH-26 — сверка 25.09.
 | Р-3 `x-data-logging-enabled: false` | ✅ 30.09 | `llm/yandex_headers.py` | во всех трёх адаптерах; действие на эмбеддинги Яндекс не подтверждает (RISKS №48) |
 | BH-32 реранкер за флагом | ✅ 01.10 (архитектура — 30.09), выключен | `domain/rerank.py` (ML: правило), `services/faq_service.py::_rerank`, `llm/reranker.py`, `compose.yaml` (профиль `reranker`) | модель — отдельный сервис text-embeddings-inference, а не в процессе API (контракт допускает оба; без torch в образе API, CPU и память ограничены отдельно); `RAG_RERANK_MAX_LENGTH` — только 512 (сервис режет по окну модели); `RAG_RERANK_DEPTH` ≤ 64; см. «Реранкер» ниже |
 | BH-33…BH-35 приём .xlsx, .pptx, .doc | ✅ 01.10 | `ingest/extract.py` (`SourceFormat`, `detect_format`, `extract`, `error_message`), `core/config.py::IngestSettings.extra_formats`; разбор — `ingest/xlsx.py`, `pptx.py`, `doc.py` (ML) | флаг `INGEST_EXTRA_FORMATS=xlsx,pptx,doc` (по умолчанию все три; опечатка в имени — ошибка старта); выключенный формат не скачивается и из коннекторов (`supported_extensions()`). Подсказка `.doc` («сохраните как .docx или PDF») оставлена для Word 6.0/95 — его `ingest.doc` не читает. Фронт принимает все семь расширений и не знает флага: выключенный формат отклоняет сервер. Для ML: `domain/split.py::_FILE_EXTENSION` не отрезает `.xlsx` и `.pptx` от названия файла в крошках — у файлов из систем с таким названием крошки «Отчёт.xlsx > Лист» |
-| BH-36 верхний индекс в .docx и HTML | ⏳ после слияния `ml/superscript` в `main` | `ingest/extract.py::_extract_docx`, `connectors/html.py` — `sup_symbol="<sup>"` | одна строка в двух местах, но только вместе с новым `preprocess` ML: нынешний снимает `<sup>цифры</sup>` как сноску, и «м<sup>2</sup>» стало бы «м» вместо «м²»; после слияния — правка, тест из контракта и переиндексация (BH-6) |
+| BH-36 верхний индекс в .docx и HTML | ✅ 04.10 | `ingest/extract.py::_extract_docx`, `connectors/html.py` — `sup_symbol="<sup>"` | номер сноски, набранный верхним индексом, уходит, «м<sup>2</sup>» → «м²» (`preprocess` ML); ссылки на сноски Word встают на место, как раньше. **Переиндексация (BH-6) уже загруженные файлы не починит**: исходный файл не хранится (`Material`), `reindex` режет сохранённый текст — в нём `<sup>` уже снят. Файлы — загрузить заново; страницы источников обновятся со следующей правкой страницы. На стенде клиентских документов нет |
+| BH-37 порог «отвечать» и «выдержки» раздельно | ✅ 04.10, выключен | `services/faq_service.py::_retrieve`, `_relevance_limit`; `core/config.py::RagSettings` (`faq_gate_distance`, `faq_near_margin`, `answer_distance`); `cli gaps` | по контракту: `RAG_FAQ_GATE_DISTANCE` пусто — поведение прежнее (тест), `RAG_FAQ_NEAR_MARGIN=0.05`; гибрид — по тому же порогу; реранкеру — порог вопроса, а без ответа по документам он не вызывается (как и раньше: пул был пуст); отчёт о пробелах делит отказ и промах по `answer_distance`. Gate ближе `RAG_FAQ_MAX_DISTANCE` — ошибка старта. Включить — `RAG_FAQ_GATE_DISTANCE=0.70` в `.env` сервера после Р-17 |
+| BH-38 корпус проверки стенда 02.10 | ✅ 04.10 | `tests/fixtures/stand_quality/` (`README.md` — состав и колонки) | 17 документов, 19 граничных файлов, `golden.json` (176 случаев), генератор `gen.py`; `cases.csv` — по строке на вопрос (у диалогов `id` вида `D-001.2`), колонки контракта плюс `forbidden`, `expect_origin`, `verdict_first_run`, `origin`, `expected_rank`/`expected_distance` (место нужного документа в выдаче, первая реплика); `best_distance` — ближайший фрагмент при ответе. Итог 02.10 — 111 и 117 из 155, `PR-010` засчитан вручную (неразрывный дефис в «25‑го»). Трёх файлов на 4–26 МиБ нет — их создаёт генератор |
 
 ## Что бэкенд ждёт от ML
 
@@ -87,6 +89,12 @@ BH-1…BH-26 — сверка 25.09.
 - `ml-report.md`: настройки `RAG_NOT_FOUND_MODE` нет — режим в поле
   компании `tenants.not_found_mode`, меняется `cli set-not-found-mode`.
 - `ml-plan.md`: файла `prompts/program.py` нет (удалён пивотом 25.09).
+- `backend-handoff.md`, раздел 0, п. 2 и BH-36 «Переиндексация»
+  (сверка 04.10): `reindex` не читает файл заново — исходники не
+  хранятся, переиндексация режет сохранённый текст. Правки `preprocess` и
+  нарезки она применит (сноски .docx — #45, крошки — #64), правки
+  извлечения — нет (`ingest/doc.py`, `xlsx.py`, `pptx.py`, верхний индекс
+  BH-36): таким файлам нужна повторная загрузка.
 
 ## Что ML ждёт от бэкенда
 

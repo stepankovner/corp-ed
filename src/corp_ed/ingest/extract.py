@@ -342,7 +342,12 @@ def _extract_docx(data: bytes) -> str:
         )
     except Exception as exc:  # noqa: BLE001 — любая ошибка парсера = битый файл
         raise ExtractionError("corrupted") from exc
-    markdown: str = markdownify.markdownify(result.value, heading_style="ATX")
+    # Верхний индекс остаётся тегом (BH-36): иначе цифра прилипает к числу
+    # («2 500 000³ ₽» → «2 500 0003 ₽»). Номер сноски preprocess уберёт,
+    # «м<sup>2</sup>» сделает «м²».
+    markdown: str = markdownify.markdownify(
+        result.value, heading_style="ATX", sup_symbol="<sup>"
+    )
     headers = _docx_running_text(data, "header")
     footers = _docx_running_text(data, "footer")
     # Верхний колонтитул — перед текстом: номер положения и редакция

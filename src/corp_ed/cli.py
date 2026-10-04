@@ -806,7 +806,9 @@ async def _gaps(company_code: str | None) -> int:
             get_session_maker(),
             build_llm_gateway(client, llm_settings),
             GapsSettings(),  # type: ignore[call-arg]
-            max_distance=rag.faq_max_distance,
+            # Вопрос, дошедший до модели, — её отказ, а не промах поиска:
+            # порог «отвечать» (BH-37), а не порог выдержек.
+            max_distance=rag.answer_distance,
         )
         reports = await service.run(company_code)
     for report in reports:

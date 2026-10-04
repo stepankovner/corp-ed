@@ -14,7 +14,7 @@ from corp_ed.ingest.extract import (
     error_message,
     extract,
 )
-from corp_ed.ingest.preprocess import PAGE_BREAK
+from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
 from corp_ed.ingest.sandbox import _clean_env, _crash_code, cpu_budget, extract_isolated
 from tests.ingest import samples
 
@@ -139,6 +139,29 @@ def test_docx_headings_become_markdown() -> None:
     assert "# Положение об отпусках" in markdown
     assert "## 3.2 Перенос отпуска" in markdown
     assert "По заявлению работника." in markdown
+
+
+def test_docx_superscript_does_not_stick_to_numbers() -> None:
+    """BH-36: верхний индекс, набранный вручную вместо сноски, mammoth отдаёт
+    тегом <sup>; без тега цифра прилипала к числу — «5 000 0001»."""
+    sup = '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>{}</w:t></w:r>'
+    text = '<w:r><w:t xml:space="preserve">{}</w:t></w:r>'
+    body = (
+        "<w:p>"
+        + text.format("Бюджет проекта 5 000 000")
+        + sup.format("1")
+        + text.format(" ₽.")
+        + "</w:p><w:p>"
+        + text.format("Площадь склада 120 м")
+        + sup.format("2")
+        + text.format(".")
+        + "</w:p>"
+    )
+    markdown = preprocess(extract(SourceFormat.DOCX, samples.docx([], body_xml=body)))
+
+    assert "Бюджет проекта 5 000 000 ₽." in markdown
+    assert "5 000 0001" not in markdown
+    assert "Площадь склада 120 м²." in markdown
 
 
 def test_docx_running_text_is_extracted() -> None:

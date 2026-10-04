@@ -1,0 +1,3571 @@
+[
+ {
+  "id": "F-001",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой номер у положения об отпусках, отгулах и днях без сохранения заработной платы?",
+    "expect": [
+     [
+      "П-ОТП-07"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в верхнем колонтитуле docx."
+ },
+ {
+  "id": "F-002",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "По какому внутреннему телефону можно задать вопросы по положению об отпусках?",
+    "expect": [
+     [
+      "2318"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в нижнем колонтитуле docx."
+ },
+ {
+  "id": "F-003",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько календарных дней длится ежегодный основной оплачиваемый отпуск?",
+    "expect": [
+     [
+      "28 календарн",
+      "28 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-004",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "За сколько дней до начала отпуска нужно подать заявление на ежегодный отпуск?",
+    "expect": [
+     [
+      "16 календарн",
+      "16 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-005",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "По какой форме подаётся заявление на ежегодный оплачиваемый отпуск?",
+    "expect": [
+     [
+      "ПК-11"
+     ]
+    ],
+    "forbid": [
+     "ПК-17",
+     "ПК-23"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-006",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "До какой даты утверждается график отпусков на следующий год?",
+    "expect": [
+     [
+      "12 декабря"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-007",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "В течение какого срока нужно использовать накопленные отгулы?",
+    "expect": [
+     [
+      "120 календарн",
+      "120 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-008",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько отгулов можно взять за квартал?",
+    "expect": [
+     [
+      "6 отгул",
+      "не более 6",
+      "шесть"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-009",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Кто согласует дни без сохранения заработной платы сверх лимита в 10 дней в году?",
+    "expect": [
+     [
+      "по персоналу"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-010",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "С какой даты действует новая редакция положения о командировках?",
+    "expect": [
+     [
+      "01.02.2026",
+      "1 февраля 2026"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-011",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Через какой сервис бронируются билеты и гостиницы для командировки и не позднее чем за сколько дней?",
+    "expect": [
+     [
+      "Тест-Тревел"
+     ],
+     [
+      "9 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-012",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Кто должен дополнительно согласовать командировку продолжительностью 25 календарных дней?",
+    "expect": [
+     [
+      "генеральн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-013",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой лимит у корпоративной карты на одну командировку?",
+    "expect": [
+     [
+      "65 000",
+      "65000"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-014",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "В каком кабинете находится ИТ-служба?",
+    "expect": [
+     [
+      "314-Б"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-015",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какое время реакции ИТ-службы на критическую заявку приоритета P1?",
+    "expect": [
+     [
+      "15 минут"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-016",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой минимальной длины должен быть пароль учётной записи?",
+    "expect": [
+     [
+      "13 символ"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-017",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "По какой форме оформляется заявка на удалённый доступ (VPN)?",
+    "expect": [
+     [
+      "ИТ-42"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-018",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой единый внутренний номер дежурной смены ИТ?",
+    "expect": [
+     [
+      "7700"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-019",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Куда сообщать о подозрительном или фишинговом письме?",
+    "expect": [
+     [
+      "security@stk-test.example"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-020",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "За сколько рабочих дней до выхода нового сотрудника нужно подать заявку на подготовку ноутбука?",
+    "expect": [
+     [
+      "4 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-021",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой порт используется для подключения к VPN?",
+    "expect": [
+     [
+      "51871"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-022",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Через сколько минут разрывается неактивная VPN-сессия?",
+    "expect": [
+     [
+      "55 минут"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-023",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какое приложение используется для одноразовых кодов при входе в VPN?",
+    "expect": [
+     [
+      "СТК Ключ"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-024",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какую категорию указать в заявке, если не получается подключиться к VPN?",
+    "expect": [
+     [
+      "VPN-08"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-025",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Где место сбора после эвакуации из офиса?",
+    "expect": [
+     [
+      "С-2",
+      "флагшток"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ohrana_truda_scan.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт есть только в PDF-скане без текстового слоя: ответ возможен, только если сервис делает OCR."
+ },
+ {
+  "id": "F-026",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "По какому внутреннему номеру сообщить на пост охраны о пожаре или задымлении?",
+    "expect": [
+     [
+      "0101"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ohrana_truda_scan.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт есть только в PDF-скане без текстового слоя: ответ возможен, только если сервис делает OCR."
+ },
+ {
+  "id": "F-027",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Когда пройдёт ближайшая учебная эвакуация?",
+    "expect": [
+     [
+      "19 ноября"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ohrana_truda_scan.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт есть только в PDF-скане без текстового слоя: ответ возможен, только если сервис делает OCR."
+ },
+ {
+  "id": "F-028",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "По какой форме оформляется заявка на закупку?",
+    "expect": [
+     [
+      "ЗК-5"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-029",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько участников минимум нужно, чтобы тендер состоялся?",
+    "expect": [
+     [
+      "4 участ",
+      "четыр"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-030",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько длится приём заявок на участие в тендере?",
+    "expect": [
+     [
+      "15 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-031",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой максимальный размер предоплаты поставщику без дополнительного согласования?",
+    "expect": [
+     [
+      "40 %"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-032",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Кто генеральный директор СТК?",
+    "expect": [
+     [
+      "Пряников"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-033",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Как зовут главного бухгалтера?",
+    "expect": [
+     [
+      "Брусникин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-034",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько работников в штате СТК?",
+    "expect": [
+     [
+      "214"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-035",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Как зовут ИТ-директора?",
+    "expect": [
+     [
+      "Ёлкин",
+      "Елкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-036",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Во сколько открывается и закрывается офис по рабочим дням?",
+    "expect": [
+     [
+      "7:30"
+     ],
+     [
+      "21:30"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-037",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько стоит изготовление дубликата утерянного пропуска?",
+    "expect": [
+     [
+      "730"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-038",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "До какого времени нужно заказать гостевой пропуск?",
+    "expect": [
+     [
+      "18:00"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-039",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько мест в переговорной «Сияние»?",
+    "expect": [
+     [
+      "20 мест",
+      "20 человек"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-040",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "В какой срок нужно сдать авансовый отчёт после командировки?",
+    "expect": [
+     [
+      "3 рабочих",
+      "трёх рабочих",
+      "три рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-041",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "По какой форме составляется авансовый отчёт?",
+    "expect": [
+     [
+      "АО-1"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-042",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой лимит подотчётной суммы на хозяйственные нужды?",
+    "expect": [
+     [
+      "47 000",
+      "47000"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-043",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "В какие дни недели оплачиваются счета поставщиков?",
+    "expect": [
+     [
+      "вторник"
+     ],
+     [
+      "четверг"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-044",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какая минимальная маржинальность сделки по политике скидок?",
+    "expect": [
+     [
+      "22 %"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-045",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько действует коммерческое предложение клиенту?",
+    "expect": [
+     [
+      "20 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-046",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Подарок какой максимальной стоимости можно принять от партнёра?",
+    "expect": [
+     [
+      "2 700",
+      "2700"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/kodeks_etiki.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-047",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой номер у анонимной линии доверия?",
+    "expect": [
+     [
+      "6464"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/kodeks_etiki.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-048",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Сколько дней в месяц можно работать удалённо в гибридном формате?",
+    "expect": [
+     [
+      "8 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-049",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "До какого времени нужно сообщить руководителю об открытии больничного?",
+    "expect": [
+     [
+      "10:30"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "F-050",
+  "category": "fact",
+  "turns": [
+   {
+    "q": "Какой адрес у корпоративного портала СТК-Портал?",
+    "expect": [
+     [
+      "portal.stk-test.example"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/glossariy.markdown"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "T-001",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Сколько дополнительных дней отпуска положено за ненормированный рабочий день?",
+    "expect": [
+     [
+      "3 календарн",
+      "3 дн",
+      "три"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-002",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Какой код табеля у дополнительного отпуска за непрерывный стаж в СТК свыше 5 лет?",
+    "expect": [
+     [
+      "ОТ-62"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-003",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Сколько дополнительных дней отдыха дают при регистрации брака?",
+    "expect": [
+     [
+      "5 календарн",
+      "5 дн",
+      "пять"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-004",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Какой код в табеле у дополнительных дней при рождении ребёнка?",
+    "expect": [
+     [
+      "ОТ-64"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-005",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Сколько дополнительных дней положено за непрерывный стаж в компании больше 5 лет?",
+    "expect": [
+     [
+      "2 календарн",
+      "2 дн",
+      "два"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-006",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Какую максимальную скидку менеджер может дать клиенту без согласования?",
+    "expect": [
+     [
+      "7 %"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-007",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Кто согласует скидку клиенту в 12 %?",
+    "expect": [
+     [
+      "руководител"
+     ],
+     [
+      "ОКП",
+      "корпоративных продаж"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-008",
+  "category": "table",
+  "turns": [
+   {
+    "q": "В какой срок коммерческий директор согласует скидку свыше 18 %?",
+    "expect": [
+     [
+      "12 рабочих час"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы."
+ },
+ {
+  "id": "T-009",
+  "category": "table",
+  "turns": [
+   {
+    "q": "До какого числа принимаются заявления на материальную помощь?",
+    "expect": [
+     [
+      "23-го",
+      "23 числа"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы PDF."
+ },
+ {
+  "id": "T-010",
+  "category": "table",
+  "turns": [
+   {
+    "q": "Во сколько закрывается реестр счетов к оплате?",
+    "expect": [
+     [
+      "14:30"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в ячейке таблицы PDF."
+ },
+ {
+  "id": "X-001",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Кто дежурный инженер ИТ на неделе с 12 по 18 октября 2026 года?",
+    "expect": [
+     [
+      "Леденцов"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-002",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Какой мобильный телефон у дежурного инженера на 43-й неделе?",
+    "expect": [
+     [
+      "404-46-43"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-003",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Кто резервный инженер на неделе 19.10–25.10.2026?",
+    "expect": [
+     [
+      "Сухарев"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-004",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Кто старший смены ИТ для эскалации и какой у него телефон?",
+    "expect": [
+     [
+      "Крендельков"
+     ],
+     [
+      "409-90-01"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-005",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Какой лимит на гостиницу в сутки для специалиста?",
+    "expect": [
+     [
+      "3 870",
+      "3870"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-006",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Какой месячный лимит на такси по городу у директора департамента?",
+    "expect": [
+     [
+      "6 125",
+      "6125"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-007",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Какой лимит на мобильную связь в месяц у руководителя отдела?",
+    "expect": [
+     [
+      "1 870",
+      "1870"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "X-008",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Сколько составляет итоговый лимит мобильной связи по всем должностям?",
+    "expect": [
+     [
+      "6 830",
+      "6830"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents",
+  "note": "Значение в ячейке с формулой =SUM(D3:D6); кэш пересчитан LibreOffice. Если парсер берёт формулу без значения — ответа не будет."
+ },
+ {
+  "id": "X-009",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Какой номер редакции у таблицы лимитов расходов по должностям?",
+    "expect": [
+     [
+      "Л-2026/3"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в объединённой ячейке-заголовке A1:E1."
+ },
+ {
+  "id": "X-010",
+  "category": "xlsx",
+  "turns": [
+   {
+    "q": "Какой лимит представительских расходов в квартал у ведущего специалиста?",
+    "expect": [
+     [
+      "6 500",
+      "6500"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "P-001",
+  "category": "pptx",
+  "turns": [
+   {
+    "q": "Во сколько нужно прийти в первый рабочий день?",
+    "expect": [
+     [
+      "9:40"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "P-002",
+  "category": "pptx",
+  "turns": [
+   {
+    "q": "Где проходит вводный инструктаж по охране труда для новичков и сколько он длится?",
+    "expect": [
+     [
+      "108"
+     ],
+     [
+      "50 минут"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "P-003",
+  "category": "pptx",
+  "turns": [
+   {
+    "q": "Какой испытательный срок у руководителей?",
+    "expect": [
+     [
+      "6 месяц",
+      "шесть месяц",
+      "полгода"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "P-004",
+  "category": "pptx",
+  "turns": [
+   {
+    "q": "Сколько рабочих дней новичка сопровождает наставник?",
+    "expect": [
+     [
+      "60 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "P-005",
+  "category": "pptx",
+  "turns": [
+   {
+    "q": "По какому внутреннему телефону решать вопросы с зарплатной картой?",
+    "expect": [
+     [
+      "2604"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в таблице на слайде."
+ },
+ {
+  "id": "P-006",
+  "category": "pptx",
+  "turns": [
+   {
+    "q": "За какой срок нужно пройти обязательные курсы в «СТК-Академии»?",
+    "expect": [
+     [
+      "30 календарн",
+      "30 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PN-001",
+  "category": "pptx_notes",
+  "turns": [
+   {
+    "q": "Какая компенсация занятий спортом положена сотрудникам?",
+    "expect": [
+     [
+      "4 750",
+      "4750"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в заметках докладчика (слайд «Полезное»)."
+ },
+ {
+  "id": "PN-002",
+  "category": "pptx_notes",
+  "turns": [
+   {
+    "q": "Кто временно заменяет наставника новичка, если наставник в отпуске?",
+    "expect": [
+     [
+      "Сушкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents",
+  "note": "Факт только в заметках докладчика (слайд «Испытательный срок и наставник»)."
+ },
+ {
+  "id": "M-001",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Кто (ФИО) согласует закупку на 2 миллиона рублей?",
+    "expect": [
+     [
+      "Кукушкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Порог — в регламенте закупок, ФИО финансового директора — в оргструктуре."
+ },
+ {
+  "id": "M-002",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Как зовут руководителя подразделения, которое регистрирует заявки на закупку?",
+    "expect": [
+     [
+      "Черепашкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "В закупках только «ЦУП», руководитель ЦУП — в оргструктуре."
+ },
+ {
+  "id": "M-003",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Кто лично должен согласовать клиенту скидку 25 %? Назови ФИО.",
+    "expect": [
+     [
+      "Самоваров"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-004",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Кто именно принимает авансовые отчёты? Нужна фамилия.",
+    "expect": [
+     [
+      "Брусникин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-005",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Кто назначает наставника новому сотруднику? Назови ФИО.",
+    "expect": [
+     [
+      "Подберёзов",
+      "Подберезов"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-006",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Я руководитель отдела и еду в командировку по России. Какие у меня суточные и лимит на гостиницу в сутки?",
+    "expect": [
+     [
+      "2 050",
+      "2050"
+     ],
+     [
+      "5 640",
+      "5640"
+     ]
+    ],
+    "forbid": [
+     "1 600",
+     "1600",
+     "3 500"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-007",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "К кому (ФИО) обращаться при утере пропуска и сколько стоит дубликат?",
+    "expect": [
+     [
+      "Ватрушкин"
+     ],
+     [
+      "730"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-008",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Кто комплаенс-офицер, которому сообщают о конфликте интересов, и в какой срок нужно сообщить?",
+    "expect": [
+     [
+      "Клюквин"
+     ],
+     [
+      "5 рабочих",
+      "пяти рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/kodeks_etiki.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-009",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Я буду часть времени работать из дома: сколько дней в месяц можно и к какому VPN-серверу подключаться?",
+    "expect": [
+     [
+      "8 рабочих"
+     ],
+     [
+      "vpn.stk-test.example"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt",
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "M-010",
+  "category": "multi_doc",
+  "turns": [
+   {
+    "q": "Кто согласует клиенту отсрочку платежа на 60 дней? Назови ФИО.",
+    "expect": [
+     [
+      "Кукушкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Свыше 45 дней — финансовый директор (политика скидок) → ФИО в оргструктуре."
+ },
+ {
+  "id": "PR-001",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "сколько сейчас платят в день в командировке, ну суточные эти",
+    "expect": [
+     [
+      "1 450",
+      "1450"
+     ]
+    ],
+    "forbid": [
+     "1 100",
+     "1100"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-002",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "если я в субботу вышел поработать, могу потом взять выходной? как это оформить",
+    "expect": [
+     [
+      "ПК-17"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-003",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "заболел, до скольки надо маякнуть начальнику?",
+    "expect": [
+     [
+      "10:30"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-004",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "сколько дней в месяц можно сидеть дома на удалёнке",
+    "expect": [
+     [
+      "8 рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-005",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "компания подкидывает денег за домашний интернет? сколько",
+    "expect": [
+     [
+      "640"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-006",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "посеял пропуск, сколько с меня возьмут за новый",
+    "expect": [
+     [
+      "730"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-007",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "клиент хочет подарить мне дорогой коньяк, можно взять? какой потолок по цене",
+    "expect": [
+     [
+      "2 700",
+      "2700"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/kodeks_etiki.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-008",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "в какой комнате сидят айтишники",
+    "expect": [
+     [
+      "314-Б"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-009",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "сколько народу влезет в самую большую переговорку",
+    "expect": [
+     [
+      "20 мест",
+      "20 человек"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "PR-010",
+  "category": "paraphrase",
+  "turns": [
+   {
+    "q": "до какого числа надо отчитаться за деньги, взятые под отчёт на хозяйственные нужды",
+    "expect": [
+     [
+      "25-го",
+      "25 числа"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "TY-001",
+  "category": "typo",
+  "turns": [
+   {
+    "q": "скок суточных в камандировке щас",
+    "expect": [
+     [
+      "1 450",
+      "1450"
+     ]
+    ],
+    "forbid": [
+     "1 100",
+     "1100"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "TY-002",
+  "category": "typo",
+  "turns": [
+   {
+    "q": "kak podklyuchitsya k vpn, kakoi adres servera",
+    "expect": [
+     [
+      "vpn.stk-test.example"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "TY-003",
+  "category": "typo",
+  "turns": [
+   {
+    "q": "форма заевления на отгул какая",
+    "expect": [
+     [
+      "ПК-17"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "TY-004",
+  "category": "typo",
+  "turns": [
+   {
+    "q": "сколко дней основново отпуска",
+    "expect": [
+     [
+      "28 календарн",
+      "28 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "TY-005",
+  "category": "typo",
+  "turns": [
+   {
+    "q": "где кабенет айти слжбы",
+    "expect": [
+     [
+      "314-Б"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "TY-006",
+  "category": "typo",
+  "turns": [
+   {
+    "q": "parol minimalnaya dlina skolko simvolov",
+    "expect": [
+     [
+      "13 символ",
+      "13 знак",
+      "13 characters"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "V-001",
+  "category": "version_conflict",
+  "turns": [
+   {
+    "q": "Какие суточные при командировке по России?",
+    "expect": [
+     [
+      "1 450",
+      "1450"
+     ]
+    ],
+    "forbid": [
+     "1 100",
+     "1100"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Есть устаревшая редакция 2025 (docs/komandirovki_2025.docx); верный ответ — из редакции 2026."
+ },
+ {
+  "id": "V-002",
+  "category": "version_conflict",
+  "turns": [
+   {
+    "q": "Какие суточные у руководителей подразделений в командировке?",
+    "expect": [
+     [
+      "2 050",
+      "2050"
+     ]
+    ],
+    "forbid": [
+     "1 600",
+     "1600"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Есть устаревшая редакция 2025 (docs/komandirovki_2025.docx); верный ответ — из редакции 2026."
+ },
+ {
+  "id": "V-003",
+  "category": "version_conflict",
+  "turns": [
+   {
+    "q": "Какие суточные при зарубежной командировке?",
+    "expect": [
+     [
+      "48 доллар",
+      "48 USD",
+      "$48",
+      "48 $"
+     ]
+    ],
+    "forbid": [
+     "35 доллар",
+     "35 USD",
+     "$35"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Есть устаревшая редакция 2025 (docs/komandirovki_2025.docx); верный ответ — из редакции 2026."
+ },
+ {
+  "id": "V-004",
+  "category": "version_conflict",
+  "turns": [
+   {
+    "q": "Какой лимит на такси в командировке за одну поездку?",
+    "expect": [
+     [
+      "1 750",
+      "1750"
+     ]
+    ],
+    "forbid": [
+     "1 200",
+     "1200"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Есть устаревшая редакция 2025 (docs/komandirovki_2025.docx); верный ответ — из редакции 2026."
+ },
+ {
+  "id": "V-005",
+  "category": "version_conflict",
+  "turns": [
+   {
+    "q": "По какой форме оформляется служебное задание на командировку?",
+    "expect": [
+     [
+      "КМ-9"
+     ]
+    ],
+    "forbid": [
+     "КМ-3"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Есть устаревшая редакция 2025 (docs/komandirovki_2025.docx); верный ответ — из редакции 2026."
+ },
+ {
+  "id": "V-006",
+  "category": "version_conflict",
+  "turns": [
+   {
+    "q": "Какие суточные по России были в редакции положения о командировках 2025 года?",
+    "expect": [
+     [
+      "1 100",
+      "1100"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Исторический вопрос: здесь правильный ответ — из редакции 2025 (1 100 ₽), сервис не должен подменять его значением 2026."
+ },
+ {
+  "id": "N-001",
+  "category": "numeric",
+  "turns": [
+   {
+    "q": "Сколько всего календарных дней оплачиваемого отпуска в год у сотрудника с ненормированным рабочим днём?",
+    "expect": [
+     [
+      "31"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "28 (текст) + 3 (ячейка таблицы) = 31."
+ },
+ {
+  "id": "N-002",
+  "category": "numeric",
+  "turns": [
+   {
+    "q": "Сколько суточных я получу за командировку по России на 4 дня? Я не руководитель.",
+    "expect": [
+     [
+      "5 800",
+      "5800"
+     ]
+    ],
+    "forbid": [
+     "4 400",
+     "4400"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "4 × 1 450 = 5 800; по старой редакции было бы 4 400."
+ },
+ {
+  "id": "N-003",
+  "category": "numeric",
+  "turns": [
+   {
+    "q": "Руководитель отдела едет в командировку на 3 ночи. Какой максимум возместят за гостиницу?",
+    "expect": [
+     [
+      "16 920",
+      "16920"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents",
+  "note": "3 × 5 640 = 16 920."
+ },
+ {
+  "id": "N-004",
+  "category": "numeric",
+  "turns": [
+   {
+    "q": "Сколько всего дней оплачиваемого отпуска в год у сотрудника с ненормированным днём и стажем в СТК 7 лет?",
+    "expect": [
+     [
+      "33"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "28 + 3 + 2 = 33."
+ },
+ {
+  "id": "N-005",
+  "category": "numeric",
+  "turns": [
+   {
+    "q": "Какой годовой лимит на мобильную связь у ведущего специалиста?",
+    "expect": [
+     [
+      "15 840",
+      "15840"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents",
+  "note": "1 320 × 12 = 15 840."
+ },
+ {
+  "id": "G-001",
+  "category": "glossary",
+  "turns": [
+   {
+    "q": "Что такое ЦУП в нашей компании?",
+    "expect": [
+     [
+      "центр учёта поставок",
+      "центр учета поставок"
+     ]
+    ],
+    "forbid": [
+     "управления полётами",
+     "управления полетами"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/glossariy.markdown",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "G-002",
+  "category": "glossary",
+  "turns": [
+   {
+    "q": "Куда направляется заявка на закупку после оформления?",
+    "expect": [
+     [
+      "ЦУП",
+      "центр учёта поставок",
+      "центр учета поставок"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx",
+   "docs/glossariy.markdown"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "G-003",
+  "category": "glossary",
+  "turns": [
+   {
+    "q": "Как расшифровывается ОКП?",
+    "expect": [
+     [
+      "отдел корпоративных продаж"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/glossariy.markdown",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "G-004",
+  "category": "glossary",
+  "turns": [
+   {
+    "q": "За сколько рабочих дней центр учёта поставок проверяет нового поставщика?",
+    "expect": [
+     [
+      "6 рабочих",
+      "шести рабочих"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx",
+   "docs/glossariy.markdown"
+  ],
+  "expect_origin": "documents",
+  "note": "В вопросе расшифровка, в регламенте — только «ЦУП»."
+ },
+ {
+  "id": "ND-001",
+  "category": "needle",
+  "turns": [
+   {
+    "q": "Под каким шифром хранятся резервные копии архива подписанных договоров?",
+    "expect": [
+     [
+      "АРХ-7741-Щ"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/svod_reglamentov.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Иголка в docs/svod_reglamentov.txt: 286305 символов, факт на смещении 142695 (50%)."
+ },
+ {
+  "id": "ND-002",
+  "category": "needle",
+  "turns": [
+   {
+    "q": "В каком внешнем депозитарии хранятся резервные копии архива договоров?",
+    "expect": [
+     [
+      "Кварц-Хранение"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/svod_reglamentov.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Иголка в docs/svod_reglamentov.txt: 286305 символов, факт на смещении 142695 (50%)."
+ },
+ {
+  "id": "D-001",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Какие суточные в командировке по России?",
+    "expect": [
+     [
+      "1 450",
+      "1450"
+     ]
+    ],
+    "forbid": [
+     "1 100",
+     "1100"
+    ]
+   },
+   {
+    "q": "А для руководителей?",
+    "expect": [
+     [
+      "2 050",
+      "2050"
+     ]
+    ],
+    "forbid": [
+     "1 600",
+     "1600"
+    ]
+   },
+   {
+    "q": "А за границей?",
+    "expect": [
+     [
+      "48 доллар",
+      "48 USD",
+      "$48",
+      "48 $"
+     ]
+    ],
+    "forbid": [
+     "35 доллар",
+     "35 USD"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-002",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Сколько дней длится основной отпуск?",
+    "expect": [
+     [
+      "28 календарн",
+      "28 дн"
+     ]
+    ]
+   },
+   {
+    "q": "А если у меня ненормированный рабочий день?",
+    "expect": [
+     [
+      "3 календарн",
+      "3 дн",
+      "31"
+     ]
+    ]
+   },
+   {
+    "q": "И по какой форме его оформить?",
+    "expect": [
+     [
+      "ПК-11"
+     ]
+    ],
+    "forbid": [
+     "ПК-17",
+     "ПК-23"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-003",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Как оформить отгул?",
+    "expect": [
+     [
+      "ПК-17"
+     ]
+    ]
+   },
+   {
+    "q": "А за сколько часов переработки он положен?",
+    "expect": [
+     [
+      "8 час"
+     ]
+    ]
+   },
+   {
+    "q": "Сколько таких можно взять за квартал?",
+    "expect": [
+     [
+      "6 отгул",
+      "не более 6",
+      "шесть"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-004",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Как подключиться к VPN из дома?",
+    "expect": [
+     [
+      "vpn.stk-test.example"
+     ]
+    ]
+   },
+   {
+    "q": "А если основной сервер не отвечает?",
+    "expect": [
+     [
+      "vpn2.stk-test.example"
+     ]
+    ]
+   },
+   {
+    "q": "Какой там порт?",
+    "expect": [
+     [
+      "51871"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-005",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Кто дежурит в ИТ на неделе с 26 октября?",
+    "expect": [
+     [
+      "Зефиров"
+     ]
+    ]
+   },
+   {
+    "q": "А какой у него телефон?",
+    "expect": [
+     [
+      "405-57-44"
+     ]
+    ]
+   },
+   {
+    "q": "А кто резервный?",
+    "expect": [
+     [
+      "Леденцов"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-006",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Какая минимальная длина пароля?",
+    "expect": [
+     [
+      "13 символ"
+     ]
+    ]
+   },
+   {
+    "q": "А как часто его надо менять?",
+    "expect": [
+     [
+      "83 д"
+     ]
+    ]
+   },
+   {
+    "q": "А что будет, если я несколько раз ошибусь при вводе?",
+    "expect": [
+     [
+      "25 минут"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-007",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Кто согласует закупку на 900 тысяч рублей?",
+    "expect": [
+     [
+      "ЦУП",
+      "центр учёта поставок",
+      "центр учета поставок"
+     ]
+    ]
+   },
+   {
+    "q": "А как его зовут?",
+    "expect": [
+     [
+      "Черепашкин"
+     ]
+    ]
+   },
+   {
+    "q": "А если сумма 2 миллиона?",
+    "expect": [
+     [
+      "Кукушкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-008",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Какую скидку менеджер может дать сам, без согласования?",
+    "expect": [
+     [
+      "7 %"
+     ]
+    ]
+   },
+   {
+    "q": "А скидку 15 % кто согласует?",
+    "expect": [
+     [
+      "руководител"
+     ]
+    ]
+   },
+   {
+    "q": "Как зовут этого руководителя?",
+    "expect": [
+     [
+      "Пастилов"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/prodazhi_skidki.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-009",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Я заболел. До какого времени нужно сообщить об этом?",
+    "expect": [
+     [
+      "10:30"
+     ]
+    ]
+   },
+   {
+    "q": "А номер больничного когда сообщать?",
+    "expect": [
+     [
+      "1 рабоч",
+      "одного рабоч"
+     ]
+    ]
+   },
+   {
+    "q": "Компания что-то доплачивает сверх пособия?",
+    "expect": [
+     [
+      "14 календарн",
+      "14 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/udalenka_i_bolnichnye.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-010",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Сколько машино-мест на парковке у офиса?",
+    "expect": [
+     [
+      "27"
+     ]
+    ]
+   },
+   {
+    "q": "А гости надолго могут оставить машину?",
+    "expect": [
+     [
+      "150 минут"
+     ]
+    ]
+   },
+   {
+    "q": "А до скольки надо заказать гостю пропуск?",
+    "expect": [
+     [
+      "18:00"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/ofis_propuska_parkovka_cp1251.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-011",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Когда сдавать авансовый отчёт после командировки?",
+    "expect": [
+     [
+      "3 рабочих",
+      "трёх рабочих"
+     ]
+    ]
+   },
+   {
+    "q": "А по какой форме?",
+    "expect": [
+     [
+      "АО-1"
+     ]
+    ]
+   },
+   {
+    "q": "Кто его проверяет — как зовут?",
+    "expect": [
+     [
+      "Брусникин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/finansy_avansovye_otchety.pdf",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "D-012",
+  "category": "dialogue",
+  "turns": [
+   {
+    "q": "Где проходит вводный инструктаж для новичков?",
+    "expect": [
+     [
+      "108"
+     ]
+    ]
+   },
+   {
+    "q": "А сколько он длится?",
+    "expect": [
+     [
+      "50 минут"
+     ]
+    ]
+   },
+   {
+    "q": "А во сколько вообще приходить в первый день?",
+    "expect": [
+     [
+      "9:40"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/onboarding.pptx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "NO-001",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Какой размер годовой премии у менеджеров по продажам?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-002",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Положена ли компенсация за использование личного автомобиля в служебных целях?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-003",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Есть ли в компании программа релокации для сотрудников из других городов?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-004",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Какой пароль от гостевого Wi-Fi в офисе?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-005",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Как получить налоговый вычет за обучение через компанию?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-006",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Можно ли приводить собаку в офис?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-007",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Какие курсы английского языка оплачивает компания?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-008",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Как часто в компании индексируется зарплата?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-009",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Выдаёт ли компания беспроцентные займы сотрудникам?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-010",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Какая доплата за работу в ночные смены на складе?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-011",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Есть ли у сотрудников опционная программа?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-012",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Есть ли в компании корпоративная пенсионная программа?",
+    "expect": []
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Ответа в корпусе нет: ожидается пометка «В документах компании ответа нет» (режим general) или отказ (strict)."
+ },
+ {
+  "id": "NO-013",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Кто написал роман «Война и мир»?",
+    "expect": [
+     [
+      "Толст"
+     ]
+    ]
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Вопрос не по теме компании (off-topic). В режиме strict ожидается отказ (origin none)."
+ },
+ {
+  "id": "NO-014",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Какая столица Австралии?",
+    "expect": [
+     [
+      "Канберр"
+     ]
+    ]
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Вопрос не по теме компании (off-topic). В режиме strict ожидается отказ (origin none)."
+ },
+ {
+  "id": "NO-015",
+  "category": "not_in_docs",
+  "turns": [
+   {
+    "q": "Сколько будет 17 умножить на 23?",
+    "expect": [
+     [
+      "391"
+     ]
+    ]
+   }
+  ],
+  "sources": [],
+  "expect_origin": "general_knowledge",
+  "note": "Вопрос не по теме компании (off-topic). В режиме strict ожидается отказ (origin none)."
+ },
+ {
+  "id": "EN-001",
+  "category": "english",
+  "turns": [
+   {
+    "q": "What is the current daily allowance for business trips within Russia?",
+    "expect": [
+     [
+      "1 450",
+      "1450",
+      "1,450"
+     ]
+    ],
+    "forbid": [
+     "1 100",
+     "1100",
+     "1,100"
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf",
+   "docs/komandirovki_2025.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "EN-002",
+  "category": "english",
+  "turns": [
+   {
+    "q": "What is the VPN server address for remote access?",
+    "expect": [
+     [
+      "vpn.stk-test.example"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/vpn_pamyatka.md"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "EN-003",
+  "category": "english",
+  "turns": [
+   {
+    "q": "Which room is the IT support office in?",
+    "expect": [
+     [
+      "314-Б",
+      "314-B",
+      "314B"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "EN-004",
+  "category": "english",
+  "turns": [
+   {
+    "q": "Who has to approve a purchase above 1.25 million rubles? Give the person's name.",
+    "expect": [
+     [
+      "Кукушкин",
+      "Kukushkin"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/zakupki_reglament.docx",
+   "docs/orgstruktura.txt"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "L-001",
+  "category": "long_question",
+  "turns": [
+   {
+    "q": "Добрый день! Я в компании совсем недавно, месяца два, и меня впервые отправляют в командировку в другой город, кажется на четыре дня, но может быть и продлят, пока непонятно. Коллега из соседнего отдела сказал, что суточные у нас вроде бы 1 100 рублей, но он сам последний раз ездил ещё в прошлом году и вообще мог что-то перепутать, а в бухгалтерии я пока никого не знаю и стесняюсь спрашивать по таким мелочам. Подскажите, пожалуйста, какой сейчас размер суточных по России для обычного сотрудника, не руководителя, и через какой сервис мне бронировать билеты и гостиницу?",
+    "expect": [
+     [
+      "1 450",
+      "1450"
+     ],
+     [
+      "Тест-Тревел"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/komandirovki_2026.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Вопрос сам содержит устаревшее значение 1 100 — forbid не ставим, ответ может его упомянуть как старое."
+ },
+ {
+  "id": "L-002",
+  "category": "long_question",
+  "turns": [
+   {
+    "q": "Здравствуйте, ситуация такая: у нас был релиз, и я с командой вышел в субботу и в воскресенье, в сумме получилось часов шестнадцать сверх нормы, руководитель в курсе и вроде не против, но деньгами за переработку мне брать не очень хочется, лучше отдохнуть потом, например после Нового года, когда будет поспокойнее. Я слышал, что это называется отгул, но не уверен, как это правильно оформить, по какой форме подаётся заявление и не сгорят ли эти дни, если я долго не буду их брать. Объясните, пожалуйста, что мне нужно сделать?",
+    "expect": [
+     [
+      "ПК-17"
+     ],
+     [
+      "120 календарн",
+      "120 дн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/hr_otpuska_i_otguly.docx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "L-003",
+  "category": "long_question",
+  "turns": [
+   {
+    "q": "Привет. Пишу в выходной, поздно вечером в субботу: у меня завтра с утра важная встреча с клиентом, а VPN вдруг перестал подключаться, хотя ещё в пятницу всё работало нормально, пароль я не менял, ноутбук рабочий, интернет дома есть, браузер открывается. В ИТ-службу сейчас, понятно, никто не придёт, кабинет закрыт, а писать заявку и ждать до понедельника я не могу, потому что встреча уже завтра. Куда мне звонить прямо сейчас, есть ли какой-то единый номер дежурной смены или кто-то, кто дежурит по выходным?",
+    "expect": [
+     [
+      "7700"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "docs/it_reglament.doc",
+   "docs/it_dezhurstva_i_limity.xlsx"
+  ],
+  "expect_origin": "documents"
+ },
+ {
+  "id": "E-001",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Как называется черновик положения о гербарии СТК?",
+    "expect": [
+     [
+      "Ж-404"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/only_title.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Почти пустой docx: допустимы и индексация, и отказ."
+ },
+ {
+  "id": "E-002",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какое кодовое название у проекта переезда офиса?",
+    "expect": [
+     [
+      "Морошка-26"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/too_big.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Файл 26 МиБ должен быть ОТКЛОНЁН — найденный ответ означает, что лимит 25 МиБ не сработал."
+ },
+ {
+  "id": "E-003",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какое кодовое название у программы лояльности для клиентов?",
+    "expect": [
+     [
+      "Брусника-245"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/near_limit.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. 24,5 МиБ проходит по байтам, но ~13 млн символов > 2 000 000: ожидается отказ по лимиту символов (или усечение — тогда факт в начале найдётся)."
+ },
+ {
+  "id": "E-004",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Как зовут талисман корпоративной сборной по волейболу?",
+    "expect": [
+     [
+      "Пломбир"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/huge_text.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. ~2,5 млн символов > лимита 2 000 000. Факт в самом начале: найдётся, только если файл усечён, а не отклонён."
+ },
+ {
+  "id": "E-005",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой девиз у корпоративной сборной по волейболу?",
+    "expect": [
+     [
+      "Подача за подачей"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/huge_text.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Факт после 2 000 000-го символа: не должен находиться ни при отказе, ни при усечении."
+ },
+ {
+  "id": "E-006",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой залог за шкафчик для сменной обуви?",
+    "expect": [
+     [
+      "410"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/pdf_renamed.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. PDF под расширением .docx — ожидается format_mismatch, ответ не должен находиться."
+ },
+ {
+  "id": "E-007",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой шифр у схемы эвакуации 4 этажа?",
+    "expect": [
+     [
+      "СХ-4-ЭВ"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/png_renamed.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. PNG под расширением .pdf — ожидается format_mismatch; текст есть только в картинке."
+ },
+ {
+  "id": "E-008",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Сколько стоит фирменный суп «Северный» в столовой?",
+    "expect": [
+     [
+      "215"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/docx_renamed.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Zip (docx) под расширением .txt — ожидается format_mismatch."
+ },
+ {
+  "id": "E-009",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "По какой заявке выдаются канцелярские товары?",
+    "expect": [
+     [
+      "КЦ-77"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/truncated.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Обрезанный docx — ожидается ошибка разбора."
+ },
+ {
+  "id": "E-010",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой код мероприятия у новогоднего корпоратива?",
+    "expect": [
+     [
+      "НГ-2026-СС"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/encrypted.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Зашифрованный docx (пароль test123) — ожидается отказ."
+ },
+ {
+  "id": "E-011",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой бюджет праздника «День СТК»?",
+    "expect": [
+     [
+      "318 000",
+      "318000"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/encrypted.pdf"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Зашифрованный PDF (пароль test123) — ожидается отказ."
+ },
+ {
+  "id": "E-012",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "В каком кабинете находится корпоративная библиотека?",
+    "expect": [
+     [
+      "117"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/sample.odt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. ODT не поддерживается — ожидается unsupported_format с подсказкой."
+ },
+ {
+  "id": "E-013",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Во сколько размораживают холодильники на кухне по пятницам?",
+    "expect": [
+     [
+      "16:40"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/sample.rtf"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. RTF не поддерживается — ожидается unsupported_format."
+ },
+ {
+  "id": "E-014",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Во сколько шаттл ШТ-3 отправляется от станции «Тестовая» к офису?",
+    "expect": [
+     [
+      "8:47"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/sample.xls"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. XLS не поддерживается — ожидается unsupported_format."
+ },
+ {
+  "id": "E-015",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой NPS клиентов по итогам III квартала?",
+    "expect": [
+     [
+      "73"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/sample.ppt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. PPT не поддерживается — ожидается unsupported_format."
+ },
+ {
+  "id": "E-016",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Кто руководит корпоративным хором?",
+    "expect": [
+     [
+      "Гармошкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/sample.html"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. HTML не поддерживается — ожидается unsupported_format."
+ },
+ {
+  "id": "E-017",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Где хранится ключ К-881 от архива договоров?",
+    "expect": [
+     [
+      "пост охраны",
+      "охран"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/sample.csv"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. CSV не поддерживается — ожидается unsupported_format."
+ },
+ {
+  "id": "E-018",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Какой код дежурства офиса действует в новогодние каникулы?",
+    "expect": [
+     [
+      "ЁЛ-2027",
+      "ЕЛ-2027"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/Регламент «Отпуска» ёлочки и пробелы.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Имя с «ёлочками», ё и пробелами — файл должен приниматься."
+ },
+ {
+  "id": "E-019",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Кто отвечает за полив фикуса в холле?",
+    "expect": [
+     [
+      "Лейкин"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/Порядок ухода за растениями в холле и переговорных комнатах центрального офиса Северной тестовой компании с графиком полива, списком.md"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Длинное кириллическое имя — файл должен приниматься; имя в 200 символов — через multipart filename."
+ },
+ {
+  "id": "E-020",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Где находится станция зарядки электросамокатов ЗС-09?",
+    "expect": [
+     [
+      "южн"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/📄 памятка.txt"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Эмодзи в имени — файл должен приниматься."
+ },
+ {
+  "id": "E-021",
+  "category": "edge_indexed",
+  "turns": [
+   {
+    "q": "Подарок какой максимальной стоимости можно принять от партнёра по кодексу этики?",
+    "expect": [
+     [
+      "2 700",
+      "2700"
+     ]
+    ]
+   }
+  ],
+  "sources": [
+   "edge/duplicate.docx"
+  ],
+  "expect_origin": "documents",
+  "note": "Результат зависит от того, принят ли файл. Побайтовый дубликат docs/kodeks_etiki.docx: ответ есть в любом случае; проверяется реакция на дубликат (отказ/дедупликация/вторая копия) и отсутствие задвоенных источников в ответе."
+ }
+]
