@@ -37,7 +37,7 @@
 файл docx / pdf / txt / md (+ xlsx, pptx, doc — BH-33…BH-35)
   │  [бэкенд] файл → Markdown (docx: mammoth + markdownify; pdf: pymupdf4llm,
   │           страницы склеены символом \f; xlsx, pptx, doc: ingest/xlsx.py,
-  │           pptx.py, doc.py — код ML)
+  │           pptx.py, doc.py — код ML; pdf без AGPL — ingest/pdf.py, BH-39)
   ▼
 preprocess(markdown) ─────────────────────────── ingest/preprocess.py
   │  символы, колонтитулы, HTML, таблицы → «ключ: значение», ссылки,

@@ -1,0 +1,3 @@
+# PDF-образцы тестов — двоичные: перевод строк (autocrlf) сломал бы
+# смещения таблицы xref внутри файла.
+tests/ingest/fixtures/*.pdf binary
