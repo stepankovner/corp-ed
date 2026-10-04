@@ -63,6 +63,12 @@ async def service_unavailable_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
+async def demo_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=_body(exc)
+    )
+
+
 async def unacceptable_file_handler(request: Request, exc: Exception) -> JSONResponse:
     code = getattr(exc, "code", "unsupported_format")
     return JSONResponse(

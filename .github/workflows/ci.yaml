@@ -349,6 +349,8 @@ jobs:
             set-totp --email "$E2E_ADMIN_EMAIL" --secret-stdin
           # Он же — команда kronto: e2e проходит и нашу панель (ТЗ §9).
           uv run python -m corp_ed.cli staff add --email "$E2E_ADMIN_EMAIL"
+          # Песочница на сайте (ТЗ §1) — как при выкатке на стенд.
+          uv run python -m corp_ed.cli demo setup
           {
             echo "CONNECTOR_SECRETS_KEYS=$key"
             echo "E2E_TOTP_SECRET=$totp"

@@ -21,6 +21,7 @@ from corp_ed.core.config import (
     get_auth_settings,
     get_billing_settings,
     get_connector_settings,
+    get_demo_settings,
     get_lead_settings,
 )
 from corp_ed.core.database import get_session, get_session_maker
@@ -91,6 +92,7 @@ from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.company_service import CompanyService
 from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_service import CreditService
+from corp_ed.services.demo_service import DemoService
 from corp_ed.services.department_service import DepartmentService
 from corp_ed.services.faq_service import FaqService
 from corp_ed.services.folder_service import FolderService
@@ -647,6 +649,17 @@ def get_chat_generator(
     stop: Annotated[StopSignals, Depends(get_stop_signals)],
 ) -> ChatGenerator:
     return ChatGenerator(session_factory, build, stop)
+
+
+def get_demo_service(
+    session_factory: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+    build: Annotated[FaqBuilder, Depends(get_faq_builder)],
+) -> DemoService:
+    """Песочница на сайте (ТЗ §1): своя сессия в области компании песочницы
+    — у запроса без входа компании нет."""
+    return DemoService(session_factory, get_demo_settings(), build)
 
 
 def get_attachment_service(
