@@ -66,6 +66,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     liveRef.current = live;
   }, [live]);
   const controllers = useRef(new Map<string, AbortController>());
+  // «Остановить» нажали до события start: номера ответа ещё нет. Поток не
+  // обрываем — сервер всё равно дописал бы ответ, — а останавливаем, как
+  // только номер придёт (e2e 04.10: ответ доходил целиком).
+  const pendingStops = useRef(new Set<AbortController>());
 
   // Выход или другая компания — провайдер пересоздаётся: потоки закрыть.
   useEffect(() => {
@@ -132,6 +136,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             } else {
               patch(key, (item) => ({ ...item, answerId: event.answer.id }));
             }
+            if (pendingStops.current.delete(controller)) {
+              stopAnswer(id, event.answer.id).catch(() => controller.abort());
+            }
             queryClient.setQueryData<Conversation>(conversationKey(id), (old) =>
               applyStart(old, event, turn),
             );
@@ -179,6 +186,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         void queryClient.invalidateQueries({ queryKey: conversationKey(key) });
       } finally {
         drop(key);
+        pendingStops.current.delete(controller);
         if (controllers.current.get(key) === controller) controllers.current.delete(key);
       }
     },
@@ -189,11 +197,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     (conversationId: string) => {
       const item = liveRef.current[conversationId];
       const controller = controllers.current.get(conversationId);
-      if (!item?.answerId) {
+      if (!item) {
         controller?.abort();
         return;
       }
       patch(conversationId, (current) => ({ ...current, stopping: true }));
+      if (!item.answerId) {
+        if (controller) pendingStops.current.add(controller);
+        return;
+      }
       // Сервер сохранит то, что успело прийти, и закончит поток событием done.
       stopAnswer(conversationId, item.answerId).catch(() => controller?.abort());
     },
