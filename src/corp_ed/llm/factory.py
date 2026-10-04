@@ -24,7 +24,11 @@ def build_llm_gateway(
     достался.
     """
     if settings.llm_provider == "fake":
-        return DevAdapter(stream_delay=settings.llm_fake_stream_delay_ms / 1000)
+        return DevAdapter(
+            stream_delay=settings.llm_fake_stream_delay_ms / 1000,
+            latency=settings.llm_fake_latency_ms / 1000,
+            concurrency=concurrency if settings.llm_fake_quotas else None,
+        )
     if settings.llm_provider == "yandex-native":
         return YandexAdapter(
             client=client,
@@ -51,7 +55,11 @@ def build_embedding_gateway(
 ) -> EmbeddingGateway:
     """Эмбеддер по LLM_PROVIDER: Yandex или «мешок слов» в режиме fake."""
     if settings.llm_provider == "fake":
-        return WordEmbeddingAdapter()
+        if not settings.llm_fake_quotas:
+            return WordEmbeddingAdapter()
+        return WordEmbeddingAdapter(
+            document_throttle=document_throttle, query_throttle=query_throttle
+        )
     return YandexEmbeddingAdapter(
         client=client,
         folder_id=settings.yc_folder_id,

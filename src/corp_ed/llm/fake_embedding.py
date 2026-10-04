@@ -4,6 +4,7 @@ import zlib
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
+from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.types import EmbeddingResult
 
 
@@ -42,12 +43,29 @@ class WordEmbeddingAdapter(EmbeddingGateway):
     """Эмбеддер для разработки (LLM_PROVIDER=fake) и сквозных тестов:
     «мешок слов». Общие слова сближают тексты, без общих слов расстояние
     близко к 1 — вопрос по документу находит его, вопрос вне документов
-    уходит в общий ответ."""
+    уходит в общий ответ.
+
+    С темпом (LLM_FAKE_QUOTAS, нагрузочная проверка) ждёт слота так же,
+    как настоящий эмбеддер: очередь длиннее допустимого — ThrottleBusyError.
+    """
+
+    def __init__(
+        self,
+        *,
+        document_throttle: Throttle | None = None,
+        query_throttle: Throttle | None = None,
+    ) -> None:
+        self._document_throttle = document_throttle
+        self._query_throttle = query_throttle
 
     async def embed_document(self, text: str) -> EmbeddingResult:
+        if self._document_throttle is not None:
+            await self._document_throttle.acquire()
         return self._result(text)
 
     async def embed_query(self, text: str) -> EmbeddingResult:
+        if self._query_throttle is not None:
+            await self._query_throttle.acquire()
         return self._result(text)
 
     def _result(self, text: str) -> EmbeddingResult:

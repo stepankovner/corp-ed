@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
@@ -86,12 +87,25 @@ class DevAdapter(LLMGateway):
 
     Поток — по словам с паузой stream_delay: интерфейс печатает ответ
     так же, как с настоящей моделью, и его можно остановить.
+
+    Для нагрузочной проверки (docs/LOAD-TEST.md): latency — пауза до первого
+    слова (и вся длительность ответа без потока), concurrency — семафор
+    генерации процесса, слот занят на всё время ответа, как у настоящей
+    модели.
     """
 
     model_name = "dev"
 
-    def __init__(self, stream_delay: float = 0.03) -> None:
+    def __init__(
+        self,
+        stream_delay: float = 0.03,
+        *,
+        latency: float = 0.0,
+        concurrency: asyncio.Semaphore | None = None,
+    ) -> None:
         self.stream_delay = stream_delay
+        self.latency = latency
+        self._concurrency = concurrency
 
     async def stream(
         self,
@@ -100,13 +114,13 @@ class DevAdapter(LLMGateway):
         temperature: float = 0.3,
         max_tokens: int = 1000,
     ) -> AsyncGenerator[str | Completion, None]:
-        completion = await self.generate(
-            messages, temperature=temperature, max_tokens=max_tokens
-        )
-        for word in re.findall(r"\S+\s*", completion.content):
-            await asyncio.sleep(self.stream_delay)
-            yield word
-        yield completion
+        async with self._slot():
+            await self._wait()
+            completion = self._complete(messages)
+            for word in re.findall(r"\S+\s*", completion.content):
+                await asyncio.sleep(self.stream_delay)
+                yield word
+            yield completion
 
     async def generate(
         self,
@@ -116,6 +130,20 @@ class DevAdapter(LLMGateway):
         max_tokens: int = 1000,
         response_format: dict[str, Any] | None = None,
     ) -> Completion:
+        async with self._slot():
+            await self._wait()
+            return self._complete(messages)
+
+    def _slot(self) -> contextlib.AbstractAsyncContextManager[Any]:
+        if self._concurrency is None:
+            return contextlib.nullcontext()
+        return self._concurrency
+
+    async def _wait(self) -> None:
+        if self.latency:
+            await asyncio.sleep(self.latency)
+
+    def _complete(self, messages: list[Message]) -> Completion:
         prompt = messages[-1].content if messages else ""
         condense = _CONDENSE_QUESTION.search(prompt)
         match = _FIRST_EXCERPT.search(prompt)

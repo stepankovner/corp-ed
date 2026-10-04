@@ -3,6 +3,8 @@ from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from corp_ed.llm.throttle import ThrottleBusyError
+
 logger = structlog.get_logger()
 
 
@@ -130,6 +132,18 @@ async def llm_error_handler(
     request: Request,
     exc: Exception,
 ) -> JSONResponse:
+    if isinstance(exc, ThrottleBusyError):
+        # Очередь к квоте модели переполнена: сервис жив, вопросов больше,
+        # чем квота успевает (docs/LOAD-TEST.md). Не «модель недоступна».
+        logger.warning("llm_busy", error=str(exc), path=request.url.path)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "detail": "Сейчас очень много вопросов, попробуйте через минуту",
+                "code": "busy",
+            },
+            headers={"Retry-After": "30"},
+        )
     logger.warning(
         "llm_unavailable",
         error=str(exc),

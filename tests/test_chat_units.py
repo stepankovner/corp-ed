@@ -3,17 +3,26 @@
 
 from uuid import uuid4
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import ChatAttachment, ChatAttachmentChunk, Tenant, User
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX
+from corp_ed.repositories.chat_repository import MessageRepository
 from corp_ed.services.chat_generation import (
     ATTACHMENT_TOP_K,
+    ERROR_MESSAGES,
     AttachmentContext,
+    ChatEvent,
+    ChatGenerator,
+    ErrorEvent,
+    GenerationJob,
+    InMemoryStopSignals,
 )
 from corp_ed.services.chat_service import make_title
-from corp_ed.services.faq_service import _GeneralPrefixGate, _RefusalGate
+from corp_ed.services.faq_service import FaqService, _GeneralPrefixGate, _RefusalGate
 
 
 def test_title_is_first_line_cut_at_word_boundary() -> None:
@@ -117,3 +126,53 @@ async def test_small_attachment_goes_whole(
         [0.1] * EMBEDDING_DIM
     )
     assert [m.content for m in selected] == ["Часть 0", "Часть 1", "Часть 2"]
+
+
+def _job(tenant: Tenant) -> GenerationJob:
+    return GenerationJob(
+        tenant_id=tenant.id,
+        member_id=uuid4(),
+        conversation_id=uuid4(),
+        answer_id=uuid4(),
+        question="Сколько дней отпуска?",
+        history=[],
+        attachment_ids=[],
+        diagnostics=False,
+    )
+
+
+def _generator(session_maker: async_sessionmaker[AsyncSession]) -> ChatGenerator:
+    def build_faq(_: AsyncSession) -> FaqService:
+        raise AssertionError("до FaqService не доходит: сотрудника нет")
+
+    return ChatGenerator(session_maker, build_faq, InMemoryStopSignals())
+
+
+async def test_stream_ends_when_even_the_failure_cannot_be_saved(
+    session_maker: async_sessionmaker[AsyncSession],
+    tenant_ctx: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """База не отдала соединение и для записи ошибки — поток всё равно
+    получает итог, а не «пинг» вечно (docs/LOAD-TEST.md)."""
+
+    async def pool_exhausted(*_: object) -> None:
+        raise SQLAlchemyTimeoutError("QueuePool limit reached")
+
+    monkeypatch.setattr(MessageRepository, "get", pool_exhausted)
+    events: list[ChatEvent] = []
+
+    await _generator(session_maker).run(_job(tenant_ctx), events.append)
+
+    assert events == [ErrorEvent("internal", ERROR_MESSAGES["internal"], None)]
+
+
+async def test_saved_failure_is_the_only_final_event(
+    session_maker: async_sessionmaker[AsyncSession], tenant_ctx: Tenant
+) -> None:
+    events: list[ChatEvent] = []
+
+    await _generator(session_maker).run(_job(tenant_ctx), events.append)
+
+    # Сообщения нет — ошибка без него; второго итога нет.
+    assert events == [ErrorEvent("internal", ERROR_MESSAGES["internal"], None)]

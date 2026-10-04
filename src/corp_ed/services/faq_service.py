@@ -288,10 +288,13 @@ class FaqService:
         целиком (/faq/ask). Остановленный ответ — тоже ответ: текст до
         остановки, токены и кредиты пишутся как обычно.
 
-        Каждый ответ пишется в qa_log (BH-20) в той же транзакции:
-        версия промпта, модель, лучшее расстояние, токены и кредиты.
-        commit=False — транзакцию завершает вызывающий (ChatService
-        пишет сообщение диалога вместе с журналом).
+        Каждый ответ пишется в qa_log (BH-20): версия промпта, модель,
+        лучшее расстояние, токены и кредиты. До модели база только
+        читается, короткими транзакциями: перед каждым внешним вызовом
+        соединение возвращается в пул (_release). Запись журнала —
+        одна транзакция после ответа; commit=False — её завершает
+        вызывающий (ChatGenerator пишет сообщение диалога вместе с
+        журналом).
 
         Пул кредитов проверяется первым: исчерпанный пул не должен
         стоить ни эмбеддинга, ни вызова модели (досье 10.2).
@@ -304,6 +307,7 @@ class FaqService:
         condensed = await self._condense(history, question)
         standalone = condensed.question
         search_text = await self._search_text(standalone)
+        await self._release()
         embedded = await self.embedding_gateway.embed_query(search_text)
 
         found = await self._retrieve(
@@ -339,6 +343,7 @@ class FaqService:
         context = attached + select_context(chosen, max_tokens=self.context_max_tokens)
         nearest = found.nearest
 
+        await self._release()
         outcome = await self._answer(
             question, context, mode, history=history, standalone=standalone, sink=sink
         )
@@ -466,6 +471,7 @@ class FaqService:
         if rerank and retriever is not Retriever.VECTOR:
             raise ConflictError("Реранкер работает только с векторным поиском")
         search_text = await self._search_text(question)
+        await self._release()
         embedded = await self.embedding_gateway.embed_query(search_text)
         found = await self._retrieve(
             search_text,
@@ -482,6 +488,22 @@ class FaqService:
         if reranked.failed:
             raise ServiceUnavailableError()
         return reranked.matches[:limit]
+
+    async def _release(self) -> None:
+        """Вернуть соединение в пул перед внешним вызовом: модель,
+        эмбеддинги, реранкер.
+
+        Ответ ждёт квоту модели и пишется секунды; всё это время
+        открытая транзакция чтения держала соединение. Сотня вопросов
+        разом — и пул (5 + 10 на процесс) кончался: остальные запросы
+        API ждали соединение 30 с и падали (docs/LOAD-TEST.md). Здесь
+        только чтение, закрыть его — commit; следующий запрос начнёт
+        новую транзакцию с тем же тенантом (core/database.py), объекты
+        не устаревают (expire_on_commit=False). Держать транзакцию через
+        вызов модели не хотели и в кредитах (CreditService.ensure_available).
+        """
+        if self.session.in_transaction():
+            await self.session.commit()
 
     def _fetch_limit(self, limit: int) -> int:
         """Сколько кандидатов брать у поиска: с реранкером — глубину для
@@ -529,6 +551,7 @@ class FaqService:
         if len(asked) <= 1:
             return _Reranked(matches=pool, model=None, ms=None)
 
+        await self._release()
         started = time.perf_counter()
         try:
             scores = await asyncio.wait_for(
@@ -592,6 +615,7 @@ class FaqService:
         """
         if not history:
             return _Condensed(question=question, completion=None)
+        await self._release()
         try:
             completion = await asyncio.wait_for(
                 self.llm_gateway.generate(

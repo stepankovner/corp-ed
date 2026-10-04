@@ -8,6 +8,7 @@ from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import Chunk, Material
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.throttle import ThrottleBusyError
 from corp_ed.llm.types import Completion, Message
 from corp_ed.main import app
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX
@@ -24,6 +25,20 @@ class FailingLLM(LLMGateway):
         response_format: dict[str, Any] | None = None,
     ) -> Completion:
         raise LLMError("провайдер недоступен", retryable=True)
+
+
+class BusyLLM(LLMGateway):
+    """Очередь к квоте переполнена (ThrottleBusyError) — нагрузка, не сбой."""
+
+    async def generate(
+        self,
+        messages: list[Message],
+        *,
+        temperature: float = 0.3,
+        max_tokens: int = 1000,
+        response_format: dict[str, Any] | None = None,
+    ) -> Completion:
+        raise ThrottleBusyError(7.5)
 
 
 async def test_faq_empty_database_returns_marked_general_answer(
@@ -129,3 +144,32 @@ async def test_faq_llm_error_returns_502(
     body = response.json()
 
     assert "провайдер недоступен" not in body["detail"]
+
+
+async def test_faq_overloaded_quota_is_503_busy_not_provider_failure(
+    employee_client: httpx.AsyncClient,
+    material: Material,
+    chunk_repo,
+    session: AsyncSession,
+) -> None:
+    """Вопросов больше, чем успевает квота (docs/LOAD-TEST.md): 503 с
+    понятным текстом и Retry-After, а не «модель недоступна»."""
+    chunk = Chunk(
+        material_id=material.id,
+        position=0,
+        content="Первый чанк.",
+        embedding=[0.1] * EMBEDDING_DIM,
+        model="fake",
+        model_version="fake",
+    )
+    await chunk_repo.bulk_create(chunks=[chunk])
+    await session.commit()
+    app.dependency_overrides[get_llm_gateway] = lambda: BusyLLM()
+
+    response = await employee_client.post(
+        "/api/v1/faq/ask", json={"question": "Что написано?"}
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "busy"
+    assert response.headers["Retry-After"] == "30"

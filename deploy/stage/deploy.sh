@@ -42,6 +42,31 @@ if [[ -n "$token" ]]; then
     unset DOCKER_CONFIG
 fi
 
+echo "==> настройки ответов"
+# Решения ML и владельца о том, как отвечать (порог, BH-37, память
+# диалога…), едут с кодом: значение — из .env.example этого коммита, каждое
+# изменение — в лог выкатки. Не трогаем то, чему нужна переиндексация
+# (RAG_CHUNK_TOKENS, RAG_OVERLAP_TOKENS) или ручной шаг на сервере
+# (RAG_RERANK_MODEL — модель и профиль compose, STAGE.md §5).
+answer_keys=(
+    RAG_FAQ_LIMIT RAG_FAQ_MAX_DISTANCE RAG_FAQ_GATE_DISTANCE RAG_FAQ_NEAR_MARGIN
+    RAG_CONTEXT_MAX_TOKENS RAG_FAQ_TEMPERATURE RAG_RETRIEVER RAG_FULLTEXT_WEIGHT
+    RAG_HISTORY_TURNS RAG_HISTORY_TTL_MINUTES RAG_CONDENSE_TIMEOUT_SECONDS
+)
+# Значение строки KEY=… без пробелов и комментария; нет строки — пусто и код 1.
+env_value() { awk -v k="$1" -F= '$1 == k { sub(/^[^=]*=/, ""); sub(/[ \t]*#.*$/, ""); v = $0; f = 1 } END { print v; exit !f }' "$2"; }
+for key in "${answer_keys[@]}"; do
+    want=$(env_value "$key" .env.example) || continue
+    if have=$(env_value "$key" .env); then
+        [[ "$have" == "$want" ]] && continue
+        sed -i -E "s|^$key=.*|$key=$want|" .env
+    else
+        have="(нет)"
+        printf '%s=%s\n' "$key" "$want" >> .env
+    fi
+    echo "    $key: ${have:-(пусто)} → ${want:-(пусто)}"
+done
+
 echo "==> compose up"
 # up ждёт migrate (service_completed_successfully): упавшая миграция
 # останавливает выкатку здесь, старые api и worker продолжают работать.
