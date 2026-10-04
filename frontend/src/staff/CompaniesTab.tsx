@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2 } from "lucide-react";
+import { Building2, Pencil } from "lucide-react";
 import { useId, useMemo, useState, type SubmitEvent } from "react";
 
 import adminStyles from "../admin/Admin.module.css";
@@ -20,6 +20,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Checkbox, SelectField, TextField } from "../ui/Field";
 import fieldStyles from "../ui/Field.module.css";
+import { IconButton } from "../ui/IconButton";
 import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
 import { EmptyState } from "../ui/Page";
@@ -55,6 +56,19 @@ function today(): string {
 /** Дней от одной календарной даты до другой. */
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
+}
+
+const dayMonth = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
+
+/** «8 октября»; год — только если не текущий. */
+function pilotDate(until: string, now: string): string {
+  return until.slice(0, 4) === now.slice(0, 4)
+    ? dayMonth.format(new Date(`${until}T00:00:00Z`))
+    : formatCalendarDate(until);
 }
 
 /** Доля потраченного пула: с порога — предупреждение, весь пул — ошибка. */
@@ -121,7 +135,7 @@ export function CompaniesTab() {
               <input
                 className={adminStyles.search}
                 type="search"
-                placeholder="Название, код, почта администратора"
+                placeholder="Название, код, почта"
                 aria-label="Поиск по названию, коду и почте администратора"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -135,10 +149,8 @@ export function CompaniesTab() {
               <thead>
                 <tr>
                   <th>Компания</th>
-                  <th>Тариф</th>
-                  <th>Места</th>
+                  <th>Тариф и места</th>
                   <th>Кредиты за месяц</th>
-                  <th>Пилот</th>
                   <th>Состояние</th>
                   <th>Последний вопрос</th>
                   <th className={tableStyles.actions}>
@@ -165,6 +177,10 @@ export function CompaniesTab() {
   );
 }
 
+/**
+ * Строка компании. Тариф с местами и пауза с пилотом — парами в одной
+ * колонке: так таблица помещается в ноутбук рядом с открытой панелью.
+ */
 function CompanyRow({
   company,
   now,
@@ -186,10 +202,11 @@ function CompanyRow({
           </span>
         </div>
       </td>
-      <td className={tableStyles.nowrap}>{tariffName(company.tariff)}</td>
       <td className={tableStyles.nowrap}>
-        <span className="num">
-          {formatNumber(company.members)} из {formatNumber(company.seats)}
+        {tariffName(company.tariff)}
+        <span className={`${styles.seats} num`}>
+          {formatNumber(company.members)} из {formatNumber(company.seats)}{" "}
+          {plural(company.seats, "места", "мест", "мест")}
         </span>
         {company.pending ? (
           <span className={tableStyles.sub}>ждут: {formatNumber(company.pending)}</span>
@@ -203,23 +220,20 @@ function CompanyRow({
           <span className={`${styles.share} ${shareTone(share)}`}>{share} %</span>
         ) : null}
       </td>
-      {/* nowrap — у ячейки: на телефоне таблица его снимает, и дата переносится. */}
-      <td className={tableStyles.nowrap}>
-        {company.pilot_until ? (
-          <div className={styles.cell}>
-            <span>до {formatCalendarDate(company.pilot_until)}</span>
-            <PilotBadge until={company.pilot_until} now={now} />
-          </div>
-        ) : (
-          "—"
-        )}
-      </td>
       <td>
-        {company.is_active ? (
-          <Badge tone="ok">работает</Badge>
-        ) : (
-          <Badge tone="error">на паузе</Badge>
-        )}
+        <div className={styles.cell}>
+          {company.is_active ? (
+            <Badge tone="ok">работает</Badge>
+          ) : (
+            <Badge tone="error">на паузе</Badge>
+          )}
+          {company.pilot_until ? (
+            <>
+              <span className={styles.pilot}>пилот до {pilotDate(company.pilot_until, now)}</span>
+              <PilotBadge until={company.pilot_until} now={now} />
+            </>
+          ) : null}
+        </div>
       </td>
       <td
         className={tableStyles.nowrap}
@@ -229,9 +243,9 @@ function CompanyRow({
         <span className={tableStyles.sub}>за месяц: {formatNumber(company.questions_month)}</span>
       </td>
       <td className={tableStyles.actions}>
-        <Button variant="ghost" size="xs" aria-label={`Изменить: ${company.name}`} onClick={onEdit}>
-          Изменить
-        </Button>
+        <IconButton size="sm" label={`Изменить: ${company.name}`} onClick={onEdit}>
+          <Pencil size={16} aria-hidden />
+        </IconButton>
       </td>
     </tr>
   );

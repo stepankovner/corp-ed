@@ -143,10 +143,10 @@ describe("панель: компании", () => {
     expect(within(meridian).getByText("meridian-1a2b")).toBeInTheDocument();
     expect(within(meridian).getByText("anna@meridian.ru")).toBeInTheDocument();
     expect(within(meridian).getByText("Базовый")).toBeInTheDocument();
-    expect(within(meridian).getByText("12 из 30")).toBeInTheDocument();
+    expect(within(meridian).getByText("12 из 30 мест")).toBeInTheDocument();
     expect(within(meridian).getByText("ждут: 2")).toBeInTheDocument();
     expect(within(meridian).getByText("25 %")).toBeInTheDocument();
-    expect(within(meridian).getByText("до 8 октября 2026 г.")).toBeInTheDocument();
+    expect(within(meridian).getByText("пилот до 8 октября")).toBeInTheDocument();
     expect(within(meridian).getByText("осталось 4 дня")).toBeInTheDocument();
     expect(within(meridian).getByText("работает")).toBeInTheDocument();
     expect(within(meridian).getByText("2 часа назад")).toBeInTheDocument();
@@ -156,13 +156,13 @@ describe("панель: компании", () => {
     expect(within(sever).getByText("администраторов нет")).toBeInTheDocument();
     expect(within(sever).queryByText(/ждут/)).not.toBeInTheDocument();
     expect(within(sever).getByText("100 %")).toBeInTheDocument();
+    expect(within(sever).getByText("пилот до 30 сентября")).toBeInTheDocument();
     expect(within(sever).getByText("закончился")).toBeInTheDocument();
     expect(within(sever).getByText("на паузе")).toBeInTheDocument();
     expect(within(sever).getByText("не было")).toBeInTheDocument();
 
     const vostok = row("Восток");
-    expect(within(vostok).getByText("—")).toBeInTheDocument();
-    expect(within(vostok).queryByText(/осталось|закончился/)).not.toBeInTheDocument();
+    expect(within(vostok).queryByText(/пилот|осталось|закончился/)).not.toBeInTheDocument();
 
     const search = screen.getByRole("searchbox", {
       name: "Поиск по названию, коду и почте администратора",
@@ -202,7 +202,7 @@ describe("панель: компании", () => {
     expect(await screen.findByText("Сохранено: Восток")).toBeInTheDocument();
     expect(bodies).toEqual([{ tariff: "extended", seats: 40, pilot_until: "2026-11-30" }]);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(await within(row("Восток")).findByText("12 из 40")).toBeInTheDocument();
+    expect(await within(row("Восток")).findByText("12 из 40 мест")).toBeInTheDocument();
     expect(within(row("Восток")).getByText("Расширенный")).toBeInTheDocument();
   });
 

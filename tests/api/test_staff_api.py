@@ -197,9 +197,14 @@ async def test_staff_changes_seats_tariff_pilot_and_suspends(
 
     # Свою компанию из панели не приостановить: её токен перестал бы
     # приниматься.
-    own = await api.patch(url, json={"is_active": False}, headers=bearer(staff))
+    # Отказ — до любых изменений: места из того же запроса не сохраняются.
+    own = await api.patch(
+        url, json={"seats": 45, "is_active": False}, headers=bearer(staff)
+    )
     assert own.status_code == 409
     assert own.json()["code"] == "own_company"
+    unchanged = await api.get(url, headers=bearer(staff))
+    assert unchanged.json()["seats"] == 40
 
     # Другую — приостановить и вернуть.
     other = Tenant(id=uuid4(), company_code="paused", name="На паузе")

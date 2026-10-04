@@ -224,24 +224,30 @@ async def update_company(
     row = await service.company(tenant_id)
     code = row.tenant.company_code
     fields = body.model_fields_set
-    if body.seats is not None and body.seats != row.tenant.seats:
-        check = await seats_check(session, code, body.seats)
+    # Сначала все проверки, потом изменения: каждое изменение коммитится
+    # само, и отказ посреди списка оставил бы часть применённой.
+    pause = body.is_active is False and row.tenant.is_active
+    if pause and current_tenant.get() == tenant_id:
+        # Токен этой компании перестал бы приниматься — панель
+        # закрылась бы посреди работы.
+        raise CodedConflictError(
+            "Свою компанию из панели не приостановить — "
+            "переключитесь на другую или используйте cli suspend-tenant",
+            "own_company",
+        )
+    new_seats = body.seats if body.seats not in (None, row.tenant.seats) else None
+    if new_seats is not None:
+        check = await seats_check(session, code, new_seats)
         if check.stops_pool and not body.confirm:
             raise CodedConflictError(check.message or "", "seats_stop_pool")
-        await tenants.set_seats(code, body.seats)
+
+    if new_seats is not None:
+        await tenants.set_seats(code, new_seats)
     if body.tariff is not None and body.tariff.value != row.tenant.tariff:
         await tenants.set_tariff(code, body.tariff)
     if "pilot_until" in fields:
         await service.set_pilot(tenant_id, body.pilot_until)
     if body.is_active is not None and body.is_active != row.tenant.is_active:
-        if not body.is_active and current_tenant.get() == tenant_id:
-            # Токен этой компании перестал бы приниматься — панель
-            # закрылась бы посреди работы.
-            raise CodedConflictError(
-                "Свою компанию из панели не приостановить — "
-                "переключитесь на другую или используйте cli suspend-tenant",
-                "own_company",
-            )
         await tenants.set_active(code, active=body.is_active)
     return _company(await service.company(tenant_id))
 

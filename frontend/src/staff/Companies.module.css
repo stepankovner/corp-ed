@@ -4,7 +4,7 @@
 .company {
   display: grid;
   gap: 2px;
-  min-width: 14rem;
+  min-width: 12rem;
   overflow-wrap: anywhere;
 }
 .name {
@@ -14,11 +14,20 @@
   color: var(--muted);
 }
 
-/* Ячейка с плашкой под текстом: пилот, места. */
+/* Места под тарифом — вровень с текстом, не подписью. */
+.seats {
+  display: block;
+  margin-top: 2px;
+}
+
+/* Состояние: плашка «работает / на паузе», под ней — срок пилота. */
 .cell {
   display: grid;
   gap: 4px;
   justify-items: start;
+}
+.pilot {
+  font-size: 0.8125rem;
 }
 
 /* Доля потраченного пула под числами: с 80 % — предупреждение, с 100 % — ошибка. */

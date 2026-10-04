@@ -533,6 +533,45 @@ test.describe.serial("путь компании", () => {
     await expect(page.getByText("Папка создана").first()).toBeVisible();
   });
 
+  test("команда kronto: компании, расход, помощь со входом", async ({ page, context }) => {
+    // Администратор проверочной компании — и команда kronto (cli staff add в CI).
+    await loginAdmin(page, context);
+    await page.getByRole("link", { name: "Панель kronto" }).click();
+    await expect(page.getByRole("heading", { name: "Панель kronto" })).toBeVisible();
+    await expect(page).toHaveURL(/\/staff\/requests$/);
+
+    // Срок пилота своей компании.
+    await page.getByRole("link", { name: "Компании", exact: true }).click();
+    await page
+      .getByRole("table", { name: "Компании" })
+      .getByRole("button", { name: "Изменить: E2E" })
+      .click();
+    const edit = page.getByRole("dialog", { name: "E2E" });
+    const pilot = new Date(Date.now() + 60 * 86_400_000).toISOString().slice(0, 10);
+    await edit.getByLabel("Пилот до").fill(pilot);
+    await edit.getByRole("button", { name: "Сохранить" }).click();
+    await expect(page.getByText("Сохранено: E2E")).toBeVisible();
+
+    // Расход: вопросы этой компании уже были.
+    await page.getByRole("link", { name: "Расход", exact: true }).click();
+    await expect(page.getByRole("table", { name: "Расход по компаниям" })).toContainText("E2E");
+
+    // Помощь со входом: ссылка на новый пароль уходит письмом.
+    const since = Date.now();
+    await page.getByRole("link", { name: "Люди", exact: true }).click();
+    await page.getByRole("searchbox", { name: "Почта или имя" }).fill(invitedEmail);
+    await page.getByRole("button", { name: "Найти" }).click();
+    const card = page.getByRole("list", { name: "Найденные учётки" }).getByRole("listitem").first();
+    await expect(card).toContainText("E2E");
+    await card.getByRole("button", { name: /Отправить ссылку на новый пароль/ }).click();
+    await page
+      .getByRole("dialog", { name: "Отправить ссылку на новый пароль?" })
+      .getByRole("button", { name: "Отправить" })
+      .click();
+    await expect(page.getByText(/Ссылка на новый пароль отправлена/)).toBeVisible();
+    await waitForMail(invitedEmail, since, /Восстановление пароля/);
+  });
+
   test("папку отдела видит только отдел: «Где ищет ассистент» и ответ", async ({ page }) => {
     // Инна — в отделе «Продажи» (профиль выше).
     await loginByMail(page, invitedEmail, employeePassword);
