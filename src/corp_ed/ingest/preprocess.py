@@ -20,6 +20,12 @@ Markdown, но без мусора, который ест токены и лом
    самодостаточна. Пустая шапка (таблица Word без помеченной строки
    заголовка — так по умолчанию) → шапкой становится первая строка, если
    похожа на шапку: иначе ключи терялись целиком (`ml-formats.md`).
+4а. Сноски: текст сноски встаёт на место ссылки — «(сноска: …)», у
+   заголовка и шапки таблицы — абзацем после строки; копия всех сносок
+   остаётся в конце. Конвертеры кладут сноски только в конец документа,
+   и условие из сноски не попадало в чанк со своим абзацем. Понимаются
+   разметка mammoth (.docx) и `[^1]: …` (Markdown, `ingest.doc`); раньше
+   вторую стирало правило 5.
 5. Ссылки: [текст](url) → текст, голые URL удаляются. Почтовые адреса
    остаются — это содержательный ответ на «куда писать».
 6. Экранирование markdownify (tenant\\_id → tenant_id).
@@ -129,6 +135,7 @@ def preprocess(markdown: str) -> str:
     text = _remove_page_furniture(text)
     text = _strip_inline_html(text)
     text = _linearize_tables(text)
+    text = _inline_notes(text)
     text = _remove_links(text)
     text = _unescape_markdown(text)
     text = _clean_headings(text)
@@ -370,6 +377,174 @@ def _table_to_lines(keys: list[str], rows: list[list[str]]) -> list[str]:
         return [header_line] if header_line else []
 
     return lines
+
+
+# --- 4а. Сноски --------------------------------------------------------------
+
+NOTE_LABEL = "Сноска"
+
+# Ссылка на сноску. mammoth: <sup><a href="#footnote-ID">[N]</a></sup> →
+# markdownify «[[N]](#footnote-ID)» (концевая — endnote-ID). Markdown и
+# `ingest.doc` — «[^метка]».
+_NOTE_REF = re.compile(
+    r"\[\[\d+\]\]\(#[^)\s]*?((?:foot|end)note-[-\d]+)\)|\[\^([^\]\s]+)\]"
+)
+# Текст сноски mammoth — пункт нумерованного списка в конце документа;
+# пункт кончается обратной ссылкой «[↑](#footnote-ref-ID)».
+_NOTE_BACK_LINK = re.compile(r"\s*\[↑\]\(#[^)\s]*?((?:foot|end)note)-ref-(-?\d+)\)")
+_NOTE_DEFINITION = re.compile(r"^ {0,3}\[\^([^\]\s]+)\]:[ \t]*(.*)$")
+_LIST_ITEM_START = re.compile(r"^\d+\.(?:\s|$)")
+_LIST_MARKER = re.compile(r"^(?:[*+-]|\d+\.)\s+")
+
+
+def _inline_notes(text: str) -> str:
+    """Текст сноски — на место ссылки «(сноска: …)», копия всех — в конце.
+
+    Конвертеры кладут сноски в конец документа: mammoth — нумерованным
+    списком с обратными ссылками «↑», `ingest.doc` и Markdown —
+    определениями `[^1]: …`. Там сноска оторвана от своего места: вопрос
+    про условие из сноски находил абзац без условия, а модель не видела,
+    к чему сноска. Даже абзац «Сноска: …» сразу под строкой таблицы модель
+    к строке не относила (замер 01.10, `docs/ml-formats.md`), поэтому текст
+    встаёт прямо на место ссылки. Исключения — заголовок (сноска к нему
+    обычно про весь раздел, а заголовок повторяется в крошках каждого
+    чанка) и шапка таблицы (после шага 4 ключ повторён в каждой строке):
+    там сноска — абзацем «Сноска: …» после первой строки. Копия всех
+    сносок в конце остаётся, как раньше: короткий фрагмент из одних сносок
+    находится по вопросу о самой сноске лучше, чем строка длинной таблицы
+    со сноской внутри. Сноска без ссылки остаётся на своём месте.
+    """
+    lines = text.split("\n")
+    fenced = fenced_lines(lines)
+    notes, owner = _note_definitions(lines, fenced)
+    refs = [
+        [] if fenced[i] or i in owner else _note_refs(line, notes)
+        for i, line in enumerate(lines)
+    ]
+    counts = Counter(key for keys in refs for key in keys)
+    if not notes and not counts:
+        return text
+
+    result: list[str] = []
+    placed: list[str] = []
+    for i, line in enumerate(lines):
+        key = owner.get(i)
+        if key is not None:
+            if key not in counts and notes[key] and owner.get(i - 1) != key:
+                result.extend(["", f"{NOTE_LABEL}: {notes[key]}", ""])
+            continue
+        if not refs[i]:
+            result.append(line)
+            continue
+        with_notes, after = _place_notes(line, notes, counts, placed)
+        result.append(with_notes)
+        for note in after:
+            result.extend(["", f"{NOTE_LABEL}: {note}", ""])
+    if placed:
+        result.extend(["", *(f"{NOTE_LABEL}: {notes[key]}" for key in placed)])
+    return "\n".join(result)
+
+
+def _place_notes(
+    line: str, notes: dict[str, str], counts: Counter[str], placed: list[str]
+) -> tuple[str, list[str]]:
+    """Ссылки строки → текст сноски на их месте; у заголовка и шапки
+    таблицы — сноски, которые встанут абзацами после строки.
+
+    Ссылка на уже поставленную сноску просто убирается; `placed` — порядок
+    сносок для копии в конце.
+    """
+    apart = bool(ATX_HEADING.match(line) or _BOLD_LINE.match(line))
+    after: list[str] = []
+
+    def place(match: re.Match[str]) -> str:
+        key = match.group(1) or "^" + match.group(2)
+        if not match.group(1) and key not in notes:
+            return match.group(0)
+        note = notes.get(key)
+        if not note or key in placed:
+            return ""
+        placed.append(key)
+        if apart or counts[key] > 1:
+            after.append(note)
+            return ""
+        return f" ({NOTE_LABEL.lower()}: {note})"
+
+    return _NOTE_REF.sub(place, line), after
+
+
+def _note_definitions(
+    lines: list[str], fenced: list[bool]
+) -> tuple[dict[str, str], dict[int, str]]:
+    """Тексты сносок по ключу и строки, которые они занимают (номер → ключ)."""
+    notes: dict[str, str] = {}
+    owner: dict[int, str] = {}
+    floor = -1
+    i = 0
+    while i < len(lines):
+        definition = None if fenced[i] else _NOTE_DEFINITION.match(lines[i])
+        back_link = None if fenced[i] else _NOTE_BACK_LINK.search(lines[i])
+        if definition is not None:
+            start, end = i, _definition_end(lines, fenced, i)
+            key = "^" + definition.group(1)
+            first = definition.group(2)
+        elif back_link is not None:
+            start, end = _list_item_start(lines, i, floor), i
+            key = f"{back_link.group(1)}-{back_link.group(2)}"
+            first = _LIST_ITEM_START.sub("", lines[start], count=1)
+        else:
+            i += 1
+            continue
+        notes[key] = _note_text(first, lines[start + 1 : end + 1])
+        owner.update(dict.fromkeys(range(start, end + 1), key))
+        floor = end
+        i = end + 1
+    return notes, owner
+
+
+def _definition_end(lines: list[str], fenced: list[bool], start: int) -> int:
+    """`[^1]: …` продолжается строками с отступом (между ними — пустые)."""
+    end = start
+    for j in range(start + 1, len(lines)):
+        if fenced[j]:
+            break
+        if lines[j].strip():
+            if not lines[j].startswith(("    ", "\t")):
+                break
+            end = j
+    return end
+
+
+def _list_item_start(lines: list[str], end: int, floor: int) -> int:
+    """Начало пункта списка mammoth: строки продолжения — с отступом."""
+    if not lines[end][:1].isspace():
+        return end
+    for j in range(end - 1, floor, -1):
+        if lines[j].strip() and not lines[j][:1].isspace():
+            return j if _LIST_ITEM_START.match(lines[j]) else end
+    return end
+
+
+def _note_text(first: str, rest: list[str]) -> str:
+    parts = [_NOTE_BACK_LINK.sub("", first)]
+    parts += [
+        _LIST_MARKER.sub("", _NOTE_BACK_LINK.sub("", line).strip()) for line in rest
+    ]
+    return " ".join(" ".join(parts).split())
+
+
+def _note_refs(line: str, notes: dict[str, str]) -> list[str]:
+    """Ключи сносок, на которые ссылается строка, по порядку.
+
+    `[^метка]` без определения — не сноска (например, `[^0-9]` в тексте
+    про регулярные выражения) и остаётся как есть.
+    """
+    keys: list[str] = []
+    for match in _NOTE_REF.finditer(line):
+        key = match.group(1) or "^" + match.group(2)
+        if match.group(1) or key in notes:
+            keys.append(key)
+    return keys
 
 
 # --- 5. Ссылки ---------------------------------------------------------------
