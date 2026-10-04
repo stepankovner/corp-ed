@@ -53,6 +53,100 @@ def test_gate_distance_takes_nearest_beyond_threshold() -> None:
     assert relevant_matches(near, 0.59, gate_distance=0.7) == near[:1]
 
 
+def test_gate_counts_from_nearest_of_whole_ranking() -> None:
+    # Реранкер вытеснил ближайший фрагмент (0.68) из первых пяти: порог —
+    # всё равно по нему, как found.nearest продукта, а не по ближайшему
+    # из оставшихся (0.71 — дальше gate, был бы отказ).
+    top = [OfflineMatch(str(i), "Д", distance=0.71 + i / 100) for i in range(3)]
+
+    assert relevant_matches(top, 0.59, gate_distance=0.7, near_margin=0.05) == []
+    gated = relevant_matches(
+        top, 0.59, gate_distance=0.7, near_margin=0.05, nearest=0.68
+    )
+    assert gated == top
+
+
+def test_rerank_with_gate_uses_limit_of_the_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from eval.corpus import BenchChunk
+    from eval.rerank import CachedReranker
+
+    chunks = [
+        BenchChunk(str(i), "Д", i, [], f"фрагмент {i}", f"фрагмент {i}")
+        for i in range(4)
+    ]
+    distances = {
+        "зона": [0.66, 0.69, 0.71, 0.80],
+        "далеко": [0.75, 0.76, 0.77, 0.78],
+        "близко": [0.50, 0.55, 0.62, 0.66],
+    }
+
+    def rankings(
+        chunks: Sequence[object],
+        queries: Sequence[str],
+        limit: int,
+        workers: int,
+        embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
+    ) -> tuple[list[list[int]], list[list[float]]]:
+        return [[0, 1, 2, 3] for _ in queries], [distances[q] for q in queries]
+
+    class _Encoder:
+        """Балл тем выше, чем дальше фрагмент: реранкер переворачивает."""
+
+        def __init__(self) -> None:
+            self.passages: list[list[str]] = []
+
+        def predict(
+            self, pairs: Sequence[tuple[str, str]], batch_size: int = 16
+        ) -> list[float]:
+            self.passages.append([passage for _, passage in pairs])
+            return [float(passage[-1]) for _, passage in pairs]
+
+    encoder = _Encoder()
+    reranker = CachedReranker(model="m", max_length=512, cache_path=None)
+    reranker._encoder = encoder
+    monkeypatch.setattr(offline_e2e, "vector_rankings", rankings)
+
+    found = offline_e2e.retrieve(
+        chunks,
+        list(distances),
+        retriever="vector",
+        limit=2,
+        reranker=reranker,
+        rerank_depth=4,
+        rerank_max_distance=0.59,
+        gate_distance=0.7,
+        near_margin=0.05,
+    )
+
+    zone, far, near = found
+    # Зона (0.59; 0.70]: порог вопроса 0.71 — реранкер видит три фрагмента,
+    # ближайший (0.66) уходит из первых двух, но порог считается по нему.
+    assert [m.content for m in zone[0]] == ["фрагмент 2", "фрагмент 1"]
+    assert zone[1] == 0.66
+    picked = relevant_matches(
+        zone[0], 0.59, gate_distance=0.7, near_margin=0.05, nearest=zone[1]
+    )
+    assert picked == zone[0]
+    # Дальше gate — ответа по документам нет, реранкер не зовём.
+    assert [m.content for m in far[0]] == ["фрагмент 0", "фрагмент 1"]
+    # Ближе порога — как без gate: только прошедшие 0.59.
+    assert [m.content for m in near[0]] == ["фрагмент 1", "фрагмент 0"]
+    assert encoder.passages == [
+        ["фрагмент 0", "фрагмент 1", "фрагмент 2"],
+        ["фрагмент 0", "фрагмент 1"],
+    ]
+    # Без rerank_max_distance порог продукта неизвестен — ошибка, а не тихий
+    # пропуск реранкера.
+    with pytest.raises(ValueError):
+        offline_e2e.retrieve(
+            chunks, ["зона"], retriever="vector", limit=2, reranker=reranker,
+            gate_distance=0.7,
+        )  # fmt: skip
+
+
 def test_citations() -> None:
     answer = "Отпуск 28 дней [1], перенос по заявлению [2][4]."
 
