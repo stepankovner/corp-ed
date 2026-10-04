@@ -66,7 +66,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Режим | `ENVIRONMENT=production` | включает HSTS, выключает `/docs`, требует явных хостов, CORS и Redis |
 | Секреты | `SECRET_KEY` (≥ 32 символов), `POSTGRES_PASSWORD`, `APP_DB_PASSWORD`, `REDIS_PASSWORD`, `YC_API_KEY` | генерировать: `openssl rand -hex 32` |
 | Yandex Cloud | `YC_FOLDER_ID`, `LLM_PROVIDER`, `LLM_MODEL`, `LLM_MAX_CONCURRENCY`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `EMBEDDING_QUERY_RPS`, `EMBEDDING_INGEST_RPS` | квоты каталога делятся между API и воркером |
-| Поиск и ответ | `RAG_*` | значения задаёт ML; у основных дефолтов нет намеренно. Порог — `RAG_FAQ_MAX_DISTANCE=0.59` (BH-31, 30.09) |
+| Поиск и ответ | `RAG_*` | значения задаёт ML; у основных дефолтов нет намеренно. Порог — `RAG_FAQ_MAX_DISTANCE=0.59` (BH-31, 30.09); `RAG_FAQ_GATE_DISTANCE` (BH-37) — пусто, включение после решения Р-17 |
 | Память диалога | `RAG_HISTORY_TURNS`, `RAG_HISTORY_TTL_MINUTES`, `RAG_CONDENSE_TIMEOUT_SECONDS` | BH-28: 3 последние пары реплик (замер ML 01.10), 0 — выключена; реплики — только в Redis, 720 мин от последнего вопроса (решение 30.09) |
 | Форматы файлов | `INGEST_EXTRA_FORMATS`, `INGEST_PDF_LAYOUT` | Р-5, BH-33…BH-35: `xlsx,pptx,doc` по умолчанию — к docx, pdf, txt и md; убранный формат отклоняется с подсказкой и не скачивается из систем; новых зависимостей образа нет |
 | Реранкер | `RAG_RERANK_MODEL`, `RAG_RERANK_URL`, `RAG_RERANK_DEPTH`, `RAG_RERANK_MAX_LENGTH`, `RAG_RERANK_TIMEOUT_MS`, `COMPOSE_PROFILES=reranker` | M3, BH-32: пустая модель — выключен (по умолчанию); включать по итогам holdout ML — `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, файлы — `deploy/reranker/fetch-model.sh`; глубина ≤ 64 (размер пачки сервиса) |

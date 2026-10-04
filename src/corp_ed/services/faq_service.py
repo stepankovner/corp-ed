@@ -27,6 +27,7 @@ from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
 from corp_ed.domain.rerank import rerank as reorder
+from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.domain.types import (
     DEFAULT_NOT_FOUND_MODE,
@@ -108,6 +109,9 @@ class _Retrieval:
     """top-limit в итоговом порядке, без порога."""
     relevant: list[ChunkMatch]
     """Прошедшие порог — только они могут попасть в промпт."""
+    limit: float | None
+    """До какого расстояния выдержки идут в модель (BH-37); None —
+    ответа по документам нет."""
     nearest: float | None
     """Расстояние лучшего ВЕКТОРНОГО кандидата (qa_log, классы пробелов)."""
     best_fulltext: float | None
@@ -189,6 +193,8 @@ class FaqService:
         reranker: Reranker | None = None,
         rerank_depth: int = 30,
         rerank_timeout: float = 3.0,
+        gate_distance: float | None = None,
+        near_margin: float = 0.0,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -200,6 +206,8 @@ class FaqService:
         self.session = session
         self.limit = limit
         self.max_distance = max_distance
+        self.gate_distance = gate_distance
+        self.near_margin = near_margin
         self.context_max_tokens = context_max_tokens
         self.temperature = temperature
         self.retriever = retriever
@@ -309,9 +317,14 @@ class FaqService:
         # нет — по-прежнему по вектору, и в модель идут только прошедшие.
         # Выключен — первые limit по вектору. Пара для модели — вопрос,
         # который ушёл в поиск (после переписывания и словаря).
-        if self.retriever is Retriever.VECTOR:
+        if found.limit is None:
+            # Ответа по документам нет — переставлять нечего, модель
+            # реранкера не зовём.
+            reranked = _Reranked(matches=found.candidates, model=None, ms=None)
+        elif self.retriever is Retriever.VECTOR:
+            # Порог — этого вопроса (BH-37): в зоне (max; gate] пул не пуст.
             reranked = await self._rerank(
-                search_text, found.candidates, max_distance=self.max_distance
+                search_text, found.candidates, max_distance=found.limit
             )
         else:
             # HYBRID: порог решён целиком по лучшему вектору (_retrieve).
@@ -461,10 +474,10 @@ class FaqService:
             retriever=retriever,
             viewer=viewer.id,
         )
-        if not rerank:
-            return found.candidates
+        if not rerank or found.limit is None:
+            return found.candidates[:limit]
         reranked = await self._rerank(
-            search_text, found.candidates, max_distance=self.max_distance
+            search_text, found.candidates, max_distance=found.limit
         )
         if reranked.failed:
             raise ServiceUnavailableError()
@@ -656,10 +669,15 @@ class FaqService:
                 if query
                 else []
             )
+            nearest = vector[0].distance if vector else None
+            cutoff = self._relevance_limit(nearest)
             return _Retrieval(
                 candidates=vector,
-                relevant=[m for m in vector if m.distance <= self.max_distance],
-                nearest=vector[0].distance if vector else None,
+                relevant=[
+                    m for m in vector if cutoff is not None and m.distance <= cutoff
+                ],
+                limit=cutoff,
+                nearest=nearest,
                 best_fulltext=fulltext[0].fulltext_rank if fulltext else None,
             )
 
@@ -686,12 +704,20 @@ class FaqService:
         )
         candidates = [by_id[chunk_id] for chunk_id, _ in merged[:limit]]
         nearest = vector[0].distance if vector else None
-        passed = nearest is not None and nearest <= self.max_distance
+        cutoff = self._relevance_limit(nearest)
         return _Retrieval(
             candidates=candidates,
-            relevant=candidates if passed else [],
+            relevant=candidates if cutoff is not None else [],
+            limit=cutoff,
             nearest=nearest,
             best_fulltext=fulltext[0].fulltext_rank if fulltext else None,
+        )
+
+    def _relevance_limit(self, nearest: float | None) -> float | None:
+        """Порог выдержек этого вопроса — правило ML (BH-37): без
+        gate_distance — max_distance, если ближайший его прошёл."""
+        return relevance_limit(
+            nearest, self.max_distance, self.gate_distance, self.near_margin
         )
 
     async def rate(self, user: User, log_id: UUID, feedback: int) -> None:

@@ -163,6 +163,14 @@ class RagSettings(BaseSettings):
     overlap_tokens: int = Field(ge=0)
     faq_limit: int = Field(gt=0, le=50)
     faq_max_distance: float = Field(gt=0, le=2)
+    # Порог «отвечать ли по документам» отдельно от отсечения выдержек
+    # (BH-37, domain/threshold.py). Пусто — один порог faq_max_distance,
+    # как раньше; включение — решение Артёма (Р-17) после финального
+    # прогона, кандидат ML — 0.70.
+    faq_gate_distance: float | None = Field(default=None, gt=0, le=2)
+    # Ближайший фрагмент дальше faq_max_distance, но не дальше gate — в
+    # модель идут выдержки не дальше него на столько (BH-37).
+    faq_near_margin: float = Field(default=0.05, ge=0, le=1)
     context_max_tokens: int = Field(gt=0)
     # Для FAQ 0: при 0.3 ответ на один и тот же вопрос по одним и тем же
     # выдержкам переключался «ответил ↔ отказал» (замер ML 24.09, BH-8).
@@ -215,12 +223,33 @@ class RagSettings(BaseSettings):
         extra="ignore",
     )
 
+    @property
+    def answer_distance(self) -> float:
+        """Порог «отвечать ли по документам» по ближайшему фрагменту: gate
+        (BH-37), без него — faq_max_distance. Отчёт о пробелах делит по
+        нему отказ модели и промах поиска."""
+        if self.faq_gate_distance is not None:
+            return self.faq_gate_distance
+        return self.faq_max_distance
+
+    @field_validator("faq_gate_distance", mode="before")
+    @classmethod
+    def empty_gate_is_off(cls, value: object) -> object:
+        # RAG_FAQ_GATE_DISTANCE= в .env — выключено, а не ошибка числа.
+        return None if isinstance(value, str) and not value.strip() else value
+
     @model_validator(mode="after")
     def validate_overlap(self) -> Self:
         # split_document сам кидает ValueError, но на первом ингесте.
         # Падать на старте дешевле, чем узнать об ошибке от клиента.
         if self.overlap_tokens >= self.chunk_tokens:
             raise ValueError("overlap_tokens must be less than chunk_tokens")
+        # Gate ближе порога выдержек ничего бы не менял — это опечатка.
+        if (
+            self.faq_gate_distance is not None
+            and self.faq_gate_distance < self.faq_max_distance
+        ):
+            raise ValueError("faq_gate_distance must not be less than faq_max_distance")
         return self
 
 
