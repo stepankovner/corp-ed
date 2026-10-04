@@ -74,7 +74,7 @@ id,question,expected_answer,expected_material,expected_section,in_corpus,type,le
   любой фрагмент нужного раздела.
 - `expected_section` — начало заголовка: `3.1` совпадёт с
   «3.1. Продолжительность», но не с «3.12».
-- `split` — **dev (33)** для настройки и **holdout (19)** для финальной
+- `split` — **dev (39)** для настройки и **holdout (19)** для финальной
   проверки. Разбиение делается один раз (`python -m eval.datasets split`).
   Без `--split holdout` инструменты holdout не берут. **Holdout
   открывается один раз, на финальном прогоне.** Новые вопросы — только
