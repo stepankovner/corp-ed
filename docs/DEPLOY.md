@@ -72,7 +72,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Реранкер | `RAG_RERANK_MODEL`, `RAG_RERANK_URL`, `RAG_RERANK_DEPTH`, `RAG_RERANK_MAX_LENGTH`, `RAG_RERANK_TIMEOUT_MS`, `COMPOSE_PROFILES=reranker` | M3, BH-32: пустая модель — выключен (по умолчанию); включать по итогам holdout ML — `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, файлы — `deploy/reranker/fetch-model.sh`; глубина ≤ 64 (размер пачки сервиса) |
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5; с мониторингом (раздел 10) — добавить `api`: Prometheus ходит на `api:8000` |
-| Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09) |
+| Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09); `BILLING_LLM_RUB_PER_1K_TOKENS` — цена 1 000 токенов модели ответа в рублях для оценки расхода в нашей панели (не задана — только токены) |
 | Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется |
@@ -142,6 +142,23 @@ docker compose -f compose.yaml run --rm api python -m corp_ed.cli reset-password
 решение 29.09, BH-29). Строгий отказ включается
 `set-not-found-mode --code acme --mode strict` или флагом
 `--not-found-mode strict` при создании.
+
+**Наша панель** (`/staff`, ТЗ §9) делает то же в браузере: заявки на
+компании, тариф, места, срок пилота, приостановка, расход на модели,
+поиск человека и письмо о новом пароле, заявки на созвон. Открыта только
+команде kronto и только с приложением-аутентификатором или ключом
+доступа. Кто в команде — задаёт только CLI, через API себя не добавить:
+
+```bash
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff add --email <почта>
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff list
+docker compose -f compose.yaml run --rm api python -m corp_ed.cli staff remove --email …
+```
+
+Учётка должна уже быть (регистрация на сайте или приглашение); панель
+откроется, когда в ней включено приложение или ключ доступа (Настройки →
+Безопасность). Действия из панели — в журнале компании с
+`details.staff_account_id`.
 
 Остальные команды: `reset-password`, `set-seats`, `set-tariff`, `set-not-found-mode`,
 `suspend-tenant`, `resume-tenant`, `reindex`, `purge`, `gaps`, `leads`

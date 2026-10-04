@@ -41,6 +41,7 @@ from corp_ed.api.v1.schemas.staff import (
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import CodedConflictError
 from corp_ed.core.rate_limit import RateLimiter
+from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.leads import LeadStatus
 from corp_ed.domain.models import Account, CompanyRequest
 from corp_ed.domain.tariffs import Tariff
@@ -233,6 +234,14 @@ async def update_company(
     if "pilot_until" in fields:
         await service.set_pilot(tenant_id, body.pilot_until)
     if body.is_active is not None and body.is_active != row.tenant.is_active:
+        if not body.is_active and current_tenant.get() == tenant_id:
+            # Токен этой компании перестал бы приниматься — панель
+            # закрылась бы посреди работы.
+            raise CodedConflictError(
+                "Свою компанию из панели не приостановить — "
+                "переключитесь на другую или используйте cli suspend-tenant",
+                "own_company",
+            )
         await tenants.set_active(code, active=body.is_active)
     return _company(await service.company(tenant_id))
 

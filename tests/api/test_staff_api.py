@@ -195,8 +195,13 @@ async def test_staff_changes_seats_tariff_pilot_and_suspends(
     assert response.status_code == 200, response.text
     assert response.json()["pilot_until"] is None
 
-    # Приостановить и вернуть — другую компанию: свою команда kronto не
-    # приостанавливает, её токен этой компании перестал бы приниматься.
+    # Свою компанию из панели не приостановить: её токен перестал бы
+    # приниматься.
+    own = await api.patch(url, json={"is_active": False}, headers=bearer(staff))
+    assert own.status_code == 409
+    assert own.json()["code"] == "own_company"
+
+    # Другую — приостановить и вернуть.
     other = Tenant(id=uuid4(), company_code="paused", name="На паузе")
     session.add(other)
     await session.commit()
