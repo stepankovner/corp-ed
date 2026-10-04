@@ -1,0 +1,158 @@
+/* Колокольчик (ТЗ §8): кнопка с числом непрочитанных и панель уведомлений. */
+
+.trigger {
+  position: relative;
+}
+/* В шапке боковой панели — рядом с кнопкой «Свернуть», а не посередине. */
+.inSidebar {
+  margin-left: auto;
+}
+/* Число непрочитанных: кружок акцента в углу, обведённый цветом фона. */
+.count {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 2px var(--sidebar-bg);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.compact .count {
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/*
+ * Панель: шапка и ссылка на настройки на месте, прокручивается список.
+ * Селектор с [role] — сильнее общего .content меню (ширина и отступы).
+ */
+.panel[role="menu"] {
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
+  max-height: min(560px, var(--radix-dropdown-menu-content-available-height));
+  padding: 0;
+  overflow: hidden;
+}
+.head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  min-height: 48px;
+  padding: 6px 6px 6px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.heading {
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+.readAll[role="menuitem"] {
+  min-height: 32px;
+  padding: 4px 10px;
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+}
+.foot {
+  flex: none;
+  padding: 6px;
+  border-top: 1px solid var(--line);
+}
+
+/* ——— пункт: значок вида, текст, точка «не прочитано» ——— */
+.entry[role="menuitem"] {
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px;
+}
+.kind {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+}
+.error {
+  background: var(--error-bg);
+  color: var(--error);
+}
+.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+.accent {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.muted {
+  background: var(--surface);
+  color: var(--muted);
+}
+.text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.title {
+  overflow-wrap: anywhere;
+}
+.unread .title {
+  font-weight: 500;
+}
+/* Начало текста: строки уведомления — с переноса, не больше двух. */
+.body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.time {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Пусто, загрузка, ошибка. */
+.state {
+  display: grid;
+  justify-items: center;
+  gap: var(--s-2);
+  padding: 28px 16px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+  text-align: center;
+}
