@@ -51,7 +51,9 @@ describe("регистрация", () => {
     expect(await screen.findByText("Без согласия зарегистрироваться нельзя.")).toBeInTheDocument();
     expect(registered).toBeUndefined();
 
-    await user.click(screen.getByRole("checkbox", { name: /Соглашаюсь на обработку/ }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }),
+    );
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
 
     expect(await screen.findByRole("heading", { name: "Подтвердите почту" })).toBeInTheDocument();
@@ -87,7 +89,9 @@ describe("регистрация", () => {
     await user.type(screen.getByLabelText("Почта"), "anna@meridian-stroy.ru");
     await user.type(screen.getByLabelText("Пароль"), PASSWORD);
     await user.type(screen.getByLabelText("Повторите пароль"), PASSWORD);
-    await user.click(screen.getByRole("checkbox", { name: /Соглашаюсь на обработку/ }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }),
+    );
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
 
     expect(await screen.findByText("Регистрация — по приглашению")).toBeInTheDocument();
@@ -241,7 +245,9 @@ describe("приглашение", () => {
     await user.type(screen.getByLabelText("Почта"), "anna@meridian-stroy.ru");
     await user.type(screen.getByLabelText("Пароль"), PASSWORD);
     await user.type(screen.getByLabelText("Повторите пароль"), PASSWORD);
-    await user.click(screen.getByRole("checkbox", { name: /Соглашаюсь на обработку/ }));
+    await user.click(
+      screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }),
+    );
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
 
     await screen.findByRole("heading", { name: "Подтвердите почту" });

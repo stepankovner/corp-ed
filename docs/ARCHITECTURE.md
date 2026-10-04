@@ -353,6 +353,18 @@ digest`. Первые шаги — `/onboarding` (чек-лист по данн�
 отметки в членстве). «Написать в поддержку» — `/support`, команде —
 `/staff/support`; в Telegram — только номер и тема.
 
+**Сайт и песочница** (ТЗ §1, этап 10): страницы сайта — React-маршруты
+в `frontend/src/site`, при сборке они рисуются в готовый HTML
+(`site/prerender.tsx` + `tools/prerender.mjs` → `dist/<адрес>/index.html`),
+остальные адреса — оболочка `app.html`; nginx: `try_files $uri
+$uri/index.html /app.html`. Гостю на `/`, `/help` и неизвестных адресах
+`RequireAuth` показывает страницу из `handle.guest` маршрута вместо
+входа. Песочница: `GET /demo`, `POST /demo/ask` без входа →
+`DemoService` в `tenant_scope` компании песочницы (`DEMO_COMPANY_CODE`)
+своей сессией → `FaqService.answer_turn` без истории (режим STRICT).
+Компанию и её документы (`src/corp_ed/demo/documents`) заводит и
+обновляет `cli demo setup` — его запускают выкатка и e2e.
+
 **Вопрос сотрудника** (`POST /faq/ask`):
 токен → тенант в контекст → лимит частоты → `CreditService.ensure_available`
 (402 до платных вызовов) → режим компании → история диалога из Redis

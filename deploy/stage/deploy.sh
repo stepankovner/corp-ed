@@ -62,6 +62,11 @@ for svc in api worker web; do
     done
 done
 
+echo "==> песочница сайта"
+# Вымышленная компания для /demo (ТЗ §1): заводится один раз, дальше —
+# только изменённые документы из src/corp_ed/demo. Идемпотентно.
+"${compose[@]}" run --rm --no-deps -T api python -m corp_ed.cli demo setup
+
 echo "==> проверка через nginx"
 # Тот же путь, что у пользователя: TLS, прокси, TrustedHost. Мимо
 # HTTPS_PROXY, если он есть в окружении (DEPLOY.md §9a): --resolve его

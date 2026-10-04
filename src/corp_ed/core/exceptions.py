@@ -317,3 +317,12 @@ class CompanyRequestExistsError(ConflictError):
 
 class InvalidLeadError(DomainError):
     """Заявка на созвон не прошла проверку (дата, окно, согласие). HTTP 422."""
+
+
+class DemoUnavailableError(DomainError):
+    """Песочница на сайте сейчас не отвечает: выключена, ещё не заведена
+    (`cli demo setup`) или исчерпала месячный пул. HTTP 503 с кодом."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code

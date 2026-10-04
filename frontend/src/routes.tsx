@@ -1,8 +1,16 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, useLocation, type RouteObject } from "react-router";
 
-import { PublicOnly, RequireAdmin, RequireAuth, RequireCompany, RequireStaff } from "./auth/guards";
+import {
+  PublicOnly,
+  RequireAdmin,
+  RequireAuth,
+  RequireCompany,
+  RequireStaff,
+  type RouteHandle,
+} from "./auth/guards";
 import { ChatPage } from "./chat/ChatPage";
+import { HelpPage } from "./help/HelpPage";
 import { AppShell } from "./layout/AppShell";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { ConfirmEmailPage, RevertEmailPage } from "./pages/EmailChangePages";
@@ -11,10 +19,17 @@ import { HomePage } from "./pages/HomePage";
 import { JoinPage } from "./pages/JoinPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { PrivacyPage } from "./pages/PrivacyPage";
+import { PricingPage } from "./pages/PricingPage";
 import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
+import { AboutPage } from "./site/AboutPage";
+import { ConsentPage, PrivacyPage, TermsPage } from "./site/LegalPages";
+import { SandboxPage } from "./site/SandboxPage";
+import { SecurityPage } from "./site/SecurityPage";
+import { SiteHelpPage } from "./site/SiteHelpPage";
+import { SiteHome } from "./site/SiteHome";
+import { SiteNotFound } from "./site/SiteNotFound";
 import { PageSpinner } from "./ui/Spinner";
 
 // Управление нужно только администраторам — отдельными чанками; его
@@ -49,10 +64,8 @@ const CompanySettingsPage = lazy(() =>
   import("./admin/CompanySettingsPage").then((m) => ({ default: m.CompanySettingsPage })),
 );
 const AuditPage = lazy(() => import("./admin/AuditPage").then((m) => ({ default: m.AuditPage })));
-// Публичные страницы тарифов и записи — отдельным чанком.
-const PricingPage = lazy(() =>
-  import("./pages/PricingPage").then((m) => ({ default: m.PricingPage })),
-);
+// Запись на созвон — отдельным чанком: страницы сайта (site/) — в основном,
+// они отдаются готовым HTML и не должны мигать загрузкой.
 const CallRequestPage = lazy(() =>
   import("./pages/CallRequestPage").then((m) => ({ default: m.CallRequestPage })),
 );
@@ -80,7 +93,6 @@ const LeadsTab = lazy(() => import("./staff/LeadsTab").then((m) => ({ default: m
 const SupportTab = lazy(() =>
   import("./staff/SupportTab").then((m) => ({ default: m.SupportTab })),
 );
-const HelpPage = lazy(() => import("./help/HelpPage").then((m) => ({ default: m.HelpPage })));
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
@@ -89,6 +101,11 @@ const SettingsPage = lazy(() =>
 function SourcesRedirect() {
   const { search } = useLocation();
   return <Navigate to={`/settings/connections${search}`} replace />;
+}
+
+/** Что видит гость на адресе приложения вместо входа (RequireAuth). */
+function guest(page: ReactNode): RouteHandle {
+  return { guest: page };
 }
 
 function lazyPage(node: ReactNode) {
@@ -105,9 +122,16 @@ export const routes: RouteObject[] = [
   { path: "/reset-password", element: <ResetPasswordPage /> },
   { path: "/confirm-email", element: <ConfirmEmailPage /> },
   { path: "/revert-email", element: <RevertEmailPage /> },
+  // Публичный сайт (ТЗ §1) — для всех, со входом и без; готовый HTML —
+  // site/prerender.tsx. Главная, «Помощь» и 404 для гостя — ниже, в
+  // handle.guest маршрутов приложения.
+  { path: "/demo", element: <SandboxPage /> },
+  { path: "/security", element: <SecurityPage /> },
+  { path: "/about", element: <AboutPage /> },
   { path: "/privacy", element: <PrivacyPage /> },
-  // Тарифы и запись на созвон — для всех, со входом и без.
-  { path: "/pricing", element: lazyPage(<PricingPage />) },
+  { path: "/terms", element: <TermsPage /> },
+  { path: "/consent", element: <ConsentPage /> },
+  { path: "/pricing", element: <PricingPage /> },
   { path: "/pricing/request", element: lazyPage(<CallRequestPage />) },
   {
     element: <PublicOnly />,
@@ -124,10 +148,10 @@ export const routes: RouteObject[] = [
       {
         element: <AppShell />,
         children: [
-          { path: "/", element: <HomePage /> },
+          { path: "/", element: <HomePage />, handle: guest(<SiteHome />) },
           { path: "/settings/*", element: lazyPage(<SettingsPage />) },
           // Помощь и «Написать в поддержку» (ТЗ §8) — и без компании.
-          { path: "/help", element: lazyPage(<HelpPage />) },
+          { path: "/help", element: <HelpPage />, handle: guest(<SiteHelpPage />) },
           // Команда kronto — и без своей компании.
           {
             path: "/staff",
@@ -197,7 +221,7 @@ export const routes: RouteObject[] = [
               },
             ],
           },
-          { path: "*", element: <NotFoundPage /> },
+          { path: "*", element: <NotFoundPage />, handle: guest(<SiteNotFound />) },
         ],
       },
     ],
