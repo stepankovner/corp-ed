@@ -2948,6 +2948,30 @@
         "title": "LogoResponse",
         "type": "object"
       },
+      "MarkReadRequest": {
+        "additionalProperties": false,
+        "description": "ids нет — прочитать все свои.",
+        "properties": {
+          "ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ids"
+          }
+        },
+        "title": "MarkReadRequest",
+        "type": "object"
+      },
       "MaterialCreateRequest": {
         "additionalProperties": false,
         "description": "Документ компании в виде текста (Markdown или простой текст).\n\ntitle — человеческое название («Положение об отпусках»), а не имя\nфайла: оно уходит в крошки эмбеддинга и в подписи источников.",
@@ -3878,6 +3902,166 @@
         "title": "NotFoundMode",
         "type": "string"
       },
+      "NotificationResponse": {
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "connector_stopped",
+              "credits_warning",
+              "credits_exhausted",
+              "join_request",
+              "weekly_digest"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link"
+          },
+          "read": {
+            "title": "Read",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "link",
+          "created_at",
+          "read"
+        ],
+        "title": "NotificationResponse",
+        "type": "object"
+      },
+      "NotificationSettingsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "email_connectors": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Connectors"
+          },
+          "email_credits": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Credits"
+          },
+          "email_join_requests": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Join Requests"
+          },
+          "email_weekly_digest": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Weekly Digest"
+          }
+        },
+        "title": "NotificationSettingsRequest",
+        "type": "object"
+      },
+      "NotificationSettingsResponse": {
+        "description": "Письма администратору; колокольчик приходит всегда. Письма о\nбезопасности учётки настройками не выключаются.",
+        "properties": {
+          "email_connectors": {
+            "title": "Email Connectors",
+            "type": "boolean"
+          },
+          "email_credits": {
+            "title": "Email Credits",
+            "type": "boolean"
+          },
+          "email_join_requests": {
+            "title": "Email Join Requests",
+            "type": "boolean"
+          },
+          "email_weekly_digest": {
+            "title": "Email Weekly Digest",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email_connectors",
+          "email_credits",
+          "email_join_requests",
+          "email_weekly_digest"
+        ],
+        "title": "NotificationSettingsResponse",
+        "type": "object"
+      },
+      "NotificationsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "unread"
+        ],
+        "title": "NotificationsResponse",
+        "type": "object"
+      },
       "OAuthCallbackResponse": {
         "description": "Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.",
         "properties": {
@@ -3928,6 +4112,39 @@
           "authorize_url"
         ],
         "title": "OAuthStartResponse",
+        "type": "object"
+      },
+      "OnboardingResponse": {
+        "properties": {
+          "checklist_hidden": {
+            "title": "Checklist Hidden",
+            "type": "boolean"
+          },
+          "documents": {
+            "title": "Documents",
+            "type": "boolean"
+          },
+          "people": {
+            "title": "People",
+            "type": "boolean"
+          },
+          "question": {
+            "title": "Question",
+            "type": "boolean"
+          },
+          "tips_seen": {
+            "title": "Tips Seen",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "documents",
+          "people",
+          "question",
+          "tips_seen",
+          "checklist_hidden"
+        ],
+        "title": "OnboardingResponse",
         "type": "object"
       },
       "PasskeyCreatedResponse": {
@@ -5343,6 +5560,114 @@
         "title": "StaffRequestResponse",
         "type": "object"
       },
+      "StaffSupportResponse": {
+        "properties": {
+          "company": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "answered",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "topic": {
+            "enum": [
+              "login",
+              "documents",
+              "answers",
+              "billing",
+              "other"
+            ],
+            "title": "Topic",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "topic",
+          "message",
+          "status",
+          "created_at",
+          "email",
+          "name",
+          "company",
+          "updated_at"
+        ],
+        "title": "StaffSupportResponse",
+        "type": "object"
+      },
+      "StaffSupportUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "new",
+              "answered",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "StaffSupportUpdate",
+        "type": "object"
+      },
       "StreamDelta": {
         "properties": {
           "text": {
@@ -5586,6 +5911,82 @@
           "frequent"
         ],
         "title": "SuggestionsResponse",
+        "type": "object"
+      },
+      "SupportCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "maxLength": 4000,
+            "minLength": 10,
+            "pattern": "\\S",
+            "title": "Message",
+            "type": "string"
+          },
+          "topic": {
+            "enum": [
+              "login",
+              "documents",
+              "answers",
+              "billing",
+              "other"
+            ],
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "message"
+        ],
+        "title": "SupportCreateRequest",
+        "type": "object"
+      },
+      "SupportResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "answered",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "topic": {
+            "enum": [
+              "login",
+              "documents",
+              "answers",
+              "billing",
+              "other"
+            ],
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "topic",
+          "message",
+          "status",
+          "created_at"
+        ],
+        "title": "SupportResponse",
         "type": "object"
       },
       "SwitchCompanyRequest": {
@@ -10977,6 +11378,228 @@
         ]
       }
     },
+    "/api/v1/notifications": {
+      "get": {
+        "description": "Последние 30 уведомлений и сколько не прочитано.",
+        "operationId": "list_notifications_api_v1_notifications_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Notifications",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/read": {
+      "post": {
+        "operationId": "mark_read_api_v1_notifications_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mark Read",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/settings": {
+      "get": {
+        "operationId": "read_settings_api_v1_notifications_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Settings",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "operationId": "update_settings_api_v1_notifications_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Settings",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/onboarding": {
+      "get": {
+        "description": "Первые шаги: чек-лист администратора и подсказки сотруднику.",
+        "operationId": "read_onboarding_api_v1_onboarding_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Onboarding",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/onboarding/{step}": {
+      "post": {
+        "description": "tips — подсказки показаны; checklist — чек-лист скрыт.",
+        "operationId": "finish_onboarding_step_api_v1_onboarding__step__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "step",
+            "required": true,
+            "schema": {
+              "enum": [
+                "tips",
+                "checklist"
+              ],
+              "title": "Step",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Finish Onboarding Step",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
     "/api/v1/people": {
       "get": {
         "description": "Работающие люди компании по алфавиту. Видят только её люди.",
@@ -11764,6 +12387,128 @@
         ]
       }
     },
+    "/api/v1/staff/support": {
+      "get": {
+        "description": "Обращения: текст и почта — только здесь, в Telegram их нет.",
+        "operationId": "list_support_api_v1_staff_support_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "new",
+                    "answered",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffSupportResponse"
+                  },
+                  "title": "Response List Support Api V1 Staff Support Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Support",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/support/{request_id}": {
+      "patch": {
+        "operationId": "update_support_api_v1_staff_support__request_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffSupportUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffSupportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Support",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
     "/api/v1/suggestions": {
       "get": {
         "description": "Подсказки для пустого экрана: от администратора и частые вопросы\nкомпании (обезличенно, не меньше трёх разных людей).",
@@ -11979,6 +12724,83 @@
         "summary": "Update Suggestion",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/support": {
+      "post": {
+        "description": "Обращение уходит команде kronto; ответ придёт на почту учётки.",
+        "operationId": "create_support_request_api_v1_support_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Support Request",
+        "tags": [
+          "support"
+        ]
+      }
+    },
+    "/api/v1/support/mine": {
+      "get": {
+        "operationId": "my_support_requests_api_v1_support_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SupportResponse"
+                  },
+                  "title": "Response My Support Requests Api V1 Support Mine Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "My Support Requests",
+        "tags": [
+          "support"
         ]
       }
     },

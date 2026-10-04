@@ -13,6 +13,7 @@ import { WindowMark } from "../ui/Logo";
 import { Notice } from "../ui/Notice";
 import { EmptyState } from "../ui/Page";
 import { PageSpinner } from "../ui/Spinner";
+import { FirstSteps } from "../onboarding/FirstSteps";
 import { useToast } from "../ui/useToast";
 import { fetchConversation, pathUpTo, type Conversation, type Message } from "./api";
 import { AnswerActions, AnswerBody, UserMessage, Versions, type OpenSource } from "./AnswerView";
@@ -106,6 +107,7 @@ function NewConversation() {
                 Если в документах ответа нет — скажу об этом прямо.
               </p>
               <ConnectBanner />
+              <FirstSteps />
               <Suggestions onPick={(question) => void ask({ question, attachments: [] })} />
             </div>
           )}

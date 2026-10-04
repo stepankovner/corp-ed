@@ -30,6 +30,7 @@ describe("настройки: вкладки", () => {
       "Профиль",
       "Безопасность",
       "Мои подключения",
+      "Уведомления",
       "Компании",
       "Управление учётной записью",
     ]);
@@ -55,7 +56,7 @@ describe("настройки: вкладки", () => {
 
     expect(await screen.findByRole("heading", { name: "Настройки" })).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/profile"));
-    // Уведомления — этапом 9, заглушки нет; «Мои подключения» — только в компании.
+    // «Мои подключения» и «Уведомления» — только в компании.
     expect(screen.queryByRole("link", { name: "Уведомления" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Мои подключения" })).not.toBeInTheDocument();
     // Без компании нет и раздела о работе в ней.

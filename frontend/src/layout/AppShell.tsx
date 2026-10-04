@@ -9,6 +9,7 @@ import { IconButton } from "../ui/IconButton";
 import { Logo } from "../ui/Logo";
 import styles from "./AppShell.module.css";
 import { NewDialogButton, Sidebar } from "./Sidebar";
+import { NotificationBell } from "./NotificationBell";
 import { UsageBanner } from "./UsageBanner";
 
 const COLLAPSED_KEY = "kronto.sidebar";
@@ -160,6 +161,7 @@ function Shell() {
             <Link to="/" className={styles.topbarBrand} aria-label="kronto — к вопросам">
               <Logo height={18} />
             </Link>
+            <NotificationBell compact />
             <NewDialogButton compact />
           </header>
         ) : null}

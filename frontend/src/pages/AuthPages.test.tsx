@@ -353,13 +353,13 @@ describe("без компании", () => {
     const { router } = renderApp("/");
 
     expect(await screen.findByText(/Заявка на вступление в «АО «Север»»/)).toBeInTheDocument();
-    // Разделов компании нет: только главная.
+    // Разделов компании нет: главная и помощь (она — всем, и без компании).
     const nav = screen.getByRole("navigation", { name: "Разделы" });
     expect(
       within(nav)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Главная"]);
+    ).toEqual(["Главная", "Помощь"]);
 
     await user.type(screen.getByLabelText("Ссылка или код приглашения"), "k7qm-4xpa");
     await user.click(screen.getByRole("button", { name: "Продолжить" }));

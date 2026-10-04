@@ -49,6 +49,7 @@ export function StaffPage() {
           { to: "/staff/spend", label: "Расход" },
           { to: "/staff/people", label: "Люди" },
           { to: "/staff/leads", label: "Созвоны" },
+          { to: "/staff/support", label: "Обращения" },
         ]}
       />
       <Outlet />

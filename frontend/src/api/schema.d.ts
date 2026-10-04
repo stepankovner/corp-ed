@@ -1820,6 +1820,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notifications
+         * @description Последние 30 уведомлений и сколько не прочитано.
+         */
+        get: operations["list_notifications_api_v1_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Read */
+        post: operations["mark_read_api_v1_notifications_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Settings */
+        get: operations["read_settings_api_v1_notifications_settings_get"];
+        /** Update Settings */
+        put: operations["update_settings_api_v1_notifications_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Onboarding
+         * @description Первые шаги: чек-лист администратора и подсказки сотруднику.
+         */
+        get: operations["read_onboarding_api_v1_onboarding_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/{step}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish Onboarding Step
+         * @description tips — подсказки показаны; checklist — чек-лист скрыт.
+         */
+        post: operations["finish_onboarding_step_api_v1_onboarding__step__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/people": {
         parameters: {
             query?: never;
@@ -2101,6 +2196,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/support": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Support
+         * @description Обращения: текст и почта — только здесь, в Telegram их нет.
+         */
+        get: operations["list_support_api_v1_staff_support_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/support/{request_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Support */
+        patch: operations["update_support_api_v1_staff_support__request_id__patch"];
+        trace?: never;
+    };
     "/api/v1/suggestions": {
         parameters: {
             query?: never;
@@ -2156,6 +2288,43 @@ export interface paths {
         head?: never;
         /** Update Suggestion */
         patch: operations["update_suggestion_api_v1_suggestions__suggestion_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/support": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Support Request
+         * @description Обращение уходит команде kronto; ответ придёт на почту учётки.
+         */
+        post: operations["create_support_request_api_v1_support_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/support/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Support Requests */
+        get: operations["my_support_requests_api_v1_support_mine_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/usage": {
@@ -3428,6 +3597,14 @@ export interface components {
             logo_url: string;
         };
         /**
+         * MarkReadRequest
+         * @description ids нет — прочитать все свои.
+         */
+        MarkReadRequest: {
+            /** Ids */
+            ids?: string[] | null;
+        };
+        /**
          * MaterialCreateRequest
          * @description Документ компании в виде текста (Markdown или простой текст).
          *
@@ -3754,6 +3931,65 @@ export interface components {
          * @enum {string}
          */
         NotFoundMode: "general" | "strict";
+        /** NotificationResponse */
+        NotificationResponse: {
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "join_request" | "weekly_digest";
+            /** Link */
+            link: string | null;
+            /** Read */
+            read: boolean;
+            /** Title */
+            title: string;
+        };
+        /** NotificationSettingsRequest */
+        NotificationSettingsRequest: {
+            /** Email Connectors */
+            email_connectors?: boolean | null;
+            /** Email Credits */
+            email_credits?: boolean | null;
+            /** Email Join Requests */
+            email_join_requests?: boolean | null;
+            /** Email Weekly Digest */
+            email_weekly_digest?: boolean | null;
+        };
+        /**
+         * NotificationSettingsResponse
+         * @description Письма администратору; колокольчик приходит всегда. Письма о
+         *     безопасности учётки настройками не выключаются.
+         */
+        NotificationSettingsResponse: {
+            /** Email Connectors */
+            email_connectors: boolean;
+            /** Email Credits */
+            email_credits: boolean;
+            /** Email Join Requests */
+            email_join_requests: boolean;
+            /** Email Weekly Digest */
+            email_weekly_digest: boolean;
+        };
+        /** NotificationsResponse */
+        NotificationsResponse: {
+            /** Items */
+            items: components["schemas"]["NotificationResponse"][];
+            /** Unread */
+            unread: number;
+        };
         /**
          * OAuthCallbackResponse
          * @description Ответ обратного вызова, когда CONNECTOR_OAUTH_RETURN_URL не задан.
@@ -3774,6 +4010,19 @@ export interface components {
         OAuthStartResponse: {
             /** Authorize Url */
             authorize_url: string;
+        };
+        /** OnboardingResponse */
+        OnboardingResponse: {
+            /** Checklist Hidden */
+            checklist_hidden: boolean;
+            /** Documents */
+            documents: boolean;
+            /** People */
+            people: boolean;
+            /** Question */
+            question: boolean;
+            /** Tips Seen */
+            tips_seen: boolean;
         };
         /** PasskeyCreatedResponse */
         PasskeyCreatedResponse: {
@@ -4288,6 +4537,50 @@ export interface components {
             /** Tenant Id */
             tenant_id: string | null;
         };
+        /** StaffSupportResponse */
+        StaffSupportResponse: {
+            /** Company */
+            company: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Message */
+            message: string;
+            /** Name */
+            name: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "answered" | "closed";
+            /**
+             * Topic
+             * @enum {string}
+             */
+            topic: "login" | "documents" | "answers" | "billing" | "other";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** StaffSupportUpdate */
+        StaffSupportUpdate: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "answered" | "closed";
+        };
         /** StreamDelta */
         StreamDelta: {
             /** Text */
@@ -4406,6 +4699,41 @@ export interface components {
             company: components["schemas"]["SuggestionResponse"][];
             /** Frequent */
             frequent: string[];
+        };
+        /** SupportCreateRequest */
+        SupportCreateRequest: {
+            /** Message */
+            message: string;
+            /**
+             * Topic
+             * @enum {string}
+             */
+            topic: "login" | "documents" | "answers" | "billing" | "other";
+        };
+        /** SupportResponse */
+        SupportResponse: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Message */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "answered" | "closed";
+            /**
+             * Topic
+             * @enum {string}
+             */
+            topic: "login" | "documents" | "answers" | "billing" | "other";
         };
         /** SwitchCompanyRequest */
         SwitchCompanyRequest: {
@@ -7877,6 +8205,163 @@ export interface operations {
             };
         };
     };
+    list_notifications_api_v1_notifications_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationsResponse"];
+                };
+            };
+        };
+    };
+    mark_read_api_v1_notifications_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_settings_api_v1_notifications_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettingsResponse"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_notifications_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationSettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_onboarding_api_v1_onboarding_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingResponse"];
+                };
+            };
+        };
+    };
+    finish_onboarding_step_api_v1_onboarding__step__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                step: "tips" | "checklist";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_people_api_v1_people_get: {
         parameters: {
             query?: never;
@@ -8372,6 +8857,72 @@ export interface operations {
             };
         };
     };
+    list_support_api_v1_staff_support_get: {
+        parameters: {
+            query?: {
+                status?: ("new" | "answered" | "closed") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffSupportResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_support_api_v1_staff_support__request_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffSupportUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffSupportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_suggestions_api_v1_suggestions_get: {
         parameters: {
             query?: never;
@@ -8518,6 +9069,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_support_request_api_v1_support_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupportCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    my_support_requests_api_v1_support_mine_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportResponse"][];
                 };
             };
         };
