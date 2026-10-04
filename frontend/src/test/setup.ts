@@ -8,6 +8,7 @@ import { server } from "./server";
 
 // jsdom не умеет прокрутку.
 Element.prototype.scrollIntoView = function scrollIntoView() {};
+window.scrollTo = function scrollTo() {};
 
 // Меню и подсказки Radix меряют якорь через ResizeObserver, которого в jsdom нет.
 Object.defineProperty(globalThis, "ResizeObserver", {

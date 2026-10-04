@@ -166,3 +166,10 @@ table {
 .skip-link:focus {
   top: 12px;
 }
+
+/* Готовый HTML сайта (site/prerender.tsx) у того, кто входил в этом
+   браузере, не показываем: на тех же адресах у него приложение, и оно
+   нарисует своё поверх (скрипт в index.html ставит data-session). */
+html[data-session] [data-prerender] {
+  visibility: hidden;
+}

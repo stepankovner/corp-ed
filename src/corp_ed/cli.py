@@ -65,6 +65,7 @@ from corp_ed.core.config import (
     RagSettings,
     get_billing_settings,
     get_connector_settings,
+    get_demo_settings,
     get_lead_settings,
     get_settings,
 )
@@ -90,6 +91,7 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
+from corp_ed.services.demo_service import DemoService
 from corp_ed.services.digest_service import DigestService
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.lead_service import LeadService
@@ -214,6 +216,16 @@ def _parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="не ждать понедельника и прислать ещё раз — проверить письмо",
+    )
+
+    demo = commands.add_parser(
+        "demo", help="песочница на сайте: вымышленная компания и её документы"
+    )
+    demo_commands = demo.add_subparsers(dest="demo_command", required=True)
+    demo_commands.add_parser(
+        "setup",
+        help="завести компанию песочницы или обновить её документы "
+        "(идемпотентно, запускает выкатка)",
     )
 
     staff = commands.add_parser(
@@ -351,6 +363,18 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "staff":
         return await _staff(args)
+
+    if args.command == "demo":
+        demo_report = await DemoService(
+            get_session_maker(), get_demo_settings()
+        ).setup()
+        company = "заведена" if demo_report.tenant_created else "есть"
+        print(
+            f"песочница: компания {company}; документов новых "
+            f"{demo_report.created}, обновлено {demo_report.updated}, "
+            f"без изменений {demo_report.unchanged}"
+        )
+        return 0
 
     if args.command == "digest":
         digest_report = await DigestService(

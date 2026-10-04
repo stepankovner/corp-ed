@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import indexHtml from "../../index.html?raw";
+import { setSession } from "../api/session";
 
 type ThemeModule = typeof import("./theme");
 
@@ -142,6 +143,17 @@ describe("скрипт темы в index.html", () => {
     run();
     expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
     expect(themeColor()).toBe(theme.THEME_COLOR.dark);
+  });
+
+  it("отмечает, что здесь входили: готовый HTML сайта скрыт до приложения", () => {
+    run();
+    expect(document.documentElement.hasAttribute("data-session")).toBe(false);
+    // Тот же признак, что ставит api/session.ts при входе.
+    setSession({ accessToken: "a", expiresAt: Date.now() + 60_000 });
+    run();
+    expect(document.documentElement.hasAttribute("data-session")).toBe(true);
+    document.documentElement.removeAttribute("data-session");
+    setSession(null);
   });
 
   it("переживает недоступное хранилище", () => {

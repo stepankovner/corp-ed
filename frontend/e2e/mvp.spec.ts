@@ -75,6 +75,13 @@ const INSIDE = (page: Page) =>
     .or(page.getByRole("heading", { name: /^Здравствуйте,/ }))
     .first();
 
+/** Выход завершён: гость видит сайт («Войти» в шапке) или форму входа. */
+async function signedOut(page: Page) {
+  await expect(
+    page.getByRole("link", { name: "Войти" }).or(page.getByLabel("Почта")).first(),
+  ).toBeVisible();
+}
+
 async function submitPassword(page: Page, email: string, password: string, remember = false) {
   await page.goto("/login");
   await page.getByLabel("Почта").fill(email);
@@ -127,7 +134,7 @@ async function register(page: Page, email: string, firstName: string) {
   await page.getByLabel("Почта").fill(email);
   await page.getByLabel("Пароль", { exact: true }).fill(employeePassword);
   await page.getByLabel("Повторите пароль").fill(employeePassword);
-  await page.getByRole("checkbox", { name: /Соглашаюсь на обработку/ }).check();
+  await page.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }).check();
   await page.getByRole("button", { name: "Зарегистрироваться" }).click();
   await expect(page.getByRole("heading", { name: "Подтвердите почту" })).toBeVisible();
   const mail = await waitForMail(email, since, /Код подтверждения/);
@@ -183,9 +190,14 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
-    await expect(page).toHaveURL(/\/login/);
+    // Вышли — на главной сайт для гостя; после перезагрузки сессия не
+    // вернулась, и готовый HTML сайта не скрыт признаком входа.
+    await expect(page.getByRole("link", { name: "Войти" })).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel("Почта")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Спросите — и получите ответ/ }),
+    ).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-session");
   });
 
   test("оболочка: тема переживает перезагрузку, заголовки вкладок, меню на телефоне", async ({
@@ -447,6 +459,7 @@ test.describe.serial("путь компании", () => {
     // Администратор видит её в справочнике: должность, отдел, фото, контакты.
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginAdmin(page, context);
     await page.goto("/people");
     const card = page
@@ -550,6 +563,7 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginAdmin(page, context);
     await page.getByRole("link", { name: "Панель kronto" }).click();
     await page.getByRole("link", { name: "Обращения", exact: true }).click();
@@ -620,6 +634,7 @@ test.describe.serial("путь компании", () => {
     // Кирилл — без отдела: папки не видит.
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginByMail(page, coderEmail, employeePassword);
     await page.goto("/settings/connections");
     where = page.getByRole("region", { name: "Где ищет ассистент" });
@@ -646,6 +661,7 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginByMail(page, invitedEmail, fresh);
     await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
   });
@@ -656,6 +672,8 @@ test.describe.serial("путь компании", () => {
       .getByRole("region", { name: "Базовый" })
       .getByRole("link", { name: "Записаться на созвон" })
       .click();
+    // Страница записи — отдельным чанком: пока он грузится, на экране тарифы.
+    await expect(page.getByRole("heading", { name: "Запись на созвон" })).toBeVisible();
     await page.getByLabel("Компания").fill(leadCompany);
     await page.getByLabel("Сколько сотрудников работают за компьютером").fill("60");
     await page.getByLabel("Как к вам обращаться").fill("Анна");
@@ -666,4 +684,45 @@ test.describe.serial("путь компании", () => {
     await page.getByRole("button", { name: "Отправить заявку" }).click();
     await expect(page.getByText("Заявка отправлена")).toBeVisible();
   });
+});
+
+test("гость: сайт из готового HTML, песочница отвечает по документам", async ({
+  page,
+  request,
+}) => {
+  // Готовый HTML (предрендер): главная — с текстом до скриптов, адрес
+  // приложения — пустая оболочка.
+  const html = { Accept: "text/html" };
+  const home = await (await request.get("/", { headers: html })).text();
+  expect(home).toContain("Спросите — и получите ответ по документам компании");
+  expect(home).toContain('<link rel="canonical" href="https://krontoai.ru/"');
+  const shell = await (await request.get("/admin/users", { headers: html })).text();
+  expect(shell).not.toContain("data-prerender");
+  expect(shell).toContain('<meta name="robots" content="noindex"');
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: /Спросите — и получите ответ/ }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Попробовать в песочнице" }).first().click();
+  await expect(page).toHaveURL(/\/demo$/);
+  // Пока переход идёт, на экране ещё главная — с тем же документом в демо.
+  await expect(page.getByRole("heading", { level: 1, name: "Спросите kronto сами" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("complementary", { name: "Документы компании" })
+      .getByText("Положение о служебных командировках"),
+  ).toBeVisible();
+
+  // Документы песочницы индексирует воркер (cli demo setup при подготовке):
+  // пока не готовы — честный отказ, спрашиваем ещё раз.
+  const input = page.getByLabel("Ваш вопрос");
+  await expect(async () => {
+    await input.fill("Какие суточные в командировке?");
+    await page.getByRole("button", { name: "Спросить" }).click();
+    await expect(
+      page.getByRole("button", { name: /Положение о служебных командировках/ }).last(),
+    ).toBeVisible({ timeout: 5_000 });
+  }).toPass({ intervals: [3_000, 5_000], timeout: 30_000 });
+  await expect(page.getByText(/По документам:/).last()).toBeVisible();
 });
