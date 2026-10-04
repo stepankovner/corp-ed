@@ -371,7 +371,8 @@ def _parser() -> argparse.ArgumentParser:
         "--temperature",
         type=float,
         default=0.0,
-        help="0 — воспроизводимо; при 0.3 (как сейчас у бэкенда) ответы гуляют",
+        help="0 — как в продукте (RAG_FAQ_TEMPERATURE); текст у Flash и при 0 "
+        "немного гуляет (69/91 одинаковых, 25.09), при 0.3 — заметно",
     )
     parser.add_argument(
         "--api",
