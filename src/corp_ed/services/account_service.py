@@ -62,6 +62,7 @@ from corp_ed.services.mfa_service import (
     MfaService,
     mask_email,
 )
+from corp_ed.services.passwords import set_password
 
 logger = structlog.get_logger()
 
@@ -287,7 +288,7 @@ class AccountService:
                     token.used_at = _now()
                 await self.session.commit()
                 raise InvalidSecondFactorError()
-        account.hashed_password = hash_password(new_password)
+        set_password(account, new_password)
         account.must_change_password = False
         if account.email_verified_at is None:
             account.email_verified_at = _now()

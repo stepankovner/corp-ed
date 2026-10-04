@@ -31,7 +31,9 @@ def test_state_roundtrip_carries_user_tenant_connector() -> None:
 
 
 def test_access_token_is_not_a_state_and_vice_versa() -> None:
-    access = create_access_token(uuid4(), 1, tenant_id=uuid4(), member_id=uuid4())
+    access = create_access_token(
+        uuid4(), 1, session_id=uuid4(), tenant_id=uuid4(), member_id=uuid4()
+    )
     with pytest.raises(jwt.PyJWTError):
         decode_oauth_state(access)
     state = create_oauth_state(uuid4(), uuid4(), uuid4(), ttl_minutes=5)

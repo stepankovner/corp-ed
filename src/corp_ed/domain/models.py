@@ -189,6 +189,11 @@ class Account(Base):
     # В casefold: Anna@Acme.ru и anna@acme.ru — одна учётка.
     email: Mapped[str] = mapped_column(String(254), unique=True)
     hashed_password: Mapped[str]
+    # Хеши прежних паролей, новые первыми (services/passwords.py): после
+    # смены или сброса нельзя вернуть пароль, который заменили.
+    previous_password_hashes: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), default=list, server_default="{}"
+    )
     # У перенесённых со старой схемы учёток имени может не быть: фронт
     # попросит его при входе. Новые без имени не регистрируются.
     first_name: Mapped[str | None] = mapped_column(String(100))

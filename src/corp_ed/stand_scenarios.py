@@ -224,6 +224,7 @@ async def run_scenarios(
             before_poll=before_poll,
             sleep=sleep,
         )
+        await _logout(staff, report)
         await _sandbox(client, report, before_poll=before_poll, sleep=sleep)
         await _formats(
             client,
@@ -443,6 +444,26 @@ async def _folder(
         moved.status_code == 200 and found,
         f"перевод в отдел: HTTP {moved.status_code}, документ папки в "
         f"источниках и код в ответе: {_yes(found)}",
+    )
+
+
+async def _logout(staff: StandClient, report: Report) -> None:
+    """«Выйти» действует сразу: токен доступа сотрудника после выхода —
+    401, а не ещё до 15 минут работы."""
+    if not staff.token:
+        report.add("выход гасит токен", True, "пропущено: сотрудник не вошёл")
+        return
+    before = await staff.request("GET", "/auth/me")
+    out = await staff.request("POST", "/auth/logout")
+    after = await staff.request("GET", "/auth/me")
+    staff.token = None
+    report.add(
+        "выход гасит токен",
+        before.status_code == 200
+        and out.status_code == 204
+        and after.status_code == 401,
+        f"до выхода HTTP {before.status_code}, выход HTTP {out.status_code}, "
+        f"тот же токен после выхода HTTP {after.status_code}",
     )
 
 

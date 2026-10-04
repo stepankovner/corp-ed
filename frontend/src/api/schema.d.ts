@@ -524,7 +524,7 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Отозвать цепочку текущего входа и стереть cookie.
+         * @description Закрыть текущий сеанс и стереть cookie.
          */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
@@ -729,8 +729,8 @@ export interface paths {
         put?: never;
         /**
          * End Session
-         * @description Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
-         *     для немедленного выхода везде есть /auth/logout-all.
+         * @description Выйти на одном устройстве: его refresh- и access-токены перестают
+         *     действовать сразу.
          */
         post: operations["end_session_api_v1_auth_sessions__session_id__end_post"];
         delete?: never;

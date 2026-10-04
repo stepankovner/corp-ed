@@ -11,6 +11,7 @@ from uuid import uuid4
 import httpx
 import jwt
 import pytest
+from argon2 import PasswordHasher
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,10 @@ from corp_ed.core import security
 from corp_ed.core.config import get_settings
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.models import MemberStatus, RefreshToken, Tenant, User
+from corp_ed.repositories.audit_repository import AuditRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.tenant_service import TenantService
 from tests.api.conftest import (
     PASSWORD,
     bearer,
@@ -244,6 +249,7 @@ def _forge(**claims: object) -> str:
         "nbf": now,
         "exp": now + timedelta(minutes=5),
         "jti": uuid4().hex,
+        "sid": str(uuid4()),
         **claims,
     }
     return jwt.encode(
@@ -259,6 +265,8 @@ def _forge(**claims: object) -> str:
         {"tenant_id": "../../etc/passwd"},
         {"ver": "abc"},
         {"ver": None},
+        {"sid": "not-a-uuid"},
+        {"sid": 12345},
     ],
 )
 async def test_malformed_claims_are_401_not_500(
@@ -515,6 +523,33 @@ async def test_logout_revokes_refresh_token_and_clears_cookie(
 
     again = await refresh_with(api, raw)
     assert again.status_code == 401
+    # Токен доступа этого входа больше не действует — сразу, а не через
+    # 15 минут, когда истечёт (сеанс в нём — sid).
+    me = await api.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {signed_in.json()['access_token']}"},
+    )
+    assert me.status_code == 401
+
+
+async def test_logout_keeps_other_sessions_working(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    phone = (await login(api, account.email)).json()
+    laptop = await login(api, account.email)
+
+    await api.post(
+        "/api/v1/auth/logout",
+        headers={
+            "Authorization": f"Bearer {laptop.json()['access_token']}",
+            "Cookie": f"{REFRESH_COOKIE}={refresh_token_of(laptop)}",
+        },
+    )
+
+    me = await api.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {phone['access_token']}"}
+    )
+    assert me.status_code == 200
 
 
 async def test_logout_without_cookie_still_succeeds(
@@ -523,6 +558,21 @@ async def test_logout_without_cookie_still_succeeds(
     api.cookies.clear()
     response = await api.post("/api/v1/auth/logout", headers=bearer(account))
     assert response.status_code == 204
+
+
+async def test_logout_without_cookie_ends_the_token_session(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """cookie потерялся — «Выйти» всё равно закрывает сеанс из токена."""
+    signed_in = await login(api, account.email)
+    raw = refresh_token_of(signed_in)
+    headers = {"Authorization": f"Bearer {signed_in.json()['access_token']}"}
+    api.cookies.clear()
+
+    assert (await api.post("/api/v1/auth/logout", headers=headers)).status_code == 204
+
+    assert (await api.get("/api/v1/auth/me", headers=headers)).status_code == 401
+    assert (await refresh_with(api, raw)).status_code == 401
 
 
 async def test_logout_from_foreign_origin_is_403(
@@ -678,6 +728,55 @@ async def test_wrong_current_password_is_still_limited(
         for attempt in range(6)
     ]
     assert statuses == [400] * 5 + [429]
+
+
+async def test_temporary_password_cannot_be_changed_back_to_the_old_one(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    """Пароль сбросила команда (cli reset-password) — прежний не вернуть:
+    сбрасывают его, когда его мог узнать кто-то ещё."""
+    temporary = "временный пароль от команды 2026"
+    await TenantService(
+        TenantRepository(session),
+        UserRepository(session),
+        AuditRepository(session),
+        session,
+    ).reset_password(account.email, temporary)
+    signed_in = await login(api, account.email, temporary)
+    headers = {"Authorization": f"Bearer {signed_in.json()['access_token']}"}
+
+    back = await api.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": temporary, "new_password": PASSWORD},
+        headers=headers,
+    )
+    assert back.status_code == 422
+    assert "уже был" in back.json()["detail"]
+
+    fresh = await api.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": temporary, "new_password": "new horse battery 2026"},
+        headers=headers,
+    )
+    assert fresh.status_code == 200
+
+
+async def test_rehash_on_login_does_not_touch_password_history(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    """Хеш со старыми параметрами пересчитывается при входе — пароль тот
+    же, в историю он не идёт."""
+    assert account.account is not None
+    old = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1).hash(PASSWORD)
+    account.account.hashed_password = old
+    await session.commit()
+
+    assert (await login(api, account.email)).status_code == 200
+
+    await session.refresh(account.account)
+    assert account.account.hashed_password != old
+    assert security.verify_password(PASSWORD, account.account.hashed_password)
+    assert account.account.previous_password_hashes == []
 
 
 async def test_temporary_password_blocks_everything_but_change(
