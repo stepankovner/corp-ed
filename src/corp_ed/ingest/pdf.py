@@ -16,8 +16,9 @@ pdfminer.six — MIT; pypdfium2 — BSD-3 / Apache-2.0). Замер —
   жирной отдельной строке с номером или ПРОПИСНЫМИ буквами; строка-
   вводная «2.1. Предприятие обязуется:» перед списком — подзаголовок;
 - обложка длинного документа и шапка, которая встречается только в
-  начале («Приложение № 1 к Документации»), — не заголовки: иначе их
-  текст попадает в крошки каждого фрагмента;
+  начале и длиннее одного заголовка («Приложение № 1 к Документации» с
+  перечнем), — не заголовки: иначе их текст попадает в крошки каждого
+  фрагмента; короткое название документа — заголовок;
 - верхний индекс (номер сноски) — `<sup>`, его снимает preprocess.
 
 Выход — как ждёт preprocess (так же было у pymupdf4llm): заголовки #,
@@ -130,21 +131,20 @@ class _Glyph:
 _SPACE = _Glyph(" ", 0.0, "", 0.0, 0.0, 0.0, space=True)
 
 
-def check_container(data: bytes) -> None:
-    """Сигнатура, пароль, число страниц — до разбора (как у xlsx и doc)."""
-    with _open(data) as pdf:
-        if len(pdf.pages) > MAX_PAGES:
-            raise PdfError("too_many_pages")
-
-
 def pdf_to_markdown(data: bytes) -> str:
-    """PDF → Markdown до preprocess. Вызывать в песочнице."""
+    """PDF → Markdown до preprocess. Вызывать только в песочнице.
+
+    Пароль и число страниц проверяются здесь же: для этого pdfminer уже
+    разбирает файл, а файл клиента враждебный — в процессе API такой
+    проверки нет (отдельной check_container, как у xlsx и doc, у PDF нет
+    намеренно; до песочницы — только сигнатура %PDF-).
+    """
     pages: list[list[_Block]] = []
     sizes: Counter[float] = Counter()
     with _open(data) as pdf:
-        if len(pdf.pages) > MAX_PAGES:
-            raise PdfError("too_many_pages")
         try:
+            if len(pdf.pages) > MAX_PAGES:
+                raise PdfError("too_many_pages")
             for page in pdf.pages:
                 blocks = _page_blocks(page)
                 for block in blocks:
@@ -466,11 +466,14 @@ def _drop_preamble_levels(
     pages: list[list[_Block]], levels: list[float]
 ) -> list[float]:
     """Верхний уровень, который встречается только в начале, до первого
-    заголовка другого уровня, — шапка («Приложение № 1 к Документации»,
-    «Приоритетные направления…»), а не раздел: иначе её длинный текст
-    попадает в крошки каждого фрагмента. Такие строки идут жирным текстом.
+    заголовка другого уровня, и длиннее одного заголовка, — шапка
+    («Приложение № 1 к Документации» и перечень на полстраницы, обложка
+    «Фонд содействия… ПОЛОЖЕНИЕ о конкурсе…»), а не раздел: иначе её
+    длинный текст попадает в крошки каждого фрагмента. Короткий — название
+    документа («Положение о командировках (редакция 2026 года)»): его
+    оставляем, в крошках оно к месту (корпус стенда, 04.10).
     """
-    sequence: list[int] = []
+    sequence: list[tuple[int, int]] = []  # (уровень, символов в строке)
     for blocks in pages:
         for block in blocks:
             for line in block.lines:
@@ -479,19 +482,26 @@ def _drop_preamble_levels(
                     and line.letters >= 2
                     and not _PLACE_AND_YEAR.match(line.text)
                 ):
-                    sequence.append(levels.index(line.size))
+                    sequence.append((levels.index(line.size), len(line.text)))
                 elif (
                     line.bold
                     and len(line.text) <= MAX_HEADING_CHARS
                     and _looks_like_section(line.text)
                 ):
-                    sequence.append(len(levels))
+                    sequence.append((len(levels), len(line.text)))
     while levels and sequence:
-        first_other = next((i for i, level in enumerate(sequence) if level != 0), None)
-        if first_other is None or 0 in sequence[first_other:]:
+        top = [chars for level, chars in sequence if level == 0]
+        first_other = next(
+            (i for i, (level, _) in enumerate(sequence) if level != 0), None
+        )
+        if (
+            first_other is None
+            or any(level == 0 for level, _ in sequence[first_other:])
+            or sum(top) <= MAX_HEADING_CHARS
+        ):
             break
         levels = levels[1:]
-        sequence = [level - 1 for level in sequence if level != 0]
+        sequence = [(level - 1, chars) for level, chars in sequence if level != 0]
     return levels
 
 

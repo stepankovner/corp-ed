@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from corp_ed.ingest import pdf as pdf_module
-from corp_ed.ingest.pdf import PdfError, check_container, pdf_to_markdown
+from corp_ed.ingest.pdf import PdfError, pdf_to_markdown
 from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
 from tests.ingest.pdf_samples import Page, pdf
 
@@ -86,16 +86,14 @@ def test_two_columns_are_read_column_by_column() -> None:
     assert markdown.index("left column three") < markdown.index("Right column one")
 
 
-def test_check_container_errors() -> None:
-    assert _code(check_container, b"PK\x03\x04 not a pdf") == "format_mismatch"
-    assert _code(check_container, b"%PDF-1.4\n garbage") == "corrupted"
+def test_container_errors() -> None:
+    assert _code(pdf_to_markdown, b"PK\x03\x04 not a pdf") == "format_mismatch"
     assert _code(pdf_to_markdown, b"%PDF-1.4\n garbage") == "corrupted"
 
 
 def test_password_protected_pdf_is_encrypted() -> None:
     data = (FIXTURES / "encrypted.pdf").read_bytes()
 
-    assert _code(check_container, data) == "encrypted"
     assert _code(pdf_to_markdown, data) == "encrypted"
 
 
@@ -103,7 +101,6 @@ def test_owner_password_only_pdf_is_read() -> None:
     # Пароль только на права (печать, правка) — читается, как у pymupdf.
     data = (FIXTURES / "owner_password.pdf").read_bytes()
 
-    check_container(data)
     assert pdf_to_markdown(data) == "Owner only"
 
 
@@ -111,12 +108,7 @@ def test_too_many_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pdf_module, "MAX_PAGES", 2)
     data = pdf([Page().text(72, 700, "x") for _ in range(3)])
 
-    assert _code(check_container, data) == "too_many_pages"
     assert _code(pdf_to_markdown, data) == "too_many_pages"
-
-
-def test_valid_pdf_passes_check() -> None:
-    check_container(pdf([Page().text(72, 700, "Hello")]))
 
 
 # --- правила, которые латиницей стандартных шрифтов не проверить ---------------
@@ -164,14 +156,34 @@ def test_numbered_lead_in_before_list_is_subheading() -> None:
     assert lines[1] == "## 2.1. Предприятие обязуется:"
 
 
-def test_preamble_level_used_only_at_start_is_dropped() -> None:
-    title = _block(("Приоритетные направления замещения", 14.0, True))
+def test_long_preamble_level_used_only_at_start_is_dropped() -> None:
+    preamble = _block(
+        ("Приложение № 1 к Документации", 14.0, True),
+        *[
+            (f"Информационные ресурсы федеральных органов, часть {n}", 14.0, True)
+            for n in range(1, 5)
+        ],
+    )
     sections = [_block((f"{n}. ЦКР «Раздел {n}»", 12.0, True)) for n in (1, 2)]
     body = [_block(("текст раздела", 11.0, False))]
 
-    levels = pdf_module._drop_preamble_levels([[title, *sections, *body]], [14.0])
+    levels = pdf_module._drop_preamble_levels([[preamble, *sections, *body]], [14.0])
 
     assert levels == []
+
+
+def test_short_document_title_level_is_kept() -> None:
+    title = _block(
+        ("Положение о служебных", 26.0, False),
+        ("командировках (редакция", 26.0, False),
+        ("2026 года)", 26.0, False),
+    )
+    sections = [_block((f"{n}. Раздел {n}", 14.0, True)) for n in (1, 2)]
+    body = [_block(("текст раздела", 12.0, False))]
+
+    levels = pdf_module._drop_preamble_levels([[title, *sections, *body]], [26.0, 14.0])
+
+    assert levels == [26.0, 14.0]
 
 
 def test_line_join_keeps_compound_words_and_codes() -> None:
