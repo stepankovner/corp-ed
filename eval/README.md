@@ -27,7 +27,8 @@ python -m eval.bench --corpus путь/к/документам --dataset eval/pr
 
 В папке корпуса — .md, .txt, .docx, .pdf, .xlsx, .pptx и .doc (с 01.10,
 разбор `corp_ed.ingest.xlsx` / `pptx` / `doc` — как в продукте после
-BH-33…BH-35). Замер по форматам —
+BH-33…BH-35). PDF — pymupdf4llm, как в продукте сейчас; разбор без AGPL
+(`corp_ed.ingest.pdf`, BH-39) — `EVAL_PDF_PARSER=pdfplumber`. Замер по форматам —
 [`docs/ml-formats.md`](../docs/ml-formats.md).
 
 ## Что считается «продуктом»
