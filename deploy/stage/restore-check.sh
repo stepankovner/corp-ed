@@ -85,6 +85,9 @@ run() {
     fi
     drop_scratch
     trap - EXIT
+    # Отчёт после выкатки показывает сохранённый результат: сравнение с
+    # живой базой — на момент этой проверки.
+    detail+=" (проверка $(date -u '+%d.%m %H:%M') UTC)"
     printf '%s\t%s\t%s\n' "$(dump_key "$file")" "$state" "$detail" >"$RESULT.tmp"
     mv "$RESULT.tmp" "$RESULT"
     echo "$(date -u +%FT%TZ) restore-check $name $state"

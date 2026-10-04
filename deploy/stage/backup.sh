@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Суточный дамп базы стенда (DEPLOY.md §8), хранится 7 дней на самом
-# сервере. Стенд — без клиентских данных, поэтому копии вне хоста здесь
-# нет; для боя она обязательна. Запускает cron (bootstrap.sh). Сразу после
-# дампа restore-check.sh поднимает его во временной базе: дамп, который не
-# восстанавливается, — неудача задачи, и мониторинг тревожит.
+# сервере. Запускает cron (bootstrap.sh). Сразу после дампа
+# restore-check.sh поднимает его во временной базе, затем offsite.sh
+# отправляет зашифрованную копию в хранилище вне сервера (если настроена:
+# на стенде данные тестовые, для боя копия обязательна). Дамп, который не
+# восстанавливается или не ушёл, — неудача задачи, мониторинг тревожит.
 set -euo pipefail
 # shellcheck source=/dev/null
 . /etc/kronto/stage.env
@@ -19,6 +20,8 @@ find "$dir" -name 'kronto-*.dump' -mtime +7 -delete
 echo "$(date -u +%FT%TZ) backup $(du -h "$file" | cut -f1) $file"
 # Проверка после выкатки (restore-check.sh report) снимает дамп сама и
 # проверяет его под своей блокировкой.
+# Копию вне сервера отправляет и она же (offsite.sh report).
 if [[ -z "${KRONTO_BACKUP_NO_VERIFY:-}" ]]; then
     "$APP_DIR/deploy/stage/restore-check.sh" run "$file"
+    "$APP_DIR/deploy/stage/offsite.sh" upload "$file"
 fi
