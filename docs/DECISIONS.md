@@ -2689,7 +2689,7 @@ RISKS №50: сервер Telegram за рубежом, текст челове�
 `RAG_FAQ_GATE_DISTANCE`, `RAG_FAQ_NEAR_MARGIN`, `RAG_CONTEXT_MAX_TOKENS`,
 `RAG_FAQ_TEMPERATURE`, `RAG_RETRIEVER`, `RAG_FULLTEXT_WEIGHT`,
 `RAG_HISTORY_TURNS`, `RAG_HISTORY_TTL_MINUTES`,
-`RAG_CONDENSE_TIMEOUT_SECONDS`. Каждое изменение — строкой в логе
+`RAG_CONDENSE_TIMEOUT_SECONDS`, с BH-40 — `RAG_RERANK_MAX_WORDS`. Каждое изменение — строкой в логе
 выкатки. Не переносятся размер фрагментов (нужна переиндексация) и
 реранкер (модель и профиль compose ставят руками, `STAGE.md` §5).
 Первое применение — `RAG_FAQ_GATE_DISTANCE=0.70`.

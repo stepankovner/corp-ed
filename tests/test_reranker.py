@@ -67,6 +67,24 @@ def test_reranker_is_off_by_default_with_the_contract_settings() -> None:
     assert fields["rerank_depth"].default == 30
     assert fields["rerank_max_length"].default == 512
     assert fields["rerank_timeout_ms"].default == 3000
+    assert fields["rerank_max_words"].default == 24
+
+
+def test_empty_max_words_is_no_limit() -> None:
+    base: dict[str, object] = {
+        "chunk_tokens": 400,
+        "overlap_tokens": 50,
+        "faq_limit": 5,
+        "faq_max_distance": 0.59,
+        "context_max_tokens": 3000,
+        "faq_temperature": 0,
+        "retriever": "vector",
+        "fulltext_weight": 0.5,
+    }
+    empty = RagSettings(**(base | {"rerank_max_words": ""}))  # type: ignore[arg-type]
+    assert empty.rerank_max_words is None
+    twelve = RagSettings(**(base | {"rerank_max_words": "12"}))  # type: ignore[arg-type]
+    assert twelve.rerank_max_words == 12
 
 
 def test_depth_fits_the_service_batch() -> None:
@@ -166,6 +184,7 @@ def _service(
     *,
     limit: int = 2,
     depth: int = 30,
+    max_words: int | None = 24,
 ) -> FaqService:
     return FaqService(
         chunk_repo=ChunkRepository(session),
@@ -185,6 +204,7 @@ def _service(
         reranker=reranker,
         rerank_depth=depth,
         rerank_timeout=0.05,
+        rerank_max_words=max_words,
     )
 
 
@@ -409,3 +429,61 @@ async def test_search_debug_refuses_rerank_when_it_cannot(
         await _service(session, BrokenReranker(), FakeAdapter()).search(
             QUESTION, 2, viewer=admin, rerank=True
         )
+
+
+# --- длинные вопросы (BH-40) ------------------------------------------------------
+
+LONG = (
+    "Добрый день, я третий год работаю в отделе продаж, у меня появилась идея "
+    "своего проекта, коллеги советуют подать заявку, поэтому хочу уточнить: "
+    "какой размер гранта по программе УМНИК?"
+)
+
+
+def test_long_question_is_longer_than_the_limit() -> None:
+    assert len(LONG.split()) > 24
+
+
+async def test_long_question_keeps_vector_order(
+    session: AsyncSession, chunks: list[str], employee: User
+) -> None:
+    """Длиннее 24 слов — реранкер не зовём, как будто он выключен."""
+    reranker = FakeReranker()
+    llm = FakeAdapter(content="Ответ [1].")
+
+    result = await _service(session, reranker, llm).answer(LONG, employee)
+
+    assert reranker.calls == []
+    assert [s.content for s in result.sources] == chunks[:2]
+    assert all(s.rerank_score is None for s in result.sources)
+    entry = await session.scalar(select(QaLog).where(QaLog.id == result.log_id))
+    assert entry is not None
+    assert (entry.rerank_model, entry.rerank_ms) == (None, None)
+
+
+async def test_without_word_limit_long_questions_are_reranked(
+    session: AsyncSession, chunks: list[str], employee: User
+) -> None:
+    reranker = FakeReranker()
+    llm = FakeAdapter(content="Ответ [1].")
+
+    result = await _service(session, reranker, llm, max_words=None).answer(
+        LONG, employee
+    )
+
+    assert len(reranker.calls) == 1
+    assert result.sources[0].content == chunks[2]
+
+
+async def test_search_debug_follows_the_word_limit(
+    session: AsyncSession, chunks: list[str], admin: User
+) -> None:
+    """/faq/search с rerank — порядок, который дал бы ответ."""
+    reranker = FakeReranker()
+    service = _service(session, reranker, FakeAdapter())
+
+    matches = await service.search(LONG, 3, viewer=admin, rerank=True)
+
+    assert reranker.calls == []
+    assert [m.content for m in matches] == chunks
+    assert all(m.rerank_score is None for m in matches)

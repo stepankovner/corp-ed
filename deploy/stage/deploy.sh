@@ -52,6 +52,7 @@ answer_keys=(
     RAG_FAQ_LIMIT RAG_FAQ_MAX_DISTANCE RAG_FAQ_GATE_DISTANCE RAG_FAQ_NEAR_MARGIN
     RAG_CONTEXT_MAX_TOKENS RAG_FAQ_TEMPERATURE RAG_RETRIEVER RAG_FULLTEXT_WEIGHT
     RAG_HISTORY_TURNS RAG_HISTORY_TTL_MINUTES RAG_CONDENSE_TIMEOUT_SECONDS
+    RAG_RERANK_MAX_WORDS
 )
 # Значение строки KEY=… без пробелов и комментария; нет строки — пусто и код 1.
 env_value() { awk -v k="$1" -F= '$1 == k { sub(/^[^=]*=/, ""); sub(/[ \t]*#.*$/, ""); v = $0; f = 1 } END { print v; exit !f }' "$2"; }

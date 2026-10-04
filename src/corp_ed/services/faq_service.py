@@ -26,6 +26,7 @@ from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
+from corp_ed.domain.rerank import RERANK_MAX_WORDS, rerank_allowed
 from corp_ed.domain.rerank import rerank as reorder
 from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
@@ -193,6 +194,7 @@ class FaqService:
         reranker: Reranker | None = None,
         rerank_depth: int = 30,
         rerank_timeout: float = 3.0,
+        rerank_max_words: int | None = RERANK_MAX_WORDS,
         gate_distance: float | None = None,
         near_margin: float = 0.0,
     ) -> None:
@@ -223,6 +225,7 @@ class FaqService:
         self.reranker = reranker
         self.rerank_depth = rerank_depth
         self.rerank_timeout = rerank_timeout
+        self.rerank_max_words = rerank_max_words
 
     async def answer(
         self, question: str, user: User, conversation_id: UUID | None = None
@@ -524,8 +527,13 @@ class FaqService:
         Сбой, таймаут (RAG_RERANK_TIMEOUT_MS) или ответ не по контракту —
         не сбой ответа: порядок вектора, событие в лог и метрику, в
         журнале rerank_model пуст.
+
+        Вопрос длиннее rerank_max_words слов (BH-40) — модель не зовём,
+        порядок вектора, как с выключенным реранкером: на длинных
+        «разговорных» вопросах она выталкивает нужный фрагмент. query —
+        search_text, тот же текст, что ушёл бы в пару.
         """
-        if self.reranker is None:
+        if self.reranker is None or not rerank_allowed(query, self.rerank_max_words):
             return _Reranked(matches=pool, model=None, ms=None)
         by_id = {match.id: match for match in pool}
         ranking = [match.id for match in pool]

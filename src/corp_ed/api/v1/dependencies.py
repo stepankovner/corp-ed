@@ -608,6 +608,7 @@ def get_faq_builder(
             reranker=reranker,
             rerank_depth=settings.rerank_depth,
             rerank_timeout=settings.rerank_timeout_ms / 1000,
+            rerank_max_words=settings.rerank_max_words,
         )
 
     return build
