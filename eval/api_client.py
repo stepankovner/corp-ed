@@ -26,11 +26,16 @@ material_title / title, heading_path списком или строкой «A > 
     CORP_ED_TOTP_SECRET  секрет приложения учётки (второй фактор) — в .env,
                        не в чат
 Токен истёк посреди прогона (401) — клиент входит заново и повторяет запрос.
+Лимит запросов (429: /faq/ask — 30 в минуту на пользователя, /faq/search —
+60) или сервис недоступен (503) — клиент ждёт, сколько сказал сервер в
+Retry-After, и повторяет, до MAX_RETRIES раз; ожидание в задержку ответа
+не входит.
 """
 
 import os
+import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -41,6 +46,10 @@ from eval.relevance import RetrievedChunk
 
 DEFAULT_BASE_URL = "http://localhost:8000"
 API_PREFIX = "/api/v1"
+RETRY_STATUSES = (429, 503)
+MAX_RETRIES = 5
+DEFAULT_WAIT_SECONDS = 10.0
+MAX_WAIT_SECONDS = 120.0
 
 
 @dataclass(frozen=True)
@@ -60,10 +69,12 @@ class CorpEdClient:
         token: str | None = None,
         http: httpx.Client | None = None,
         timeout: float = 120.0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._http = http or httpx.Client(base_url=base_url, timeout=timeout)
         self._token = token
         self._credentials: tuple[str, str, str | None] | None = None
+        self._sleep = sleep
 
     @classmethod
     def from_env(cls) -> "CorpEdClient":
@@ -139,23 +150,48 @@ class CorpEdClient:
         )
 
     def _post(self, path: str, payload: dict[str, Any]) -> tuple[Any, float]:
-        started = time.perf_counter()
-        response = self._http.post(
-            f"{API_PREFIX}{path}", json=payload, headers=self._headers()
-        )
-        if response.status_code == 401 and self._credentials is not None:
-            # Токен живёт 15 минут, прогон дольше: войти заново и повторить.
-            self.login(*self._credentials)
+        relogged = False
+        retries = 0
+        while True:
             started = time.perf_counter()
             response = self._http.post(
                 f"{API_PREFIX}{path}", json=payload, headers=self._headers()
             )
-        latency_ms = (time.perf_counter() - started) * 1000
-        response.raise_for_status()
-        return response.json(), latency_ms
+            latency_ms = (time.perf_counter() - started) * 1000
+            if (
+                response.status_code == 401
+                and self._credentials is not None
+                and not relogged
+            ):
+                # Токен живёт 15 минут, прогон дольше: войти заново и повторить.
+                self.login(*self._credentials)
+                relogged = True
+                continue
+            if response.status_code in RETRY_STATUSES and retries < MAX_RETRIES:
+                retries += 1
+                wait = retry_after(response)
+                print(
+                    f"  {path}: HTTP {response.status_code}, жду {wait:.0f} с "
+                    f"(повтор {retries} из {MAX_RETRIES})",
+                    file=sys.stderr,
+                )
+                self._sleep(wait)
+                continue
+            response.raise_for_status()
+            return response.json(), latency_ms
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}"} if self._token else {}
+
+
+def retry_after(response: httpx.Response) -> float:
+    """Сколько ждать перед повтором: Retry-After в секундах (так его
+    ставит бэкенд), иначе DEFAULT_WAIT_SECONDS; не больше MAX_WAIT_SECONDS."""
+    try:
+        seconds = float(response.headers.get("Retry-After", ""))
+    except ValueError:
+        seconds = DEFAULT_WAIT_SECONDS
+    return min(max(seconds, 1.0), MAX_WAIT_SECONDS)
 
 
 def parse_search_response(body: Any) -> list[RetrievedChunk]:
