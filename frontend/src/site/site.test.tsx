@@ -19,6 +19,24 @@ function demoInfo(response: Record<string, unknown> = DEMO, status = 200) {
   server.use(http.get("/api/v1/demo", () => HttpResponse.json(response, { status })));
 }
 
+/** Ответ песочницы потоком (text/event-stream), как отдаёт сервер. */
+function demoStream(events: Schemas["DemoStreamEvent"][]) {
+  const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+  return new HttpResponse(body, { headers: { "Content-Type": "text/event-stream" } });
+}
+
+const ANSWER: Schemas["DemoAnswerResponse"] = {
+  content: "Суточные — 700 ₽ в день [1].",
+  origin: "documents",
+  sources: [
+    {
+      title: "Положение о служебных командировках",
+      heading_path: ["Раздел 4. Оформление командировки"],
+      content: "4.3. Бухгалтерия перечисляет аванс: суточные — 700 рублей.",
+    },
+  ],
+};
+
 describe("главная для гостя", () => {
   it("заготовленное демо: вопрос, ответ с источниками и честный отказ", async () => {
     const user = userEvent.setup();
@@ -62,24 +80,20 @@ describe("главная для гостя", () => {
 });
 
 describe("песочница", () => {
-  it("документы компании и ответ kronto с источником", async () => {
+  it("документы компании и ответ kronto потоком, источник — в конце", async () => {
     const user = userEvent.setup();
     demoInfo();
     const asked: unknown[] = [];
     server.use(
-      http.post("/api/v1/demo/ask", async ({ request }) => {
+      http.post("/api/v1/demo/ask/stream", async ({ request }) => {
         asked.push(await request.json());
-        return HttpResponse.json({
-          content: "Суточные — 700 ₽ в день [1].",
-          origin: "documents",
-          sources: [
-            {
-              title: "Положение о служебных командировках",
-              heading_path: ["Раздел 4. Оформление командировки"],
-              content: "4.3. Бухгалтерия перечисляет аванс: суточные — 700 рублей.",
-            },
-          ],
-        });
+        return demoStream([
+          { type: "stage", stage: "searching" },
+          { type: "stage", stage: "writing" },
+          { type: "delta", text: "Суточные — " },
+          { type: "delta", text: "700 ₽ в день [1]." },
+          { type: "done", answer: ANSWER },
+        ]);
       }),
     );
     renderApp("/demo", { signedIn: false });
@@ -90,25 +104,35 @@ describe("песочница", () => {
 
     expect(await screen.findByText(/Суточные — 700 ₽ в день/)).toBeVisible();
     expect(asked).toEqual([{ question: "Какие суточные?", website: "" }]);
-    const source = screen.getByRole("button", {
+    const source = await screen.findByRole("button", {
       name: /Положение о служебных командировках › Раздел 4/,
     });
     expect(source).toHaveAttribute("aria-expanded", "false");
     await user.click(screen.getByRole("button", { name: "Источник 1" }));
     expect(source).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(/Бухгалтерия перечисляет аванс/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Спросить" })).toBeEnabled();
   });
 
-  it("готовый вопрос, честный отказ и лимит", async () => {
+  it("готовый вопрос, честный отказ, лимит и ошибка в потоке", async () => {
     const user = userEvent.setup();
     demoInfo();
     let calls = 0;
     server.use(
-      http.post("/api/v1/demo/ask", () => {
+      http.post("/api/v1/demo/ask/stream", () => {
         calls += 1;
-        return calls === 1
-          ? HttpResponse.json({ content: "", origin: "none", sources: [] })
-          : HttpResponse.json({ detail: "Слишком много запросов" }, { status: 429 });
+        if (calls === 1) {
+          return demoStream([
+            { type: "stage", stage: "searching" },
+            { type: "done", answer: { content: "", origin: "none", sources: [] } },
+          ]);
+        }
+        if (calls === 2) {
+          return HttpResponse.json({ detail: "Слишком много запросов" }, { status: 429 });
+        }
+        return demoStream([
+          { type: "error", code: "demo_busy", message: "Модель сейчас не отвечает." },
+        ]);
       }),
     );
     renderApp("/demo", { signedIn: false });
@@ -125,6 +149,9 @@ describe("песочница", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Вопросов из песочницы на этот час больше нет",
     );
+
+    await user.type(screen.getByLabelText("Ваш вопрос"), "А отпуск?{Enter}");
+    expect(await screen.findByText("Модель сейчас не отвечает.")).toBeVisible();
   });
 
   it("слишком короткий вопрос не отправляется", async () => {

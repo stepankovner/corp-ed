@@ -1614,6 +1614,137 @@
         "title": "DemoSourceResponse",
         "type": "object"
       },
+      "DemoStreamDelta": {
+        "properties": {
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "delta",
+            "default": "delta",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DemoStreamDelta",
+        "type": "object"
+      },
+      "DemoStreamDone": {
+        "description": "Итог: answer.content заменяет напечатанный текст (ссылки уже\nнормализованы), источники — только здесь.",
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/DemoAnswerResponse"
+          },
+          "type": {
+            "const": "done",
+            "default": "done",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "title": "DemoStreamDone",
+        "type": "object"
+      },
+      "DemoStreamError": {
+        "description": "Ответа не будет: demo_busy — пул песочницы исчерпан или модель не\nотвечает; internal — сбой.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "const": "error",
+            "default": "error",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "DemoStreamError",
+        "type": "object"
+      },
+      "DemoStreamEvent": {
+        "description": "Событие потока ответа песочницы.",
+        "discriminator": {
+          "mapping": {
+            "delta": "#/components/schemas/DemoStreamDelta",
+            "done": "#/components/schemas/DemoStreamDone",
+            "error": "#/components/schemas/DemoStreamError",
+            "reset": "#/components/schemas/DemoStreamReset",
+            "stage": "#/components/schemas/DemoStreamStage"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DemoStreamStage"
+          },
+          {
+            "$ref": "#/components/schemas/DemoStreamDelta"
+          },
+          {
+            "$ref": "#/components/schemas/DemoStreamReset"
+          },
+          {
+            "$ref": "#/components/schemas/DemoStreamDone"
+          },
+          {
+            "$ref": "#/components/schemas/DemoStreamError"
+          }
+        ],
+        "title": "DemoStreamEvent"
+      },
+      "DemoStreamReset": {
+        "description": "Показанный текст убрать: дальше пойдёт другой ответ.",
+        "properties": {
+          "type": {
+            "const": "reset",
+            "default": "reset",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "DemoStreamReset",
+        "type": "object"
+      },
+      "DemoStreamStage": {
+        "description": "searching — ищем в документах; writing — модель пишет ответ.",
+        "properties": {
+          "stage": {
+            "enum": [
+              "searching",
+              "writing"
+            ],
+            "title": "Stage",
+            "type": "string"
+          },
+          "type": {
+            "const": "stage",
+            "default": "stage",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage"
+        ],
+        "title": "DemoStreamStage",
+        "type": "object"
+      },
       "DepartmentBrief": {
         "properties": {
           "id": {
@@ -10093,6 +10224,49 @@
           }
         },
         "summary": "Demo Ask",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/demo/ask/stream": {
+      "post": {
+        "description": "То же, что /ask, но ответ печатается по мере генерации, как в чате.\nЛимиты и песочница без компании (503 demo_off) — до потока; пул или\nмодель не отвечают — событие error в потоке.",
+        "operationId": "demo_ask_stream_api_v1_demo_ask_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoStreamEvent"
+                }
+              },
+              "text/event-stream": {}
+            },
+            "description": "Поток text/event-stream: строки «data: <DemoStreamEvent>», последним — done или error. Посетитель закрыл страницу — ответ прерывается: он нигде не хранится."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Ask Stream",
         "tags": [
           "demo"
         ]

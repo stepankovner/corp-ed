@@ -46,7 +46,7 @@ from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
-from corp_ed.services.faq_service import FaqService
+from corp_ed.services.faq_service import AnswerSink, FaqService
 
 logger = structlog.get_logger()
 
@@ -108,7 +108,9 @@ class DemoService:
             questions=list(SUGGESTED_QUESTIONS),
         )
 
-    async def ask(self, question: str) -> DemoAnswer:
+    async def ask(self, question: str, *, sink: AnswerSink | None = None) -> DemoAnswer:
+        """Ответ без истории. sink — ход ответа для потока на сайте: текст
+        печатается по мере генерации, итог — в возвращённом ответе."""
         if self.build_faq is None:
             raise RuntimeError("DemoService.ask needs build_faq")
         tenant = await self._tenant()
@@ -121,7 +123,9 @@ class DemoService:
                     raise _off()
                 faq = self.build_faq(session)
                 try:
-                    result = await faq.answer_turn(question, member, history=[])
+                    result = await faq.answer_turn(
+                        question, member, history=[], sink=sink
+                    )
                 except CreditsExhaustedError:
                     logger.warning("demo_pool_exhausted")
                     raise DemoUnavailableError(
