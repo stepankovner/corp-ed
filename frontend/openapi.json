@@ -1512,6 +1512,108 @@
         "title": "DayStatsResponse",
         "type": "object"
       },
+      "DemoAnswerResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/AnswerOrigin"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DemoSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content",
+          "origin",
+          "sources"
+        ],
+        "title": "DemoAnswerResponse",
+        "type": "object"
+      },
+      "DemoInfoResponse": {
+        "properties": {
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "documents": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "questions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Questions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "company",
+          "documents",
+          "questions"
+        ],
+        "title": "DemoInfoResponse",
+        "type": "object"
+      },
+      "DemoQuestionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "maxLength": 300,
+            "minLength": 3,
+            "title": "Question",
+            "type": "string"
+          },
+          "website": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Website",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "DemoQuestionRequest",
+        "type": "object"
+      },
+      "DemoSourceResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "heading_path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Heading Path",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "heading_path",
+          "content"
+        ],
+        "title": "DemoSourceResponse",
+        "type": "object"
+      },
       "DepartmentBrief": {
         "properties": {
           "id": {
@@ -9929,6 +10031,70 @@
         "summary": "Share",
         "tags": [
           "chat"
+        ]
+      }
+    },
+    "/api/v1/demo": {
+      "get": {
+        "description": "Компания песочницы, её документы и готовые вопросы. 503 demo_off —\nпесочница выключена или ещё не заведена.",
+        "operationId": "demo_info_api_v1_demo_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoInfoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Demo Info",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/api/v1/demo/ask": {
+      "post": {
+        "description": "Вопрос без входа: ответ целиком, без истории. Лимиты — по IP и\nобщий суточный; без Redis — 503 (вопрос стоит вызова модели).",
+        "operationId": "demo_ask_api_v1_demo_ask_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoAnswerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Demo Ask",
+        "tags": [
+          "demo"
         ]
       }
     },

@@ -1,15 +1,36 @@
-import { Navigate, Outlet, useLocation, useSearchParams } from "react-router";
+import type { ReactNode } from "react";
+import { Navigate, Outlet, useLocation, useMatches, useSearchParams } from "react-router";
 
 import { PageSpinner } from "../ui/Spinner";
 import { isAdmin, needsStrongFactor, useAuth, useMe } from "./context";
 import { safeNext } from "./next";
 
+/**
+ * handle маршрута приложения. guest — что показать гостю вместо входа:
+ * на главной — сайт о продукте (ТЗ §1), на «Помощи» — статьи без формы
+ * обращения, на неизвестном адресе — 404 сайта.
+ */
+export interface RouteHandle {
+  guest?: ReactNode;
+}
+
+function guestPage(matches: ReturnType<typeof useMatches>): ReactNode {
+  for (const match of [...matches].reverse()) {
+    const handle = match.handle as RouteHandle | undefined;
+    if (handle?.guest) return handle.guest;
+  }
+  return null;
+}
+
 /** Вход обязателен; временный пароль пускает только на его смену. */
 export function RequireAuth() {
   const { state } = useAuth();
   const location = useLocation();
+  const matches = useMatches();
   if (state.status === "loading") return <PageSpinner />;
   if (state.status === "anonymous") {
+    const page = guestPage(matches);
+    if (page) return page;
     const next = location.pathname + location.search;
     return (
       <Navigate to={`/login${next === "/" ? "" : `?next=${encodeURIComponent(next)}`}`} replace />

@@ -7,19 +7,28 @@
     <meta name="robots" content="noindex" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="kronto" />
     <title>kronto</title>
     <!--
-      Тема до первой отрисовки, без вспышки светлой: повторяет applyTheme из
-      src/lib/theme.ts. Хеш скрипта разрешён в CSP (nginx.conf) — после правки
-      пересчитайте его, тест src/lib/theme.test.ts подскажет новый.
+      До первой отрисовки: тема без вспышки светлой (повторяет applyTheme из
+      src/lib/theme.ts) и признак «здесь входили» (api/session.ts) — готовый
+      HTML сайта у вошедшего скрыт до отрисовки приложения (base.css). Хеш
+      скрипта разрешён в CSP (nginx.conf) — после правки пересчитайте его,
+      тест src/lib/csp.test.ts подскажет новый.
     -->
     <script>
       (function () {
         var root = document.documentElement;
         var choice = null;
+        var signedIn = false;
         try {
           choice = localStorage.getItem("kronto.theme");
+          signedIn = localStorage.getItem("kronto.signedIn") === "1";
         } catch (e) {}
+        if (signedIn) root.setAttribute("data-session", "");
         if (choice === "light" || choice === "dark") root.setAttribute("data-theme", choice);
         var dark =
           choice === "dark" ||

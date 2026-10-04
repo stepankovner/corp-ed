@@ -204,7 +204,8 @@ describe("меню учётной записи", () => {
     );
 
     await user.click(within(menu).getByRole("menuitem", { name: "Выйти" }));
-    expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
+    // Вышли — на главной сайт для гостя с кнопкой «Войти».
+    expect(await screen.findByRole("link", { name: "Войти" })).toHaveAttribute("href", "/login");
     expect(getSession()).toBeNull();
   });
 });

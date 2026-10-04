@@ -367,6 +367,35 @@ def get_lead_settings() -> LeadSettings:
     return LeadSettings()
 
 
+class DemoSettings(BaseSettings):
+    """Песочница на сайте (ТЗ §1): вопросы без входа к вымышленной
+    компании (corp_ed/demo). Компанию заводит и обновляет `cli demo
+    setup` — его запускает выкатка; пока её нет, песочница отвечает
+    «недоступна». Вопрос стоит вызова модели, поэтому лимиты строгие и
+    при недоступном Redis — отказ (api/v1/rate_limits.py, DEMO_*).
+    """
+
+    enabled: bool = True
+    company_code: str = Field(default="demo-site", pattern=r"^[a-z0-9][a-z0-9-]{1,62}$")
+    # Учётка, от имени которой песочница спрашивает. Войти в неё нельзя:
+    # вместо хеша пароля — заглушка, которую не примет ни один пароль.
+    account_email: str = "demo@krontoai.ru"
+    # Места компании — её пул кредитов на месяц: потолок расходов на модель.
+    seats: int = Field(default=30, gt=0, le=1000)
+
+    model_config = SettingsConfigDict(
+        env_prefix="DEMO_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_demo_settings() -> DemoSettings:
+    return DemoSettings()
+
+
 class TeamNotifySettings(BaseSettings):
     """Бот в Telegram для нашей команды (решение 28.09, П-5).
 
@@ -465,7 +494,7 @@ class RegistrationSettings(BaseSettings):
 
     enabled: bool = True
     policy_url: str = "/privacy"
-    policy_version: str = Field(default="draft-2026-10-03", max_length=64)
+    policy_version: str = Field(default="draft-2026-10-04", max_length=64)
 
     model_config = SettingsConfigDict(
         env_prefix="REGISTRATION_",

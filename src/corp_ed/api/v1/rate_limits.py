@@ -116,6 +116,11 @@ STAFF_RESET_PER_ACCOUNT = RatePolicy(
 # «Написать в поддержку»: человеку хватит пяти обращений в час, больше —
 # уже рассылка в Telegram команды.
 SUPPORT_PER_ACCOUNT = RatePolicy("support", limit=5, window=3600, fail_open=False)
+# Песочница на сайте (ТЗ §1): вопрос без входа стоит вызова модели.
+# Посетителю хватит десятка вопросов в час; общий суточный потолок — против
+# раздачи модели всему интернету с многих адресов. Без Redis — отказ.
+DEMO_PER_IP = RatePolicy("demo-ip", limit=10, window=3600, fail_open=False)
+DEMO_PER_DAY = RatePolicy("demo-all", limit=300, window=86400, fail_open=False)
 SUGGESTION_EDIT_PER_TENANT = RatePolicy(
     "suggestion-edit", limit=120, window=3600, fail_open=True
 )

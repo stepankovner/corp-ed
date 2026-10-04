@@ -13,6 +13,8 @@ export function useMediaQuery(media: string): boolean {
       return () => list?.removeEventListener("change", onChange);
     },
     () => query(media)?.matches ?? false,
+    // Готовый HTML сайта рисуется без браузера.
+    () => false,
   );
 }
 

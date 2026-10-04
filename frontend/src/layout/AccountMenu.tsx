@@ -1,8 +1,9 @@
-import { ChevronsUpDown, LogOut, Settings } from "lucide-react";
+import { ChevronsUpDown, Download, LogOut, Settings } from "lucide-react";
 import { Link } from "react-router";
 
 import { displayName, useAuth, useMe } from "../auth/context";
 import { personInitials } from "../lib/initials";
+import { useInstallPrompt } from "../lib/install";
 import { Avatar } from "../ui/Avatar";
 import {
   DropdownMenu,
@@ -21,6 +22,7 @@ const ROLE_CAPTION = { admin: "администратор", employee: "сотр�
 export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
   const me = useMe();
   const { logout } = useAuth();
+  const install = useInstallPrompt();
   const name = displayName(me);
   return (
     <DropdownMenu>
@@ -62,6 +64,14 @@ export function AccountMenu({ collapsed = false }: { collapsed?: boolean }) {
             <Settings size={16} aria-hidden /> Настройки
           </Link>
         </DropdownMenuItem>
+        {install ? (
+          <DropdownMenuItem
+            icon={<Download size={16} aria-hidden />}
+            onSelect={() => void install()}
+          >
+            Установить приложение
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuSeparator />
         <ThemeOptions />
         <DropdownMenuSeparator />
