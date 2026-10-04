@@ -1,5 +1,7 @@
 """LLM_PROVIDER=fake: разработка фронта и сквозные тесты без ключей."""
 
+import asyncio
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -10,6 +12,7 @@ from corp_ed.core.config import LLMSettings
 from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
 from corp_ed.llm.fake import DevAdapter
 from corp_ed.llm.fake_embedding import WordEmbeddingAdapter
+from corp_ed.llm.throttle import Throttle, ThrottleBusyError
 from corp_ed.llm.types import Message, Role
 from corp_ed.prompts.faq import build_faq_messages, build_general_messages
 
@@ -78,3 +81,56 @@ async def test_word_embeddings_bring_shared_words_together() -> None:
     far = (await adapter.embed_query("погода на Венере")).embedding
     assert sum(a * b for a, b in zip(doc, close, strict=True)) > 0.3
     assert sum(a * b for a, b in zip(doc, far, strict=True)) < 0.1
+
+
+async def test_load_test_knobs_are_off_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    settings = LLMSettings()
+    llm = build_llm_gateway(httpx.AsyncClient(), settings, asyncio.Semaphore(1))
+    assert isinstance(llm, DevAdapter)
+    assert llm.latency == 0
+    assert llm._concurrency is None
+    embedder = build_embedding_gateway(
+        httpx.AsyncClient(), settings, query_throttle=_Busy()
+    )
+    await embedder.embed_query("вопрос")  # темп не применяется
+
+
+async def test_fake_quotas_take_the_generation_slot_and_the_throttle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Нагрузочная проверка: поддельная модель занимает слот семафора на
+    всё время ответа, эмбеддер ждёт темпа — как настоящие."""
+    monkeypatch.setenv("LLM_PROVIDER", "fake")
+    monkeypatch.setenv("LLM_FAKE_QUOTAS", "true")
+    monkeypatch.setenv("LLM_FAKE_LATENCY_MS", "50")
+    monkeypatch.setenv("LLM_FAKE_STREAM_DELAY_MS", "0")
+    settings = LLMSettings()
+    semaphore = asyncio.Semaphore(1)
+    llm = build_llm_gateway(httpx.AsyncClient(), settings, semaphore)
+    messages = [Message(role=Role.USER, content="вопрос")]
+
+    started = time.monotonic()
+    await asyncio.gather(llm.generate(messages), llm.generate(messages))
+    # Слот один: второй ответ ждёт первого.
+    assert time.monotonic() - started >= 0.1
+
+    stream = llm.stream(messages)
+    await anext(stream)
+    assert semaphore.locked()
+    async for _ in stream:
+        pass
+    assert not semaphore.locked()
+
+    embedder = build_embedding_gateway(
+        httpx.AsyncClient(), settings, query_throttle=_Busy()
+    )
+    with pytest.raises(ThrottleBusyError):
+        await embedder.embed_query("вопрос")
+
+
+class _Busy(Throttle):
+    async def acquire(self) -> None:
+        raise ThrottleBusyError(9.0)
