@@ -3,7 +3,12 @@
 run_eval ходит только сюда, в БД и во внутренности бэкенда не лезет.
 
 Эндпоинты:
-- POST /api/v1/auth/login  {company_code, email, password} → {access_token}
+- POST /api/v1/auth/login  {email, password} → {access_token} или, если у
+  учётки второй фактор (у администратора обязателен), {status:
+  "mfa_required", mfa: {token, methods}} → POST /api/v1/auth/mfa/verify
+  {token, method: "totp", code} → {access_token}. Код компании во входе
+  больше не нужен (этапы 2–4 бэкенда), лишнее поле — 422. Образец —
+  corp_ed.stand.StandClient.login;
 - POST /api/v1/faq/search  {question, limit} → top-K чанков с расстояниями,
   без LLM. Отладочный, только для админа. ЗАДАЧА БЭКЕНДУ (до 1.10);
   предлагаемый ответ — в docs/backend-handoff.md (BH-5).
@@ -15,8 +20,12 @@ material_title / title, heading_path списком или строкой «A > 
 
 Настройки — из окружения (или .env):
     CORP_ED_BASE_URL   по умолчанию http://localhost:8000
-    CORP_ED_TOKEN      готовый JWT; иначе логин по трём переменным ниже
-    CORP_ED_COMPANY, CORP_ED_EMAIL, CORP_ED_PASSWORD
+    CORP_ED_TOKEN      готовый JWT (живёт 15 минут — на прогон не хватит);
+                       иначе вход по переменным ниже
+    CORP_ED_EMAIL, CORP_ED_PASSWORD
+    CORP_ED_TOTP_SECRET  секрет приложения учётки (второй фактор) — в .env,
+                       не в чат
+Токен истёк посреди прогона (401) — клиент входит заново и повторяет запрос.
 """
 
 import os
@@ -27,6 +36,7 @@ from typing import Any
 
 import httpx
 
+from corp_ed.core import totp
 from eval.relevance import RetrievedChunk
 
 DEFAULT_BASE_URL = "http://localhost:8000"
@@ -53,6 +63,7 @@ class CorpEdClient:
     ) -> None:
         self._http = http or httpx.Client(base_url=base_url, timeout=timeout)
         self._token = token
+        self._credentials: tuple[str, str, str | None] | None = None
 
     @classmethod
     def from_env(cls) -> "CorpEdClient":
@@ -64,24 +75,49 @@ class CorpEdClient:
         if client._token is None:
             try:
                 client.login(
-                    os.environ["CORP_ED_COMPANY"],
                     os.environ["CORP_ED_EMAIL"],
                     os.environ["CORP_ED_PASSWORD"],
+                    os.environ.get("CORP_ED_TOTP_SECRET") or None,
                 )
             except KeyError as error:
                 raise SystemExit(
                     f"Не задан {error}: нужен CORP_ED_TOKEN или "
-                    "CORP_ED_COMPANY + CORP_ED_EMAIL + CORP_ED_PASSWORD"
+                    "CORP_ED_EMAIL + CORP_ED_PASSWORD (+ CORP_ED_TOTP_SECRET)"
                 ) from None
         return client
 
-    def login(self, company_code: str, email: str, password: str) -> None:
+    def login(self, email: str, password: str, totp_secret: str | None = None) -> None:
+        self._credentials = (email, password, totp_secret)
         response = self._http.post(
             f"{API_PREFIX}/auth/login",
-            json={"company_code": company_code, "email": email, "password": password},
+            json={"email": email, "password": password, "remember": False},
         )
         response.raise_for_status()
-        self._token = response.json()["access_token"]
+        body = response.json()
+        if body.get("status") == "mfa_required":
+            methods = body["mfa"]["methods"]
+            if "totp" not in methods or not totp_secret:
+                raise SystemExit(
+                    "Вход: нужен второй фактор — CORP_ED_TOTP_SECRET "
+                    f"(способы учётки: {', '.join(methods)})"
+                )
+            # Код текущего шага, затем следующего: повторный вход в те же
+            # 30 секунд даст тот же код, а повтор кода сервер отвергает.
+            step = totp.current_step()
+            for candidate in (step, step + 1):
+                response = self._http.post(
+                    f"{API_PREFIX}/auth/mfa/verify",
+                    json={
+                        "token": body["mfa"]["token"],
+                        "method": "totp",
+                        "code": totp.code_at(totp_secret, candidate),
+                    },
+                )
+                if response.status_code == 200:
+                    break
+            response.raise_for_status()
+            body = response.json()
+        self._token = body["access_token"]
 
     def search(self, question: str, limit: int) -> tuple[list[RetrievedChunk], float]:
         body, latency = self._post(
@@ -103,12 +139,23 @@ class CorpEdClient:
         )
 
     def _post(self, path: str, payload: dict[str, Any]) -> tuple[Any, float]:
-        headers = {"Authorization": f"Bearer {self._token}"} if self._token else {}
         started = time.perf_counter()
-        response = self._http.post(f"{API_PREFIX}{path}", json=payload, headers=headers)
+        response = self._http.post(
+            f"{API_PREFIX}{path}", json=payload, headers=self._headers()
+        )
+        if response.status_code == 401 and self._credentials is not None:
+            # Токен живёт 15 минут, прогон дольше: войти заново и повторить.
+            self.login(*self._credentials)
+            started = time.perf_counter()
+            response = self._http.post(
+                f"{API_PREFIX}{path}", json=payload, headers=self._headers()
+            )
         latency_ms = (time.perf_counter() - started) * 1000
         response.raise_for_status()
         return response.json(), latency_ms
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._token}"} if self._token else {}
 
 
 def parse_search_response(body: Any) -> list[RetrievedChunk]:
