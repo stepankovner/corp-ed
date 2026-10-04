@@ -72,6 +72,8 @@ class AuditAction(StrEnum):
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
     TENANT_TARIFF_CHANGED = "tenant.tariff_changed"
     TENANT_PILOT_CHANGED = "tenant.pilot_changed"
+    DIGEST_SENT = "digest.sent"
+    SUPPORT_REQUESTED = "support.requested"
     STAFF_ADDED = "staff.added"
     STAFF_REMOVED = "staff.removed"
     CREDITS_WARNING = "credits.warning"

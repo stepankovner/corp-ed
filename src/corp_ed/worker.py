@@ -42,6 +42,7 @@ from corp_ed.connectors.registry import default_registry
 from corp_ed.core.config import (
     LLMSettings,
     RagSettings,
+    get_billing_settings,
     get_connector_settings,
     get_http_settings,
     get_mail_settings,
@@ -75,6 +76,7 @@ from corp_ed.repositories.ingest_job_repository import (
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.connector_sync_service import ConnectorSyncService
+from corp_ed.services.digest_service import DigestService
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.mail_worker import MailWorker
 from corp_ed.services.team_notify import build_team_notifier
@@ -329,6 +331,27 @@ class SyncWorker:
         logger.info("sync_worker_stopped")
 
 
+DIGEST_EVERY = 900.0
+"""Как часто проверять, не пора ли разослать недельные сводки."""
+
+
+async def digest_loop(
+    stop: asyncio.Event,
+    service: DigestService,
+    every: float = DIGEST_EVERY,
+) -> None:
+    """Недельная сводка администраторам (ТЗ §8): по понедельникам с 9:00.
+    В воркере, а не в cron: на стенде cron ставит только первичная
+    настройка сервера, а воркер обновляется с каждой выкаткой."""
+    while not stop.is_set():
+        try:
+            await service.send_due()
+        except Exception:
+            logger.exception("digest_loop_error")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)
+
+
 async def heartbeat(
     stop: asyncio.Event,
     path: Path = HEARTBEAT_PATH,
@@ -435,6 +458,13 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
                 ingest_worker.run_forever(stop),
                 sync_worker.run_forever(stop),
                 mail_worker.run_forever(stop),
+                digest_loop(
+                    stop,
+                    DigestService(
+                        get_session_maker(),
+                        zone=get_billing_settings().billing_timezone,
+                    ),
+                ),
                 heartbeat(stop, redis=redis, session_maker=get_session_maker()),
             )
         finally:

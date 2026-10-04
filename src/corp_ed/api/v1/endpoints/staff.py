@@ -15,6 +15,7 @@ from corp_ed.api.v1.dependencies import (
     get_lead_service,
     get_staff_account,
     get_staff_service,
+    get_support_service,
     get_tenant_service,
 )
 from corp_ed.api.v1.rate_limits import (
@@ -22,6 +23,11 @@ from corp_ed.api.v1.rate_limits import (
     STAFF_RESET_PER_ACCOUNT,
     enforce,
     get_rate_limiter,
+)
+from corp_ed.api.v1.schemas.notification import (
+    StaffSupportResponse,
+    StaffSupportUpdate,
+    SupportStatus,
 )
 from corp_ed.api.v1.schemas.staff import (
     SpendCompanyResponse,
@@ -50,6 +56,7 @@ from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.seats import seats_check
 from corp_ed.services.staff_service import CompanyRow, Person, StaffService
+from corp_ed.services.support_service import SupportItem, SupportService
 from corp_ed.services.tenant_service import TenantService
 
 router = APIRouter(prefix="/staff", tags=["staff"])
@@ -366,3 +373,43 @@ async def update_lead(
 ) -> StaffLeadResponse:
     await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
     return _lead(await leads.set_status(lead_id, body.status))
+
+
+# --- обращения в поддержку (ТЗ §8) -------------------------------------------
+
+
+def _support(item: SupportItem) -> StaffSupportResponse:
+    request = item.request
+    return StaffSupportResponse(
+        id=request.id,
+        topic=request.topic,  # type: ignore[arg-type]
+        message=request.message,
+        status=request.status,  # type: ignore[arg-type]
+        created_at=request.created_at,
+        updated_at=request.updated_at,
+        email=item.email,
+        name=item.name,
+        company=item.company,
+    )
+
+
+@router.get("/support", response_model=list[StaffSupportResponse])
+async def list_support(
+    support: Annotated[SupportService, Depends(get_support_service)],
+    staff: Staff,
+    state: Annotated[SupportStatus | None, Query(alias="status")] = None,
+) -> list[StaffSupportResponse]:
+    """Обращения: текст и почта — только здесь, в Telegram их нет."""
+    return [_support(item) for item in await support.list(state)]
+
+
+@router.patch("/support/{request_id}", response_model=StaffSupportResponse)
+async def update_support(
+    request_id: UUID,
+    body: StaffSupportUpdate,
+    support: Annotated[SupportService, Depends(get_support_service)],
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffSupportResponse:
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    return _support(await support.set_status(request_id, body.status))

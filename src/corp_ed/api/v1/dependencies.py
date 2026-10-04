@@ -101,10 +101,13 @@ from corp_ed.services.invite_service import InviteService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.material_service import MaterialService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
+from corp_ed.services.notification_service import NotificationService
+from corp_ed.services.onboarding_service import OnboardingService
 from corp_ed.services.people_service import PeopleService
 from corp_ed.services.sources_service import SourcesService
 from corp_ed.services.staff_service import StaffService
 from corp_ed.services.suggestion_service import SuggestionService
+from corp_ed.services.support_service import SupportService
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 from corp_ed.services.tenant_service import TenantService
 from corp_ed.services.user_service import UserService
@@ -813,3 +816,23 @@ def get_tenant_service(
 ) -> TenantService:
     """Тариф, места, приостановка — то же, что cli, для нашей панели."""
     return TenantService(tenant_repo, user_repo, audit, session)
+
+
+def get_notification_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> NotificationService:
+    return NotificationService(session)
+
+
+def get_onboarding_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> OnboardingService:
+    return OnboardingService(session)
+
+
+def get_support_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
+) -> SupportService:
+    return SupportService(session, audit, notifier)

@@ -391,3 +391,35 @@ def security_changed(*, name: str | None, what: str, reset_url: str) -> Rendered
         ],
     )
     return RenderedEmail("security_changed", subject, text, html)
+
+
+def notice(
+    *,
+    kind: str,
+    name: str | None,
+    title: str,
+    lines: list[str],
+    url: str,
+    action: str,
+    settings_url: str,
+) -> RenderedEmail:
+    """Уведомление администратору (ТЗ §8): подключение, лимит, заявка на
+    вступление, недельная сводка. Внизу — где выключить такие письма."""
+    text = (
+        f"{_greeting(name)}\n\n" + "\n".join(lines) + f"\n\n{action}: {url}\n\n"
+        f"Какие письма присылать — {settings_url}"
+    )
+    html = _layout(
+        title,
+        [
+            _p(escape(_greeting(name))),
+            *(_p(escape(line)) for line in lines),
+            _button(action, url),
+            _muted(
+                "Какие письма присылать — "
+                f'<a href="{escape(settings_url, quote=True)}" '
+                f'style="color:{_MUTED};">в настройках</a>.'
+            ),
+        ],
+    )
+    return RenderedEmail(f"notice_{kind}", title, text, html)

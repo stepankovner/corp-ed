@@ -63,6 +63,7 @@ from corp_ed.core.config import (
     GapsSettings,
     LLMSettings,
     RagSettings,
+    get_billing_settings,
     get_connector_settings,
     get_lead_settings,
     get_settings,
@@ -89,6 +90,7 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
+from corp_ed.services.digest_service import DigestService
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.reindex_service import ReindexService
@@ -202,6 +204,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     set_totp.add_argument("--email", required=True)
     set_totp.add_argument("--secret-stdin", action="store_true", required=True)
+
+    digest = commands.add_parser(
+        "digest",
+        help="недельная сводка администраторам (воркер шлёт её сам по понедельникам)",
+    )
+    digest.add_argument("--code", help="одна компания")
+    digest.add_argument(
+        "--force",
+        action="store_true",
+        help="не ждать понедельника и прислать ещё раз — проверить письмо",
+    )
 
     staff = commands.add_parser(
         "staff", help="команда kronto с доступом к нашей панели (/staff)"
@@ -338,6 +351,16 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "staff":
         return await _staff(args)
+
+    if args.command == "digest":
+        digest_report = await DigestService(
+            get_session_maker(), zone=get_billing_settings().billing_timezone
+        ).send_due(force=args.force, company_code=args.code)
+        print(
+            f"сводок отправлено: {digest_report.sent}, "
+            f"пропущено: {digest_report.skipped}"
+        )
+        return 0
 
     if args.command == "set-totp":
         return await _set_totp(args.email, sys.stdin.readline().strip())

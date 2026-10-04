@@ -52,6 +52,11 @@ from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.invite_repository import InviteRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.notification_service import (
+    Notice,
+    NotificationKind,
+    NotificationService,
+)
 from corp_ed.services.seats import JOIN_SEATS_MESSAGE, ensure_free_seat
 
 logger = structlog.get_logger()
@@ -278,6 +283,23 @@ class InviteService:
                 target_id=member.id,
                 details={"invite_id": str(invite.id), "account_id": str(account.id)},
             )
+            if status is MemberStatus.PENDING:
+                # Администраторам (ТЗ §8): человек ждёт одобрения.
+                who = account.full_name or account.email
+                await NotificationService(self.session).notify_admins(
+                    tenant.id,
+                    Notice(
+                        kind=NotificationKind.JOIN_REQUEST,
+                        title=f"Заявка на вступление: {who}",
+                        lines=[
+                            f"{who} ({account.email}) хочет вступить в компанию "
+                            "по приглашению.",
+                            "Одобрить или отклонить — в разделе «Сотрудники».",
+                        ],
+                        link="/admin/users",
+                        action="Открыть заявки",
+                    ),
+                )
             # Записать в контексте компании: коммит вызывающего идёт уже
             # вне его, и RLS не нашёл бы строки членства и приглашения.
             await self.session.flush()
