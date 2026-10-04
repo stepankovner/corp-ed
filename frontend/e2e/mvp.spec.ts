@@ -75,6 +75,13 @@ const INSIDE = (page: Page) =>
     .or(page.getByRole("heading", { name: /^Здравствуйте,/ }))
     .first();
 
+/** Выход завершён: гость видит сайт («Войти» в шапке) или форму входа. */
+async function signedOut(page: Page) {
+  await expect(
+    page.getByRole("link", { name: "Войти" }).or(page.getByLabel("Почта")).first(),
+  ).toBeVisible();
+}
+
 async function submitPassword(page: Page, email: string, password: string, remember = false) {
   await page.goto("/login");
   await page.getByLabel("Почта").fill(email);
@@ -183,9 +190,14 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
-    await expect(page).toHaveURL(/\/login/);
+    // Вышли — на главной сайт для гостя; после перезагрузки сессия не
+    // вернулась, и готовый HTML сайта не скрыт признаком входа.
+    await expect(page.getByRole("link", { name: "Войти" })).toBeVisible();
     await page.reload();
-    await expect(page.getByLabel("Почта")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Спросите — и получите ответ/ }),
+    ).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-session");
   });
 
   test("оболочка: тема переживает перезагрузку, заголовки вкладок, меню на телефоне", async ({
@@ -447,6 +459,7 @@ test.describe.serial("путь компании", () => {
     // Администратор видит её в справочнике: должность, отдел, фото, контакты.
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginAdmin(page, context);
     await page.goto("/people");
     const card = page
@@ -550,6 +563,7 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginAdmin(page, context);
     await page.getByRole("link", { name: "Панель kronto" }).click();
     await page.getByRole("link", { name: "Обращения", exact: true }).click();
@@ -620,6 +634,7 @@ test.describe.serial("путь компании", () => {
     // Кирилл — без отдела: папки не видит.
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginByMail(page, coderEmail, employeePassword);
     await page.goto("/settings/connections");
     where = page.getByRole("region", { name: "Где ищет ассистент" });
@@ -646,6 +661,7 @@ test.describe.serial("путь компании", () => {
 
     await page.getByRole("button", { name: /^Профиль/ }).click();
     await page.getByRole("menuitem", { name: "Выйти" }).click();
+    await signedOut(page);
     await loginByMail(page, invitedEmail, fresh);
     await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
   });
