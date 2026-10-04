@@ -144,17 +144,22 @@ def relevant_matches(
     *,
     gate_distance: float | None = None,
     near_margin: float = 0.0,
+    nearest: float | None = None,
 ) -> list[OfflineMatch]:
     """Как faq_service: отбросить всё дальше порога, порядок сохранить.
 
     gate_distance (BH-37, замер 04.10): если ближайшая выдержка дальше
     max_distance, но не дальше gate_distance, в модель идут она и выдержки
     не дальше неё + near_margin (`domain.threshold.relevance_limit`).
+
+    nearest — ближайший по вектору фрагмент всей выдачи, как found.nearest
+    продукта. После реранкера его может не быть среди matches, и порог по
+    ближайшему из них был бы другим. Без него — ближайший из matches.
     """
-    known = [m.distance for m in matches if m.distance is not None]
-    limit = relevance_limit(
-        min(known) if known else None, max_distance, gate_distance, near_margin
-    )
+    if nearest is None:
+        known = [m.distance for m in matches if m.distance is not None]
+        nearest = min(known) if known else None
+    limit = relevance_limit(nearest, max_distance, gate_distance, near_margin)
     if limit is None:
         return []
     return [
@@ -227,6 +232,8 @@ def retrieve(
     rerank_depth: int = 30,
     rerank_max_distance: float | None = None,
     rerank_kind: str = "embed",
+    gate_distance: float | None = None,
+    near_margin: float = 0.0,
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
 
@@ -239,7 +246,17 @@ def retrieve(
     reranker (M3) — первые rerank_depth векторных кандидатов, прошедших
     rerank_max_distance, пересортировываются кросс-энкодером; в выдачу —
     первые limit. Порог по вектору остаётся (relevant_matches).
+
+    gate_distance (BH-37) — порог реранкера у каждого вопроса свой, как в
+    faq_service: `relevance_limit` по ближайшему фрагменту; ответа по
+    документам нет — реранкер не зовём.
     """
+    if (
+        reranker is not None
+        and gate_distance is not None
+        and rerank_max_distance is None
+    ):
+        raise ValueError("с gate_distance нужен rerank_max_distance — порог продукта")
     groups = [list(group) for group in paraphrases] if paraphrases else []
     flat = [*questions, *(query for group in groups for query in group)]
     depth = (
@@ -272,7 +289,15 @@ def retrieve(
             ranking = fuse_query_rankings(
                 ranking, extra, paraphrase_weight=paraphrase_weight, k=rrf_k
             )
-        if reranker is not None:
+        nearest = min(distance_of.values(), default=None)
+        cutoff = rerank_max_distance
+        if gate_distance is not None and rerank_max_distance is not None:
+            cutoff = relevance_limit(
+                nearest, rerank_max_distance, gate_distance, near_margin
+            )
+        # С gate ответа по документам нет — продукт реранкер не зовёт; без
+        # gate None — оценить всех первых rerank_depth (как было).
+        if reranker is not None and (gate_distance is None or cutoff is not None):
             question = questions[index]
             ranking = rerank_candidates(
                 ranking,
@@ -281,7 +306,7 @@ def retrieve(
                     q, [rerank_text(chunks[i], rerank_kind) for i in idx]
                 ),
                 depth=rerank_depth,
-                max_distance=rerank_max_distance,
+                max_distance=cutoff,
             )
         results.append(
             (
@@ -289,7 +314,7 @@ def retrieve(
                     OfflineMatch.from_chunk(chunks[i], distance_of.get(i))
                     for i in ranking[:limit]
                 ],
-                min(distance_of.values(), default=None),
+                nearest,
             )
         )
     return results
@@ -493,6 +518,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
+    if (
+        args.rerank
+        and args.gate_distance is not None
+        and args.rerank_max_distance is not None
+    ):
+        # С BH-37 порог реранкера — порог продукта у каждого вопроса.
+        print("--rerank-max-distance: не вместе с --gate-distance")
+        return 2
     rr_name = (
         config_suffix(
             args.rerank_depth,
@@ -560,6 +593,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             else args.max_distance
         ),
         rerank_kind=args.rerank_text,
+        gate_distance=args.gate_distance,
+        near_margin=args.near_margin,
     )
     if reranker is not None:
         reranker.save()
@@ -593,6 +628,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.max_distance,
                 gate_distance=args.gate_distance,
                 near_margin=args.near_margin,
+                nearest=best,
             )
             if retriever == "vector" and not args.multi_query
             else gate_by_best_distance(found, best, args.max_distance)
