@@ -284,6 +284,10 @@ git pull
 docker compose -f compose.yaml up -d --build
 ```
 
+После выкатки — `docker compose -f compose.yaml run --rm --no-deps -T api
+python -m corp_ed.cli demo setup`: заводит или обновляет компанию
+песочницы сайта (на стенде это делает `deploy/stage/deploy.sh`).
+
 `api` и `worker` стартуют только после успешного `migrate`
 (`service_completed_successfully`). Миграции пишутся совместимыми с
 предыдущей версией кода там, где это возможно; там, где нет (смена
@@ -438,7 +442,17 @@ Confluence — обычный пользователь, который чита�
 - [ ] Прогон `security.yaml` на текущем коммите зелёный (кроме CodeQL —
       до решения по GitHub Code Security, RISKS №13).
 - [ ] `python -m corp_ed.stand check` против стенда — все шаги прошли.
-- [ ] `https://<имя>/` открывает вход; `curl -I https://<имя>/` —
+- [ ] `https://<имя>/` гостю открывает сайт (готовый HTML с текстом
+      главной), `https://<имя>/login` — вход; на боевом `krontoai.ru` у
+      страниц нет `X-Robots-Tag`, `robots.txt` открыт и указывает на
+      `sitemap.xml`; на любом другом имени (стенд) — `X-Robots-Tag:
+      noindex, nofollow` и `Disallow: /`.
+- [ ] Песочница: `cli demo setup` отработал при выкатке, через пару минут
+      `https://<имя>/demo` отвечает по документам «Меридиан Строй».
+      `DEMO_SEATS` — потолок расходов на модель от посетителей в месяц.
+- [ ] `REGISTRATION_ENABLED=false` на боевом домене, пока юридические
+      страницы — черновики «заменить» (`/privacy`, `/terms`, `/consent`).
+- [ ] `curl -I https://<имя>/` —
       `Content-Security-Policy: default-src 'self'; script-src 'self'
       'sha256-…'` (хеш встроенного скрипта темы из `index.html`: правите
       скрипт — обновите хеш в `nginx.conf`, иначе тема мигнёт при загрузке;

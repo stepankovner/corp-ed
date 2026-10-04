@@ -1,10 +1,8 @@
 .screen {
   position: relative;
   isolation: isolate;
-  min-height: 100vh;
-  min-height: 100dvh;
   background: var(--surface);
-  padding: 12px var(--gutter) var(--s-8);
+  padding: 0 var(--gutter) var(--s-8);
   overflow-x: clip;
 }
 /* Свечение, как на экране входа и на лендинге. */
@@ -18,23 +16,6 @@
     radial-gradient(40rem 26rem at 12% 0%, var(--glow-2), transparent 70%),
     radial-gradient(44rem 28rem at 88% 20%, var(--glow-1), transparent 70%);
   pointer-events: none;
-}
-.top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  max-width: var(--container);
-  margin: 0 auto;
-}
-.brand {
-  display: flex;
-  color: var(--ink);
-}
-.topActions {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
 }
 .main {
   max-width: var(--container);

@@ -98,7 +98,8 @@ export async function authFetch(input: Request): Promise<Response> {
 }
 
 export const api = createClient<paths>({
-  baseUrl: window.location.origin,
+  // Без window — предрендер сайта при сборке (site/prerender.tsx): запросов он не шлёт.
+  baseUrl: typeof window === "undefined" ? "http://localhost" : window.location.origin,
   fetch: (request) => authFetch(request),
 });
 

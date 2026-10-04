@@ -1352,6 +1352,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Demo Info
+         * @description Компания песочницы, её документы и готовые вопросы. 503 demo_off —
+         *     песочница выключена или ещё не заведена.
+         */
+        get: operations["demo_info_api_v1_demo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/demo/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Demo Ask
+         * @description Вопрос без входа: ответ целиком, без истории. Лимиты — по IP и
+         *     общий суточный; без Redis — 503 (вопрос стоит вызова модели).
+         */
+        post: operations["demo_ask_api_v1_demo_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/departments": {
         parameters: {
             query?: never;
@@ -2998,6 +3040,42 @@ export interface components {
             day: string;
             /** Questions */
             questions: number;
+        };
+        /** DemoAnswerResponse */
+        DemoAnswerResponse: {
+            /** Content */
+            content: string;
+            origin: components["schemas"]["AnswerOrigin"];
+            /** Sources */
+            sources: components["schemas"]["DemoSourceResponse"][];
+        };
+        /** DemoInfoResponse */
+        DemoInfoResponse: {
+            /** Company */
+            company: string;
+            /** Documents */
+            documents: string[];
+            /** Questions */
+            questions: string[];
+        };
+        /** DemoQuestionRequest */
+        DemoQuestionRequest: {
+            /** Question */
+            question: string;
+            /**
+             * Website
+             * @default
+             */
+            website: string;
+        };
+        /** DemoSourceResponse */
+        DemoSourceResponse: {
+            /** Content */
+            content: string;
+            /** Heading Path */
+            heading_path: string[];
+            /** Title */
+            title: string;
         };
         /** DepartmentBrief */
         DepartmentBrief: {
@@ -7228,6 +7306,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_info_api_v1_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoInfoResponse"];
+                };
+            };
+        };
+    };
+    demo_ask_api_v1_demo_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoAnswerResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

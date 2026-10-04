@@ -1,0 +1,343 @@
+/* Публичный сайт: оболочка и общие блоки страниц. Только токены — цвета
+   тёмной темы приходят из tokens.css. */
+
+.site {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* ——— шапка ——— */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bar-bg);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.headerInner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  max-width: var(--container);
+  height: var(--header-h);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+.brand {
+  display: flex;
+  color: var(--ink);
+  border-radius: var(--r-xs);
+}
+.nav {
+  flex: 1;
+}
+.navList {
+  display: flex;
+  gap: var(--s-1);
+}
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-sm);
+  padding: 0 var(--s-3);
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-decoration: none;
+  transition:
+    color 0.15s var(--ease),
+    background-color 0.15s var(--ease);
+}
+.navLink:hover {
+  color: var(--ink);
+  background: var(--fill-hover);
+}
+.navActive {
+  color: var(--ink);
+  background: var(--fill-active);
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-left: auto;
+}
+.menuButton {
+  display: none;
+}
+.mobileNav ul {
+  display: grid;
+  gap: 2px;
+  padding: var(--s-2) var(--gutter) var(--s-4);
+}
+.mobileNav a {
+  display: block;
+  padding: var(--s-3) var(--s-2);
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  text-decoration: none;
+  font-size: var(--fs-body);
+}
+.mobileNav a:hover {
+  background: var(--fill-hover);
+}
+
+@media (max-width: 960px) {
+  .nav,
+  .headerCta {
+    display: none;
+  }
+  .menuButton {
+    display: inline-flex;
+  }
+}
+@media (min-width: 961px) {
+  .mobileNav {
+    display: none !important;
+  }
+}
+
+/* ——— содержимое ——— */
+
+.main {
+  flex: 1;
+  outline: none;
+}
+.container {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+.section {
+  padding: var(--section-y) 0;
+  scroll-margin-top: var(--header-h);
+}
+.sectionAlt {
+  padding: var(--section-y) 0;
+  background: var(--surface);
+  scroll-margin-top: var(--header-h);
+}
+.narrow {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: var(--s-8) var(--gutter) var(--section-y);
+}
+
+.sectionHead {
+  display: grid;
+  gap: var(--s-4);
+  max-width: 760px;
+  margin-bottom: var(--s-7);
+}
+.eyebrow {
+  color: var(--accent);
+  text-transform: lowercase;
+}
+.pageTitle {
+  font-size: var(--fs-h2);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.035em;
+}
+.sectionTitle {
+  font-size: var(--fs-h2);
+  line-height: var(--lh-head);
+  letter-spacing: -0.03em;
+}
+.lead {
+  color: var(--muted);
+  font-size: var(--fs-lead);
+  line-height: 1.5;
+}
+
+/* Карточки в сетке: «как работает», «отличия», «безопасность». */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: var(--s-4);
+}
+.card {
+  display: grid;
+  align-content: start;
+  gap: var(--s-3);
+  padding: clamp(20px, 2.5vw, 28px);
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.sectionAlt .card {
+  box-shadow: var(--shadow-xs);
+}
+.cardIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.cardTitle {
+  font-size: var(--fs-h3);
+  letter-spacing: -0.02em;
+}
+.cardText {
+  color: var(--muted);
+}
+.step {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--accent);
+}
+
+/* Призыв в конце страницы. */
+.cta {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-4);
+  padding: clamp(28px, 5vw, 56px);
+  border-radius: var(--r-xl);
+  background: var(--grad);
+  border: 1px solid var(--line);
+}
+.cta h2 {
+  font-size: var(--fs-h2);
+  letter-spacing: -0.03em;
+  max-width: 18ch;
+}
+.cta p {
+  color: var(--ink);
+  max-width: 56ch;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+}
+
+/* Текстовые страницы: безопасность, о компании, юридические. */
+.prose {
+  display: grid;
+  gap: var(--s-4);
+}
+.prose h2 {
+  margin-top: var(--s-6);
+  font-size: var(--fs-h3);
+  letter-spacing: -0.02em;
+}
+.prose h3 {
+  margin-top: var(--s-4);
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+.prose ul,
+.prose ol {
+  display: grid;
+  gap: var(--s-2);
+  padding-left: 1.25em;
+}
+.prose ul {
+  list-style: disc;
+}
+.prose ol {
+  list-style: decimal;
+}
+.prose li::marker {
+  color: var(--accent);
+}
+.prose dl {
+  display: grid;
+  grid-template-columns: minmax(120px, max-content) 1fr;
+  gap: var(--s-2) var(--s-5);
+}
+.prose dt {
+  color: var(--muted);
+}
+@media (max-width: 560px) {
+  .prose dl {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .prose dd {
+    margin-bottom: var(--s-2);
+  }
+}
+.updated {
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+
+.draft {
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: var(--fs-small);
+}
+.draft strong {
+  font-weight: 500;
+}
+
+/* ——— подвал ——— */
+
+.footer {
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  padding: var(--s-8) var(--gutter) var(--s-6);
+}
+.footerInner {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.3fr) 3fr;
+  gap: var(--s-6);
+  max-width: var(--container);
+  margin: 0 auto;
+}
+.footerNav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: var(--s-6);
+}
+@media (max-width: 860px) {
+  .footerInner {
+    grid-template-columns: 1fr;
+  }
+}
+.footerBrand {
+  display: grid;
+  align-content: start;
+  gap: var(--s-3);
+  color: var(--ink);
+  font-size: var(--fs-small);
+}
+.footerContacts {
+  display: grid;
+  gap: var(--s-1);
+}
+.footerGroup ul {
+  display: grid;
+  gap: var(--s-2);
+  font-size: var(--fs-small);
+}
+.footerGroup a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.footerGroup a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.footerTitle {
+  margin-bottom: var(--s-3);
+  font-weight: 500;
+  font-size: var(--fs-small);
+}
+.copyright {
+  max-width: var(--container);
+  margin: var(--s-7) auto 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+}

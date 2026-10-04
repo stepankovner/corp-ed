@@ -113,7 +113,10 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+/** Готовый HTML сайта (site/prerender.tsx) рисуется без браузера — как в системе. */
+const SERVER_SNAPSHOT: Snapshot = { preference: "system", theme: "light" };
+
 export function useTheme(): Snapshot & { setPreference: (value: ThemePreference) => void } {
-  const value = useSyncExternalStore(subscribe, current);
+  const value = useSyncExternalStore(subscribe, current, () => SERVER_SNAPSHOT);
   return { ...value, setPreference: setThemePreference };
 }
