@@ -147,6 +147,59 @@ def test_rerank_with_gate_uses_limit_of_the_question(
         )  # fmt: skip
 
 
+def test_rerank_skips_questions_longer_than_max_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Починка 04.10: вопрос длиннее rerank_max_words слов — порядок вектора,
+    # модель реранкера не зовём; короче — переставляем, как раньше.
+    from eval.corpus import BenchChunk
+    from eval.rerank import CachedReranker
+
+    chunks = [
+        BenchChunk(str(i), "Д", i, [], f"фрагмент {i}", f"фрагмент {i}")
+        for i in range(3)
+    ]
+
+    def rankings(
+        chunks: Sequence[object],
+        queries: Sequence[str],
+        limit: int,
+        workers: int,
+        embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
+    ) -> tuple[list[list[int]], list[list[float]]]:
+        return [[0, 1, 2] for _ in queries], [[0.3, 0.4, 0.5] for _ in queries]
+
+    class _Encoder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def predict(
+            self, pairs: Sequence[tuple[str, str]], batch_size: int = 16
+        ) -> list[float]:
+            self.calls += 1
+            return [float(passage[-1]) for _, passage in pairs]
+
+    encoder = _Encoder()
+    reranker = CachedReranker(model="m", max_length=512, cache_path=None)
+    reranker._encoder = encoder
+    monkeypatch.setattr(offline_e2e, "vector_rankings", rankings)
+
+    short, long = offline_e2e.retrieve(
+        chunks,
+        ["Сколько дней отпуска?", "Добрый день, я в компании недавно, подскажите"],
+        retriever="vector",
+        limit=3,
+        reranker=reranker,
+        rerank_max_distance=0.59,
+        rerank_max_words=5,
+    )
+
+    assert [m.content for m in short[0]] == ["фрагмент 2", "фрагмент 1", "фрагмент 0"]
+    assert [m.content for m in long[0]] == ["фрагмент 0", "фрагмент 1", "фрагмент 2"]
+    assert encoder.calls == 1
+
+
 def test_citations() -> None:
     answer = "Отпуск 28 дней [1], перенос по заявлению [2][4]."
 
