@@ -660,19 +660,12 @@ EXTRA_FORMAT_NAMES = ("xlsx", "pptx", "doc")
 class IngestSettings(BaseSettings):
     """Разбор файлов в песочнице (API — загрузка, воркер — коннекторы).
 
-    pdf_layout — модель разметки `pymupdf-layout`, которую `pymupdf4llm`
-    1.28 включает сама, если пакет установлен. С ней разбор PDF в ~5 раз
-    дороже по CPU при том же объёме текста (RISKS №40); качество таблиц и
-    заголовков без неё не сравнивалось. По умолчанию — как было (включена),
-    решение команды и ML — одной переменной INGEST_PDF_LAYOUT=false.
-
     extra_formats — форматы Р-5 (решение Артёма 29.09: по одному, после
     приёмки ML; .xlsx, .pptx и .doc приняты 01.10, ml-formats.md), через
     запятую. Убрать формат — он снова отклоняется с подсказкой и не
     скачивается из подключённых систем; уже загруженные файлы остаются.
     """
 
-    pdf_layout: bool = True
     extra_formats: str = "xlsx,pptx,doc"
 
     model_config = SettingsConfigDict(

@@ -255,7 +255,8 @@ Middleware, снаружи внутрь: `CORS` → `SecurityHeaders` → `Reque
   Redis (Lua + Redis TIME) с честным разделением долей.
 - `fake.py`, `fake_embedding.py` — для тестов.
 - `ingest/extract.py` — сигнатуры, zip-бомба, docx (mammoth →
-  markdownify), pdf (pymupdf4llm, страницы через `\f`), doc, xlsx и pptx
+  markdownify), pdf (`ingest/pdf.py` ML на pdfplumber / pdfminer.six, BH-39;
+  страницы через `\f`), doc, xlsx и pptx
   (свои разборщики ML без сторонних библиотек, `INGEST_EXTRA_FORMATS`),
   txt и md — UTF-8 как есть; `sandbox.py` —
   дочерний `python -I`, чистое окружение, таймаут, бюджет CPU = таймаут ×
@@ -523,7 +524,7 @@ Alembic, `alembic upgrade head`; в CI — на пустой базе под в�
 **Приложение:** Python 3.12, FastAPI, SQLAlchemy 2 (async) + asyncpg,
 PostgreSQL 16 + pgvector, Alembic, Redis 7, Pydantic v2 +
 pydantic-settings, PyJWT, argon2-cffi, structlog, httpx, uvicorn; разбор
-файлов — mammoth + markdownify, pymupdf4llm (AGPL, принято); ML —
+файлов — mammoth + markdownify, pdfplumber / pdfminer.six (MIT, BH-39); ML —
 numpy, razdel.
 
 **Внешние сервисы:** Yandex Cloud — Alice AI LLM Flash (OpenAI-совместимый

@@ -2,11 +2,13 @@
 
 import io
 import zipfile
+from pathlib import Path
 
 import pytest
 
 from corp_ed.core.config import IngestSettings
 from corp_ed.ingest import extract as extract_module
+from corp_ed.ingest import pdf as pdf_module
 from corp_ed.ingest.extract import (
     ExtractionError,
     SourceFormat,
@@ -17,6 +19,8 @@ from corp_ed.ingest.extract import (
 from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
 from corp_ed.ingest.sandbox import _clean_env, _crash_code, cpu_budget, extract_isolated
 from tests.ingest import samples
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _code(call: object) -> str:
@@ -201,7 +205,7 @@ def test_pdf_pages_are_joined_with_page_break() -> None:
 
 
 def test_encrypted_pdf_is_rejected() -> None:
-    data = samples.pdf([[("Secret", 11)]], password="pw")
+    data = (FIXTURES / "encrypted.pdf").read_bytes()
     assert _code(lambda: extract(SourceFormat.PDF, data)) == "encrypted"
 
 
@@ -254,7 +258,7 @@ def test_oversized_text_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_too_many_pdf_pages(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(extract_module, "MAX_PDF_PAGES", 1)
+    monkeypatch.setattr(pdf_module, "MAX_PAGES", 1)
     data = samples.pdf([[("a", 11)], [("b", 11)]])
     assert _code(lambda: extract(SourceFormat.PDF, data)) == "too_many_pages"
 
@@ -281,28 +285,20 @@ async def test_sandbox_times_out() -> None:
     assert info.value.code == "timeout"
 
 
-def test_pdf_layout_model_can_be_switched_off() -> None:
-    """INGEST_PDF_LAYOUT=false (RISKS №40): тот же текст без модели разметки."""
+async def test_sandbox_parses_pdf_with_headings() -> None:
+    """BH-39: разбор ML (pdfplumber) в песочнице — заголовок по кеглю."""
     data = samples.pdf([[("Vacation policy", 18), ("Vacation lasts 28 days.", 11)]])
-    with_layout = extract(SourceFormat.PDF, data, pdf_layout=True)
-    plain = extract(SourceFormat.PDF, data, pdf_layout=False)
-    assert "28 days" in with_layout
-    assert "28 days" in plain
+    markdown = await extract_isolated(SourceFormat.PDF, data)
+    assert "# Vacation policy" in markdown
+    assert "28 days" in markdown
 
 
-async def test_sandbox_passes_the_layout_setting_to_the_child() -> None:
-    data = samples.pdf([[("Vacation lasts 28 days.", 11)]])
-    assert "28 days" in await extract_isolated(SourceFormat.PDF, data, pdf_layout=False)
-    assert "28 days" in await extract_isolated(SourceFormat.PDF, data, pdf_layout=True)
-
-
-def test_ingest_settings_keep_the_layout_model_by_default(
+def test_old_pdf_layout_setting_does_not_break_start(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("INGEST_PDF_LAYOUT", raising=False)
-    assert IngestSettings().pdf_layout is True
+    """INGEST_PDF_LAYOUT в старом .env сервера — не ошибка: модели больше нет."""
     monkeypatch.setenv("INGEST_PDF_LAYOUT", "false")
-    assert IngestSettings().pdf_layout is False
+    assert IngestSettings().extra_format_names
 
 
 def test_kill_by_cpu_limit_is_reported_as_timeout() -> None:
