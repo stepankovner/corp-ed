@@ -3,7 +3,7 @@
   "short_name": "kronto",
   "description": "Ассистент отвечает сотрудникам по документам компании со ссылкой на источник.",
   "lang": "ru",
-  "start_url": "/",
+  "start_url": "/login",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",

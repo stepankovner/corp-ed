@@ -494,7 +494,7 @@ class RegistrationSettings(BaseSettings):
 
     enabled: bool = True
     policy_url: str = "/privacy"
-    policy_version: str = Field(default="draft-2026-10-03", max_length=64)
+    policy_version: str = Field(default="draft-2026-10-04", max_length=64)
 
     model_config = SettingsConfigDict(
         env_prefix="REGISTRATION_",
