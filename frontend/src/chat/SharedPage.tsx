@@ -42,8 +42,8 @@ export function SharedPage() {
     );
   }
   const data = shared.data;
-  const source = opened
-    ? data.messages.find((m) => m.id === opened.messageId)?.sources[opened.index]
+  const sources = opened
+    ? data.messages.find((m) => m.id === opened.messageId)?.sources
     : undefined;
 
   return (
@@ -80,8 +80,8 @@ export function SharedPage() {
           )}
         </div>
       </div>
-      {opened && source ? (
-        <SourcePanel source={source} number={opened.index + 1} onClose={close} />
+      {opened && sources?.[opened.index] ? (
+        <SourcePanel sources={sources} index={opened.index} onClose={close} />
       ) : null}
     </section>
   );

@@ -10,6 +10,7 @@ import {
   eventStream,
   question,
   reply,
+  SOURCES,
   summary,
 } from "../test/chat";
 import { me } from "../test/fixtures";
@@ -61,6 +62,57 @@ describe("новый диалог", () => {
       "href",
       "https://portal.example.ru/docs/42",
     );
+  });
+
+  it("фрагменты одного раздела — одна карточка, в панели оба", async () => {
+    signedIn();
+    const [first, second] = SOURCES;
+    const sources = [
+      first!,
+      second!,
+      {
+        ...first!,
+        position: 4,
+        content:
+          "Положение о командировках > 2. Суточные\nВ день отъезда и приезда суточные платятся полностью.",
+      },
+    ];
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(
+          conversation([
+            question(),
+            reply({
+              content: "Суточные — 700 рублей [1], за рубеж — 2500 [2], день отъезда — полный [3].",
+              sources,
+            }),
+          ]),
+        ),
+      ),
+    );
+    renderApp("/c/c-1");
+    const user = userEvent.setup();
+    const card = await screen.findByRole("button", {
+      name: /^Источники 1, 3:\s?Положение о командировках\.docx/,
+    });
+    expect(screen.getAllByRole("button", { name: /^Источник/ })).toHaveLength(
+      // две карточки и три ссылки [n] в тексте
+      5,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "Источник 3: Положение о командировках.docx" }),
+    );
+    const panel = await screen.findByRole("dialog");
+    expect(within(panel).getByText("источники 1, 3")).toBeInTheDocument();
+    expect(within(panel).getByText("фрагмент 1")).toBeInTheDocument();
+    expect(
+      within(panel).getByText("Суточные при командировках по России — 700 рублей в сутки."),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getByText("В день отъезда и приезда суточные платятся полностью."),
+    ).toBeInTheDocument();
+    expect(card).toHaveAttribute("aria-expanded", "true");
   });
 
   it("показывает подсказки и задаёт вопрос по клику", async () => {

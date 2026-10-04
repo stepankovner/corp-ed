@@ -16,6 +16,7 @@ import { Link } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import { errorMessage } from "../api/errors";
+import { plural } from "../lib/format";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { IconButton } from "../ui/IconButton";
@@ -27,7 +28,7 @@ import styles from "./Chat.module.css";
 import { stripGeneralPrefix } from "./citations";
 import { conversationKey } from "./keys";
 import { Markdown } from "./Markdown";
-import { sourceSection } from "./sources";
+import { groupSources, sourceSection } from "./sources";
 import type { LiveAnswer } from "./store";
 
 export interface OpenSource {
@@ -154,29 +155,39 @@ export function AnswerBody({
       ) : null}
       {sources.length > 0 && !general ? (
         <div className={styles.sources}>
-          {sources.map((source, index) => {
-            const expanded = openSource?.messageId === message.id && openSource.index === index;
+          {groupSources(sources).map(({ source, index, numbers }) => {
+            const expanded =
+              openSource?.messageId === message.id && numbers.includes(openSource.index + 1);
             return (
               <button
-                key={`${source.material_id ?? source.attachment_id}-${source.position}-${index}`}
+                key={index}
                 type="button"
                 className={styles.sourceBtn}
                 aria-expanded={expanded}
                 aria-controls="source-panel"
                 onClick={() => onOpenSource(index)}
               >
-                <span className={`${styles.src} ${styles.srcStatic}`} aria-hidden>
-                  {index + 1}
+                <span className={styles.srcNumbers} aria-hidden>
+                  {numbers.map((n) => (
+                    <span key={n} className={`${styles.src} ${styles.srcStatic}`}>
+                      {n}
+                    </span>
+                  ))}
                 </span>
                 <span className={styles.sourceText}>
-                  <span className="visually-hidden">Источник {index + 1}: </span>
+                  <span className="visually-hidden">
+                    {numbers.length > 1 ? "Источники" : "Источник"} {numbers.join(", ")}:{" "}
+                  </span>
                   <span className={styles.sourceTitle}>{source.title}</span>
                   <span className={`mono ${styles.sourceMeta}`}>
                     {source.kind === "attachment"
                       ? "ваш файл"
                       : source.content === null
                         ? "недоступен"
-                        : sourceSection(source) || `фрагмент ${source.position + 1}`}
+                        : sourceSection(source) ||
+                          (numbers.length > 1
+                            ? `${numbers.length} ${plural(numbers.length, "фрагмент", "фрагмента", "фрагментов")}`
+                            : `фрагмент ${source.position + 1}`)}
                   </span>
                 </span>
               </button>
