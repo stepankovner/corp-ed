@@ -185,15 +185,21 @@
   display: grid;
   gap: var(--s-4);
 }
+/* Подсказка и счётчик в строку; в узкой колонке счётчик уходит вниз, вправо. */
 .hintRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--s-3);
+  gap: 2px var(--s-3);
+}
+.hintRow > :first-child {
+  flex: 1 1 18rem;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 .counter {
   flex: none;
+  margin-left: auto;
   white-space: nowrap;
 }
 .over {

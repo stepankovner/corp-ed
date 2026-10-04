@@ -113,7 +113,7 @@ export function HelpPage() {
                 type="search"
                 className={styles.searchInput}
                 aria-label="Поиск по статьям"
-                placeholder="Например: пароль, файл, приглашение"
+                placeholder="Например: пароль или файл"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
