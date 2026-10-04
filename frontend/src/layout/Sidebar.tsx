@@ -5,6 +5,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings2,
+  ShieldCheck,
   SquarePen,
   X,
   type LucideIcon,
@@ -109,6 +110,10 @@ export function Sidebar({ mode, onToggle, onClose, closeRef }: Props) {
             ) : (
               <NavItem to="/" end icon={House} label="Главная" collapsed={collapsed} />
             )}
+            {/* Наша панель (ТЗ §9) — команде kronto, и без своей компании. */}
+            {me.staff ? (
+              <NavItem to="/staff" icon={ShieldCheck} label="Панель kronto" collapsed={collapsed} />
+            ) : null}
           </ul>
         </nav>
         {/* Диалоги с сервера (ТЗ §6); в свёрнутой панели — только значки разделов. */}

@@ -115,7 +115,7 @@ class SpendResponse(BaseModel):
     companies: list[SpendCompanyResponse]
 
 
-class PersonCompanyResponse(BaseModel):
+class StaffPersonCompanyResponse(BaseModel):
     tenant_id: UUID
     company_name: str
     role: str
@@ -123,7 +123,7 @@ class PersonCompanyResponse(BaseModel):
     last_login_at: datetime | None
 
 
-class PersonResponse(BaseModel):
+class StaffPersonResponse(BaseModel):
     """Человек для помощи со входом: что настроено, без секретов."""
 
     id: UUID
@@ -138,7 +138,7 @@ class PersonResponse(BaseModel):
     backup_codes: int
     sessions: int
     staff: bool
-    companies: list[PersonCompanyResponse]
+    companies: list[StaffPersonCompanyResponse]
 
 
 class StaffLeadResponse(BaseModel):

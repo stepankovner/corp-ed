@@ -30,6 +30,7 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
       },
     ],
     mfa: { strong: false, strong_required: false },
+    staff: false,
     ...overrides,
   };
 }

@@ -1882,6 +1882,225 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Companies */
+        get: operations["list_companies_api_v1_staff_companies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/companies/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Company */
+        get: operations["read_company_api_v1_staff_companies__tenant_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Company
+         * @description Тариф, места, срок пилота, приостановка — как cli set-tariff,
+         *     set-seats, suspend-tenant, но с журналом от имени команды.
+         */
+        patch: operations["update_company_api_v1_staff_companies__tenant_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/staff/leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Leads */
+        get: operations["list_leads_api_v1_staff_leads_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/leads/{lead_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Lead */
+        patch: operations["update_lead_api_v1_staff_leads__lead_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/staff/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Overview */
+        get: operations["overview_api_v1_staff_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search People
+         * @description Почта или имя, от трёх символов.
+         */
+        get: operations["search_people_api_v1_staff_people_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/people/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Person */
+        get: operations["read_person_api_v1_staff_people__account_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/people/{account_id}/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Password Reset
+         * @description Письмо со ссылкой на новый пароль — то же, что «Забыли пароль?».
+         *     Пароль команда не видит и не задаёт.
+         */
+        post: operations["send_password_reset_api_v1_staff_people__account_id__password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Requests */
+        get: operations["list_requests_api_v1_staff_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/requests/{request_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Request
+         * @description Создать компанию: заявитель — администратор, ему уходит письмо.
+         */
+        post: operations["approve_request_api_v1_staff_requests__request_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/requests/{request_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Request */
+        post: operations["reject_request_api_v1_staff_requests__request_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/spend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spend */
+        get: operations["spend_api_v1_staff_spend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/suggestions": {
         parameters: {
             query?: never;
@@ -3154,6 +3373,11 @@ export interface components {
              */
             website: string;
         };
+        /**
+         * LeadStatus
+         * @enum {string}
+         */
+        LeadStatus: "new" | "contacted" | "scheduled" | "rejected";
         /** LeaveCompanyRequest */
         LeaveCompanyRequest: {
             /**
@@ -3313,6 +3537,11 @@ export interface components {
             patronymic: string | null;
             /** Phone */
             phone: string | null;
+            /**
+             * Staff
+             * @default false
+             */
+            staff: boolean;
             /** Telegram */
             telegram: string | null;
         };
@@ -3778,6 +4007,286 @@ export interface components {
             shared_at: string;
             /** Title */
             title: string;
+        };
+        /** SpendCompanyResponse */
+        SpendCompanyResponse: {
+            /** Company Code */
+            company_code: string;
+            /** Credits */
+            credits: number;
+            /** Name */
+            name: string;
+            /** Questions */
+            questions: number;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Tokens */
+            tokens: number;
+        };
+        /** SpendDayResponse */
+        SpendDayResponse: {
+            /** Credits */
+            credits: number;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Questions */
+            questions: number;
+            /** Tokens */
+            tokens: number;
+        };
+        /** SpendModelResponse */
+        SpendModelResponse: {
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model */
+            model: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Questions */
+            questions: number;
+        };
+        /**
+         * SpendResponse
+         * @description Расход на модель ответа (из журнала ответов). rub — оценка по
+         *     BILLING_LLM_RUB_PER_1K_TOKENS; null — цена не задана.
+         */
+        SpendResponse: {
+            /** Companies */
+            companies: components["schemas"]["SpendCompanyResponse"][];
+            /** Credits */
+            credits: number;
+            /** Days */
+            days: components["schemas"]["SpendDayResponse"][];
+            /** Input Tokens */
+            input_tokens: number;
+            /** Models */
+            models: components["schemas"]["SpendModelResponse"][];
+            /** Output Tokens */
+            output_tokens: number;
+            /** Questions */
+            questions: number;
+            /** Rub */
+            rub: number | null;
+            /** Rub Per 1K Tokens */
+            rub_per_1k_tokens: number | null;
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date
+             */
+            until: string;
+        };
+        /** StaffApproveRequest */
+        StaffApproveRequest: {
+            /** Pilot Until */
+            pilot_until?: string | null;
+            /** Seats */
+            seats?: number | null;
+            /** @default base */
+            tariff: components["schemas"]["Tariff"];
+        };
+        /** StaffCompanyResponse */
+        StaffCompanyResponse: {
+            /** Admins */
+            admins: string[];
+            /** Company Code */
+            company_code: string;
+            /** Connectors */
+            connectors: number;
+            /** Credits Used */
+            credits_used: number;
+            /** Documents */
+            documents: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Is Active */
+            is_active: boolean;
+            /** Last Question At */
+            last_question_at: string | null;
+            /** Members */
+            members: number;
+            /** Name */
+            name: string;
+            /** Pending */
+            pending: number;
+            /** Pilot Until */
+            pilot_until: string | null;
+            /** Pool */
+            pool: number;
+            /** Questions Month */
+            questions_month: number;
+            /** Seats */
+            seats: number;
+            tariff: components["schemas"]["Tariff"];
+        };
+        /**
+         * StaffCompanyUpdate
+         * @description Что прислано, то и меняется. pilot_until: null — снять срок пилота.
+         */
+        StaffCompanyUpdate: {
+            /**
+             * Confirm
+             * @default false
+             */
+            confirm: boolean;
+            /** Is Active */
+            is_active?: boolean | null;
+            /** Pilot Until */
+            pilot_until?: string | null;
+            /** Seats */
+            seats?: number | null;
+            tariff?: components["schemas"]["Tariff"] | null;
+        };
+        /** StaffLeadResponse */
+        StaffLeadResponse: {
+            /** Comment */
+            comment: string | null;
+            /** Company Name */
+            company_name: string;
+            /** Contact Name */
+            contact_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Phone */
+            phone: string;
+            /**
+             * Preferred Date
+             * Format: date
+             */
+            preferred_date: string;
+            /** Preferred Slot */
+            preferred_slot: string;
+            /** Seats */
+            seats: number;
+            status: components["schemas"]["LeadStatus"];
+            /** Tariff */
+            tariff: string;
+        };
+        /** StaffLeadUpdate */
+        StaffLeadUpdate: {
+            status: components["schemas"]["LeadStatus"];
+        };
+        /** StaffOverviewResponse */
+        StaffOverviewResponse: {
+            /** Accounts */
+            accounts: number;
+            /** Active Companies */
+            active_companies: number;
+            /** Companies */
+            companies: number;
+            /** Pilots Ending */
+            pilots_ending: number;
+            /** Requests New */
+            requests_new: number;
+        };
+        /** StaffPersonCompanyResponse */
+        StaffPersonCompanyResponse: {
+            /** Company Name */
+            company_name: string;
+            /** Last Login At */
+            last_login_at: string | null;
+            /** Role */
+            role: string;
+            /** Status */
+            status: string;
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+        };
+        /**
+         * StaffPersonResponse
+         * @description Человек для помощи со входом: что настроено, без секретов.
+         */
+        StaffPersonResponse: {
+            /** Backup Codes */
+            backup_codes: number;
+            /** Companies */
+            companies: components["schemas"]["StaffPersonCompanyResponse"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Email Verified */
+            email_verified: boolean;
+            /** Full Name */
+            full_name: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Last Login At */
+            last_login_at: string | null;
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Passkeys */
+            passkeys: number;
+            /** Sessions */
+            sessions: number;
+            /** Staff */
+            staff: boolean;
+            /** Totp */
+            totp: boolean;
+        };
+        /** StaffRequestResponse */
+        StaffRequestResponse: {
+            /** Applicant Email */
+            applicant_email: string | null;
+            /** Applicant Name */
+            applicant_name: string | null;
+            /** Comment */
+            comment: string | null;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Seats */
+            seats: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "approved" | "rejected" | "cancelled";
+            /** Tenant Id */
+            tenant_id: string | null;
         };
         /** StreamDelta */
         StreamDelta: {
@@ -7470,6 +7979,395 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MySourcesResponse"];
+                };
+            };
+        };
+    };
+    list_companies_api_v1_staff_companies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCompanyResponse"][];
+                };
+            };
+        };
+    };
+    read_company_api_v1_staff_companies__tenant_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCompanyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_company_api_v1_staff_companies__tenant_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffCompanyUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCompanyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_leads_api_v1_staff_leads_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["LeadStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffLeadResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_lead_api_v1_staff_leads__lead_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lead_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffLeadUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffLeadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_v1_staff_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffOverviewResponse"];
+                };
+            };
+        };
+    };
+    search_people_api_v1_staff_people_get: {
+        parameters: {
+            query?: {
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffPersonResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_person_api_v1_staff_people__account_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffPersonResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_password_reset_api_v1_staff_people__account_id__password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_requests_api_v1_staff_requests_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffRequestResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_request_api_v1_staff_requests__request_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffApproveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCompanyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_request_api_v1_staff_requests__request_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spend_api_v1_staff_spend_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpendResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

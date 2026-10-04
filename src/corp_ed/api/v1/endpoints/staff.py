@@ -24,8 +24,6 @@ from corp_ed.api.v1.rate_limits import (
     get_rate_limiter,
 )
 from corp_ed.api.v1.schemas.staff import (
-    PersonCompanyResponse,
-    PersonResponse,
     SpendCompanyResponse,
     SpendDayResponse,
     SpendModelResponse,
@@ -36,6 +34,8 @@ from corp_ed.api.v1.schemas.staff import (
     StaffLeadResponse,
     StaffLeadUpdate,
     StaffOverviewResponse,
+    StaffPersonCompanyResponse,
+    StaffPersonResponse,
     StaffRequestResponse,
 )
 from corp_ed.core.database import get_session
@@ -80,9 +80,9 @@ def _company(row: CompanyRow) -> StaffCompanyResponse:
     )
 
 
-def _person(person: Person) -> PersonResponse:
+def _person(person: Person) -> StaffPersonResponse:
     account = person.account
-    return PersonResponse(
+    return StaffPersonResponse(
         id=account.id,
         email=account.email,
         full_name=account.full_name,
@@ -96,7 +96,7 @@ def _person(person: Person) -> PersonResponse:
         sessions=person.sessions,
         staff=person.staff,
         companies=[
-            PersonCompanyResponse(
+            StaffPersonCompanyResponse(
                 tenant_id=item.tenant_id,
                 company_name=item.company_name,
                 role=item.role,
@@ -288,20 +288,20 @@ async def spend(
 # --- люди ----------------------------------------------------------------------
 
 
-@router.get("/people", response_model=list[PersonResponse])
+@router.get("/people", response_model=list[StaffPersonResponse])
 async def search_people(
     service: Service,
     staff: Staff,
     q: Annotated[str, Query(max_length=254)] = "",
-) -> list[PersonResponse]:
+) -> list[StaffPersonResponse]:
     """Почта или имя, от трёх символов."""
     return [_person(person) for person in await service.search_people(q)]
 
 
-@router.get("/people/{account_id}", response_model=PersonResponse)
+@router.get("/people/{account_id}", response_model=StaffPersonResponse)
 async def read_person(
     account_id: UUID, service: Service, staff: Staff
-) -> PersonResponse:
+) -> StaffPersonResponse:
     return _person(await service.person(account_id))
 
 
