@@ -310,7 +310,13 @@ async def regenerate_backup_codes(
     )
 
 
-@router.get("/sessions", response_model=list[SessionResponse])
+# Сеансы — под /auth: refresh-cookie браузер шлёт только на /api/v1/auth
+# (session_cookie.py), а по ней сервер узнаёт «это устройство». Под
+# /account cookie не приходила, и текущий сеанс в списке не отмечался.
+sessions_router = APIRouter(prefix="/auth/sessions", tags=["account"])
+
+
+@sessions_router.get("", response_model=list[SessionResponse])
 async def list_sessions(
     request: Request, account: CurrentAccount, mfa: Mfa
 ) -> list[SessionResponse]:
@@ -329,7 +335,7 @@ async def list_sessions(
     ]
 
 
-@router.post("/sessions/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
+@sessions_router.post("/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
 async def end_session(session_id: UUID, account: CurrentAccount, mfa: Mfa) -> None:
     """Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
     для немедленного выхода везде есть /auth/logout-all."""

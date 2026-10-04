@@ -440,23 +440,20 @@ async def test_passkey_for_another_site_is_rejected(
 
 
 async def test_sessions_list_and_end_one(api: httpx.AsyncClient, account: User) -> None:
-    laptop = await login(api, account.email or "", remember=False)
     phone = await login(api, account.email or "", remember=False)
+    laptop = await login(api, account.email or "", remember=False)
 
-    listed = await api.get(
-        "/api/v1/account/sessions",
-        headers={
-            **_auth(laptop),
-            "Cookie": f"{REFRESH_COOKIE}={refresh_token_of(laptop)}",
-        },
-    )
+    # Cookie — из хранилища клиента, с её путём (/api/v1/auth), как в
+    # браузере: текущий сеанс сервер узнаёт по ней.
+    assert api.cookies.get(REFRESH_COOKIE) == refresh_token_of(laptop)
+    listed = await api.get("/api/v1/auth/sessions", headers=_auth(laptop))
     sessions = listed.json()
     assert len(sessions) == 2
     assert sum(item["current"] for item in sessions) == 1
     other = next(item for item in sessions if not item["current"])
 
     ended = await api.post(
-        f"/api/v1/account/sessions/{other['id']}/end", headers=_auth(laptop)
+        f"/api/v1/auth/sessions/{other['id']}/end", headers=_auth(laptop)
     )
     assert ended.status_code == 204
     assert (await refresh_with(api, refresh_token_of(phone))).status_code == 401

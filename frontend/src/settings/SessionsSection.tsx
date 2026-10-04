@@ -25,14 +25,14 @@ export function SessionsSection() {
   const [everywhere, setEverywhere] = useState(false);
   const sessions = useQuery({
     queryKey: SESSIONS_KEY,
-    queryFn: () => unwrap(api.GET("/api/v1/account/sessions")),
+    queryFn: () => unwrap(api.GET("/api/v1/auth/sessions")),
     // Это устройство — первым: его ищут глазами в первую очередь.
     select: (list) => [...list].sort((a, b) => Number(b.current) - Number(a.current)),
   });
   const end = useMutation({
     mutationFn: (id: string) =>
       unwrap(
-        api.POST("/api/v1/account/sessions/{session_id}/end", {
+        api.POST("/api/v1/auth/sessions/{session_id}/end", {
           params: { path: { session_id: id } },
         }),
       ),

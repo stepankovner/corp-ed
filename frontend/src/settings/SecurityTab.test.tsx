@@ -73,7 +73,7 @@ function signedIn({
   server.use(
     http.get("/api/v1/auth/me", () => HttpResponse.json(profile)),
     http.get("/api/v1/account/security", () => HttpResponse.json(state)),
-    http.get("/api/v1/account/sessions", () => HttpResponse.json(sessions)),
+    http.get("/api/v1/auth/sessions", () => HttpResponse.json(sessions)),
   );
 }
 
@@ -112,7 +112,7 @@ describe("безопасность: пароль", () => {
     let sessionReads = 0;
     signedIn();
     server.use(
-      http.get("/api/v1/account/sessions", () => {
+      http.get("/api/v1/auth/sessions", () => {
         sessionReads += 1;
         return HttpResponse.json([session()]);
       }),
@@ -522,8 +522,8 @@ describe("безопасность: сеансы", () => {
     let ended: string | undefined;
     signedIn();
     server.use(
-      http.get("/api/v1/account/sessions", () => HttpResponse.json(list)),
-      http.post("/api/v1/account/sessions/:id/end", ({ params }) => {
+      http.get("/api/v1/auth/sessions", () => HttpResponse.json(list)),
+      http.post("/api/v1/auth/sessions/:id/end", ({ params }) => {
         ended = params.id as string;
         list = list.filter((item) => item.id !== ended);
         return new HttpResponse(null, { status: 204 });
