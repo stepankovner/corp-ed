@@ -521,9 +521,21 @@ jobs:
           for _ in $(seq 1 20); do curl -sf "$base/healthz" >/dev/null && break; sleep 1; done
           # Не root.
           test "$(docker exec "$web" id -u)" != "0"
-          # Маршрут приложения отдаёт index.html, с CSP.
-          curl -sf "$base/admin/users" | grep -q '<div id="root">'
+          # Адрес приложения — оболочка app.html (noindex), с CSP.
+          shell=$(curl -sf "$base/admin/users")
+          grep -q '<div id="root"></div>' <<<"$shell"
+          grep -q '<meta name="robots" content="noindex"' <<<"$shell"
           curl -sI "$base/" | grep -qi "content-security-policy: default-src 'self'"
+          # Страницы сайта — готовый HTML (предрендер, ТЗ §1).
+          grep -q 'data-prerender' <<<"$(curl -sf "$base/")"
+          grep -q '<title>Тарифы — kronto</title>' <<<"$(curl -sf "$base/pricing")"
+          # Индексируется только krontoai.ru: здесь (localhost) — закрыто.
+          curl -sI "$base/" | grep -qi "x-robots-tag: noindex, nofollow"
+          grep -qx "Disallow: /" <<<"$(curl -sf "$base/robots.txt")"
+          grep -q "^Sitemap: " <<<"$(curl -sf -H "Host: krontoai.ru" "$base/robots.txt")"
+          test -z "$(curl -sI -H "Host: krontoai.ru" "$base/" | grep -i x-robots-tag || true)"
+          # Установка на телефон: манифест со своим типом.
+          curl -sI "$base/manifest.webmanifest" | grep -qi "content-type: application/manifest+json"
           # Карты исходников наружу не отдаются.
           map=$(docker exec "$web" sh -c 'ls /usr/share/nginx/html/assets/*.map | head -1 | xargs basename')
           test "$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/$map")" = "404"

@@ -667,3 +667,38 @@ test.describe.serial("путь компании", () => {
     await expect(page.getByText("Заявка отправлена")).toBeVisible();
   });
 });
+
+test("гость: сайт из готового HTML, песочница отвечает по документам", async ({
+  page,
+  request,
+}) => {
+  // Готовый HTML (предрендер): главная — с текстом до скриптов, адрес
+  // приложения — пустая оболочка.
+  const html = { Accept: "text/html" };
+  const home = await (await request.get("/", { headers: html })).text();
+  expect(home).toContain("Спросите — и получите ответ по документам компании");
+  expect(home).toContain('<link rel="canonical" href="https://krontoai.ru/"');
+  const shell = await (await request.get("/admin/users", { headers: html })).text();
+  expect(shell).not.toContain("data-prerender");
+  expect(shell).toContain('<meta name="robots" content="noindex"');
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { level: 1, name: /Спросите — и получите ответ/ }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Попробовать в песочнице" }).first().click();
+  await expect(page).toHaveURL(/\/demo$/);
+  await expect(page.getByText("Положение о служебных командировках")).toBeVisible();
+
+  // Документы песочницы индексирует воркер (cli demo setup при подготовке):
+  // пока не готовы — честный отказ, спрашиваем ещё раз.
+  const input = page.getByLabel("Ваш вопрос");
+  await expect(async () => {
+    await input.fill("Какие суточные в командировке?");
+    await page.getByRole("button", { name: "Спросить" }).click();
+    await expect(
+      page.getByRole("button", { name: /Положение о служебных командировках/ }).last(),
+    ).toBeVisible({ timeout: 5_000 });
+  }).toPass({ intervals: [3_000, 5_000], timeout: 30_000 });
+  await expect(page.getByText(/По документам:/).last()).toBeVisible();
+});
