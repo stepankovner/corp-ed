@@ -706,7 +706,13 @@ test("гость: сайт из готового HTML, песочница отв
   ).toBeVisible();
   await page.getByRole("link", { name: "Попробовать в песочнице" }).first().click();
   await expect(page).toHaveURL(/\/demo$/);
-  await expect(page.getByText("Положение о служебных командировках")).toBeVisible();
+  // Пока переход идёт, на экране ещё главная — с тем же документом в демо.
+  await expect(page.getByRole("heading", { level: 1, name: "Спросите kronto сами" })).toBeVisible();
+  await expect(
+    page
+      .getByRole("complementary", { name: "Документы компании" })
+      .getByText("Положение о служебных командировках"),
+  ).toBeVisible();
 
   // Документы песочницы индексирует воркер (cli demo setup при подготовке):
   // пока не готовы — честный отказ, спрашиваем ещё раз.
