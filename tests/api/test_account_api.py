@@ -332,6 +332,28 @@ async def test_reset_password_follows_policy(
     assert weak.status_code == 422
 
 
+async def test_reset_password_cannot_keep_the_old_one(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    """Сброс по ссылке на тот же пароль — отказ; ссылка остаётся рабочей."""
+    await api.post("/api/v1/auth/forgot-password", json={"email": account.email})
+    token = _link_token(
+        await _last_mail(session, account.email, "reset_password"), "/reset-password"
+    )
+
+    same = await api.post(
+        "/api/v1/auth/reset-password", json={"token": token, "new_password": PASSWORD}
+    )
+    assert same.status_code == 422
+    assert "уже был" in same.json()["detail"]
+
+    fresh = await api.post(
+        "/api/v1/auth/reset-password",
+        json={"token": token, "new_password": NEW_PASSWORD},
+    )
+    assert fresh.status_code == 200
+
+
 async def test_change_password_sends_a_notice(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:

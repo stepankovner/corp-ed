@@ -49,6 +49,7 @@ from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services import email_templates
 from corp_ed.services.email_service import EmailService
+from corp_ed.services.passwords import set_password
 
 logger = structlog.get_logger()
 
@@ -247,17 +248,29 @@ class AuthService:
         return pair
 
     async def logout(
-        self, account: Account, member: User | None, raw_token: str | None
+        self,
+        account: Account,
+        member: User | None,
+        session_id: UUID,
+        raw_token: str | None,
     ) -> None:
-        """Отозвать цепочку refresh-токенов текущего входа.
+        """Закрыть сеанс: цепочку refresh-токенов входа из access-токена
+        (sid) — с ней перестаёт действовать и сам access-токен — и цепочку
+        из cookie, если она другая (cookie от прежнего входа).
 
-        Чужой или несуществующий токен молча игнорируется: ответ не
-        должен подтверждать, что такой токен есть у другого человека.
+        Чужой или несуществующий refresh-токен молча игнорируется: ответ
+        не должен подтверждать, что такой токен есть у другого человека.
         """
+        now = _now()
+        await self.refresh_repo.revoke_family(session_id, now)
         if raw_token is not None:
             record = await self.refresh_repo.get_by_hash(hash_refresh_token(raw_token))
-            if record is not None and record.account_id == account.id:
-                await self.refresh_repo.revoke_family(record.family_id, _now())
+            if (
+                record is not None
+                and record.account_id == account.id
+                and record.family_id != session_id
+            ):
+                await self.refresh_repo.revoke_family(record.family_id, now)
         self.audit.record(
             AuditAction.LOGOUT,
             tenant_id=member.tenant_id if member else None,
@@ -297,7 +310,7 @@ class AuthService:
             raise WeakPasswordError("Новый пароль совпадает с текущим")
         validate_password(new_password, email=account.email)
 
-        account.hashed_password = hash_password(new_password)
+        set_password(account, new_password)
         account.must_change_password = False
         await self.invalidate_sessions(account)
         pair = await self._issue(account, member, family_id=uuid4(), remember=True)
@@ -381,6 +394,7 @@ class AuthService:
         access = create_access_token(
             account.id,
             account.token_version,
+            session_id=family_id,
             tenant_id=member.tenant_id if member else None,
             member_id=member.id if member else None,
             role=member.role.value if member else None,

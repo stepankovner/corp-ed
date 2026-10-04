@@ -29,6 +29,7 @@ OAUTH_STATE_TYPE = "connector_oauth"  # noqa: S105 — значение claim ty
 REFRESH_TOKEN_BYTES = 32
 
 _REQUIRED_CLAIMS = ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]
+_ACCESS_CLAIMS = [*_REQUIRED_CLAIMS, "sid"]
 _OAUTH_STATE_CLAIMS = [*_REQUIRED_CLAIMS, "tenant_id", "connector_id"]
 
 # Параметры argon2-cffi по умолчанию (RFC 9106, «низкая память»):
@@ -78,6 +79,7 @@ def create_access_token(
     account_id: UUID,
     account_version: int,
     *,
+    session_id: UUID,
     tenant_id: UUID | None = None,
     member_id: UUID | None = None,
     role: str | None = None,
@@ -85,7 +87,10 @@ def create_access_token(
 ) -> str:
     """Подписанный access-токен учётки (ТЗ §2).
 
-    sub — учётка, ver — её версия сессий (смена пароля, «выйти везде»).
+    sub — учётка, ver — её версия сессий (смена пароля, «выйти везде»),
+    sid — сеанс (цепочка refresh-токенов входа): «Выйти» и «Завершить» в
+    списке сеансов закрывают его, и токен перестаёт действовать сразу, а
+    не когда истечёт.
     Если выбрана компания — tenant_id, member_id (членство) и mver —
     версия членства (смена роли, блокировка, удаление из компании): её
     рост отзывает токены этой компании, не трогая вход в остальные.
@@ -104,6 +109,7 @@ def create_access_token(
         "nbf": now,
         "exp": now + timedelta(minutes=settings.access_token_ttl_minutes),
         "jti": uuid4().hex,
+        "sid": str(session_id),
     }
     if tenant_id is not None:
         payload |= {
@@ -130,7 +136,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
         algorithms=[ALGORITHM],
         audience=AUDIENCE,
         issuer=ISSUER,
-        options={"require": _REQUIRED_CLAIMS},
+        options={"require": _ACCESS_CLAIMS},
     )
     if payload.get("typ") != ACCESS_TOKEN_TYPE:
         raise jwt.InvalidTokenError("wrong token type")

@@ -37,8 +37,7 @@ export function SessionsSection() {
         }),
       ),
     onSuccess: async () => {
-      // Выданный устройству access-токен доживает свой срок — до 15 минут.
-      toast.show("Сеанс завершён. Устройство потеряет доступ в течение 15 минут.");
+      toast.show("Сеанс завершён — на устройстве выполнен выход.");
       await queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
     },
   });
