@@ -1,6 +1,9 @@
 """Песочница на сайте (ТЗ §1): компания заводится командой выкатки,
 вопрос без входа — ответ по её документам, лимиты закрыты без Redis."""
 
+import json
+from typing import Any
+
 import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -75,6 +78,24 @@ async def _index_first_document(
 
 async def _ask(api: httpx.AsyncClient, question: str, **extra: str) -> httpx.Response:
     return await api.post("/api/v1/demo/ask", json={"question": question, **extra})
+
+
+async def _stream(
+    api: httpx.AsyncClient, question: str, **extra: str
+) -> list[dict[str, Any]]:
+    response = await api.post(
+        "/api/v1/demo/ask/stream", json={"question": question, **extra}
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["x-accel-buffering"] == "no"
+    events = [
+        json.loads(line[len("data: ") :])
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert events[-1]["type"] in ("done", "error")
+    return events
 
 
 # --- cli demo setup ---------------------------------------------------------------
@@ -296,4 +317,99 @@ async def test_exhausted_pool_is_demo_busy(
     assert response.status_code == 503
     assert response.json()["code"] == "demo_busy"
     assert "созвон" in response.json()["detail"]
+    assert fake_llm.calls == []
+
+
+# --- ответ потоком ----------------------------------------------------------------
+
+
+async def test_stream_prints_answer_then_gives_sources(
+    api: httpx.AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    fake_llm: FakeAdapter,
+) -> None:
+    tenant = await _setup(session_maker)
+    material = await _index_first_document(session_maker, tenant)
+
+    events = await _stream(api, "Какие суточные в командировке?")
+
+    assert events[0] == {"type": "stage", "stage": "searching"}
+    deltas = [event["text"] for event in events if event["type"] == "delta"]
+    assert deltas
+    done = events[-1]
+    assert done["type"] == "done"
+    assert done["answer"]["origin"] == "documents"
+    assert done["answer"]["content"] == fake_llm.content
+    assert [source["title"] for source in done["answer"]["sources"]] == [material.title]
+    with tenant_scope(tenant.id):
+        async with session_maker() as session:
+            assert await session.scalar(select(func.count()).select_from(QaLog)) == 1
+
+
+async def test_stream_outside_documents_is_refusal_without_model(
+    api: httpx.AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    fake_llm: FakeAdapter,
+) -> None:
+    await _setup(session_maker)
+
+    events = await _stream(api, "Сколько дней удалёнки положено проектировщикам?")
+
+    assert events[-1]["answer"]["origin"] == "none"
+    assert not [event for event in events if event["type"] == "delta"]
+    assert fake_llm.calls == []
+
+
+async def test_stream_honeypot_answers_without_model(
+    api: httpx.AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    fake_llm: FakeAdapter,
+) -> None:
+    tenant = await _setup(session_maker)
+    await _index_first_document(session_maker, tenant)
+
+    events = await _stream(api, "Какие суточные?", website="https://spam.example")
+
+    assert [event["type"] for event in events] == ["done"]
+    assert events[0]["answer"]["origin"] == "none"
+    assert fake_llm.calls == []
+
+
+async def test_stream_checks_limits_and_company_before_streaming(
+    api: httpx.AsyncClient, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    """Песочница не заведена — 503 до потока; лимит по IP общий с /ask."""
+    off = await api.post(
+        "/api/v1/demo/ask/stream", json={"question": "Какие суточные?"}
+    )
+    assert off.status_code == 503
+    assert off.json()["code"] == "demo_off"
+
+    await _setup(session_maker)
+    # Лимит считает и вопрос к незаведённой песочнице: он идёт первым.
+    for _ in range(9):
+        assert (await _ask(api, "Сколько дней удалёнки?")).status_code == 200
+    limited = await api.post(
+        "/api/v1/demo/ask/stream", json={"question": "Сколько дней удалёнки?"}
+    )
+    assert limited.status_code == 429
+
+
+async def test_stream_exhausted_pool_is_error_event(
+    api: httpx.AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    fake_llm: FakeAdapter,
+) -> None:
+    tenant = await _setup(session_maker)
+    member = await _member(session_maker, tenant)
+    with tenant_scope(tenant.id):
+        async with session_maker() as session:
+            spend(session, member, 420 * SETTINGS.seats)
+            await session.commit()
+
+    events = await _stream(api, "Какие суточные?")
+
+    assert events[-1]["type"] == "error"
+    assert events[-1]["code"] == "demo_busy"
+    assert "созвон" in events[-1]["message"]
     assert fake_llm.calls == []
