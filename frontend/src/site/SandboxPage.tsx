@@ -1,11 +1,12 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowUp, FileText } from "lucide-react";
-import { useId, useRef, useState, type SubmitEvent } from "react";
+import { useEffect, useId, useRef, useState, type SubmitEvent } from "react";
 import { Link } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { Markdown } from "../chat/Markdown";
+import { readEvents } from "../chat/sse";
 import { buttonClass } from "../ui/buttonClass";
 import { Notice } from "../ui/Notice";
 import { Skeleton } from "../ui/Skeleton";
@@ -17,6 +18,7 @@ import { SectionHead, SiteLayout } from "./SiteLayout";
 import site from "./Site.module.css";
 
 type Answer = Schemas["DemoAnswerResponse"];
+type DemoEvent = Schemas["DemoStreamEvent"];
 
 /** Как на сервере (DemoQuestionRequest). */
 const MAX_QUESTION = 300;
@@ -27,6 +29,8 @@ const FALLBACK_QUESTIONS = SCENARIOS.map((item) => item.question);
 interface Turn {
   id: number;
   question: string;
+  /** Текст, пока модель пишет; итог с источниками — answer. */
+  text: string;
   answer?: Answer;
   error?: string;
 }
@@ -49,15 +53,55 @@ export function SandboxPage() {
   const [tooShort, setTooShort] = useState(false);
   const nextId = useRef(1);
   const inputId = useId();
-
-  const ask = useMutation({
-    mutationFn: (question: string) =>
-      unwrap(api.POST("/api/v1/demo/ask", { body: { question, website: "" } })),
-  });
+  const [pending, setPending] = useState(false);
+  const stream = useRef<AbortController | null>(null);
+  // Ушли со страницы — ответ дальше не читаем (сервер его тоже прервёт).
+  useEffect(() => () => stream.current?.abort(), []);
 
   const off = info.error instanceof ApiError && info.error.code === "demo_off";
   const questions = info.data?.questions ?? FALLBACK_QUESTIONS;
-  const pending = ask.isPending;
+
+  function update(id: number, change: (turn: Turn) => Turn) {
+    setTurns((current) => current.map((turn) => (turn.id === id ? change(turn) : turn)));
+  }
+
+  /** Ответ печатается по мере генерации, как в чате; источники — в конце. */
+  async function ask(id: number, question: string) {
+    const controller = new AbortController();
+    stream.current = controller;
+    setPending(true);
+    try {
+      const body = await unwrap(
+        api.POST("/api/v1/demo/ask/stream", {
+          body: { question, website: "" },
+          parseAs: "stream",
+          signal: controller.signal,
+        }),
+      );
+      if (!body) throw new Error("empty stream");
+      let finished = false;
+      for await (const event of readEvents<DemoEvent>(body)) {
+        if (event.type === "delta")
+          update(id, (turn) => ({ ...turn, text: turn.text + event.text }));
+        else if (event.type === "reset") update(id, (turn) => ({ ...turn, text: "" }));
+        else if (event.type === "done") {
+          finished = true;
+          update(id, (turn) => ({ ...turn, answer: event.answer }));
+        } else if (event.type === "error") {
+          finished = true;
+          update(id, (turn) => ({ ...turn, error: event.message }));
+        }
+      }
+      if (!finished) throw new Error("stream ended early");
+    } catch (error) {
+      if (!controller.signal.aborted) update(id, (turn) => ({ ...turn, error: askError(error) }));
+    } finally {
+      if (stream.current === controller) {
+        stream.current = null;
+        setPending(false);
+      }
+    }
+  }
 
   function send(text: string) {
     const question = text.trim().replace(/\s+/g, " ");
@@ -68,16 +112,9 @@ export function SandboxPage() {
     if (pending || question.length > MAX_QUESTION) return;
     setTooShort(false);
     const id = nextId.current++;
-    setTurns((current) => [...current, { id, question }]);
+    setTurns((current) => [...current, { id, question, text: "" }]);
     setDraft("");
-    ask.mutate(question, {
-      onSuccess: (answer) =>
-        setTurns((current) => current.map((turn) => (turn.id === id ? { ...turn, answer } : turn))),
-      onError: (error) =>
-        setTurns((current) =>
-          current.map((turn) => (turn.id === id ? { ...turn, error: askError(error) } : turn)),
-        ),
-    });
+    void ask(id, question);
   }
 
   function submit(event: SubmitEvent) {
@@ -251,6 +288,14 @@ function TurnAnswer({ turn }: { turn: Turn }) {
     );
   }
   const answer = turn.answer;
+  if (!answer && turn.text) {
+    // Ссылки [n] — кнопками в итоге, когда придут источники.
+    return (
+      <div className={styles.answer} aria-busy="true">
+        <Markdown renderCitation={() => null}>{turn.text}</Markdown>
+      </div>
+    );
+  }
   if (!answer) {
     return (
       <p className={styles.searching}>

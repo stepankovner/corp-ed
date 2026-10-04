@@ -359,9 +359,13 @@ digest`. Первые шаги — `/onboarding` (чек-лист по данн�
 остальные адреса — оболочка `app.html`; nginx: `try_files $uri
 $uri/index.html /app.html`. Гостю на `/`, `/help` и неизвестных адресах
 `RequireAuth` показывает страницу из `handle.guest` маршрута вместо
-входа. Песочница: `GET /demo`, `POST /demo/ask` без входа →
+входа. Песочница: `GET /demo`, `POST /demo/ask` (ответ целиком) и
+`POST /demo/ask/stream` (потоком, как чат; сайт берёт его) без входа →
 `DemoService` в `tenant_scope` компании песочницы (`DEMO_COMPANY_CODE`)
 своей сессией → `FaqService.answer_turn` без истории (режим STRICT).
+Поток идёт из задачи внутри запроса: посетитель закрыл страницу — задача
+отменяется, модель дальше не зовётся (ответ нигде не хранится, в отличие
+от чата).
 Компанию и её документы (`src/corp_ed/demo/documents`) заводит и
 обновляет `cli demo setup` — его запускают выкатка и e2e.
 

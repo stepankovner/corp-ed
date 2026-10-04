@@ -62,9 +62,11 @@ HTTP API (`/api/v1/*`), загружаемые файлы, содержимое 
 |---|---|---|
 | Пароли — argon2id, `verify` с пустышкой: время ответа одинаково для несуществующей почты | `core/security.py` | `security/test_password_policy.py`, `api/test_auth_api.py::test_login_failures_are_indistinguishable` |
 | Политика пароля: 12–128 символов, не из списка частых, не содержит почту | `core/password_policy.py` | `security/test_password_policy.py` |
-| Access JWT HS256, 15 мин; обязательные `iss`, `aud`, `exp`, `nbf`, `iat`, `jti`, `sub` (учётка), `typ`, `ver`; при выбранной компании — `tenant_id`, `member_id`, `mver`; ключ ≥ 32 символов проверяется на старте | `core/security.py`, `core/config.py` | `security/test_tokens.py` (истёкший, чужой `aud`/`iss`, `alg=none`, другой HMAC, refresh вместо access, старая `ver`, токен без компании) |
+| Прежний пароль не вернуть: смена, сброс по ссылке и временный пароль из CLI сверяются с текущим и тремя прежними (`accounts.previous_password_hashes`, хеши argon2id); проверка — после второго фактора, чтобы ответ «пароль уже был» не получил тот, кто учёткой не владеет; периодической смены пароля нет | `services/passwords.py` | `security/test_password_history.py`, `api/test_account_api.py`, `api/test_auth_api.py` |
+| Access JWT HS256, 15 мин; обязательные `iss`, `aud`, `exp`, `nbf`, `iat`, `jti`, `sub` (учётка), `typ`, `ver`, `sid` (сеанс — цепочка refresh-токенов входа); при выбранной компании — `tenant_id`, `member_id`, `mver`; ключ ≥ 32 символов проверяется на старте | `core/security.py`, `core/config.py` | `security/test_tokens.py` (истёкший, чужой `aud`/`iss`, `alg=none`, другой HMAC, refresh вместо access, старая `ver`, токен без компании) |
 | Refresh — непрозрачный, в базе только sha256, ротация при каждом использовании, повторное использование отзывает всё семейство (RFC 9700) | `services/auth_service.py`, `repositories/refresh_token_repository.py` | `api/test_auth_api.py` (reuse → 401 и отзыв семейства, аудит `auth.refresh.reuse_detected`) |
 | Refresh — только в httpOnly-cookie `kronto_refresh` (`SameSite=Strict`, `Path=/api/v1/auth`, `Secure` в production), в теле ответа его нет; `/auth/refresh` и `/auth/logout` сверяют хост `Origin` с `Host`; во фронте access — в памяти вкладки, в `localStorage` токенов нет | `api/v1/session_cookie.py`, `frontend/src/api/session.ts` | `api/test_auth_api.py` (атрибуты, `Secure`, чужой `Origin` → 403, выход стирает cookie), `frontend/src/api/client.test.ts`, e2e «сессия переживает перезагрузку» |
+| «Выйти» и «Завершить» в списке сеансов действуют сразу: отзывают цепочку refresh-токенов сеанса, и access-токен с этим `sid` отклоняется на каждом запросе (поиск отозванной записи цепочки по индексу); «Выйти» закрывает сеанс из токена, даже если cookie нет. Отозванные записи хранятся, пока не истекут access-токены | `api/v1/dependencies.py`, `repositories/refresh_token_repository.py`, `services/auth_service.py` | `api/test_auth_api.py` (выход → `/auth/me` 401, другие сеансы живы, выход без cookie), `api/test_mfa_api.py` (завершённый сеанс → 401) |
 | Две версии токенов: учётки (смена пароля, «выйти везде» — все сессии) и членства (смена роли, блокировка, удаление из компании — токены только этой компании; вход в другие компании не трогается) | `api/v1/dependencies.py` | `security/test_tokens.py`, `api/test_auth_api.py`, `api/test_users_api.py` |
 | Временный пароль (только из `cli reset-password`): до смены доступен только `/auth/change-password`, `/auth/me`, `/auth/logout` | `get_principal` | `api/test_auth_api.py` |
 | Единый ответ «Неверный логин или пароль» для неверной почты и пароля; неподтверждённая почта — отдельный код только после верного пароля | `services/auth_service.py`, `core/exception_handlers.py` | `api/test_auth_api.py` |
@@ -87,8 +89,6 @@ HTTP API (`/api/v1/*`), загружаемые файлы, содержимое 
 | «Запомнить устройство» — 30 дней: httpOnly-cookie `kronto_device`, в базе sha256; компания может запретить; смена пароля, «выйти везде» и возврат почты забывают все устройства | `services/mfa_service.py`, `services/auth_service.py` | `api/test_mfa_api.py` |
 | Новый пароль по ссылке при включённом приложении или ключе — ещё и код приложения или резервный: взлом почты не обходит второй фактор | `services/account_service.py` | `api/test_mfa_api.py` |
 | Список сеансов (браузер, адрес, время), выход на одном устройстве и везде; письма о входе с нового устройства и об изменениях защиты | `services/mfa_service.py`, `services/email_templates.py` | `api/test_mfa_api.py` |
-
-Нет: истории паролей — см. раздел 6.
 
 ### 3.2. Авторизация
 
@@ -182,8 +182,9 @@ Telegram команды уходит номер, тема и код компан
 (бот без персональных данных, RISKS №50). Тесты:
 `api/test_notifications_api.py`.
 
-Сайт и песочница (ТЗ §1, этап 10): `POST /demo/ask` — единственный
-вызов модели без входа. Лимиты: 10 в час с IP и 300 в сутки всего, без
+Сайт и песочница (ТЗ §1, этап 10): `POST /demo/ask` и
+`/demo/ask/stream` — единственный вызов модели без входа (лимиты общие,
+проверяются до потока). Лимиты: 10 в час с IP и 300 в сутки всего, без
 Redis — 503 (`DEMO_PER_IP`, `DEMO_PER_DAY`); вопрос 3–300 символов, тело
 строгое, скрытое поле-ловушка — ответ без модели и без записи. Режим
 STRICT: без выдержек модель не вызывается, общего ответа нет. Месячный
@@ -587,7 +588,6 @@ RLS не видит строк.
 Полный список с планом — `RISKS.md`. Кратко, что пентестер найдёт и
 что мы об этом знаем:
 
-- нет истории паролей;
 - ссылка на фото профиля действует до конца следующих суток: кто её
   получил (переслал коллега), видит фото и после выхода человека из
   компании — до истечения срока;

@@ -337,6 +337,6 @@ async def list_sessions(
 
 @sessions_router.post("/{session_id}/end", status_code=status.HTTP_204_NO_CONTENT)
 async def end_session(session_id: UUID, account: CurrentAccount, mfa: Mfa) -> None:
-    """Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
-    для немедленного выхода везде есть /auth/logout-all."""
+    """Выйти на одном устройстве: его refresh- и access-токены перестают
+    действовать сразу."""
     await mfa.end_session(account, session_id)

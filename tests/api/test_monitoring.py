@@ -51,6 +51,30 @@ async def test_metrics_count_requests_by_route_template(
     assert _sample("corp_ed_http_requests_total", labels) == before + 2
 
 
+async def test_router_routes_are_labelled_with_the_full_template(
+    api: httpx.AsyncClient,
+) -> None:
+    """Префикс include_router («/api/v1») — в метке, значения параметров —
+    нет: иначе тревоги и панели по маршрутам молча теряют ряды, а каждый
+    id стал бы новым рядом (FastAPI 0.142 отдаёт маршрут без префикса)."""
+    me = {"method": "GET", "route": "/api/v1/auth/me", "status": "401"}
+    chat = {
+        "method": "GET",
+        "route": "/api/v1/conversations/{conversation_id}",
+        "status": "401",
+    }
+    before = (
+        _sample("corp_ed_http_requests_total", me),
+        _sample("corp_ed_http_requests_total", chat),
+    )
+
+    await api.get("/api/v1/auth/me")
+    await api.get(f"/api/v1/conversations/{uuid4()}")
+
+    assert _sample("corp_ed_http_requests_total", me) == before[0] + 1
+    assert _sample("corp_ed_http_requests_total", chat) == before[1] + 1
+
+
 async def test_unknown_paths_share_one_label(api: httpx.AsyncClient) -> None:
     """Случайные URL не плодят ряды: иначе сканер съест память Prometheus."""
     labels = {"method": "GET", "route": "unmatched", "status": "404"}

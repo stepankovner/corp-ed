@@ -524,7 +524,7 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Отозвать цепочку текущего входа и стереть cookie.
+         * @description Закрыть текущий сеанс и стереть cookie.
          */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
@@ -729,8 +729,8 @@ export interface paths {
         put?: never;
         /**
          * End Session
-         * @description Выйти на одном устройстве. Его access-токен доживёт до 15 минут —
-         *     для немедленного выхода везде есть /auth/logout-all.
+         * @description Выйти на одном устройстве: его refresh- и access-токены перестают
+         *     действовать сразу.
          */
         post: operations["end_session_api_v1_auth_sessions__session_id__end_post"];
         delete?: never;
@@ -1388,6 +1388,28 @@ export interface paths {
          *     общий суточный; без Redis — 503 (вопрос стоит вызова модели).
          */
         post: operations["demo_ask_api_v1_demo_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/demo/ask/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Demo Ask Stream
+         * @description То же, что /ask, но ответ печатается по мере генерации, как в чате.
+         *     Лимиты и песочница без компании (503 demo_off) — до потока; пул или
+         *     модель не отвечают — событие error в потоке.
+         */
+        post: operations["demo_ask_stream_api_v1_demo_ask_stream_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3076,6 +3098,77 @@ export interface components {
             heading_path: string[];
             /** Title */
             title: string;
+        };
+        /** DemoStreamDelta */
+        DemoStreamDelta: {
+            /** Text */
+            text: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "delta";
+        };
+        /**
+         * DemoStreamDone
+         * @description Итог: answer.content заменяет напечатанный текст (ссылки уже
+         *     нормализованы), источники — только здесь.
+         */
+        DemoStreamDone: {
+            answer: components["schemas"]["DemoAnswerResponse"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "done";
+        };
+        /**
+         * DemoStreamError
+         * @description Ответа не будет: demo_busy — пул песочницы исчерпан или модель не
+         *     отвечает; internal — сбой.
+         */
+        DemoStreamError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "error";
+        };
+        /**
+         * DemoStreamEvent
+         * @description Событие потока ответа песочницы.
+         */
+        DemoStreamEvent: components["schemas"]["DemoStreamStage"] | components["schemas"]["DemoStreamDelta"] | components["schemas"]["DemoStreamReset"] | components["schemas"]["DemoStreamDone"] | components["schemas"]["DemoStreamError"];
+        /**
+         * DemoStreamReset
+         * @description Показанный текст убрать: дальше пойдёт другой ответ.
+         */
+        DemoStreamReset: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "reset";
+        };
+        /**
+         * DemoStreamStage
+         * @description searching — ищем в документах; writing — модель пишет ответ.
+         */
+        DemoStreamStage: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "searching" | "writing";
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "stage";
         };
         /** DepartmentBrief */
         DepartmentBrief: {
@@ -7358,6 +7451,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DemoAnswerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_ask_stream_api_v1_demo_ask_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Поток text/event-stream: строки «data: <DemoStreamEvent>», последним — done или error. Посетитель закрыл страницу — ответ прерывается: он нигде не хранится. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoStreamEvent"];
+                    "text/event-stream": unknown;
                 };
             };
             /** @description Validation Error */

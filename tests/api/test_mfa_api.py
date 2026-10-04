@@ -456,6 +456,9 @@ async def test_sessions_list_and_end_one(api: httpx.AsyncClient, account: User) 
         f"/api/v1/auth/sessions/{other['id']}/end", headers=_auth(laptop)
     )
     assert ended.status_code == 204
+    # Завершённый сеанс гаснет сразу — и его токен доступа тоже.
+    assert (await api.get("/api/v1/auth/me", headers=_auth(phone))).status_code == 401
+    assert (await api.get("/api/v1/auth/me", headers=_auth(laptop))).status_code == 200
     assert (await refresh_with(api, refresh_token_of(phone))).status_code == 401
     assert (await refresh_with(api, refresh_token_of(laptop))).status_code == 200
 

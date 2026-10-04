@@ -728,6 +728,13 @@ class ConnectorSettings(BaseSettings):
     # флаг. Решение 28.09: «База знаний 2.0» Битрикс24 — до проверки на
     # портале (RISKS №36).
     preview_modules: str = ""
+    # Виды подключений целиком (bitrix24, confluence, yandex360 — через
+    # запятую), которые компаниям не предлагаются: их нет в каталоге,
+    # новое подключение не создать. Уже созданные работают как раньше:
+    # синхронизация, вход сотрудников, настройки, удаление;
+    # `cli connector-check` их тоже видит — для живой проверки. Для
+    # решения «не проверили на живой системе к MVP — скрыть» (STATUS.md).
+    hidden_kinds: str = ""
 
     # OAuth-приложения (режим per_user, этап 2). callback — публичный
     # адрес ручки GET /api/v1/connectors/oauth/callback: его админ
@@ -795,6 +802,10 @@ class ConnectorSettings(BaseSettings):
     @property
     def enabled_preview_modules(self) -> frozenset[str]:
         return frozenset(_split_csv(self.preview_modules))
+
+    @property
+    def hidden_kind_names(self) -> frozenset[str]:
+        return frozenset(_split_csv(self.hidden_kinds))
 
 
 @lru_cache

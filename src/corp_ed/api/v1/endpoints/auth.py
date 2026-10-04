@@ -409,10 +409,13 @@ async def logout(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     principal: Annotated[Principal, Depends(get_principal_allow_password_change)],
 ) -> None:
-    """Отозвать цепочку текущего входа и стереть cookie."""
+    """Закрыть текущий сеанс и стереть cookie."""
     ensure_same_origin(request)
     await auth_service.logout(
-        principal.account, principal.member, read_refresh_cookie(request)
+        principal.account,
+        principal.member,
+        principal.session_id,
+        read_refresh_cookie(request),
     )
     clear_refresh_cookie(response)
 

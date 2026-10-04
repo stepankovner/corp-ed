@@ -3,6 +3,7 @@ import contextvars
 import re
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -181,6 +182,8 @@ def bearer(user: User) -> dict[str, str]:
     token = create_access_token(
         user.account.id,
         user.account.token_version,
+        # Сеанс без записей refresh-токенов — не закрыт (family_revoked).
+        session_id=uuid4(),
         tenant_id=user.tenant_id,
         member_id=user.id,
         role=user.role.value,
@@ -191,7 +194,7 @@ def bearer(user: User) -> dict[str, str]:
 
 def account_bearer(account: Account) -> dict[str, str]:
     """Токен учётки без выбранной компании."""
-    token = create_access_token(account.id, account.token_version)
+    token = create_access_token(account.id, account.token_version, session_id=uuid4())
     return {"Authorization": f"Bearer {token}"}
 
 

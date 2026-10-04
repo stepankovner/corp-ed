@@ -19,6 +19,7 @@ from corp_ed.repositories.connector_repository import ConnectorRepository
 from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.passwords import set_password
 
 logger = structlog.get_logger()
 
@@ -330,7 +331,7 @@ class TenantService:
         if account is None:
             raise ConflictError(f"Учётки с почтой {email.strip()} нет")
         validate_password(temporary_password, email=account.email)
-        account.hashed_password = hash_password(temporary_password)
+        set_password(account, temporary_password)
         account.must_change_password = True
         if account.email_verified_at is None:
             account.email_verified_at = datetime.now(UTC)

@@ -203,6 +203,7 @@ class Principal:
 
     account: Account
     member: User | None
+    session_id: UUID
     tenant: Tenant | None = None
 
 
@@ -239,6 +240,7 @@ async def get_principal_allow_password_change(
     try:
         account_id = UUID(payload["sub"])
         account_version = int(payload["ver"])
+        session_id = UUID(payload["sid"])
         tenant_raw = payload.get("tenant_id")
         tenant_id = UUID(tenant_raw) if tenant_raw is not None else None
         member_id = UUID(payload["member_id"]) if tenant_id is not None else None
@@ -251,8 +253,12 @@ async def get_principal_allow_password_change(
     account = await AccountRepository(session).get(account_id)
     if account is None or account.token_version != account_version:
         raise NotAuthenticatedError("Сессия недействительна")
+    # Шаг 4б: сеанс не закрыт — «Выйти» и «Завершить» в списке сеансов
+    # действуют сразу, а не когда истечёт токен (до 15 минут).
+    if await RefreshTokenRepository(session).family_revoked(session_id):
+        raise NotAuthenticatedError("Сессия недействительна")
     if tenant_id is None:
-        return Principal(account=account, member=None)
+        return Principal(account=account, member=None, session_id=session_id)
 
     # Шаг 5: компания — в контекст ИЗ ТОКЕНА; хук изоляции добавит
     # WHERE tenant_id ко всем запросам ниже.
@@ -275,7 +281,9 @@ async def get_principal_allow_password_change(
     ):
         raise NotAuthenticatedError("Сессия недействительна")
 
-    return Principal(account=account, member=member, tenant=tenant)
+    return Principal(
+        account=account, member=member, session_id=session_id, tenant=tenant
+    )
 
 
 async def get_principal(

@@ -78,14 +78,21 @@ def settings() -> ConnectorSettings:
 
 
 @pytest.fixture
+def hidden_kinds() -> frozenset[str]:
+    """CONNECTOR_HIDDEN_KINDS; тест подменяет параметризацией."""
+    return frozenset()
+
+
+@pytest.fixture
 async def connectors_api(
     api: httpx.AsyncClient,
     session: AsyncSession,
     source: FakeSource,
     secrets: SecretBox,
     settings: ConnectorSettings,
+    hidden_kinds: frozenset[str],
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    registry = make_registry(source)
+    registry = make_registry(source, hidden_kinds)
 
     def build(session: AsyncSession, audit: AuditRepository) -> ConnectorService:
         return ConnectorService(
@@ -154,6 +161,38 @@ async def test_kinds_describe_the_form(
     assert spec["credential_fields"] == [
         {"name": "token", "title": "Токен", "required": True, "secret": True}
     ]
+
+
+@pytest.mark.parametrize("hidden_kinds", [frozenset({FAKE_KIND})])
+async def test_hidden_kind_is_not_offered_but_existing_ones_work(
+    connectors_api: httpx.AsyncClient, admin_account: User, session: AsyncSession
+) -> None:
+    """CONNECTOR_HIDDEN_KINDS: вида нет в каталоге и новое не создать;
+    заведённое раньше — в списке и проверяется, как прежде."""
+    with tenant_scope(admin_account.tenant_id):
+        existing = Connector(
+            kind=FAKE_KIND,
+            name="Заведён до скрытия",
+            mode="organization",
+            modules=["docs"],
+            config={"base_url": "https://portal.example.com/rest/"},
+        )
+        session.add(existing)
+        await session.commit()
+
+    kinds = await connectors_api.get(f"{URL}/kinds", headers=bearer(admin_account))
+    assert [k["kind"] for k in kinds.json()] == [FAKE_PER_USER_KIND]
+
+    created = await _create(connectors_api, admin_account)
+    assert created.status_code == 422
+    assert created.json()["code"] == "kind_unknown"
+
+    listed = await connectors_api.get(URL, headers=bearer(admin_account))
+    assert [c["id"] for c in listed.json()] == [str(existing.id)]
+    tested = await connectors_api.post(
+        f"{URL}/{existing.id}/test", headers=bearer(admin_account)
+    )
+    assert tested.status_code == 200, tested.text
 
 
 @pytest.mark.parametrize(
