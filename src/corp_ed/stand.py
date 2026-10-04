@@ -40,11 +40,14 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from corp_ed.core import totp
+
+if TYPE_CHECKING:
+    from corp_ed.stand_scenarios import Credentials
 
 API = "/api/v1"
 DEFAULT_BASE_URL = "http://localhost:8000"
@@ -261,9 +264,13 @@ async def run_check(
     poll_interval: float = POLL_INTERVAL,
     before_poll: Hook | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    scenarios: bool = False,
+    employee: "Credentials | None" = None,
 ) -> Report:
     """Сквозной сценарий против API. before_poll — для тестов: запустить
-    воркер индексации в том же процессе перед очередным опросом статуса."""
+    воркер индексации в том же процессе перед очередным опросом статуса.
+    scenarios — ещё шаги этапов 1–10 (stand_scenarios.py), employee —
+    вторая служебная учётка для шагов сотрудника."""
     report = Report()
     client = StandClient(http)
     nonce = nonce or secrets.token_hex(4)
@@ -356,6 +363,20 @@ async def run_check(
             f"списано {spent}, осталось {usage_after['remaining']} "
             f"из {usage_after['pool']}",
         )
+
+        if scenarios:
+            from corp_ed.stand_scenarios import SmokeDocument, run_scenarios
+
+            await run_scenarios(
+                client,
+                report,
+                SmokeDocument(material_id, title, question, nonce),
+                employee=employee,
+                timeout=timeout,
+                poll_interval=poll_interval,
+                before_poll=before_poll,
+                sleep=sleep,
+            )
     except StandError as exc:
         report.add("сценарий прерван", False, str(exc))
     except (httpx.HTTPError, KeyError, ValueError) as exc:
@@ -476,12 +497,33 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="сквозной сценарий: документ → ответ")
     check.add_argument("--timeout", type=float, default=INDEX_TIMEOUT)
+    check.add_argument(
+        "--basic",
+        action="store_true",
+        help="только основной сценарий, без шагов этапов 1–10",
+    )
     upload = commands.add_parser("upload", help="загрузить папку документов")
     upload.add_argument("--dir", required=True, type=Path)
     upload.add_argument(
         "--titles", type=Path, help="JSON: имя файла → название документа"
     )
     return parser
+
+
+def _employee(env: "os._Environ[str]") -> "Credentials | None":
+    """Вторая служебная учётка для шагов сотрудника (CORP_ED_EMPLOYEE_*)."""
+    from corp_ed.stand_scenarios import Credentials
+
+    email = env.get("CORP_ED_EMPLOYEE_EMAIL")
+    password = env.get("CORP_ED_EMPLOYEE_PASSWORD")
+    if not (email and password):
+        return None
+    return Credentials(
+        email=email,
+        password=password,
+        totp_secret=env.get("CORP_ED_EMPLOYEE_TOTP_SECRET") or None,
+        new_password=env.get("CORP_ED_EMPLOYEE_NEW_PASSWORD") or None,
+    )
 
 
 async def _main(args: argparse.Namespace) -> int:
@@ -509,6 +551,8 @@ async def _main(args: argparse.Namespace) -> int:
                 new_password=env.get("CORP_ED_NEW_PASSWORD") or None,
                 totp_secret=env.get("CORP_ED_TOTP_SECRET") or None,
                 timeout=args.timeout,
+                scenarios=not args.basic,
+                employee=_employee(env),
             )
         else:
             titles = json.loads(args.titles.read_text("utf-8")) if args.titles else None

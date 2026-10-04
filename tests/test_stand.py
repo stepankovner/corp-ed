@@ -2,14 +2,26 @@
 моделью: вход, загрузка через песочницу, воркер, ответ со ссылкой,
 общий ответ вне документов, оценка, кредиты, удаление."""
 
+from dataclasses import replace
+from typing import Any
+
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.domain.models import Tenant, User
+from corp_ed import stand_scenarios
+from corp_ed.core.config import DemoSettings
+from corp_ed.core.security import hash_password
+from corp_ed.core.tenant_context import tenant_scope
+from corp_ed.domain.models import Department, Folder, Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
+from corp_ed.llm.types import Completion, Message
+from corp_ed.services.demo_service import DemoService
 from corp_ed.stand import main as stand_main
 from corp_ed.stand import run_check, smoke_document, upload_directory
-from tests.api.conftest import TEST_TOTP_SECRET, bearer
+from corp_ed.stand_scenarios import Credentials
+from tests.api.conftest import TEST_TOTP_SECRET, bearer, enable_test_totp
+from tests.factories import make_user
 from tests.stand_harness import (
     PASSWORD,
     WordEmbeddings,
@@ -234,3 +246,115 @@ def test_cli_needs_company_and_email(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("CORP_ED_COMPANY", "CORP_ED_EMAIL", "CORP_ED_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     assert stand_main(["check"]) == 2
+
+
+class EchoExcerpts(FakeAdapter):
+    """Отвечает выдержками из промпта: в ответе есть всё, что нашёл поиск
+    (кодовое слово, код склада), и ничего, чего он не нашёл."""
+
+    async def generate(  # type: ignore[override]
+        self, messages: list[Message], **kwargs: Any
+    ) -> Completion:
+        completion = await super().generate(messages, **kwargs)
+        prompt = messages[-1].content if messages else ""
+        if "[1]" not in prompt:
+            return completion
+        return replace(completion, content=f"По документам [1]: {prompt[:4000]}")
+
+
+async def test_stage_scenarios_pass_with_employee(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    session_maker: async_sessionmaker[AsyncSession],
+    rag,  # type: ignore[no-untyped-def]
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Шаги этапов 1–10: чат, обзор, отдел с закрытой папкой, сотрудник по
+    приглашению (папку видит, только когда он в отделе), песочница сайта.
+    За собой сценарий убирает всё."""
+    await make_admin(session, tenant_ctx)
+    other = Tenant(company_code="stand-employee", name="Вторая компания")
+    session.add(other)
+    await session.flush()
+    employee = make_user(
+        email="stand-employee@test.com",
+        role=UserRole.ADMIN,
+        tenant_id=other.id,
+        hashed_password=hash_password("temporary-password-42"),
+        must_change_password=True,
+    )
+    assert employee.account is not None
+    enable_test_totp(employee.account)
+    with tenant_scope(other.id):
+        session.add(employee)
+        await session.commit()
+    await DemoService(session_maker, DemoSettings()).setup()
+    # «Мешок слов» не связывает «командировку» и «командировки»: вопрос
+    # песочницы — словами документа. На стенде — обычный вопрос.
+    monkeypatch.setattr(
+        stand_scenarios,
+        "DEMO_QUESTION",
+        "Суточные в размере 700 рублей за каждый день командировки",
+    )
+
+    embeddings = WordEmbeddings()
+    llm = EchoExcerpts()
+
+    credentials = Credentials(
+        email="stand-employee@test.com",
+        password="temporary-password-42",
+        totp_secret=TEST_TOTP_SECRET,
+        new_password="second-check-account-2026",
+    )
+    reports = []
+    # Дважды, как на стенде при каждой выкатке: второй раз сотрудник уже
+    # сменил пароль и вступает снова после того, как его убрали.
+    for nonce in (NONCE, "beefcafe"):
+        async with stand_client(session_maker, embeddings, llm, rag) as client:
+            reports.append(
+                await run_check(
+                    client,
+                    totp_secret=TEST_TOTP_SECRET,
+                    email="stand-admin@test.com",
+                    password=PASSWORD,
+                    nonce=nonce,
+                    before_poll=ingest_hook(session_maker, embeddings, rag),
+                    sleep=_no_sleep,
+                    scenarios=True,
+                    employee=credentials
+                    if nonce == NONCE
+                    else replace(credentials, password=credentials.new_password or ""),
+                )
+            )
+
+    report = reports[1]
+    assert reports[0].ok, "\n".join(reports[0].lines())
+    assert report.ok, "\n".join(report.lines())
+    names = [step.name for step in report.steps]
+    # Последний шаг — удаление документа основного сценария.
+    assert names[-12:] == [
+        "чат: ответ потоком",
+        "чат: список, «поделиться», удаление",
+        "уведомления и первые шаги",
+        "обзор и настройки компании",
+        "сеансы входа",
+        "отдел и закрытая папка",
+        "сотрудник по приглашению",
+        "сотрудник: общий документ виден, папка отдела — нет",
+        "сотрудник в отделе видит папку",
+        "песочница сайта",
+        "уборка сценариев",
+        "удаление документа",
+    ]
+    # Убрано: сотрудника в компании нет, отделов и папок не осталось.
+    async with session_maker() as check:
+        members = (
+            await check.scalars(select(User).where(User.tenant_id == tenant_ctx.id))
+        ).all()
+        # Убранный сотрудник — «ушёл»: учётка жива, доступа к компании нет.
+        assert sorted((m.role.value, m.status.value) for m in members) == [
+            ("admin", "active"),
+            ("employee", "left"),
+        ]
+        assert (await check.scalar(select(func.count()).select_from(Folder))) == 0
+        assert (await check.scalar(select(func.count()).select_from(Department))) == 0
