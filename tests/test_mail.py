@@ -337,6 +337,8 @@ async def test_mail_check_flags_disabled_sending_and_stuck_queue(
 
     lines = report.lines()
     assert lines[0].startswith("FAIL почта: console")
+    # Без отправки письма не «отправлены», а только записаны в журнал.
+    assert "только в журнал 0" in lines[0] and ": отправлено" not in lines[0]
     assert any("отправка выключена" in line for line in lines)
     assert any("в очереди дольше 10 мин" in line and "30 мин" in line for line in lines)
 

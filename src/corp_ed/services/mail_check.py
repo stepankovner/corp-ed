@@ -47,8 +47,13 @@ class MailCheckReport:
             head += f" {self.server}"
         if self.login:
             head += f", вход в ящик — {self.login}"
+        # console и memory письма не отправляют, а только пишут в журнал:
+        # «отправлено» здесь вводило бы в заблуждение (стенд 06.10).
+        done = (
+            "только в журнал" if self.backend in ("console", "memory") else "отправлено"
+        )
         head += (
-            f"; за {self.days} дн.: отправлено {self.sent}, ждут {self.pending}, "
+            f"; за {self.days} дн.: {done} {self.sent}, ждут {self.pending}, "
             f"не отправлено {self.failed}"
         )
         if self.errors:
