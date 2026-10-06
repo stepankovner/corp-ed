@@ -1,19 +1,15 @@
 """Корпус для офлайн-стенда и генерации серебряного набора.
 
 Папка с документами → Markdown → preprocess → чанки нужной конфигурации.
-Извлечение повторяет то, что предложено бэкенду (docs/backend-handoff.md, BH-2):
-docx — mammoth + markdownify, pdf — pymupdf4llm постранично через \\f,
-xlsx, pptx, doc — `corp_ed.ingest.xlsx` / `pptx` / `doc` (Р-5, BH-33…35). md
-и txt читаются как есть. Библиотеки извлечения нужны, только если в папке
-есть docx/pdf (eval/requirements.txt).
-
-PDF без AGPL (П-12, BH-39): `EVAL_PDF_PARSER=pdfplumber` — разбор
-`corp_ed.ingest.pdf`. По умолчанию — pymupdf4llm, как в продукте сейчас:
-финальный прогон меряет продукт как есть (конфигурация A), новый разбор —
-отдельной конфигурацией F (`docs/ml-holdout-protocol.md`).
+Извлечение — функция продукта `corp_ed.ingest.extract.extract`, та же, что
+при загрузке файла: колонтитулы docx, txt в Windows-1251 и UTF-16,
+.markdown, PDF без AGPL (`ingest.pdf`, BH-39), xlsx, pptx, doc. Файл,
+который продукт не принимает (скан без текста, пустой), в корпус не
+попадает — как при загрузке. Своей копии разбора у стенда нет: прежняя
+расходилась с продуктом (колонтитулы, cp1251, .markdown — сверка 04.10).
 """
 
-import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -25,9 +21,22 @@ from corp_ed.domain.split import (
     split_into_chunks,
     split_sections,
 )
-from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
+from corp_ed.ingest.extract import ExtractionError, SourceFormat, extract
+from corp_ed.ingest.preprocess import preprocess
 
-SUPPORTED_SUFFIXES = (".md", ".txt", ".docx", ".pdf", ".xlsx", ".pptx", ".doc")
+FORMATS = {
+    ".docx": SourceFormat.DOCX,
+    ".pdf": SourceFormat.PDF,
+    ".txt": SourceFormat.TXT,
+    ".md": SourceFormat.MD,
+    ".markdown": SourceFormat.MD,
+    ".xlsx": SourceFormat.XLSX,
+    ".pptx": SourceFormat.PPTX,
+    ".doc": SourceFormat.DOC,
+}
+"""Расширения, которые принимает продукт (`ingest.extract`); xlsx, pptx и
+doc — все, без настройки INGEST_EXTRA_FORMATS: стенд меряет и их."""
+SUPPORTED_SUFFIXES = tuple(FORMATS)
 
 
 @dataclass(frozen=True)
@@ -78,42 +87,14 @@ class ChunkingConfig:
 
 
 def extract_markdown(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix in (".md", ".txt"):
-        return path.read_text(encoding="utf-8")
-    if suffix == ".docx":
-        import mammoth
-        import markdownify
+    """Файл → Markdown до preprocess, как при загрузке в продукт.
 
-        with path.open("rb") as file:
-            html = mammoth.convert_to_html(file).value
-        # sup_symbol — как предложено бэкенду (BH-36): верхний индекс
-        # остаётся тегом, `preprocess` решает, что с ним делать.
-        return str(
-            markdownify.markdownify(html, heading_style="ATX", sup_symbol="<sup>")
-        )
-    if suffix == ".xlsx":
-        from corp_ed.ingest.xlsx import xlsx_to_markdown
-
-        return xlsx_to_markdown(path.read_bytes())
-    if suffix == ".doc":
-        from corp_ed.ingest.doc import doc_to_markdown
-
-        return doc_to_markdown(path.read_bytes())
-    if suffix == ".pptx":
-        from corp_ed.ingest.pptx import pptx_to_markdown
-
-        return pptx_to_markdown(path.read_bytes())
-    if suffix == ".pdf" and os.environ.get("EVAL_PDF_PARSER") == "pdfplumber":
-        from corp_ed.ingest.pdf import pdf_to_markdown
-
-        return pdf_to_markdown(path.read_bytes())
-    if suffix == ".pdf":
-        import pymupdf4llm
-
-        pages = pymupdf4llm.to_markdown(str(path), page_chunks=True)
-        return PAGE_BREAK.join(str(page["text"]) for page in pages)
-    raise ValueError(f"unsupported file type: {path.name}")
+    ExtractionError — файл продукт не принимает (код — `error.code`).
+    """
+    fmt = FORMATS.get(path.suffix.lower())
+    if fmt is None:
+        raise ValueError(f"unsupported file type: {path.name}")
+    return extract(fmt, path.read_bytes())
 
 
 def load_corpus(directory: Path) -> list[Document]:
@@ -122,9 +103,16 @@ def load_corpus(directory: Path) -> list[Document]:
     )
     if not paths:
         raise SystemExit(f"В {directory} нет файлов {SUPPORTED_SUFFIXES}")
-    return [
-        Document(title=p.stem, markdown=preprocess(extract_markdown(p))) for p in paths
-    ]
+    documents = []
+    for path in paths:
+        try:
+            markdown = extract_markdown(path)
+        except ExtractionError as error:
+            # Продукт такой файл не принимает — в базе компании его нет.
+            print(f"Пропущен {path.name}: {error.code}", file=sys.stderr)
+            continue
+        documents.append(Document(title=path.stem, markdown=preprocess(markdown)))
+    return documents
 
 
 def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[BenchChunk]:
