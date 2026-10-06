@@ -39,7 +39,14 @@ class RegisterRequest(RequestModel):
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
     consent: Literal[True]
     """Согласие на обработку персональных данных (152-ФЗ) — обязательно."""
-    invite: str | None = Field(default=None, min_length=8, max_length=MAX_TOKEN_LENGTH)
+    invite: str | None = Field(
+        default=None,
+        min_length=8,
+        max_length=MAX_TOKEN_LENGTH,
+        description="Приглашение, по которому человек пришёл: при закрытой "
+        "регистрации пускает зарегистрироваться. В компанию не вступает — после "
+        "подтверждения почты это отдельный шаг POST /invites/accept («Вступить»).",
+    )
     """Ссылка или код приглашения: при закрытой регистрации пускает только с ним."""
 
 

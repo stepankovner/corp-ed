@@ -336,7 +336,7 @@ function WorkSection({ company }: { company: Company }) {
   return (
     <Section
       title={`Работа в «${company.name}»`}
-      description="Должность и отдел у каждой компании свои. Администратор может их поправить."
+      description="Должность и отдел у каждой компании свои. Администратор может их поправить; в отдел с закрытыми папками записывает только он."
     >
       <form className={styles.form} onSubmit={submit}>
         {save.isError ? <Notice kind="error">{errorMessage(save.error)}</Notice> : null}

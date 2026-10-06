@@ -747,6 +747,19 @@ class MfaService:
         ]
 
     async def end_session(self, account: Account, family_id: UUID) -> None:
+        """Завершить свой сеанс. Чужой или несуществующий — «не найден»
+        (одинаково: по ответу не узнать, есть ли такой сеанс у другого);
+        уже завершённый свой — без ошибки, повторное нажатие."""
+        known = await self.session.scalar(
+            select(func.count())
+            .select_from(RefreshToken)
+            .where(
+                RefreshToken.account_id == account.id,
+                RefreshToken.family_id == family_id,
+            )
+        )
+        if not known:
+            raise NotFoundError("Сеанс не найден")
         await self.session.execute(
             update(RefreshToken)
             .where(

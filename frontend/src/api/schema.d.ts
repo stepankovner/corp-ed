@@ -4306,9 +4306,15 @@ export interface components {
             last_name?: string | null;
             /** Patronymic */
             patronymic?: string | null;
-            /** Phone */
+            /**
+             * Phone
+             * @description Хранится как +79991234567: «+7 (999) 123-45-67» и «8 999 123 45 67» приводятся к этому виду; с кодом страны, 10–15 цифр.
+             */
             phone?: string | null;
-            /** Telegram */
+            /**
+             * Telegram
+             * @description Имя без «@»: «@anna_s» и «https://t.me/anna_s» хранятся как anna_s; 5–32 латинских буквы, цифры и «_», с буквы — правило Telegram.
+             */
             telegram?: string | null;
         };
         /** RegisterRequest */
@@ -4325,7 +4331,10 @@ export interface components {
             email: string;
             /** First Name */
             first_name: string;
-            /** Invite */
+            /**
+             * Invite
+             * @description Приглашение, по которому человек пришёл: при закрытой регистрации пускает зарегистрироваться. В компанию не вступает — после подтверждения почты это отдельный шаг POST /invites/accept («Вступить»).
+             */
             invite?: string | null;
             /** Last Name */
             last_name: string;
@@ -4863,7 +4872,8 @@ export interface components {
         /**
          * SuggestionsResponse
          * @description company — заданные администратором; frequent — частые вопросы
-         *     компании, обезличенно (не меньше трёх разных людей).
+         *     компании, обезличенно: заданные не меньше чем тремя разными людьми за
+         *     последние 90 дней и получившие ответ по документам (без 👎).
          */
         SuggestionsResponse: {
             /** Company */

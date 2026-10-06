@@ -116,6 +116,10 @@ class CompanyRequestService:
             request.status = "cancelled"
             request.decided_at = _now()
             await self.session.commit()
+        elif request.status != "cancelled":
+            # Одобренную или отклонённую не отменить — как и не рассмотреть
+            # повторно (_open); повторная отмена — без ошибки.
+            raise ConflictError("Заявка уже рассмотрена")
         return request
 
     # --- команда Kronto (cli) -------------------------------------------------

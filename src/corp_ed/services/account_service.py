@@ -297,6 +297,14 @@ class AccountService:
         self.audit.record(
             AuditAction.PASSWORD_RESET_DONE, details={"account_id": str(account.id)}
         )
+        # Письмо о безопасности (ТЗ §3) — как при смене пароля в настройках:
+        # ссылку сброса мог открыть и тот, у кого доступ к почте.
+        self.mail.enqueue(
+            account.email,
+            email_templates.password_changed(
+                name=account.first_name, reset_url=self.mail.url("/forgot-password")
+            ),
+        )
         member = await self.auth.default_membership(account)
         return await self.auth.open_session(account, member)
 

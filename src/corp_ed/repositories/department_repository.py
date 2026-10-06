@@ -4,7 +4,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Department, MemberStatus, User
+from corp_ed.domain.models import (
+    Department,
+    Folder,
+    FolderDepartment,
+    MemberStatus,
+    User,
+)
 
 
 class DepartmentRepository:
@@ -39,6 +45,20 @@ class DepartmentRepository:
             select(Department).where(Department.id == department_id)
         )
         return result.first()
+
+    async def opens_restricted_folder(self, department_id: UUID) -> bool:
+        """Открыта ли отделу хоть одна закрытая папка."""
+        result = await self.session.scalar(
+            select(func.count())
+            .select_from(FolderDepartment)
+            .join(Folder, Folder.id == FolderDepartment.folder_id)
+            .where(
+                FolderDepartment.tenant_id == require_tenant(),
+                FolderDepartment.department_id == department_id,
+                Folder.restricted.is_(True),
+            )
+        )
+        return bool(result)
 
     async def find_by_name(self, name: str) -> Department | None:
         result = await self.session.scalars(

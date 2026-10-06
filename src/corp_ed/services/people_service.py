@@ -68,7 +68,11 @@ class PeopleService:
         department_id: UUID | None | _Unset = UNSET,
     ) -> Person:
         """Должность и отдел в компании: свои — сам человек, чужие —
-        администратор (ТЗ §4). Правка администратора — в журнал."""
+        администратор (ТЗ §4). Правка администратора — в журнал.
+
+        В отдел, которому открыта закрытая папка, человек сам себя не
+        записывает — только администратор: иначе любой сотрудник открыл бы
+        себе папку бухгалтерии (разбор 06.10, RISKS №58)."""
         if member_id != actor.id and actor.role is not UserRole.ADMIN:
             raise PermissionError("Должность и отдел коллеги меняет администратор")
         member = await self.users.get_by_id(member_id)
@@ -84,6 +88,14 @@ class PeopleService:
             # Поиск под RLS: отдел чужой компании не найдётся.
             if await self.departments.get_by_id(department_id) is None:
                 raise NotFoundError("Отдел не найден")
+            if (
+                actor.role is not UserRole.ADMIN
+                and department_id != member.department_id
+                and await self.departments.opens_restricted_folder(department_id)
+            ):
+                raise PermissionError(
+                    "В этот отдел добавляет администратор: ему открыты закрытые папки"
+                )
             member.department_id = department_id
         elif department_id is None:
             member.department_id = None

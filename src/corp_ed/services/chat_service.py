@@ -19,7 +19,7 @@ current_message_id — лист показанной ветки; её и вид�
 import secrets
 from collections import defaultdict
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -101,6 +101,9 @@ class MessageView:
     """Версии этого сообщения (ветки) по порядку, включая его самого."""
     attachments: list[ChatAttachment] = field(default_factory=list)
     sources: list[SourceView] = field(default_factory=list)
+    content: str | None = None
+    """Текст для этого смотрящего вместо сохранённого (общая ссылка: ответ
+    по документу, к которому у него нет доступа); None — как сохранён."""
 
 
 @dataclass(frozen=True)
@@ -507,7 +510,10 @@ class ChatService:
             for m in tree.path(conversation.shared_message_id)
             if m.status != "generating"
         ]
-        messages = await self._message_views(path, tree, viewer=viewer)
+        messages = [
+            _hide_closed_answer(view)
+            for view in await self._message_views(path, tree, viewer=viewer)
+        ]
         await self.session.commit()
         return SharedView(
             conversation=conversation,
@@ -639,6 +645,21 @@ class ChatService:
             )
             for message in path
         ]
+
+
+HIDDEN_ANSWER = "Ответ опирается на документы, к которым у вас нет доступа."
+
+
+def _hide_closed_answer(view: MessageView) -> MessageView:
+    """Общая ссылка: текст источника без доступа скрыт, а ответ его
+    пересказывает — скрыть и ответ (разбор 06.10). Отличие от своего
+    диалога: там документ мог быть удалён после ответа, здесь смотрит
+    другой человек со своими правами."""
+    if view.message.role != "assistant" or not any(
+        source.kind == "document" and source.content is None for source in view.sources
+    ):
+        return view
+    return replace(view, content=HIDDEN_ANSWER)
 
 
 def source_view(raw: dict[str, Any], visible: set[UUID]) -> SourceView:
