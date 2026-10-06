@@ -774,8 +774,12 @@ class FaqService:
 
         Модель ответа видит вопрос сотрудника как есть, историю и
         переписанный вопрос (build_faq_messages); без истории промпт байт
-        в байт прежний. Общий ответ строится по переписанному вопросу:
-        «А для УМНИК?» без контекста общему источнику непонятен.
+        в байт прежний. Прошлые ответы «в документах ответа нет» в историю
+        для модели ответа не идут: фактов в них нет, а модель, видя свой
+        отказ, повторяла его, хотя выдержка уже нашлась — отдел подтвердили
+        или файл загрузили (владелец 06.10). Остались одни отказы — модель
+        получает переписанный вопрос. Общий ответ строится по переписанному
+        вопросу: «А для УМНИК?» без контекста общему источнику непонятен.
 
         В поток отказ модели не попадает: _RefusalGate придерживает
         начало ответа, пока оно может оказаться фразой NOT_FOUND_ANSWER,
@@ -786,10 +790,11 @@ class FaqService:
                 standalone, mode, reason="no_relevant_excerpts", sink=sink
             )
 
+        answered = [turn for turn in history if not is_not_found(turn.answer)]
         messages = build_faq_messages(
-            question=question,
+            question=question if answered or not history else standalone,
             matches=context,
-            history=history,
+            history=answered,
             standalone_question=standalone,
         )
         await sink.stage("writing")

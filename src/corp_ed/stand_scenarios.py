@@ -357,6 +357,15 @@ async def run_scenarios(
     try:
         await _chat(client, report, smoke)
         await _overview(client, report)
+        await _late_document(
+            client,
+            report,
+            created,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            before_poll=before_poll,
+            sleep=sleep,
+        )
         await _folder(
             client,
             report,
@@ -609,6 +618,86 @@ async def _folder(
         f"источниках и код в ответе: {_yes(found)}",
     )
 
+    # Тот же вопрос в том же диалоге, где до подтверждения ответа не было
+    # (владелец 06.10): поиск идёт заново, но модель видит историю — свой
+    # прошлый ответ «в документах ответа нет».
+    again = await _ask(
+        staff, question, conversation_id=str(pending.get("conversation_id") or "")
+    )
+    again_titles = [str(s.get("title")) for s in again.get("sources", [])]
+    answered = title in again_titles and code in str(again.get("content", ""))
+    report.add(
+        "тот же диалог после подтверждения: ответ по папке",
+        answered,
+        f"origin {again.get('origin')}, документ папки в источниках: "
+        f"{_yes(title in again_titles)}, код в ответе: "
+        f"{_yes(code in str(again.get('content', '')))}",
+    )
+
+
+async def _late_document(
+    client: StandClient,
+    report: Report,
+    created: dict[str, str],
+    *,
+    timeout: float,
+    poll_interval: float,
+    before_poll: Hook | None,
+    sleep: Callable[[float], Awaitable[None]],
+) -> None:
+    """Документ появился после вопроса (владелец 06.10): в диалоге, где
+    ассистент ответил «в документах ответа нет», тот же вопрос после
+    загрузки — или после подтверждения отдела — снова получал общий ответ,
+    а в новом диалоге — ответ по документу. От имени администратора: ему
+    API отдаёт диагностику — нашлись ли выдержки и как понят вопрос."""
+    nonce = secrets.token_hex(3)
+    code = str(1000 + secrets.randbelow(9000))
+    title = f"Сейф бухгалтерии {nonce}"
+    question = f"Какой код сейфа в бухгалтерии {nonce}?"
+    before = await _ask(client, question)
+    material = await client.request(
+        "POST",
+        "/materials",
+        json={
+            "title": title,
+            "content": (
+                f"# {title}\n\nКод сейфа в бухгалтерии {nonce} — {code}. "
+                "Его знают только сотрудники бухгалтерии.\n"
+            ),
+        },
+    )
+    if material.status_code != 201:
+        raise StandError(f"документ: HTTP {material.status_code} {_code(material)}")
+    created["late_material"] = material.json()["id"]
+    await _wait_ready(
+        client,
+        created["late_material"],
+        timeout=timeout,
+        poll_interval=poll_interval,
+        before_poll=before_poll,
+        sleep=sleep,
+    )
+    same = await _ask(
+        client, question, conversation_id=str(before.get("conversation_id") or "")
+    )
+    fresh = await _ask(client, question)
+
+    def found(answer: dict[str, Any]) -> bool:
+        titles = [str(s.get("title")) for s in answer.get("sources", [])]
+        return title in titles and code in str(answer.get("content", ""))
+
+    diagnostics = same.get("diagnostics") or {}
+    report.add(
+        "документ появился позже: тот же диалог отвечает по нему",
+        found(same),
+        f"до загрузки: origin {before.get('origin')}; тот же диалог: origin "
+        f"{same.get('origin')}, код в ответе: {_yes(found(same))}, ближайшая "
+        f"выдержка {diagnostics.get('nearest_distance')}, учтено реплик "
+        f"{diagnostics.get('history_turns')}, понят как "
+        f"«{diagnostics.get('standalone_question')}»; новый диалог: origin "
+        f"{fresh.get('origin')}, код в ответе: {_yes(found(fresh))}",
+    )
+
 
 async def _logout(staff: StandClient, report: Report) -> None:
     """«Выйти» действует сразу: токен доступа сотрудника после выхода —
@@ -721,6 +810,9 @@ async def _clean(client: StandClient, report: Report, created: dict[str, str]) -
     paths = []
     if created.get("member"):
         paths.append(("сотрудник из компании", f"/users/{created['member']}"))
+    if created.get("late_material"):
+        late = created["late_material"]
+        paths.append(("документ после вопроса", f"/materials/{late}"))
     if created.get("folder_material"):
         paths.append(("документ папки", f"/materials/{created['folder_material']}"))
     if created.get("folder"):
