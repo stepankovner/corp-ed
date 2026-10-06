@@ -13,7 +13,7 @@ from corp_ed.api.v1.dependencies import get_lead_service, get_team_notifier
 from corp_ed.cli import _parser
 from corp_ed.core.config import LeadSettings
 from corp_ed.domain.leads import CALL_SLOTS, CALL_TIMEZONE, LeadStatus
-from corp_ed.domain.models import Lead
+from corp_ed.domain.models import Lead, OutboxEmail
 from corp_ed.main import app
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.services.lead_service import LeadService
@@ -206,6 +206,50 @@ async def test_leads_are_rate_limited_per_ip(
     response = await api.post("/api/v1/leads", json=_body())
 
     assert response.status_code == 429
+
+
+# --- письмо команде -----------------------------------------------------------------
+
+
+async def test_team_gets_email_with_contacts(
+    api: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    settings = OPEN.model_copy(update={"notify_email": "info@kronto.example"})
+    app.dependency_overrides[get_lead_service] = lambda: LeadService(
+        LeadRepository(session), session, settings
+    )
+    try:
+        body = _body(contact_name="Анна <b>Смирнова</b>", tariff="extended")
+        assert (await api.post("/api/v1/leads", json=body)).status_code == 201
+    finally:
+        app.dependency_overrides.pop(get_lead_service, None)
+
+    [mail] = list(await session.scalars(select(OutboxEmail)))
+    assert (mail.to_email, mail.kind) == ("info@kronto.example", "lead_received")
+    assert "ООО «Меридиан Строй»" in mail.subject
+    # В письме — всё, чтобы перезвонить без cli.
+    for expected in ("+79991234567", "anna@meridian-stroy.ru", "60", "Расширенный"):
+        assert expected in mail.text_body
+    assert CALL_SLOTS[1] in mail.text_body
+    # Имя из формы в HTML — текстом, не разметкой.
+    assert "<b>Смирнова</b>" not in mail.html_body
+    assert "&lt;b&gt;Смирнова&lt;/b&gt;" in mail.html_body
+
+
+async def test_no_email_without_team_address(
+    api: httpx.AsyncClient, session: AsyncSession, leads_open: None
+) -> None:
+    assert (await api.post("/api/v1/leads", json=_body())).status_code == 201
+
+    assert list(await session.scalars(select(OutboxEmail))) == []
+
+
+def test_team_address_is_checked() -> None:
+    with pytest.raises(ValidationError, match="LEADS_NOTIFY_EMAIL"):
+        LeadSettings(notify_email="info-at-kronto")
+    assert LeadSettings(notify_email=" info@kronto.example ").notify_email == (
+        "info@kronto.example"
+    )
 
 
 # --- команда: CLI и срок хранения ---------------------------------------------------

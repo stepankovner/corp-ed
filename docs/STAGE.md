@@ -728,6 +728,20 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
     всех запросах (RISKS №48), но для эмбеддингов Яндекс его действие
     не подтверждает.
 - **Приём заявок** на созвон выключен (`LEADS_ENABLED` по умолчанию `false`).
+  Форма лендинга krontoai.ru (репозиторий demo-kronto) шлёт заявки в API
+  стенда, пока нет боевого сервера. Включение — в `/opt/kronto/.env`:
+  ```
+  LEADS_ENABLED=true
+  LEADS_POLICY_URL=https://krontoai.ru/privacy
+  LEADS_POLICY_VERSION=2026-10-06
+  LEADS_NOTIFY_EMAIL=info@krontoai.ru
+  CORS_ALLOWED_ORIGINS=https://krontoai.ru,https://www.krontoai.ru
+  ```
+  затем выкатка (или `docker compose up -d api`). Версия политики — та,
+  что указана на странице политики лендинга: сменили текст — новая версия
+  в обоих местах. Проверка: `curl -s https://stage.krontoai.ru/api/v1/leads/form`
+  отдаёт `"enabled":true`. Письмо уходит через Postbox (`MAIL_BACKEND`),
+  в Telegram — без контактов (`TEAM_NOTIFY_TELEGRAM_*`).
 - **Telegram.** Стенд — то место, где стоит проверить
   `curl -m 10 https://api.telegram.org` с российского сервера (RISKS №50)
   до того, как включать `TEAM_NOTIFY_TELEGRAM_*` (заявки и тревоги

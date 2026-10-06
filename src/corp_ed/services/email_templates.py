@@ -7,6 +7,7 @@
 """
 
 from dataclasses import dataclass
+from datetime import date
 from html import escape
 
 BRAND = "kronto"
@@ -423,3 +424,64 @@ def notice(
         ],
     )
     return RenderedEmail(f"notice_{kind}", title, text, html)
+
+
+_WEEKDAYS = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+
+
+def lead_received(
+    *,
+    company: str,
+    contact: str,
+    phone: str,
+    email: str | None,
+    seats: int,
+    tariff: str,
+    preferred_date: date,
+    preferred_slot: str,
+    comment: str | None,
+) -> RenderedEmail:
+    """Новая заявка на созвон — команде kronto (LEADS_NOTIFY_EMAIL).
+
+    В отличие от сообщения в Telegram, здесь контакты: письмо уходит
+    через наш почтовый сервис в ящик команды, а текст в очереди
+    стирается после отправки (OutboxEmail).
+    """
+    when = (
+        f"{preferred_date:%d.%m} ({_WEEKDAYS[preferred_date.weekday()]}), "
+        f"{preferred_slot} по Москве"
+    )
+    subject = f"Заявка на созвон: {company}, {preferred_date:%d.%m} {preferred_slot}"
+    rows = [
+        ("Компания", company),
+        ("Контакт", contact),
+        ("Телефон", phone),
+        ("Почта", email or "—"),
+        ("Сотрудников за компьютером", str(seats)),
+        ("Тариф", tariff),
+        ("Удобно", when),
+        ("Комментарий", comment or "—"),
+    ]
+    text = (
+        "Новая заявка на созвон с сайта.\n\n"
+        + "\n".join(f"{label}: {value}" for label, value in rows)
+        + "\n\nПерезвоните, чтобы подтвердить время. Все заявки — cli leads list."
+    )
+    cell = "padding:6px 12px 6px 0;vertical-align:top;"
+    table = "".join(
+        f'<tr><td style="{cell}color:{_MUTED};white-space:nowrap;">'
+        f'{escape(label)}</td><td style="{cell}">{escape(value)}</td></tr>'
+        for label, value in rows
+    )
+    html = _layout(
+        subject,
+        [
+            _p("Новая заявка на созвон с сайта."),
+            '<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="margin:0 0 16px;font-size:15px;">{table}</table>',
+            _muted(
+                "Перезвоните, чтобы подтвердить время. Все заявки — cli leads list."
+            ),
+        ],
+    )
+    return RenderedEmail("lead_received", subject, text, html)
