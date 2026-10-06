@@ -23,7 +23,10 @@ from corp_ed.domain.leads import (
     is_workday,
 )
 from corp_ed.domain.models import Lead
+from corp_ed.domain.tariffs import plan_for
 from corp_ed.repositories.lead_repository import LeadRepository
+from corp_ed.services import email_templates
+from corp_ed.services.email_service import EmailService
 
 logger = structlog.get_logger()
 
@@ -97,6 +100,23 @@ class LeadService:
                 consented_at=datetime.now(UTC),
             )
         )
+        if self.settings.notify_email:
+            # В транзакции заявки: письмо в очереди появляется вместе с
+            # ней, отправляет воркер — сбой почты не теряет заявку.
+            EmailService(self.session).enqueue(
+                self.settings.notify_email,
+                email_templates.lead_received(
+                    company=lead.company_name,
+                    contact=lead.contact_name,
+                    phone=lead.phone,
+                    email=lead.email,
+                    seats=lead.seats,
+                    tariff=plan_for(lead.tariff).title,
+                    preferred_date=lead.preferred_date,
+                    preferred_slot=lead.preferred_slot,
+                    comment=lead.comment,
+                ),
+            )
         await self.session.commit()
         # В лог — только id: персональные данные читает команда из CLI.
         logger.info("lead_created", lead_id=str(lead.id), tariff=lead.tariff)

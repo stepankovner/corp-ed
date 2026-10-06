@@ -1,4 +1,5 @@
 import os
+import re
 from functools import lru_cache
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -379,6 +380,11 @@ class LeadSettings(BaseSettings):
     retention_days: int = Field(default=180, gt=0, le=730)
     # Выбор даты созвона: с завтрашнего дня на столько дней вперёд.
     days_ahead: int = Field(default=30, gt=0, le=90)
+    # Ящик команды для писем о новой заявке — с контактами, чтобы
+    # перезвонить без cli. Почта уходит через наш почтовый сервис
+    # (MAIL_BACKEND), а не в чужой мессенджер: в Telegram контактов нет.
+    # Пусто — писем нет.
+    notify_email: str = Field(default="", max_length=254)
 
     model_config = SettingsConfigDict(
         env_prefix="LEADS_",
@@ -393,6 +399,16 @@ class LeadSettings(BaseSettings):
         value = value.strip()
         if value and not (value.startswith("https://") or value.startswith("/")):
             raise ValueError("LEADS_POLICY_URL: https://… или путь на этом сайте")
+        return value
+
+    @field_validator("notify_email")
+    @classmethod
+    def validate_notify_email(cls, value: str) -> str:
+        value = value.strip()
+        if value and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError(
+                "LEADS_NOTIFY_EMAIL: адрес почты, например info@krontoai.ru"
+            )
         return value
 
     @model_validator(mode="after")
