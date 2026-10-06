@@ -11,8 +11,9 @@
 - приглашение и вступление (§2): вторая служебная учётка вступает по коду
   и отвечает как сотрудник; после проверки её убирают из компании;
 - песочница сайта (§1): ответ по документам вымышленной компании;
-- загрузка Word и PDF: текст из них достаёт песочница извлечения на
-  сервере, чего документ .md основного сценария не проверяет.
+- загрузка файлов Word (docx и doc), PDF, Excel и PowerPoint: текст из
+  них достаёт песочница извлечения на сервере, чего документ .md
+  основного сценария не проверяет.
 
 Всё, что сценарий создал, он удаляет — повторные запуски не копят данные.
 Учётка сотрудника необязательна: без неё шаги сотрудника пропускаются.
@@ -25,6 +26,7 @@ import time
 import zipfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from corp_ed.stand import (
@@ -142,8 +144,132 @@ def _pdf(lines: list[str]) -> bytes:
     return bytes(out)
 
 
+_PKG = "http://schemas.openxmlformats.org/package/2006/relationships"
+_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_OFFICE = "application/vnd.openxmlformats-officedocument"
+
+
+def _zip(parts: dict[str, str]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, xml in parts.items():
+            archive.writestr(name, '<?xml version="1.0" encoding="UTF-8"?>' + xml)
+    return buffer.getvalue()
+
+
+def _package(main: str, main_type: str, extra: dict[str, str]) -> dict[str, str]:
+    """[Content_Types].xml и связь пакета с главной частью."""
+    overrides = "".join(
+        f'<Override PartName="/{name}" ContentType="{_OFFICE}.{kind}"/>'
+        for name, kind in {main: main_type, **extra}.items()
+    )
+    return {
+        "[Content_Types].xml": (
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/'
+            'content-types"><Default Extension="rels" ContentType="application/'
+            'vnd.openxmlformats-package.relationships+xml"/><Default '
+            f'Extension="xml" ContentType="application/xml"/>{overrides}</Types>'
+        ),
+        "_rels/.rels": (
+            f'<Relationships xmlns="{_PKG}"><Relationship Id="rId1" '
+            f'Type="{_REL}/officeDocument" Target="{main}"/></Relationships>'
+        ),
+    }
+
+
+def _xlsx(rows: list[list[str]]) -> bytes:
+    """Один лист, строки — встроенным текстом (без общей таблицы строк)."""
+    main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    body = "".join(
+        f'<row r="{r}">'
+        + "".join(
+            f'<c r="{chr(65 + c)}{r}" t="inlineStr"><is><t>{text}</t></is></c>'
+            for c, text in enumerate(cells)
+        )
+        + "</row>"
+        for r, cells in enumerate(rows, start=1)
+    )
+    return _zip(
+        {
+            **_package(
+                "xl/workbook.xml",
+                "spreadsheetml.sheet.main+xml",
+                {"xl/worksheets/sheet1.xml": "spreadsheetml.worksheet+xml"},
+            ),
+            "xl/workbook.xml": (
+                f'<workbook xmlns="{main}" xmlns:r="{_REL}"><sheets><sheet '
+                'name="Лист1" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+            "xl/_rels/workbook.xml.rels": (
+                f'<Relationships xmlns="{_PKG}"><Relationship Id="rId1" '
+                f'Type="{_REL}/worksheet" Target="worksheets/sheet1.xml"/>'
+                "</Relationships>"
+            ),
+            "xl/worksheets/sheet1.xml": (
+                f'<worksheet xmlns="{main}"><sheetData>{body}</sheetData></worksheet>'
+            ),
+        }
+    )
+
+
+def _pptx(heading: str, lines: list[str]) -> bytes:
+    """Один слайд: заголовок и текст."""
+    ns = (
+        'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        f'xmlns:r="{_REL}"'
+    )
+
+    def shape(paragraphs: list[str], placeholder: str) -> str:
+        text = "".join(
+            f"<a:p><a:r><a:t>{line}</a:t></a:r></a:p>" for line in paragraphs
+        )
+        return (
+            '<p:sp><p:nvSpPr><p:cNvPr id="2" name="s"/><p:cNvSpPr/><p:nvPr>'
+            f"{placeholder}</p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/>"
+            f"{text}</p:txBody></p:sp>"
+        )
+
+    return _zip(
+        {
+            **_package(
+                "ppt/presentation.xml",
+                "presentationml.presentation.main+xml",
+                {"ppt/slides/slide1.xml": "presentationml.slide+xml"},
+            ),
+            "ppt/presentation.xml": (
+                f'<p:presentation {ns}><p:sldIdLst><p:sldId id="256" r:id="rId1"/>'
+                "</p:sldIdLst></p:presentation>"
+            ),
+            "ppt/_rels/presentation.xml.rels": (
+                f'<Relationships xmlns="{_PKG}"><Relationship Id="rId1" '
+                f'Type="{_REL}/slide" Target="slides/slide1.xml"/></Relationships>'
+            ),
+            "ppt/slides/slide1.xml": (
+                f'<p:sld {ns}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" '
+                'name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>'
+                + shape([heading], '<p:ph type="title"/>')
+                + shape(lines, "")
+                + "</p:spTree></p:cSld></p:sld>"
+            ),
+        }
+    )
+
+
+_DOC_TEMPLATE = Path(__file__).parent / "stand_files" / "check.doc"
+_DOC_NONCE = "QQQQQQ".encode("utf-16-le")
+"""Место кода проверки в check.doc: в .doc нет контрольных сумм, и код той
+же длины встаёт на место без пересборки файла (собран
+tests/ingest/doc_samples.py, как Word 97–2003: OLE, FIB, куски текста)."""
+
+
+def _doc(nonce: str) -> bytes:
+    return _DOC_TEMPLATE.read_bytes().replace(_DOC_NONCE, nonce.encode("utf-16-le"))
+
+
 def format_files(nonce: str) -> list[tuple[str, bytes, str]]:
-    """Файлы Word и PDF: имя, содержимое, название документа."""
+    """Файлы всех форматов, кроме .md: имя, содержимое, название документа.
+    nonce — шесть знаков (место под него в check.doc — шесть)."""
     return [
         (
             f"check-{nonce}.docx",
@@ -164,6 +290,25 @@ def format_files(nonce: str) -> list[tuple[str, bytes, str]]:
                 ]
             ),
             f"Проверка PDF {nonce}",
+        ),
+        (f"check-{nonce}.doc", _doc(nonce), f"Проверка Word 97 {nonce}"),
+        (
+            f"check-{nonce}.xlsx",
+            _xlsx(
+                [
+                    ["Кабинет", "Ответственный"],
+                    [f"Переговорная проверки {nonce}", "Отдел проверки"],
+                ]
+            ),
+            f"Проверка Excel {nonce}",
+        ),
+        (
+            f"check-{nonce}.pptx",
+            _pptx(
+                f"Порядок дежурств {nonce}",
+                [f"Дежурный проверки {nonce} меняется каждый понедельник."],
+            ),
+            f"Проверка PowerPoint {nonce}",
         ),
     ]
 
@@ -545,7 +690,7 @@ async def _formats(
             + (f" ({material['status_error']})" if material.get("status_error") else "")
         )
     report.add(
-        "загрузка Word и PDF",
+        "загрузка docx, pdf, doc, xlsx, pptx",
         ready == len(files),
         ", ".join(details) + f", {time.monotonic() - started:.0f} с",
     )
