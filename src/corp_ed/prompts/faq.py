@@ -69,7 +69,7 @@ from corp_ed.domain.split import format_breadcrumbs
 from corp_ed.llm.types import Message, Role
 from corp_ed.prompts.dialogue import Turn, format_history
 
-PROMPT_VERSION = "faq-v2.5"
+PROMPT_VERSION = "faq-v2.7"
 """Версия промпта. Бэкенду — писать в qa_log рядом с ответом, чтобы
 результаты eval и отзывы 👍/👎 можно было привязать к версии промпта."""
 
@@ -332,4 +332,7 @@ def _format_excerpt(number: int, match: SourceChunk) -> str:
     if source and first_line.strip() == source:
         body = rest.strip()
     header = f"[{number}] {source}" if source else f"[{number}]"
-    return f"{header}\n{body}"
+    # faq-v2.7 (Р-15): номер и после текста — иначе ближайший номер после
+    # факта в конце длинной выдержки — заголовок следующей, и модель ставит
+    # его (06.10: 11 из 14 ссылок «не на ту выдержку»).
+    return f"{header}\n{body}\n(конец выдержки [{number}])"
