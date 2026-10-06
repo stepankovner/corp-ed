@@ -669,7 +669,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         general = False
         hop_query, hop_added = "", 0
         if selected and not args.dry_run:
-            calls.append(ask(build_faq_messages(item.question, selected)))
+            calls.append(
+                ask(build_faq_messages(item.question, selected, search="allowed"))
+            )
             raw = calls[-1].text.strip()
             # faq-v2.9: модель просит второй шаг поиска — тот же поиск по её
             # запросу, новые фрагменты (до SEARCH_MORE_LIMIT) — после прежних.
@@ -701,7 +703,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                     context_text = "\n".join(block.content for block in selected)
                     calls.append(
-                        ask(build_faq_messages(item.question, selected, searched=True))
+                        ask(build_faq_messages(item.question, selected, search="done"))
                     )
                     raw = calls[-1].text.strip()
                     if search_request(raw) is not None:

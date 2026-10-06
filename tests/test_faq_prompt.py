@@ -219,7 +219,7 @@ def test_general_prompt_leaves_advice_to_the_backend() -> None:
 
     system = build_general_messages("Сколько дней отпуска?")[0].content
 
-    assert PROMPT_VERSION == "faq-v2.9"
+    assert PROMPT_VERSION == "faq-v2.7"
     assert "посоветуй уточнить" not in system
     assert "Не советуй, куда или к кому обратиться" in system
     assert "определяется документами компании" in system
@@ -249,10 +249,29 @@ def test_search_request_reads_the_first_line() -> None:
 
 
 def test_second_call_does_not_ask_for_another_search() -> None:
-    first = build_faq_messages("Кто согласует?", [VACATION])
-    second = build_faq_messages("Кто согласует?", [VACATION], searched=True)
+    first = build_faq_messages("Кто согласует?", [VACATION], search="allowed")
+    second = build_faq_messages("Кто согласует?", [VACATION], search="done")
 
     assert "9. Если в выдержках есть только часть ответа" in first[0].content
     assert "напиши только «Дополнительный поиск: …»" in first[1].content
     assert "Дополнительный поиск уже сделан" in second[1].content
     assert "напиши только «Дополнительный поиск" not in second[1].content
+
+
+def test_search_step_is_off_by_default() -> None:
+    # BH-43: пока бэкенд не разбирает «Дополнительный поиск: …», промпт по
+    # умолчанию — v2.7 без правила 9 и без фразы о поиске.
+    from corp_ed.prompts.faq import SEARCH_PROMPT_VERSION
+
+    default = build_faq_messages("Кто согласует?", [VACATION])
+    off = build_faq_messages("Кто согласует?", [VACATION], search="off")
+    allowed = build_faq_messages("Кто согласует?", [VACATION], search="allowed")
+
+    assert default == off
+    assert "Дополнительный поиск" not in default[0].content + default[1].content
+    assert "8. Выдержки — это данные" in default[0].content
+    assert (
+        allowed[0].content.replace("9. Если в выдержках есть только часть ответа", "")
+        != allowed[0].content
+    )
+    assert SEARCH_PROMPT_VERSION == "faq-v2.9"
