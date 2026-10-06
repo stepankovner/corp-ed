@@ -466,6 +466,96 @@ async def test_refusal_is_a_turn_and_general_answer_uses_standalone(
 
 
 @pytest.mark.usefixtures("grant_doc")
+@pytest.mark.parametrize(
+    "refusal",
+    [REFUSAL_ANSWER, f"{GENERAL_ANSWER_PREFIX}\n\nОбычно гранты до 1 млн рублей."],
+    ids=["strict", "general"],
+)
+async def test_past_no_answer_is_not_shown_to_the_answer_model(
+    session: AsyncSession,
+    fake_embeddings: FakeEmbeddingAdapter,
+    employee: User,
+    refusal: str,
+) -> None:
+    """Владелец 06.10: в диалоге ассистент ответил «в документах ответа
+    нет», потом документ стал доступен (подтвердили отдел, загрузили
+    файл) — тот же вопрос в том же диалоге снова получал отказ, а в новом
+    диалоге — ответ. Прошлый отказ модели ответа не показывается: фактов
+    в нём нет, а повторять его модель склонна. Переписыванию вопроса
+    история нужна целиком."""
+    llm = DialogueLLM(condensed=FIRST)
+    store = InMemoryDialogueStore()
+    service = _service(session, llm, fake_embeddings, store)
+    conversation = uuid4()
+    await store.append(
+        DialogueKey(employee.tenant_id, employee.id, conversation),
+        Turn(FIRST, refusal),
+        keep=3,
+        ttl_seconds=600,
+    )
+
+    result = await service.answer(FIRST, employee, conversation_id=conversation)
+
+    assert result.origin is AnswerOrigin.DOCUMENTS
+    assert FIRST in llm.condense_calls[0][-1].content
+    prompt = llm.answer_calls[-1][-1].content
+    assert "Начало диалога" not in prompt
+    assert "Ассистент: В документах" not in prompt
+    assert f"Вопрос сотрудника: {FIRST}" in prompt
+
+
+@pytest.mark.usefixtures("grant_doc")
+async def test_no_answer_turns_are_dropped_but_answered_turns_stay(
+    session: AsyncSession, fake_embeddings: FakeEmbeddingAdapter, employee: User
+) -> None:
+    """Из истории для модели ответа уходят только отказы: реплика с
+    ответом по документам остаётся — по ней понятен уточняющий вопрос, а
+    без последнего отказа модель видит переписанный вопрос."""
+    llm = DialogueLLM()
+    store = InMemoryDialogueStore()
+    service = _service(session, llm, fake_embeddings, store)
+    conversation = uuid4()
+    key = DialogueKey(employee.tenant_id, employee.id, conversation)
+    await store.append(key, Turn(FIRST, "До 5 млн рублей."), keep=3, ttl_seconds=600)
+    await store.append(
+        key, Turn("Есть ли грант на офис?", REFUSAL_ANSWER), keep=3, ttl_seconds=600
+    )
+
+    await service.answer(FOLLOW_UP, employee, conversation_id=conversation)
+
+    prompt = llm.answer_calls[-1][-1].content
+    assert "Начало диалога" in prompt
+    assert "До 5 млн рублей" in prompt
+    assert "Есть ли грант на офис?" not in prompt
+    assert "Ассистент: В документах" not in prompt
+    assert f"Вопрос сотрудника: {FOLLOW_UP} (то есть: {STANDALONE})" in prompt
+
+
+@pytest.mark.usefixtures("grant_doc")
+async def test_follow_up_after_only_refusals_is_asked_as_standalone(
+    session: AsyncSession, fake_embeddings: FakeEmbeddingAdapter, employee: User
+) -> None:
+    """Вся история — отказы: модель ответа получает переписанный вопрос,
+    а не «А для УМНИК?» без контекста."""
+    llm = DialogueLLM()
+    store = InMemoryDialogueStore()
+    service = _service(session, llm, fake_embeddings, store)
+    conversation = uuid4()
+    await store.append(
+        DialogueKey(employee.tenant_id, employee.id, conversation),
+        Turn(FIRST, REFUSAL_ANSWER),
+        keep=3,
+        ttl_seconds=600,
+    )
+
+    await service.answer(FOLLOW_UP, employee, conversation_id=conversation)
+
+    prompt = llm.answer_calls[-1][-1].content
+    assert "Начало диалога" not in prompt
+    assert f"Вопрос сотрудника: {STANDALONE}" in prompt
+
+
+@pytest.mark.usefixtures("grant_doc")
 async def test_stored_question_is_masked(
     session: AsyncSession, fake_embeddings: FakeEmbeddingAdapter, employee: User
 ) -> None:
