@@ -339,7 +339,7 @@ async def test_stage_scenarios_pass_with_employee(
     assert report.ok, "\n".join(report.lines())
     names = [step.name for step in report.steps]
     # Последний шаг — удаление документа основного сценария.
-    assert names[-15:] == [
+    assert names[-16:] == [
         "чат: ответ потоком",
         "чат: список, «поделиться», удаление",
         "уведомления и первые шаги",
@@ -350,6 +350,7 @@ async def test_stage_scenarios_pass_with_employee(
         "сотрудник: общий документ виден, папка отдела — нет",
         "сам выбрал отдел: папка закрыта до подтверждения",
         "отдел подтверждён: сотрудник видит папку",
+        "тот же диалог после подтверждения: ответ по папке",
         "выход гасит токен",
         "песочница сайта",
         "загрузка docx, pdf, doc, xlsx, pptx",

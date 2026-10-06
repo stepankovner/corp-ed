@@ -609,6 +609,22 @@ async def _folder(
         f"источниках и код в ответе: {_yes(found)}",
     )
 
+    # Тот же вопрос в том же диалоге, где до подтверждения ответа не было
+    # (владелец 06.10): поиск идёт заново, но модель видит историю — свой
+    # прошлый ответ «в документах ответа нет».
+    again = await _ask(
+        staff, question, conversation_id=str(pending.get("conversation_id") or "")
+    )
+    again_titles = [str(s.get("title")) for s in again.get("sources", [])]
+    answered = title in again_titles and code in str(again.get("content", ""))
+    report.add(
+        "тот же диалог после подтверждения: ответ по папке",
+        answered,
+        f"origin {again.get('origin')}, документ папки в источниках: "
+        f"{_yes(title in again_titles)}, код в ответе: "
+        f"{_yes(code in str(again.get('content', '')))}",
+    )
+
 
 async def _logout(staff: StandClient, report: Report) -> None:
     """«Выйти» действует сразу: токен доступа сотрудника после выхода —
