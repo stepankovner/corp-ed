@@ -33,7 +33,7 @@ from corp_ed.api.v1.dependencies import (
     get_session_factory,
 )
 from corp_ed.core import totp as totp_module
-from corp_ed.core.config import DemoSettings
+from corp_ed.core.config import BillingSettings, DemoSettings, get_billing_settings
 from corp_ed.core.database import get_session
 from corp_ed.core.dialogue_store import InMemoryDialogueStore
 from corp_ed.core.mail import MemorySender
@@ -52,6 +52,7 @@ from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.chat_generation import ChatRunner, InMemoryStopSignals
 from corp_ed.services.demo_service import DemoService
 from corp_ed.services.digest_service import DigestService
 from corp_ed.services.mail_worker import MailWorker
@@ -228,6 +229,13 @@ class Kronto:
         self._clock.offset += totp_module.PERIOD
         return totp_module.code_at(secret, totp_module.current_step(self._clock.time()))
 
+    def set_credits_per_seat(self, credits: int) -> None:
+        """Настройка сервера BILLING_CREDITS_PER_SEAT (в бою 420): маленький
+        пул, чтобы дойти до 100 % за несколько вопросов."""
+        app.dependency_overrides[get_billing_settings] = lambda: BillingSettings(
+            credits_per_seat=credits
+        )
+
     def passkey(self) -> SoftAuthenticator:
         """Программный ключ доступа (как отпечаток или Face ID в браузере):
         register(options) — ответ на регистрацию, sign(options) — подпись
@@ -310,13 +318,30 @@ async def kronto(
     app.dependency_overrides[get_embedding_gateway] = lambda: embeddings
     app.dependency_overrides[get_llm_gateway] = lambda: model
     app.dependency_overrides[get_rag_settings] = lambda: rag
+    # Что приложение заводит на старте (lifespan; ASGITransport его не
+    # запускает). HTTP-клиент наружу не ходит: сети в тестах нет.
     app.state.rate_limiter = InMemoryRateLimiter()
     app.state.dialogue_store = InMemoryDialogueStore()
+    app.state.chat_runner = ChatRunner()
+    app.state.chat_stop_signals = InMemoryStopSignals()
+    app.state.http_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_no_network)
+    )
     harness = Kronto(maker, model, embeddings, clock)
     try:
         yield harness
     finally:
         await harness.close()
+        await app.state.chat_runner.shutdown()
+        await app.state.http_client.aclose()
         app.dependency_overrides.clear()
-        with contextlib.suppress(AttributeError):
-            del app.state.dialogue_store
+        for name in _LIFESPAN_STATE:
+            with contextlib.suppress(AttributeError):
+                delattr(app.state, name)
+
+
+_LIFESPAN_STATE = ("dialogue_store", "chat_runner", "chat_stop_signals", "http_client")
+
+
+def _no_network(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("в тестах сети наружу нет", request=request)

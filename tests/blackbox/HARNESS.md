@@ -40,7 +40,8 @@ async def test_something(kronto: Kronto) -> None:
 | `await kronto.inbox(email)` | письма, дошедшие до адреса, по порядку: список `Letter(to, subject, text, html)`. Сам вызывает `run_background()` | почтовый ящик человека |
 | `await kronto.last_letter(email)` | последнее письмо на адрес (нет писем — тест падает) | |
 | `await kronto.setup_demo()` | вымышленная компания песочницы сайта и её документы | выкатка, `cli demo setup` |
-| `await kronto.send_digest(company_code=None)` | недельная сводка администраторам — сейчас, не дожидаясь понедельника. Возвращает число отправленных | `cli digest --force` |
+| `await kronto.send_digest(company_code=None)` | недельная сводка администраторам — сейчас, не дожидаясь понедельника. Возвращает число компаний, которым сводка разослана (в колокольчик; письмом — тем, у кого оно включено) | `cli digest --force` |
+| `kronto.set_credits_per_seat(n)` | кредитов на место в месяц — `n` вместо 420: пул компании = места × `n`. Чтобы дойти до 80 % и 100 % за несколько вопросов | настройка сервера `BILLING_CREDITS_PER_SEAT` |
 | `kronto.model.unavailable = True` | поставщик модели лежит: каждый вызов модели — ошибка | сбой Yandex Cloud |
 | `kronto.model.calls` | сколько раз вызывали модель | |
 
