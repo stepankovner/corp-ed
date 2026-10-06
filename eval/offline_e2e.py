@@ -71,7 +71,6 @@ from corp_ed.prompts.faq import (
     ensure_general_prefix,
     is_not_found,
     normalize_citations,
-    verify_citations,
 )
 from eval.bench import (
     FUSION_CANDIDATES,
@@ -660,14 +659,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         calls: list[Completion] = []
         raw = answer = NOT_FOUND_ANSWER
-        quotes: list[int | None] = []
         general = False
         if selected and not args.dry_run:
             calls.append(ask(build_faq_messages(item.question, selected)))
             raw = calls[-1].text.strip()
-            # Р-15 (faq-v2.8): «[n|цитата]» → «[m]» по тому, где цитата есть.
-            verified, quotes = verify_citations(raw, selected)
-            answer = normalize_citations(verified, selected)
+            answer = normalize_citations(raw, selected)
         # Р1 (решено 25.09): ответа в документах нет — ни одна выдержка не
         # прошла порог или модель по выдержкам ответила отказом — общий ответ
         # со строгой пометкой, что он не из документов компании.
@@ -696,9 +692,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "expected_answer": item.expected_answer,
                 "expected_material": item.expected_material,
                 "answer": answer,
-                "raw_answer": raw,
-                "quotes": len(quotes),
-                "quotes_found": sum(source is not None for source in quotes),
                 "answered": answered,
                 "answer_given": bool(selected),
                 "general_answer": general,
