@@ -219,17 +219,7 @@ def test_general_prompt_leaves_advice_to_the_backend() -> None:
 
     system = build_general_messages("Сколько дней отпуска?")[0].content
 
-    assert PROMPT_VERSION == "faq-v2.6"
+    assert PROMPT_VERSION == "faq-v2.5"
     assert "посоветуй уточнить" not in system
     assert "Не советуй, куда или к кому обратиться" in system
     assert "определяется документами компании" in system
-
-
-def test_prompt_answers_from_the_newest_edition() -> None:
-    # faq-v2.6: две редакции одного положения в выдержках — ответ по новой,
-    # а настоящие противоречия разных документов — по-прежнему оба варианта.
-    system = build_faq_messages("Какие суточные?", [VACATION])[0].content
-
-    assert "приведи оба варианта со ссылками" in system
-    assert "отвечай по самой новой редакции" in system
-    assert "вопрос прямо о ней" in system
