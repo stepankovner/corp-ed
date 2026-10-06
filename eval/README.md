@@ -25,10 +25,11 @@ python -m eval.bench --corpus путь/к/документам --dataset eval/pr
     --split dev --retriever vector
 ```
 
-В папке корпуса — .md, .txt, .docx, .pdf, .xlsx, .pptx и .doc (с 01.10,
-разбор `corp_ed.ingest.xlsx` / `pptx` / `doc` — как в продукте после
-BH-33…BH-35). PDF — pymupdf4llm, как в продукте сейчас; разбор без AGPL
-(`corp_ed.ingest.pdf`, BH-39) — `EVAL_PDF_PARSER=pdfplumber`. Замер по форматам —
+В папке корпуса — .md, .markdown, .txt, .docx, .pdf, .xlsx, .pptx и .doc.
+Разбор — функция продукта `corp_ed.ingest.extract.extract`, та же, что при
+загрузке файла (с 06.10; колонтитулы docx, txt в Windows-1251, PDF без
+AGPL — BH-39). Файл, который продукт не принимает (скан без текста),
+пропускается с сообщением. Замер по форматам —
 [`docs/ml-formats.md`](../docs/ml-formats.md).
 
 ## Что считается «продуктом»
