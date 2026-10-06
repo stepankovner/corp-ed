@@ -306,9 +306,8 @@ function ConversationScreen({ id }: { id: string }) {
     setOpened(null);
     trigger.current?.focus();
   }, []);
-  const openedSources = opened
-    ? messages.find((m) => m.id === opened.messageId)?.sources
-    : undefined;
+  const openedMessage = opened ? messages.find((m) => m.id === opened.messageId) : undefined;
+  const openedSources = openedMessage?.sources;
 
   if (conversation.isPending) return <PageSpinner />;
   if (conversation.isError || !data) {
@@ -434,7 +433,12 @@ function ConversationScreen({ id }: { id: string }) {
         }
       />
       {opened && openedSources?.[opened.index] ? (
-        <SourcePanel sources={openedSources} index={opened.index} onClose={closeSource} />
+        <SourcePanel
+          sources={openedSources}
+          content={openedMessage?.content ?? ""}
+          index={opened.index}
+          onClose={closeSource}
+        />
       ) : null}
       {sharing ? <ShareDialog conversation={data} onClose={() => setSharing(false)} /> : null}
     </section>
