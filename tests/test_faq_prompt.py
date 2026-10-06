@@ -219,7 +219,7 @@ def test_general_prompt_leaves_advice_to_the_backend() -> None:
 
     system = build_general_messages("Сколько дней отпуска?")[0].content
 
-    assert PROMPT_VERSION == "faq-v2.5"
+    assert PROMPT_VERSION == "faq-v2.7"
     assert "посоветуй уточнить" not in system
     assert "Не советуй, куда или к кому обратиться" in system
     assert "определяется документами компании" in system
