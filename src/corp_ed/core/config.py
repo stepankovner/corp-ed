@@ -478,24 +478,31 @@ class MailSettings(BaseSettings):
     """Отправка писем (ТЗ §3, решение 03.10).
 
     backend:
-    - smtp — настоящая отправка; на старте — ящик Яндекс 360 на
-      krontoai.ru (smtp.yandex.ru:465, пароль приложения; лимит Яндекса —
-      300 писем в сутки с ящика);
+    - postbox — Yandex Cloud Postbox по HTTPS (порт 443), статический ключ
+      сервисного аккаунта с ролью postbox.sender. Стенд и бой: Selectel
+      закрывает исходящие 25, 465 и 587 (RISKS №57), SMTP оттуда не
+      доходит ни до одного почтового сервера;
+    - smtp — отправка по SMTP (сервер без закрытых портов; CI — Mailpit);
     - console — письмо в лог вместо отправки (разработка);
     - memory — в список в памяти процесса (тесты).
 
-    Стенд — тот же ящик Яндекс 360 (STAGE.md §4.5а); сквозные проверки
-    CI — перехватчик писем Mailpit (ci.yaml, задание e2e): наружу ничего
-    не уходит. Пароль — секрет: в логи не пишется.
+    Стенд — STAGE.md §4.5а; сквозные проверки CI — перехватчик писем
+    Mailpit (ci.yaml, задание e2e): наружу ничего не уходит. Пароль и
+    ключ — секреты: в логи не пишутся.
     """
 
-    backend: Literal["smtp", "console", "memory"] = "console"
+    backend: Literal["postbox", "smtp", "console", "memory"] = "console"
     smtp_host: str | None = None
     smtp_port: int = Field(default=465, gt=0, lt=65536)
     smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
     smtp_username: str | None = None
     smtp_password: SecretStr | None = None
+    # Таймаут и SMTP, и запроса к Postbox.
     smtp_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
+    postbox_key_id: str | None = None
+    postbox_secret_key: SecretStr | None = None
+    postbox_url: str = "https://postbox.cloud.yandex.net"
+    postbox_region: str = "ru-central1"
     from_address: str = "noreply@krontoai.ru"
     from_name: str = "kronto"
     # Адрес сайта для ссылок в письмах, без «/» в конце.
@@ -519,6 +526,13 @@ class MailSettings(BaseSettings):
         # встанет на подтверждении почты. Лучше не стартовать.
         if self.backend == "smtp" and not self.smtp_host:
             raise ValueError("MAIL_SMTP_HOST is required for MAIL_BACKEND=smtp")
+        if self.backend == "postbox" and not (
+            self.postbox_key_id and self.postbox_secret_key
+        ):
+            raise ValueError(
+                "MAIL_POSTBOX_KEY_ID and MAIL_POSTBOX_SECRET_KEY are required "
+                "for MAIL_BACKEND=postbox"
+            )
         return self
 
 

@@ -75,7 +75,7 @@ from corp_ed.core.config import (
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
-from corp_ed.core.mail import MailDeliveryError, OutgoingEmail, SmtpSender
+from corp_ed.core.mail import MailDeliveryError, OutgoingEmail, build_sender
 from corp_ed.core.outbound import (
     OutboundClient,
     OutboundURLError,
@@ -850,19 +850,20 @@ async def _mail_check(days: int, send_to: str | None) -> int:
         print(line)
     if send_to is None:
         return 0 if report.ok else 1
-    if settings.backend != "smtp":
-        print("тестовое письмо: не отправлено — MAIL_BACKEND не smtp")
+    if settings.backend not in ("smtp", "postbox"):
+        print(f"тестовое письмо: не отправлено — MAIL_BACKEND={settings.backend}")
         return 1
     text = "Это проверочное письмо с сервера kronto. Отвечать не нужно."
     try:
-        await SmtpSender(settings).send(
-            OutgoingEmail(
-                to=send_to,
-                subject="kronto: проверка почты",
-                text=text,
-                html=f"<p>{text}</p>",
+        async with httpx.AsyncClient() as client:
+            await build_sender(settings, client).send(
+                OutgoingEmail(
+                    to=send_to,
+                    subject="kronto: проверка почты",
+                    text=text,
+                    html=f"<p>{text}</p>",
+                )
             )
-        )
     except MailDeliveryError as exc:
         print(f"тестовое письмо: не принято — {exc.code}")
         return 1

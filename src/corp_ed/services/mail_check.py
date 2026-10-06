@@ -44,7 +44,9 @@ class MailCheckReport:
         mark = "OK  " if self.ok else "FAIL"
         head = f"{mark} почта: {self.backend}"
         if self.server:
-            head += f" {self.server}, вход в ящик — {self.login}"
+            head += f" {self.server}"
+        if self.login:
+            head += f", вход в ящик — {self.login}"
         head += (
             f"; за {self.days} дн.: отправлено {self.sent}, ждут {self.pending}, "
             f"не отправлено {self.failed}"
@@ -64,11 +66,16 @@ async def check_mail(
     sender: SmtpSender | None = None,
 ) -> MailCheckReport:
     report = MailCheckReport(backend=settings.backend, days=days)
-    if settings.backend != "smtp":
+    if settings.backend in ("console", "memory"):
         report.problems.append(
             "отправка выключена: письма только в журнал воркера — "
             "MAIL_* в .env сервера (STAGE.md §4.5а)"
         )
+    elif settings.backend == "postbox":
+        # Проверить ключ без письма Postbox не даёт (роли postbox.sender
+        # доступна только отправка): ошибки видны по очереди ниже, живая
+        # проверка — cli mail-check --send-to.
+        report.server = f"{settings.postbox_url} {settings.postbox_region}"
     else:
         report.server = (
             f"{settings.smtp_host}:{settings.smtp_port} {settings.smtp_security}"
@@ -104,8 +111,9 @@ async def _probe(sender: SmtpSender) -> str:
 _LOGIN_HINTS = {
     "smtp_auth": "ящик не пускает: неверный пароль приложения или в ящике "
     "не включён доступ почтовых программ (STAGE.md §4.5а, шаги 2–3)",
-    "smtp_unavailable": "до почтового сервера нет связи с этого сервера: "
-    "сеть, порт или имя MAIL_SMTP_HOST",
+    "smtp_unavailable": "до почтового сервера нет связи с этого сервера: на "
+    "Selectel исходящие 25, 465 и 587 закрыты — MAIL_BACKEND=postbox "
+    "(STAGE.md §4.5а); иначе сеть или имя MAIL_SMTP_HOST",
 }
 
 

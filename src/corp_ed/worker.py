@@ -452,7 +452,9 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
         )
         ingest_worker = IngestWorker(get_session_maker(), gateway, rag)
         sync_worker = SyncWorker(get_session_maker(), sync_service)
-        mail_worker = MailWorker(get_session_maker(), build_sender(get_mail_settings()))
+        mail_worker = MailWorker(
+            get_session_maker(), build_sender(get_mail_settings(), client)
+        )
         try:
             await asyncio.gather(
                 ingest_worker.run_forever(stop),
