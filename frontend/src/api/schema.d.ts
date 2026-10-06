@@ -2476,6 +2476,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/{user_id}/department/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Department
+         * @description Подтвердить отдел, который сотрудник выбрал сам (ТЗ §7): с этого
+         *     момента ему открыты закрытые папки отдела. Уже подтверждён — ответ
+         *     тот же, без изменений. Отдела нет — 409. Только работающий человек
+         *     своей компании, иначе 404. Человеку — уведомление, в журнал.
+         */
+        post: operations["confirm_department_api_v1_users__user_id__department_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{user_id}/department/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Department
+         * @description Отклонить отдел, выбранный сотрудником (ТЗ §7): отдел у человека
+         *     снимается (department_id null). Отдела нет или он уже подтверждён —
+         *     409 (подтверждённый меняют в профиле сотрудника). Только работающий
+         *     человек своей компании, иначе 404. Человеку — уведомление, в журнал.
+         */
+        post: operations["reject_department_api_v1_users__user_id__department_reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users/{user_id}/reject": {
         parameters: {
             query?: never;
@@ -3033,6 +3079,11 @@ export interface components {
         /** CurrentCompany */
         CurrentCompany: {
             department: components["schemas"]["DepartmentRef"] | null;
+            /**
+             * Department Confirmed
+             * @default false
+             */
+            department_confirmed: boolean;
             /** Logo Url */
             logo_url?: string | null;
             /**
@@ -3206,6 +3257,8 @@ export interface components {
             members: number;
             /** Name */
             name: string;
+            /** Unconfirmed */
+            unconfirmed: number;
         };
         /** EmailChangeRequest */
         EmailChangeRequest: {
@@ -4120,7 +4173,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "join_request" | "weekly_digest";
+            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "join_request" | "department_request" | "department_confirmed" | "department_rejected" | "weekly_digest";
             /** Link */
             link: string | null;
             /** Read */
@@ -4261,6 +4314,8 @@ export interface components {
             /** Avatar Url */
             avatar_url: string | null;
             department: components["schemas"]["DepartmentRef"] | null;
+            /** Department Confirmed */
+            department_confirmed: boolean;
             /** Email */
             email: string;
             /** First Name */
@@ -4287,6 +4342,11 @@ export interface components {
         /**
          * PersonUpdateRequest
          * @description Должность и отдел в компании. Пришедшее null — очистить.
+         *
+         *     Отдел (ТЗ §7): назначенный администратором подтверждён сразу;
+         *     выбранный самим сотрудником ждёт подтверждения (department_confirmed
+         *     false), а тот же, что уже стоит, ничего не меняет. null — снять отдел
+         *     сразу.
          */
         PersonUpdateRequest: {
             /** Department Id */
@@ -4306,9 +4366,15 @@ export interface components {
             last_name?: string | null;
             /** Patronymic */
             patronymic?: string | null;
-            /** Phone */
+            /**
+             * Phone
+             * @description Хранится как +79991234567: «+7 (999) 123-45-67» и «8 999 123 45 67» приводятся к этому виду; с кодом страны, 10–15 цифр.
+             */
             phone?: string | null;
-            /** Telegram */
+            /**
+             * Telegram
+             * @description Имя без «@»: «@anna_s» и «https://t.me/anna_s» хранятся как anna_s; 5–32 латинских буквы, цифры и «_», с буквы — правило Telegram.
+             */
             telegram?: string | null;
         };
         /** RegisterRequest */
@@ -4325,7 +4391,10 @@ export interface components {
             email: string;
             /** First Name */
             first_name: string;
-            /** Invite */
+            /**
+             * Invite
+             * @description Приглашение, по которому человек пришёл: при закрытой регистрации пускает зарегистрироваться. В компанию не вступает — после подтверждения почты это отдельный шаг POST /invites/accept («Вступить»).
+             */
             invite?: string | null;
             /** Last Name */
             last_name: string;
@@ -4863,7 +4932,8 @@ export interface components {
         /**
          * SuggestionsResponse
          * @description company — заданные администратором; frequent — частые вопросы
-         *     компании, обезличенно (не меньше трёх разных людей).
+         *     компании, обезличенно: заданные не меньше чем тремя разными людьми за
+         *     последние 90 дней и получившие ответ по документам (без 👎).
          */
         SuggestionsResponse: {
             /** Company */
@@ -5053,6 +5123,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Department Confirmed */
+            department_confirmed: boolean;
             /** Department Id */
             department_id: string | null;
             /** Email */
@@ -9489,6 +9561,68 @@ export interface operations {
         };
     };
     approve_user_api_v1_users__user_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_department_api_v1_users__user_id__department_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_department_api_v1_users__user_id__department_reject_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -278,7 +278,7 @@ async def test_stage_scenarios_pass_with_employee(
 ) -> None:
     """Шаги этапов 1–10: чат, обзор, отдел с закрытой папкой, сотрудник по
     приглашению (папку видит, только когда он в отделе), песочница сайта,
-    загрузка Word и PDF. За собой сценарий убирает всё."""
+    загрузка файлов всех форматов. За собой сценарий убирает всё."""
     await make_admin(session, tenant_ctx)
     other = Tenant(company_code="stand-employee", name="Вторая компания")
     session.add(other)
@@ -339,7 +339,7 @@ async def test_stage_scenarios_pass_with_employee(
     assert report.ok, "\n".join(report.lines())
     names = [step.name for step in report.steps]
     # Последний шаг — удаление документа основного сценария.
-    assert names[-14:] == [
+    assert names[-15:] == [
         "чат: ответ потоком",
         "чат: список, «поделиться», удаление",
         "уведомления и первые шаги",
@@ -348,10 +348,11 @@ async def test_stage_scenarios_pass_with_employee(
         "отдел и закрытая папка",
         "сотрудник по приглашению",
         "сотрудник: общий документ виден, папка отдела — нет",
-        "сотрудник в отделе видит папку",
+        "сам выбрал отдел: папка закрыта до подтверждения",
+        "отдел подтверждён: сотрудник видит папку",
         "выход гасит токен",
         "песочница сайта",
-        "загрузка Word и PDF",
+        "загрузка docx, pdf, doc, xlsx, pptx",
         "уборка сценариев",
         "удаление документа",
     ]
@@ -372,3 +373,23 @@ async def test_stage_scenarios_pass_with_employee(
             assert (
                 await check.scalar(select(func.count()).select_from(Department))
             ) == 0
+
+
+def test_format_files_carry_the_nonce_through_extraction() -> None:
+    """Каждый файл проверки форматов разбирается и несёт свой код: иначе
+    шаг стенда проверял бы не тот документ. check.doc собран
+    tests/ingest/doc_samples.py — пересобрать тем же, если формат менялся."""
+    from corp_ed.ingest.extract import SourceFormat, extract
+    from corp_ed.stand_scenarios import format_files
+
+    files = format_files("a1b2c3")
+
+    assert sorted(name.rsplit(".", 1)[1] for name, _, _ in files) == [
+        "doc",
+        "docx",
+        "pdf",
+        "pptx",
+        "xlsx",
+    ]
+    for name, data, _ in files:
+        assert "a1b2c3" in extract(SourceFormat(name.rsplit(".", 1)[1]), data), name

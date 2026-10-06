@@ -13,6 +13,11 @@ from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.department_repository import DepartmentRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.avatar_service import AvatarService, avatar_url
+from corp_ed.services.notification_service import (
+    Notice,
+    NotificationKind,
+    NotificationService,
+)
 
 
 class _Unset:
@@ -68,7 +73,13 @@ class PeopleService:
         department_id: UUID | None | _Unset = UNSET,
     ) -> Person:
         """Должность и отдел в компании: свои — сам человек, чужие —
-        администратор (ТЗ §4). Правка администратора — в журнал."""
+        администратор (ТЗ §4). Правка администратора — в журнал.
+
+        Отдел (ТЗ §7): назначенный администратором подтверждён сразу;
+        выбранный самим сотрудником виден сразу, но закрытые папки отдела
+        откроет только подтверждение администратора — иначе любой открыл
+        бы себе папку бухгалтерии (RISKS №58). Тот же отдел, что уже
+        стоит, ничего не меняет; снять отдел можно сразу."""
         if member_id != actor.id and actor.role is not UserRole.ADMIN:
             raise PermissionError("Должность и отдел коллеги меняет администратор")
         member = await self.users.get_by_id(member_id)
@@ -80,13 +91,22 @@ class PeopleService:
         }
         if not isinstance(position, _Unset):
             member.position = position
+        by_admin = actor.role is UserRole.ADMIN
         if isinstance(department_id, UUID):
             # Поиск под RLS: отдел чужой компании не найдётся.
-            if await self.departments.get_by_id(department_id) is None:
+            department = await self.departments.get_by_id(department_id)
+            if department is None:
                 raise NotFoundError("Отдел не найден")
-            member.department_id = department_id
+            if by_admin:
+                member.department_id = department_id
+                member.department_confirmed = True
+            elif department_id != member.department_id:
+                member.department_id = department_id
+                member.department_confirmed = False
+                await self._ask_admins(member, department)
         elif department_id is None:
             member.department_id = None
+            member.department_confirmed = False
         after = {
             "position": member.position,
             "department_id": _str(member.department_id),
@@ -102,6 +122,30 @@ class PeopleService:
             )
         await self.session.commit()
         return await self.get_person(member.id)
+
+    async def _ask_admins(self, member: User, department: Department) -> None:
+        """Отдел с закрытой папкой ждёт подтверждения — администраторам
+        (ТЗ §7). Выбор обычного отдела не шумит: человек и так в списке
+        ждущих в «Сотрудниках»."""
+        if not await self.departments.opens_restricted_folder(department.id):
+            return
+        account = member.account
+        who = (account.full_name or account.email) if account else "Сотрудник"
+        await NotificationService(self.session).notify_admins(
+            member.tenant_id,
+            Notice(
+                kind=NotificationKind.DEPARTMENT_REQUEST,
+                title=f"Подтвердите отдел: {who}",
+                lines=[
+                    f"{who} указал(а) отдел «{department.name}». Этому отделу "
+                    "открыты закрытые папки — они откроются после вашего "
+                    "подтверждения.",
+                    "Подтвердить или отклонить — в разделе «Сотрудники».",
+                ],
+                link="/admin/users",
+                action="Открыть «Сотрудники»",
+            ),
+        )
 
     async def _people(self, members: list[User]) -> list[Person]:
         departments = {item.id: item for item in await self.departments.list_all()}

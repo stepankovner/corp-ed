@@ -13,8 +13,14 @@ NotificationKindName = Literal[
     "credits_warning",
     "credits_exhausted",
     "join_request",
+    "department_request",
+    "department_confirmed",
+    "department_rejected",
     "weekly_digest",
 ]
+"""department_request — администраторам: сотрудник выбрал отдел, которому
+открыта закрытая папка, и ждёт подтверждения; department_confirmed и
+department_rejected — сотруднику: решение по его отделу (ТЗ §7)."""
 
 
 class NotificationResponse(BaseModel):
@@ -45,6 +51,8 @@ class NotificationSettingsResponse(BaseModel):
     email_connectors: bool
     email_credits: bool
     email_join_requests: bool
+    """Заявки на вступление и отдел с закрытой папкой, ждущий
+    подтверждения (ТЗ §7)."""
     email_weekly_digest: bool
 
 

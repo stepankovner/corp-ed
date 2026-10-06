@@ -16,8 +16,18 @@ class ProfileUpdateRequest(RequestModel):
     first_name: PersonName | None = None
     last_name: PersonName | None = None
     patronymic: ProfileText | None = None
-    phone: str | None = Field(default=None, max_length=32)
-    telegram: str | None = Field(default=None, max_length=64)
+    phone: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Хранится как +79991234567: «+7 (999) 123-45-67» и "
+        "«8 999 123 45 67» приводятся к этому виду; с кодом страны, 10–15 цифр.",
+    )
+    telegram: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Имя без «@»: «@anna_s» и «https://t.me/anna_s» хранятся как "
+        "anna_s; 5–32 латинских буквы, цифры и «_», с буквы — правило Telegram.",
+    )
 
     @model_validator(mode="after")
     def names_are_required(self) -> Self:

@@ -230,7 +230,7 @@ describe("настройки: профиль", () => {
     server.use(
       http.get("/api/v1/auth/me", () => HttpResponse.json(me())),
       http.get("/api/v1/departments", () =>
-        HttpResponse.json([{ id: "d-1", name: "Продажи", members: 3 }]),
+        HttpResponse.json([{ id: "d-1", name: "Продажи", members: 3, unconfirmed: 0 }]),
       ),
       http.patch("/api/v1/people/:memberId", async ({ request, params }) => {
         body = { memberId: params.memberId, ...((await request.json()) as object) };

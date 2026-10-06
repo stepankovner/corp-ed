@@ -77,7 +77,12 @@ export function DepartmentsPage() {
             {departments.data.map((item) => (
               <tr key={item.id}>
                 <td>{item.name}</td>
-                <td>{item.members}</td>
+                <td>
+                  {item.members}
+                  {item.unconfirmed > 0 ? (
+                    <span className="muted">, ждут подтверждения: {item.unconfirmed}</span>
+                  ) : null}
+                </td>
                 <td className={tableStyles.actions}>
                   <span className={styles.rowActions}>
                     <IconButton size="sm" label="Переименовать" onClick={() => setEditing(item)}>

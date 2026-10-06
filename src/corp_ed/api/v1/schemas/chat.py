@@ -115,7 +115,7 @@ class MessageResponse(BaseModel):
             id=message.id,
             parent_id=message.parent_id,
             role=message.role,  # type: ignore[arg-type]
-            content=message.content,
+            content=view.content if view.content is not None else message.content,
             status=message.status,  # type: ignore[arg-type]
             origin=AnswerOrigin(message.origin) if message.origin else None,
             sources=[
@@ -200,7 +200,8 @@ class SuggestionResponse(BaseModel):
 
 class SuggestionsResponse(BaseModel):
     """company — заданные администратором; frequent — частые вопросы
-    компании, обезличенно (не меньше трёх разных людей)."""
+    компании, обезличенно: заданные не меньше чем тремя разными людьми за
+    последние 90 дней и получившие ответ по документам (без 👎)."""
 
     company: list[SuggestionResponse]
     frequent: list[str]

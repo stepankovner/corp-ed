@@ -5,6 +5,7 @@ import {
   ChartColumn,
   Gauge,
   Mail,
+  Network,
   OctagonAlert,
   Unplug,
   UserPlus,
@@ -42,6 +43,9 @@ const KINDS: Record<Notification["kind"], { icon: LucideIcon; tone: Tone }> = {
   credits_warning: { icon: Gauge, tone: "warn" },
   credits_exhausted: { icon: OctagonAlert, tone: "error" },
   join_request: { icon: UserPlus, tone: "accent" },
+  department_request: { icon: Network, tone: "accent" },
+  department_confirmed: { icon: Network, tone: "muted" },
+  department_rejected: { icon: Network, tone: "warn" },
   weekly_digest: { icon: ChartColumn, tone: "muted" },
 };
 

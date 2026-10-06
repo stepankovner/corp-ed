@@ -19,6 +19,7 @@ function member(id: string, overrides: Partial<Member> = {}): Member {
     status: "active",
     position: null,
     department_id: null,
+    department_confirmed: Boolean(overrides.department_id),
     last_login_at: null,
     created_at: "2026-10-01T10:00:00+03:00",
     ...overrides,
@@ -57,7 +58,7 @@ function company(people: Member[], seats = 30) {
     http.get("/api/v1/users", () => HttpResponse.json(state.people)),
     http.get("/api/v1/invites", () => HttpResponse.json([])),
     http.get("/api/v1/departments", () =>
-      HttpResponse.json([{ id: "d-1", name: "Продажи", members: 1 }]),
+      HttpResponse.json([{ id: "d-1", name: "Продажи", members: 1, unconfirmed: 0 }]),
     ),
   );
   return state;
@@ -162,7 +163,10 @@ describe("люди компании", () => {
 
   it("должность и отдел: видны под именем, правятся из меню строки", async () => {
     const user = userEvent.setup();
-    const state = company([SELF, { ...PETR, position: "Инженер", department_id: "d-1" }]);
+    const state = company([
+      SELF,
+      { ...PETR, position: "Инженер", department_id: "d-1", department_confirmed: true },
+    ]);
     let body: unknown;
     server.use(
       http.patch("/api/v1/people/:memberId", async ({ request, params }) => {
@@ -307,5 +311,62 @@ describe("заявки на вступление", () => {
     expect(
       await screen.findByText("Все места заняты: активных сотрудников 1 из 1."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("подтверждение отдела (ТЗ §7)", () => {
+  it("сам выбранный отдел ждёт подтверждения: подтвердить и отклонить", async () => {
+    const user = userEvent.setup();
+    const state = company([
+      SELF,
+      { ...PETR, department_id: "d-1", department_confirmed: false },
+      member("m-3", { full_name: "Ольга Ким", department_id: "d-1", department_confirmed: false }),
+    ]);
+    const calls: string[] = [];
+    server.use(
+      http.post("/api/v1/users/:id/department/:action", ({ params }) => {
+        const id = String(params.id);
+        calls.push(`${String(params.action)} ${id}`);
+        state.people = state.people.map((m) =>
+          m.id !== id
+            ? m
+            : params.action === "confirm"
+              ? { ...m, department_confirmed: true }
+              : { ...m, department_id: null, department_confirmed: false },
+        );
+        return HttpResponse.json(state.people.find((m) => m.id === id));
+      }),
+    );
+    renderApp("/admin/users");
+
+    const waiting = await screen.findByRole("list", { name: "Отделы, ждущие подтверждения" });
+    const petrCard = within(waiting).getByText("Пётр Орлов").closest("li");
+    const olgaCard = within(waiting).getByText("Ольга Ким").closest("li");
+    if (!petrCard || !olgaCard) throw new Error("нет карточек отделов");
+    expect(within(petrCard).getByText("отдел «Продажи»")).toBeInTheDocument();
+    expect(within(row("Пётр Орлов")).getByText("Продажи (не подтверждён)")).toBeInTheDocument();
+
+    await user.click(within(petrCard).getByRole("button", { name: "Подтвердить" }));
+    expect(await screen.findByText("Отдел подтверждён: Пётр Орлов — Продажи")).toBeInTheDocument();
+    expect(await within(row("Пётр Орлов")).findByText("Продажи")).toBeInTheDocument();
+
+    await user.click(within(olgaCard).getByRole("button", { name: "Отклонить" }));
+    expect(await screen.findByText("Отдел снят: Ольга Ким")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("heading", { name: "Ждут подтверждения отдела" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(calls).toEqual(["confirm m-2", "reject m-3"]);
+  });
+
+  it("подтверждённого и без отдела в списке ждущих нет", async () => {
+    company([SELF, { ...PETR, department_id: "d-1", department_confirmed: true }]);
+    renderApp("/admin/users");
+
+    expect(await screen.findByText("Пётр Орлов", { selector: "td *" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Ждут подтверждения отдела" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -23,6 +23,7 @@ function person(id: string, overrides: Partial<Person> = {}): Person {
     avatar_url: null,
     position: null,
     department: null,
+    department_confirmed: Boolean(overrides.department),
     role: "employee",
     ...overrides,
   };
@@ -55,7 +56,9 @@ function directory(profile = me()) {
     http.get("/api/v1/auth/me", () => HttpResponse.json(profile)),
     http.get("/api/v1/people", () => HttpResponse.json(PEOPLE)),
     http.get("/api/v1/usage", () => HttpResponse.json({ warning: false })),
-    http.get("/api/v1/departments", () => HttpResponse.json([{ ...SALES, members: 1 }])),
+    http.get("/api/v1/departments", () =>
+      HttpResponse.json([{ ...SALES, members: 1, unconfirmed: 0 }]),
+    ),
   );
 }
 

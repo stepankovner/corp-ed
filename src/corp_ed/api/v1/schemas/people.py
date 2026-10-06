@@ -23,11 +23,20 @@ class PersonResponse(BaseModel):
     avatar_url: str | None
     position: str | None
     department: DepartmentRef | None
+    department_confirmed: bool
+    """Отдел подтверждён администратором (ТЗ §7): только тогда человеку
+    открыты закрытые папки отдела. Выбранный самим — false до
+    подтверждения; отдела нет — false."""
     role: UserRole
 
 
 class PersonUpdateRequest(RequestModel):
-    """Должность и отдел в компании. Пришедшее null — очистить."""
+    """Должность и отдел в компании. Пришедшее null — очистить.
+
+    Отдел (ТЗ §7): назначенный администратором подтверждён сразу;
+    выбранный самим сотрудником ждёт подтверждения (department_confirmed
+    false), а тот же, что уже стоит, ничего не меняет. null — снять отдел
+    сразу."""
 
     position: ProfileText | None = None
     department_id: UUID | None = None
@@ -38,6 +47,9 @@ class DepartmentResponse(BaseModel):
     name: str
     members: int
     """Сколько работающих людей выбрали этот отдел."""
+    unconfirmed: int
+    """Из них ждут подтверждения отдела администратором (ТЗ §7): закрытые
+    папки отдела им не открыты."""
 
 
 class DepartmentRequest(RequestModel):

@@ -1437,6 +1437,11 @@
               }
             ]
           },
+          "department_confirmed": {
+            "default": false,
+            "title": "Department Confirmed",
+            "type": "boolean"
+          },
           "logo_url": {
             "anyOf": [
               {
@@ -1814,12 +1819,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "unconfirmed": {
+            "title": "Unconfirmed",
+            "type": "integer"
           }
         },
         "required": [
           "id",
           "name",
-          "members"
+          "members",
+          "unconfirmed"
         ],
         "title": "DepartmentResponse",
         "type": "object"
@@ -4157,6 +4167,9 @@
               "credits_warning",
               "credits_exhausted",
               "join_request",
+              "department_request",
+              "department_confirmed",
+              "department_rejected",
               "weekly_digest"
             ],
             "title": "Kind",
@@ -4546,6 +4559,10 @@
               }
             ]
           },
+          "department_confirmed": {
+            "title": "Department Confirmed",
+            "type": "boolean"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -4648,6 +4665,7 @@
           "avatar_url",
           "position",
           "department",
+          "department_confirmed",
           "role"
         ],
         "title": "PersonResponse",
@@ -4655,7 +4673,7 @@
       },
       "PersonUpdateRequest": {
         "additionalProperties": false,
-        "description": "Должность и отдел в компании. Пришедшее null — очистить.",
+        "description": "Должность и отдел в компании. Пришедшее null — очистить.\n\nОтдел (ТЗ §7): назначенный администратором подтверждён сразу;\nвыбранный самим сотрудником ждёт подтверждения (department_confirmed\nfalse), а тот же, что уже стоит, ничего не меняет. null — снять отдел\nсразу.",
         "properties": {
           "department_id": {
             "anyOf": [
@@ -4737,6 +4755,7 @@
                 "type": "null"
               }
             ],
+            "description": "Хранится как +79991234567: «+7 (999) 123-45-67» и «8 999 123 45 67» приводятся к этому виду; с кодом страны, 10–15 цифр.",
             "title": "Phone"
           },
           "telegram": {
@@ -4749,6 +4768,7 @@
                 "type": "null"
               }
             ],
+            "description": "Имя без «@»: «@anna_s» и «https://t.me/anna_s» хранятся как anna_s; 5–32 латинских буквы, цифры и «_», с буквы — правило Telegram.",
             "title": "Telegram"
           }
         },
@@ -4785,6 +4805,7 @@
                 "type": "null"
               }
             ],
+            "description": "Приглашение, по которому человек пришёл: при закрытой регистрации пускает зарегистрироваться. В компанию не вступает — после подтверждения почты это отдельный шаг POST /invites/accept («Вступить»).",
             "title": "Invite"
           },
           "last_name": {
@@ -6122,7 +6143,7 @@
         "type": "object"
       },
       "SuggestionsResponse": {
-        "description": "company — заданные администратором; frequent — частые вопросы\nкомпании, обезличенно (не меньше трёх разных людей).",
+        "description": "company — заданные администратором; frequent — частые вопросы\nкомпании, обезличенно: заданные не меньше чем тремя разными людьми за\nпоследние 90 дней и получившие ответ по документам (без 👎).",
         "properties": {
           "company": {
             "items": {
@@ -6559,6 +6580,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "department_confirmed": {
+            "title": "Department Confirmed",
+            "type": "boolean"
+          },
           "department_id": {
             "anyOf": [
               {
@@ -6637,6 +6662,7 @@
           "status",
           "position",
           "department_id",
+          "department_confirmed",
           "last_login_at",
           "created_at"
         ],
@@ -13344,6 +13370,104 @@
           }
         ],
         "summary": "Approve User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/department/confirm": {
+      "post": {
+        "description": "Подтвердить отдел, который сотрудник выбрал сам (ТЗ §7): с этого\nмомента ему открыты закрытые папки отдела. Уже подтверждён — ответ\nтот же, без изменений. Отдела нет — 409. Только работающий человек\nсвоей компании, иначе 404. Человеку — уведомление, в журнал.",
+        "operationId": "confirm_department_api_v1_users__user_id__department_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Department",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/department/reject": {
+      "post": {
+        "description": "Отклонить отдел, выбранный сотрудником (ТЗ §7): отдел у человека\nснимается (department_id null). Отдела нет или он уже подтверждён —\n409 (подтверждённый меняют в профиле сотрудника). Только работающий\nчеловек своей компании, иначе 404. Человеку — уведомление, в журнал.",
+        "operationId": "reject_department_api_v1_users__user_id__department_reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reject Department",
         "tags": [
           "users"
         ]

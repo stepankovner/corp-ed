@@ -93,4 +93,6 @@ def validate_password(password: str, *, email: str | None = None) -> None:
         if email.casefold() in folded or (
             len(local_part) >= 4 and local_part in folded
         ):
-            raise WeakPasswordError("Пароль не должен содержать адрес почты")
+            raise WeakPasswordError(
+                "Пароль не должен содержать адрес почты или его часть до «@»"
+            )

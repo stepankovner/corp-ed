@@ -37,7 +37,7 @@ from corp_ed.api.v1.schemas.connector import (
     TariffAllowanceResponse,
 )
 from corp_ed.connectors.registry import FieldSpec, KindSpec, UnknownKindError
-from corp_ed.domain.models import User, UserRole
+from corp_ed.domain.models import Connector, User, UserRole
 from corp_ed.domain.types import ConnectorMode, GrantStatus
 from corp_ed.services.connector_service import ConnectorService
 
@@ -126,14 +126,30 @@ async def list_connectors(
     """Подключения компании; у тех, что сотрудники подключают сами, —
     сколько уже подключилось из скольких (ТЗ §5)."""
     grants, members = await service.grant_counts()
-    return [
-        ConnectorResponse.model_validate(c).model_copy(
-            update={"grants_active": grants.get(c.id, 0), "members_active": members}
-            if c.mode == ConnectorMode.PER_USER.value
-            else {}
-        )
-        for c in await service.list_all()
-    ]
+    return [_response(c, grants, members) for c in await service.list_all()]
+
+
+async def _one(service: ConnectorService, connector: Connector) -> ConnectorResponse:
+    """Одно подключение — с теми же счётчиками, что в списке: у нового
+    per_user «0 из 12», а не пусто."""
+    if connector.mode != ConnectorMode.PER_USER.value:
+        return ConnectorResponse.model_validate(connector)
+    grants, members = await service.grant_counts()
+    return _response(connector, grants, members)
+
+
+def _response(
+    connector: Connector, grants: dict[UUID, int], members: int
+) -> ConnectorResponse:
+    response = ConnectorResponse.model_validate(connector)
+    if connector.mode != ConnectorMode.PER_USER.value:
+        return response
+    return response.model_copy(
+        update={
+            "grants_active": grants.get(connector.id, 0),
+            "members_active": members,
+        }
+    )
 
 
 @router.post(
@@ -155,7 +171,7 @@ async def create_connector(
         config=data.config,
         sync_interval_minutes=data.sync_interval_minutes,
     )
-    return ConnectorResponse.model_validate(connector)
+    return await _one(service, connector)
 
 
 # --- сотрудник: мои источники (до /{connector_id}, иначе «mine» — это id) ------
@@ -276,7 +292,7 @@ async def revoke_my_credentials(
 async def get_connector(
     connector_id: UUID, service: Service, current_user: AdminUser
 ) -> ConnectorResponse:
-    return ConnectorResponse.model_validate(await service.get(connector_id))
+    return await _one(service, await service.get(connector_id))
 
 
 @router.patch(
@@ -299,7 +315,7 @@ async def update_connector(
         sync_interval_minutes=data.sync_interval_minutes,
         status=data.status,
     )
-    return ConnectorResponse.model_validate(connector)
+    return await _one(service, connector)
 
 
 @router.delete(
@@ -330,7 +346,7 @@ async def set_credentials(
     connector = await service.set_credentials(
         current_user, connector_id, data.credentials
     )
-    return ConnectorResponse.model_validate(connector)
+    return await _one(service, connector)
 
 
 @router.post(

@@ -10,7 +10,7 @@ import { server } from "../test/server";
 describe("отделы", () => {
   it("добавляет, переименовывает и удаляет с предупреждением о людях", async () => {
     const user = userEvent.setup();
-    let departments = [{ id: "d-1", name: "Продажи", members: 2 }];
+    let departments = [{ id: "d-1", name: "Продажи", members: 2, unconfirmed: 0 }];
     const bodies: unknown[] = [];
     server.use(
       http.get("/api/v1/auth/me", () => HttpResponse.json(adminMe())),
@@ -19,7 +19,7 @@ describe("отделы", () => {
       http.post("/api/v1/departments", async ({ request }) => {
         const body = (await request.json()) as { name: string };
         bodies.push(body);
-        departments = [...departments, { id: "d-2", name: body.name, members: 0 }];
+        departments = [...departments, { id: "d-2", name: body.name, members: 0, unconfirmed: 0 }];
         return HttpResponse.json(departments.at(-1), { status: 201 });
       }),
       http.patch("/api/v1/departments/:id", async ({ request }) => {
@@ -76,6 +76,7 @@ describe("отделы", () => {
               role: "employee",
               position: null,
               department: null,
+              department_confirmed: false,
             },
           }),
         ),

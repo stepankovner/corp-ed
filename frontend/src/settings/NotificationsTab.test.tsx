@@ -58,7 +58,7 @@ describe("настройки: уведомления", () => {
       "Источник перестал отдавать документы — нужно ввести доступ заново.",
     );
     expect(within(emails).getByRole("switch", { name: "Лимит вопросов" })).toBeChecked();
-    expect(within(emails).getByRole("switch", { name: "Заявки на вступление" })).toBeChecked();
+    expect(within(emails).getByRole("switch", { name: "Заявки" })).toBeChecked();
     const digest = within(emails).getByRole("switch", { name: "Недельная сводка" });
     expect(digest).not.toBeChecked();
     expect(digest).toHaveAccessibleDescription(
@@ -89,7 +89,7 @@ describe("настройки: уведомления", () => {
 
     const credits = await screen.findByRole("switch", { name: "Лимит вопросов" });
     await user.click(credits);
-    await user.click(screen.getByRole("switch", { name: "Заявки на вступление" }));
+    await user.click(screen.getByRole("switch", { name: "Заявки" }));
     await user.click(credits);
 
     await waitFor(() =>
@@ -101,7 +101,7 @@ describe("настройки: уведомления", () => {
     );
     await waitFor(() => expect(screen.getAllByText("Сохранено").length).toBeGreaterThan(0));
     expect(credits).toBeChecked();
-    expect(screen.getByRole("switch", { name: "Заявки на вступление" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Заявки" })).not.toBeChecked();
   });
 
   it("сервер не сохранил — переключатель возвращается, причина в сообщении", async () => {

@@ -375,6 +375,8 @@ async def test_restricted_folder_is_seen_by_its_department_and_admins_only(
     session.add(hr)
     await session.flush()
     employee.department_id = hr.id
+    # Отдел назначил администратор — подтверждён (ТЗ §7).
+    employee.department_confirmed = True
     await session.commit()
 
     created = await api.post(

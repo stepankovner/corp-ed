@@ -455,6 +455,8 @@ test.describe.serial("путь компании", () => {
     await work.getByLabel("Отдел").selectOption({ label: "Продажи" });
     await work.getByRole("button", { name: "Сохранить" }).click();
     await expect(page.getByText("Сохранено", { exact: true })).toBeVisible();
+    // ТЗ §7: отдел, выбранный самой, ждёт подтверждения администратора.
+    await expect(work.getByText(/Ждёт подтверждения администратора/)).toBeVisible();
 
     // Администратор видит её в справочнике: должность, отдел, фото, контакты.
     await page.getByRole("button", { name: /^Профиль/ }).click();
@@ -510,6 +512,8 @@ test.describe.serial("путь компании", () => {
     await create.getByLabel("Название").fill(salesFolder);
     await create.getByLabel("Только отделы").check();
     await create.getByRole("group", { name: "Отделы" }).getByLabel("Продажи").check();
+    // Инна выбрала «Продажи» сама — администратор видит, что она ждёт подтверждения.
+    await expect(create.getByText(/1 человек в этих отделах ждёт подтверждения/)).toBeVisible();
     await create.getByRole("button", { name: "Создать папку" }).click();
     await expect(create).toHaveCount(0);
     await expect(page).toHaveURL(/folder=/);
@@ -521,6 +525,16 @@ test.describe.serial("путь компании", () => {
     const row = page.getByRole("row").filter({ hasText: "prodazhi" });
     await expect(row.getByText("готов", { exact: true })).toBeVisible({ timeout: 60_000 });
     await expect(row.getByRole("img", { name: "доступ ограничен" })).toBeVisible();
+
+    // Подтвердить отдел Инны: без этого закрытая папка ей не откроется (ТЗ §7).
+    await page.goto("/admin/users");
+    const waiting = page.getByRole("list", { name: "Отделы, ждущие подтверждения" });
+    await waiting
+      .getByRole("listitem")
+      .filter({ hasText: "Инна Проверкина" })
+      .getByRole("button", { name: "Подтвердить" })
+      .click();
+    await expect(page.getByText("Отдел подтверждён: Инна Проверкина — Продажи")).toBeVisible();
 
     // Логотип: сервер впишет картинку в квадрат 256×256, переключатель покажет её.
     await page.goto("/admin/settings");
@@ -610,7 +624,7 @@ test.describe.serial("путь компании", () => {
   });
 
   test("папку отдела видит только отдел: «Где ищет ассистент» и ответ", async ({ page }) => {
-    // Инна — в отделе «Продажи» (профиль выше).
+    // Инна — в отделе «Продажи» (профиль выше), администратор подтвердил.
     await loginByMail(page, invitedEmail, employeePassword);
     // Логотип компании видит и сотрудник.
     await expect

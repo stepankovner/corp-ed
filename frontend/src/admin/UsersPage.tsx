@@ -86,6 +86,11 @@ export function UsersPage() {
 
   const list = useMemo(() => users.data ?? [], [users.data]);
   const pending = list.filter((m) => m.status === "pending");
+  // Отдел, выбранный самим сотрудником, ждёт подтверждения (ТЗ §7): до
+  // него закрытые папки отдела человеку не открыты.
+  const unconfirmed = list.filter(
+    (m) => m.status === "active" && m.department_id && !m.department_confirmed,
+  );
   const active = list.filter((m) => m.status === "active").length;
   const seats = usage.data?.seats;
   const full = seats !== undefined && active >= seats;
@@ -143,13 +148,42 @@ export function UsersPage() {
   const deciding = (member: Member) =>
     (approve.isPending && approve.variables.id === member.id) ||
     (reject.isPending && reject.variables.id === member.id);
+  // Подтверждение отдела меняет и счётчики отделов («ждут подтверждения»).
+  const refreshDepartments = () =>
+    Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: DEPARTMENTS_KEY })]);
+  const confirmDepartment = useMutation({
+    mutationFn: (member: Member) =>
+      unwrap(
+        api.POST("/api/v1/users/{user_id}/department/confirm", {
+          params: { path: { user_id: member.id } },
+        }),
+      ),
+    onSuccess: (_, member) =>
+      toast.show(`Отдел подтверждён: ${memberName(member)} — ${departmentName(member) ?? ""}`),
+    onError: fail,
+    onSettled: refreshDepartments,
+  });
+  const rejectDepartment = useMutation({
+    mutationFn: (member: Member) =>
+      unwrap(
+        api.POST("/api/v1/users/{user_id}/department/reject", {
+          params: { path: { user_id: member.id } },
+        }),
+      ),
+    onSuccess: (_, member) => toast.show(`Отдел снят: ${memberName(member)}`),
+    onError: fail,
+    onSettled: refreshDepartments,
+  });
+  const decidingDepartment = (member: Member) =>
+    (confirmDepartment.isPending && confirmDepartment.variables.id === member.id) ||
+    (rejectDepartment.isPending && rejectDepartment.variables.id === member.id);
 
   return (
     <Page>
       <PageHeader
         label="управление"
         title="Сотрудники"
-        description="Сотрудники вступают сами — по ссылке или коду приглашения, своей учёткой kronto; пароль восстанавливают по почте. Здесь — заявки на вступление, роли и доступ к компании."
+        description="Сотрудники вступают сами — по ссылке или коду приглашения, своей учёткой kronto; пароль восстанавливают по почте. Здесь — заявки на вступление, подтверждение отделов, роли и доступ к компании."
         actions={<InviteButton />}
       />
       {seats !== undefined && users.data ? (
@@ -211,6 +245,47 @@ export function UsersPage() {
               </ul>
             </section>
           ) : null}
+          {unconfirmed.length > 0 ? (
+            <section aria-labelledby="departments-title" style={{ marginBottom: "var(--s-6)" }}>
+              <h2 className={pageStyles.sectionTitle} id="departments-title">
+                Ждут подтверждения отдела
+              </h2>
+              <p className="muted" style={{ marginBottom: 12 }}>
+                Сотрудник сам указал отдел. Закрытые папки отдела откроются ему только после
+                подтверждения; «Отклонить» — отдел снимется.
+              </p>
+              <ul className={styles.cards} aria-label="Отделы, ждущие подтверждения">
+                {unconfirmed.map((member) => (
+                  <li key={member.id} className={styles.card}>
+                    <div className={styles.cardHead}>
+                      <Person member={member}>
+                        <span className={tableStyles.sub}>
+                          отдел «{departmentName(member) ?? "…"}»
+                        </span>
+                      </Person>
+                      <span className={pageStyles.row} style={{ gap: 8 }}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          disabled={decidingDepartment(member)}
+                          onClick={() => rejectDepartment.mutate(member)}
+                        >
+                          Отклонить
+                        </Button>
+                        <Button
+                          size="xs"
+                          disabled={decidingDepartment(member)}
+                          onClick={() => confirmDepartment.mutate(member)}
+                        >
+                          Подтвердить
+                        </Button>
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <div className={styles.toolbar}>
             <span className={styles.searchWrap}>
               <input
@@ -244,7 +319,13 @@ export function UsersPage() {
                   <tr key={member.id}>
                     <td>
                       <Person member={member} self={self}>
-                        <Work position={member.position} department={departmentName(member)} />
+                        <Work
+                          position={member.position}
+                          department={departmentName(member)}
+                          unconfirmed={
+                            Boolean(member.department_id) && !member.department_confirmed
+                          }
+                        />
                       </Person>
                     </td>
                     <td>
@@ -353,9 +434,20 @@ function Person({
   );
 }
 
-/** «Должность · Отдел» под именем; пусто — ничего. */
-function Work({ position, department }: { position: string | null; department?: string }) {
-  const text = [position, department].filter(Boolean).join(" · ");
+/** «Должность · Отдел» под именем; пусто — ничего. Неподтверждённый отдел
+ * помечен: закрытые папки отдела человеку пока не открыты. */
+function Work({
+  position,
+  department,
+  unconfirmed = false,
+}: {
+  position: string | null;
+  department?: string;
+  unconfirmed?: boolean;
+}) {
+  const text = [position, department && unconfirmed ? `${department} (не подтверждён)` : department]
+    .filter(Boolean)
+    .join(" · ");
   return text ? <span className={tableStyles.sub}>{text}</span> : null;
 }
 

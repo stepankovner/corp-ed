@@ -1,10 +1,16 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import Department, MemberStatus, User
+from corp_ed.domain.models import (
+    Department,
+    Folder,
+    FolderDepartment,
+    MemberStatus,
+    User,
+)
 
 
 class DepartmentRepository:
@@ -20,10 +26,15 @@ class DepartmentRepository:
         )
         return list(result)
 
-    async def member_counts(self) -> dict[UUID, int]:
-        """Сколько работающих людей в каждом отделе."""
+    async def member_counts(self) -> dict[UUID, tuple[int, int]]:
+        """Сколько работающих людей в каждом отделе и сколько из них ждут
+        подтверждения отдела администратором (ТЗ §7)."""
         result = await self.session.execute(
-            select(User.department_id, func.count())
+            select(
+                User.department_id,
+                func.count(),
+                func.count().filter(User.department_confirmed.is_(False)),
+            )
             .where(
                 User.tenant_id == require_tenant(),
                 User.status == MemberStatus.ACTIVE,
@@ -31,7 +42,20 @@ class DepartmentRepository:
             )
             .group_by(User.department_id)
         )
-        return {row[0]: int(row[1]) for row in result}
+        return {row[0]: (int(row[1]), int(row[2])) for row in result}
+
+    async def drop_confirmations(self, department_id: UUID) -> None:
+        """Перед удалением отдела: внешний ключ снимет отдел у людей
+        (SET NULL), а подтверждение осталось бы и перешло на следующий
+        отдел, который человек выберет сам (ТЗ §7)."""
+        await self.session.execute(
+            update(User)
+            .where(
+                User.tenant_id == require_tenant(),
+                User.department_id == department_id,
+            )
+            .values(department_confirmed=False)
+        )
 
     async def get_by_id(self, department_id: UUID) -> Department | None:
         # select, а не session.get: см. UserRepository.get_by_id.
@@ -39,6 +63,20 @@ class DepartmentRepository:
             select(Department).where(Department.id == department_id)
         )
         return result.first()
+
+    async def opens_restricted_folder(self, department_id: UUID) -> bool:
+        """Открыта ли отделу хоть одна закрытая папка."""
+        result = await self.session.scalar(
+            select(func.count())
+            .select_from(FolderDepartment)
+            .join(Folder, Folder.id == FolderDepartment.folder_id)
+            .where(
+                FolderDepartment.tenant_id == require_tenant(),
+                FolderDepartment.department_id == department_id,
+                Folder.restricted.is_(True),
+            )
+        )
+        return bool(result)
 
     async def find_by_name(self, name: str) -> Department | None:
         result = await self.session.scalars(

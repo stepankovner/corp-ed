@@ -1,0 +1,8 @@
+# Ложные срабатывания gitleaks в истории — не секреты. Отпечаток:
+# коммит:файл:правило:строка. Новое срабатывание сюда — только после
+# проверки, что это не настоящий ключ или пароль.
+#
+# Тестовые пароли проверки обвязки тестов «чёрного ящика» (06.10).
+e22105751ea08d3ff90927fb30c7031fb0e1a402:tests/blackbox/test_harness_smoke.py:generic-api-key:14
+e22105751ea08d3ff90927fb30c7031fb0e1a402:tests/blackbox/test_harness_smoke.py:generic-api-key:23
+e22105751ea08d3ff90927fb30c7031fb0e1a402:tests/blackbox/test_harness_smoke.py:generic-api-key:45

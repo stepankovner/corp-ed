@@ -295,6 +295,21 @@ function PersonalSection() {
   );
 }
 
+/**
+ * Подсказка под отделом (ТЗ §7): выбранный самим сотрудником отдел ждёт
+ * подтверждения администратора — до него закрытые папки отдела не открыты.
+ * Администратору подтверждать нечего: его выбор подтверждён сразу.
+ */
+function departmentHint(company: Company, selected: string): string | undefined {
+  if (company.role === "admin" || !selected) return undefined;
+  if (selected !== (company.department?.id ?? "")) {
+    return "Новый отдел подтвердит администратор — до этого его закрытые папки вам не открыты.";
+  }
+  return company.department_confirmed
+    ? undefined
+    : "Ждёт подтверждения администратора — до этого закрытые папки отдела вам не открыты.";
+}
+
 /** Должность и отдел — в выбранной компании (у другой компании свои). */
 function WorkSection({ company }: { company: Company }) {
   const { reloadMe } = useAuth();
@@ -336,7 +351,7 @@ function WorkSection({ company }: { company: Company }) {
   return (
     <Section
       title={`Работа в «${company.name}»`}
-      description="Должность и отдел у каждой компании свои. Администратор может их поправить."
+      description="Должность и отдел у каждой компании свои. Администратор может их поправить и подтверждает отдел: закрытые папки отдела открываются после его подтверждения."
     >
       <form className={styles.form} onSubmit={submit}>
         {save.isError ? <Notice kind="error">{errorMessage(save.error)}</Notice> : null}
@@ -358,7 +373,7 @@ function WorkSection({ company }: { company: Company }) {
             hint={
               departments.isSuccess && list.length === 0
                 ? "Отделы заводит администратор компании."
-                : undefined
+                : departmentHint(company, department)
             }
           >
             <option value="">Не выбран</option>
