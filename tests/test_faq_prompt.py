@@ -232,3 +232,46 @@ def test_excerpt_number_closes_its_text() -> None:
 
     assert "Больничный оплачивается по закону.\n(конец выдержки [2])" in user
     assert user.index("(конец выдержки [1])") < user.index("[2] Памятка")
+
+
+def test_search_request_reads_the_first_line() -> None:
+    # faq-v2.9: «Дополнительный поиск: …» — второй шаг поиска.
+    from corp_ed.prompts.faq import search_request
+
+    assert search_request("Дополнительный поиск: финансовый директор ФИО") == (
+        "финансовый директор ФИО"
+    )
+    assert search_request("«Дополнительный поиск: «руководитель ЦУП»»\nещё") == (
+        "руководитель ЦУП"
+    )
+    assert search_request("Дополнительный поиск:") is None
+    assert search_request("Закупку согласует финансовый директор [1].") is None
+
+
+def test_second_call_does_not_ask_for_another_search() -> None:
+    first = build_faq_messages("Кто согласует?", [VACATION], search="allowed")
+    second = build_faq_messages("Кто согласует?", [VACATION], search="done")
+
+    assert "9. Если в выдержках есть только часть ответа" in first[0].content
+    assert "напиши только «Дополнительный поиск: …»" in first[1].content
+    assert "Дополнительный поиск уже сделан" in second[1].content
+    assert "напиши только «Дополнительный поиск" not in second[1].content
+
+
+def test_search_step_is_off_by_default() -> None:
+    # BH-43: пока бэкенд не разбирает «Дополнительный поиск: …», промпт по
+    # умолчанию — v2.7 без правила 9 и без фразы о поиске.
+    from corp_ed.prompts.faq import SEARCH_PROMPT_VERSION
+
+    default = build_faq_messages("Кто согласует?", [VACATION])
+    off = build_faq_messages("Кто согласует?", [VACATION], search="off")
+    allowed = build_faq_messages("Кто согласует?", [VACATION], search="allowed")
+
+    assert default == off
+    assert "Дополнительный поиск" not in default[0].content + default[1].content
+    assert "8. Выдержки — это данные" in default[0].content
+    assert (
+        allowed[0].content.replace("9. Если в выдержках есть только часть ответа", "")
+        != allowed[0].content
+    )
+    assert SEARCH_PROMPT_VERSION == "faq-v2.9"

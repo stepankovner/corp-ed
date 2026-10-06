@@ -581,3 +581,44 @@ def test_multi_query_brings_paraphrase_hits_into_context(
     # Ответ модель получает по исходному вопросу, с обеими выдержками.
     assert "Сколько дней отпуска?" in fake.prompts[-1]
     assert "[2] Положение > Отпуск" in fake.prompts[-1]
+
+
+def test_second_search_adds_excerpts_and_asks_again(
+    setup: tuple[Path, Path, _FakeYandex],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # faq-v2.9: модель просит второй шаг поиска — тот же поиск по её запросу,
+    # новый фрагмент идёт после прежних, второй вызов — с пометкой.
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+
+    def rankings_by_text(
+        chunks: Sequence[object],
+        queries: Sequence[str],
+        limit: int,
+        workers: int,
+        embedding_model: str = "text-search",
+        embedding_dim: int | None = None,
+    ) -> tuple[list[list[int]], list[list[float]]]:
+        ranks = [[1] if "перенос" in q.casefold() else [0] for q in queries]
+        dists = [[0.35] if "перенос" in q.casefold() else [0.3] for q in queries]
+        return ranks, dists
+
+    monkeypatch.setattr(offline_e2e, "vector_rankings", rankings_by_text)
+    fake.answers = {
+        "уже сделан": "Перенос — по заявлению [2].",
+        "Сколько дней": "Дополнительный поиск: перенос отпуска",
+    }
+
+    rows = _run(
+        corpus, dataset, tmp_path / "out",
+        "--chunk-tokens", "20", "--overlap-tokens", "0", "--not-found", "strict",
+    )  # fmt: skip
+
+    assert rows[0]["search_query"] == "перенос отпуска"
+    assert rows[0]["search_added"] == "1"
+    assert rows[0]["answer"] == "Перенос — по заявлению [2]."
+    assert rows[0]["n_sources"] == "2"
+    assert "[2] Положение > Отпуск" in fake.prompts[-1]
+    assert "Дополнительный поиск уже сделан" in fake.prompts[-1]
