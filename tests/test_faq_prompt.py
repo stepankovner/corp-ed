@@ -219,7 +219,7 @@ def test_general_prompt_leaves_advice_to_the_backend() -> None:
 
     system = build_general_messages("Сколько дней отпуска?")[0].content
 
-    assert PROMPT_VERSION == "faq-v2.7"
+    assert PROMPT_VERSION == "faq-v2.9"
     assert "посоветуй уточнить" not in system
     assert "Не советуй, куда или к кому обратиться" in system
     assert "определяется документами компании" in system
@@ -232,3 +232,27 @@ def test_excerpt_number_closes_its_text() -> None:
 
     assert "Больничный оплачивается по закону.\n(конец выдержки [2])" in user
     assert user.index("(конец выдержки [1])") < user.index("[2] Памятка")
+
+
+def test_search_request_reads_the_first_line() -> None:
+    # faq-v2.9: «Дополнительный поиск: …» — второй шаг поиска.
+    from corp_ed.prompts.faq import search_request
+
+    assert search_request("Дополнительный поиск: финансовый директор ФИО") == (
+        "финансовый директор ФИО"
+    )
+    assert search_request("«Дополнительный поиск: «руководитель ЦУП»»\nещё") == (
+        "руководитель ЦУП"
+    )
+    assert search_request("Дополнительный поиск:") is None
+    assert search_request("Закупку согласует финансовый директор [1].") is None
+
+
+def test_second_call_does_not_ask_for_another_search() -> None:
+    first = build_faq_messages("Кто согласует?", [VACATION])
+    second = build_faq_messages("Кто согласует?", [VACATION], searched=True)
+
+    assert "9. Если в выдержках есть только часть ответа" in first[0].content
+    assert "напиши только «Дополнительный поиск: …»" in first[1].content
+    assert "Дополнительный поиск уже сделан" in second[1].content
+    assert "напиши только «Дополнительный поиск" not in second[1].content

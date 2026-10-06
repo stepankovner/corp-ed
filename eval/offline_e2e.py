@@ -71,6 +71,7 @@ from corp_ed.prompts.faq import (
     ensure_general_prefix,
     is_not_found,
     normalize_citations,
+    search_request,
 )
 from eval.bench import (
     FUSION_CANDIDATES,
@@ -115,6 +116,8 @@ ContextMode = Literal["chunks", "sections", "window"]
 _CITATION = re.compile(r"\[(\d+)\]")
 _SECTION_CITATION = re.compile(r"\[\d+(?:\.\d+)+\.?\]")
 """[2.2], [6.1.1] — номер пункта документа вместо номера выдержки."""
+SEARCH_MORE_LIMIT = 3
+"""faq-v2.9: сколько новых фрагментов второго шага поиска добавить к прежним."""
 
 
 @dataclass(frozen=True)
@@ -585,9 +588,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if reranker is not None:
         reranker.trust_remote_code = args.rerank_trust_remote_code
         reranker.quantize = args.rerank_quantize
-    retrieved = retrieve(
-        chunks,
-        [item.question for item in items],
+    search_options = dict(
         retriever=retriever,
         limit=args.limit,
         weights=[float(w) for w in args.weights.split(",")],
@@ -611,6 +612,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         rerank_order=args.rerank_order,
         rerank_max_words=args.rerank_max_words,
     )
+    retrieved = retrieve(chunks, [item.question for item in items], **search_options)
+
+    def search_more(query: str) -> tuple[list[OfflineMatch], float | None]:
+        """faq-v2.9: второй шаг поиска — тот же поиск, что у вопроса."""
+        return retrieve(chunks, [query], **{**search_options, "paraphrases": None})[0]
+
     if reranker is not None:
         reranker.save()
         print(
@@ -660,9 +667,48 @@ def main(argv: Sequence[str] | None = None) -> int:
         calls: list[Completion] = []
         raw = answer = NOT_FOUND_ANSWER
         general = False
+        hop_query, hop_added = "", 0
         if selected and not args.dry_run:
             calls.append(ask(build_faq_messages(item.question, selected)))
             raw = calls[-1].text.strip()
+            # faq-v2.9: модель просит второй шаг поиска — тот же поиск по её
+            # запросу, новые фрагменты (до SEARCH_MORE_LIMIT) — после прежних.
+            query = search_request(raw)
+            if query is not None and retriever == "vector" and not args.multi_query:
+                hop_query = query
+                more, more_best = search_more(query)
+                known = {match.content for match in relevant}
+                added = [
+                    match
+                    for match in relevant_matches(
+                        more,
+                        args.max_distance,
+                        gate_distance=args.gate_distance,
+                        near_margin=args.near_margin,
+                        nearest=more_best,
+                    )
+                    if match.content not in known
+                ][:SEARCH_MORE_LIMIT]
+                hop_added = len(added)
+                raw = NOT_FOUND_ANSWER
+                if added:
+                    selected = build_context(
+                        [*relevant, *added],
+                        mode=context_mode,
+                        sections=sections,
+                        max_tokens=args.context_tokens,
+                        neighbours=args.neighbours,
+                    )
+                    context_text = "\n".join(block.content for block in selected)
+                    calls.append(
+                        ask(build_faq_messages(item.question, selected, searched=True))
+                    )
+                    raw = calls[-1].text.strip()
+                    if search_request(raw) is not None:
+                        # Второй раз не ищем: ответа по документам нет.
+                        raw = NOT_FOUND_ANSWER
+            elif query is not None:
+                raw = NOT_FOUND_ANSWER
             answer = normalize_citations(raw, selected)
         # Р1 (решено 25.09): ответа в документах нет — ни одна выдержка не
         # прошла порог или модель по выдержкам ответила отказом — общий ответ
@@ -692,6 +738,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "expected_answer": item.expected_answer,
                 "expected_material": item.expected_material,
                 "answer": answer,
+                "search_query": hop_query,
+                "search_added": hop_added,
                 "answered": answered,
                 "answer_given": bool(selected),
                 "general_answer": general,
