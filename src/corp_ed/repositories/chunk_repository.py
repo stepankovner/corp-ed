@@ -38,7 +38,9 @@ def visible_to(viewer: UUID, tenant_id: UUID) -> ColumnElement[bool]:
     visibility = tenant — виден всем, если он не в закрытой папке;
     restricted — только при строке в material_access (права источника).
     Закрытая папка (ТЗ §5) открыта своим отделам и администраторам
-    компании: админ загружает документы и отвечает за них. Обязательный
+    компании: админ загружает документы и отвечает за них. Отдел
+    считается, только если его подтвердил администратор (ТЗ §7):
+    выбранный самим сотрудником ждёт подтверждения. Обязательный
     аргумент viewer, а не флаг: поиск без зрителя — это поиск по чужим
     правам, такого вызова быть не должно.
     """
@@ -55,6 +57,7 @@ def visible_to(viewer: UUID, tenant_id: UUID) -> ColumnElement[bool]:
             User.id == viewer,
             User.tenant_id == tenant_id,
             User.department_id == FolderDepartment.department_id,
+            User.department_confirmed.is_(True),
         ),
         exists().where(
             User.id == viewer,

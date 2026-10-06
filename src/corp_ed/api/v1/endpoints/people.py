@@ -39,6 +39,7 @@ def person_response(person: Person) -> PersonResponse:
         department=DepartmentRef(id=person.department.id, name=person.department.name)
         if person.department
         else None,
+        department_confirmed=bool(person.department and member.department_confirmed),
         role=member.role,
     )
 

@@ -105,6 +105,7 @@ describe("компании: список", () => {
             role: "employee",
             position: null,
             department: null,
+            department_confirmed: false,
           },
           companies: profile.companies,
         });

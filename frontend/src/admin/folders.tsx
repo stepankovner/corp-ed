@@ -187,6 +187,21 @@ function FolderTile({
 }
 
 /** Новая папка (folder = null) или правка названия и доступа. */
+/**
+ * Сколько людей в выбранных отделах ждут подтверждения отдела (ТЗ §7): им
+ * папка откроется только после подтверждения в «Сотрудниках».
+ */
+function WaitingHint({ waiting }: { waiting: number }) {
+  if (waiting === 0) return null;
+  return (
+    <p className={styles.checkHint}>
+      {waiting} {plural(waiting, "человек", "человека", "человек")} в этих отделах{" "}
+      {plural(waiting, "ждёт", "ждут", "ждут")} подтверждения отдела — папка откроется после него.{" "}
+      <Link to="/admin/users">Подтвердить в «Сотрудниках»</Link>
+    </p>
+  );
+}
+
 export function FolderDialog({
   folder,
   onClose,
@@ -310,6 +325,11 @@ export function FolderDialog({
                     Отдел не выбран — документы увидят только администраторы.
                   </p>
                 ) : null}
+                <WaitingHint
+                  waiting={departments.data
+                    .filter((d) => selected.includes(d.id))
+                    .reduce((sum, d) => sum + d.unconfirmed, 0)}
+                />
               </>
             )
           ) : null}

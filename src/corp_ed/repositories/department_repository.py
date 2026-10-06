@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
@@ -26,10 +26,15 @@ class DepartmentRepository:
         )
         return list(result)
 
-    async def member_counts(self) -> dict[UUID, int]:
-        """Сколько работающих людей в каждом отделе."""
+    async def member_counts(self) -> dict[UUID, tuple[int, int]]:
+        """Сколько работающих людей в каждом отделе и сколько из них ждут
+        подтверждения отдела администратором (ТЗ §7)."""
         result = await self.session.execute(
-            select(User.department_id, func.count())
+            select(
+                User.department_id,
+                func.count(),
+                func.count().filter(User.department_confirmed.is_(False)),
+            )
             .where(
                 User.tenant_id == require_tenant(),
                 User.status == MemberStatus.ACTIVE,
@@ -37,7 +42,20 @@ class DepartmentRepository:
             )
             .group_by(User.department_id)
         )
-        return {row[0]: int(row[1]) for row in result}
+        return {row[0]: (int(row[1]), int(row[2])) for row in result}
+
+    async def drop_confirmations(self, department_id: UUID) -> None:
+        """Перед удалением отдела: внешний ключ снимет отдел у людей
+        (SET NULL), а подтверждение осталось бы и перешло на следующий
+        отдел, который человек выберет сам (ТЗ §7)."""
+        await self.session.execute(
+            update(User)
+            .where(
+                User.tenant_id == require_tenant(),
+                User.department_id == department_id,
+            )
+            .values(department_confirmed=False)
+        )
 
     async def get_by_id(self, department_id: UUID) -> Department | None:
         # select, а не session.get: см. UserRepository.get_by_id.

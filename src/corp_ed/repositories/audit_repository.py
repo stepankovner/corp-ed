@@ -41,6 +41,8 @@ class AuditAction(StrEnum):
     USER_REMOVED = "user.removed"
     USER_LEFT = "user.left"
     USER_PROFILE_UPDATED = "user.profile_updated"
+    USER_DEPARTMENT_CONFIRMED = "user.department_confirmed"
+    USER_DEPARTMENT_REJECTED = "user.department_rejected"
     DEPARTMENT_CREATED = "department.created"
     DEPARTMENT_UPDATED = "department.updated"
     DEPARTMENT_DELETED = "department.deleted"

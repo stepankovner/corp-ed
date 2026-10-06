@@ -2,9 +2,10 @@
 
 Администратору — о том, что требует его действий: остановилось
 подключение, лимит вопросов на 80 % и исчерпан, заявка на вступление,
-недельная сводка. Письма — по его настройкам (строки настроек нет — все
-включены). Сотруднику письма приходят только о безопасности (их шлют
-сервисы входа, здесь их нет).
+отдел с закрытой папкой ждёт подтверждения, недельная сводка. Письма —
+по его настройкам (строки настроек нет — все включены). Сотруднику
+письма приходят только о безопасности (их шлют сервисы входа, здесь их
+нет); в колокольчик — решение по его отделу (notify_member).
 
 Сервис не коммитит в notify_admins: уведомление пишется в той же
 транзакции, что и событие (порог кредитов, остановка подключения,
@@ -42,6 +43,9 @@ class NotificationKind(StrEnum):
     CREDITS_WARNING = "credits_warning"
     CREDITS_EXHAUSTED = "credits_exhausted"
     JOIN_REQUEST = "join_request"
+    DEPARTMENT_REQUEST = "department_request"
+    DEPARTMENT_CONFIRMED = "department_confirmed"
+    DEPARTMENT_REJECTED = "department_rejected"
     WEEKLY_DIGEST = "weekly_digest"
 
 
@@ -50,6 +54,9 @@ _EMAIL_FLAG = {
     NotificationKind.CREDITS_WARNING: "email_credits",
     NotificationKind.CREDITS_EXHAUSTED: "email_credits",
     NotificationKind.JOIN_REQUEST: "email_join_requests",
+    # Подтвердить отдел — тоже заявка: отдельной настройки писем не
+    # заводим (ТЗ §8).
+    NotificationKind.DEPARTMENT_REQUEST: "email_join_requests",
     NotificationKind.WEEKLY_DIGEST: "email_weekly_digest",
 }
 
@@ -144,6 +151,20 @@ class NotificationService:
             recipients=len(rows),
         )
         return len(rows)
+
+    def notify_member(self, member: User, notice: Notice) -> None:
+        """Колокольчик одному человеку, без письма: сотруднику письма —
+        только о безопасности (ТЗ §8). В транзакции вызывающего."""
+        self.session.add(
+            Notification(
+                tenant_id=member.tenant_id,
+                user_id=member.id,
+                kind=notice.kind.value,
+                title=notice.title[:200],
+                body="\n".join(notice.lines),
+                link=notice.link,
+            )
+        )
 
     # --- колокольчик -----------------------------------------------------------
 

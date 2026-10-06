@@ -407,7 +407,10 @@ async def test_departments_crud_by_admin(
 
     listed = await api.get("/api/v1/departments", headers=bearer(account))
     assert listed.status_code == 200
-    assert listed.json() == [{"id": sales, "name": "Отдел продаж", "members": 1}]
+    # Выбрал сам — ждёт подтверждения администратора (ТЗ §7).
+    assert listed.json() == [
+        {"id": sales, "name": "Отдел продаж", "members": 1, "unconfirmed": 1}
+    ]
 
     duplicate = await api.post(
         "/api/v1/departments", json={"name": "отдел ПРОДАЖ"}, headers=admin
@@ -417,7 +420,12 @@ async def test_departments_crud_by_admin(
     renamed = await api.patch(
         f"/api/v1/departments/{sales}", json={"name": "Продажи"}, headers=admin
     )
-    assert renamed.json() == {"id": sales, "name": "Продажи", "members": 1}
+    assert renamed.json() == {
+        "id": sales,
+        "name": "Продажи",
+        "members": 1,
+        "unconfirmed": 1,
+    }
 
     deleted = await api.delete(f"/api/v1/departments/{sales}", headers=admin)
     assert deleted.status_code == 204

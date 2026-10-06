@@ -12,8 +12,8 @@ type Material = Schemas["MaterialResponse"];
 type Folder = Schemas["FolderResponse"];
 type Connector = Schemas["ConnectorResponse"];
 
-const HR = { id: "d-hr", name: "Кадры", members: 3 };
-const ACCOUNTING = { id: "d-acc", name: "Бухгалтерия", members: 2 };
+const HR = { id: "d-hr", name: "Кадры", members: 3, unconfirmed: 0 };
+const ACCOUNTING = { id: "d-acc", name: "Бухгалтерия", members: 2, unconfirmed: 0 };
 
 function material(overrides: Partial<Material> = {}): Material {
   return {

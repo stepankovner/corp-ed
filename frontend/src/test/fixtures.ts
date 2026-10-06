@@ -20,6 +20,7 @@ export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeR
       role: "employee",
       position: null,
       department: null,
+      department_confirmed: false,
     },
     companies: [
       {
@@ -45,6 +46,7 @@ export function adminMe(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas
       role: "admin",
       position: null,
       department: null,
+      department_confirmed: false,
     },
     companies: [
       {

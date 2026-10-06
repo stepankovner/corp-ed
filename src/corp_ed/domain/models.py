@@ -461,6 +461,12 @@ class User(TenantMixin, Base):
     department_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("departments.id", ondelete="SET NULL"), index=True
     )
+    # Отдел подтвердил администратор (ТЗ §7): только тогда открыты
+    # закрытые папки отдела. Меняется вместе с department_id в одном месте
+    # кода (PeopleService, UserService, DepartmentService.delete).
+    department_confirmed: Mapped[bool] = mapped_column(
+        default=False, server_default=false()
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Первые шаги (ТЗ §8): подсказки сотруднику показаны, чек-лист

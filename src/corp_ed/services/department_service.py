@@ -40,10 +40,12 @@ class DepartmentService:
         self.audit = audit
         self.session = session
 
-    async def list_with_counts(self) -> list[tuple[Department, int]]:
+    async def list_with_counts(self) -> list[tuple[Department, int, int]]:
+        """Отделы, сколько в них работающих людей и сколько из них ждут
+        подтверждения отдела."""
         departments = await self.repository.list_all()
         counts = await self.repository.member_counts()
-        return [(item, counts.get(item.id, 0)) for item in departments]
+        return [(item, *counts.get(item.id, (0, 0))) for item in departments]
 
     async def create(self, actor: User, name: str) -> Department:
         if await self.repository.count() >= MAX_DEPARTMENTS:
@@ -77,6 +79,7 @@ class DepartmentService:
     async def delete(self, actor: User, department_id: UUID) -> None:
         department = await self.get(department_id)
         self._record(AuditAction.DEPARTMENT_DELETED, actor, department)
+        await self.repository.drop_confirmations(department.id)
         await self.repository.delete(department)
         await self.session.commit()
 

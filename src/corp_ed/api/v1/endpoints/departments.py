@@ -20,8 +20,15 @@ Member = Annotated[User, Depends(get_current_user)]
 Service = Annotated[DepartmentService, Depends(get_department_service)]
 
 
-def _response(department: Department, members: int) -> DepartmentResponse:
-    return DepartmentResponse(id=department.id, name=department.name, members=members)
+def _response(
+    department: Department, members: int = 0, unconfirmed: int = 0
+) -> DepartmentResponse:
+    return DepartmentResponse(
+        id=department.id,
+        name=department.name,
+        members=members,
+        unconfirmed=unconfirmed,
+    )
 
 
 @router.get("", response_model=list[DepartmentResponse])
@@ -30,7 +37,7 @@ async def list_departments(
 ) -> list[DepartmentResponse]:
     """Отделы компании — всем её людям: выбрать свой в профиле, отобрать
     коллег в справочнике (ТЗ §4)."""
-    return [_response(item, count) for item, count in await service.list_with_counts()]
+    return [_response(*row) for row in await service.list_with_counts()]
 
 
 @router.post(
@@ -43,7 +50,7 @@ async def create_department(
     data: DepartmentRequest, service: Service, current_user: AdminUser
 ) -> DepartmentResponse:
     department = await service.create(current_user, " ".join(data.name.split()))
-    return _response(department, 0)
+    return _response(department)
 
 
 @router.patch(
@@ -60,8 +67,8 @@ async def rename_department(
     department = await service.rename(
         current_user, department_id, " ".join(data.name.split())
     )
-    counts = {item.id: count for item, count in await service.list_with_counts()}
-    return _response(department, counts.get(department.id, 0))
+    counts = {row[0].id: row[1:] for row in await service.list_with_counts()}
+    return _response(department, *counts.get(department.id, (0, 0)))
 
 
 @router.delete(

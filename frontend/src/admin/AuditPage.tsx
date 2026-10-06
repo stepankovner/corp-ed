@@ -44,6 +44,8 @@ const ACTIONS: Record<string, string> = {
   "user.left": "Сотрудник вышел из компании",
   "user.updated": "Сотрудник изменён",
   "user.profile_updated": "Изменены должность или отдел сотрудника",
+  "user.department_confirmed": "Отдел сотрудника подтверждён",
+  "user.department_rejected": "Отдел сотрудника отклонён",
   "department.created": "Отдел добавлен",
   "department.updated": "Отдел переименован",
   "department.deleted": "Отдел удалён",

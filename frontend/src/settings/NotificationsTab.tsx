@@ -31,8 +31,8 @@ const FLAGS: { flag: Flag; label: string; hint: string }[] = [
   },
   {
     flag: "email_join_requests",
-    label: "Заявки на вступление",
-    hint: "Человек просится в компанию и ждёт одобрения.",
+    label: "Заявки",
+    hint: "Человек просится в компанию или указал отдел с закрытыми папками — ждёт вашего решения.",
   },
   {
     flag: "email_weekly_digest",

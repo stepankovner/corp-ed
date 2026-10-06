@@ -135,6 +135,7 @@ async def read_me(
             department=DepartmentRef(id=department.id, name=department.name)
             if department
             else None,
+            department_confirmed=bool(department and member.department_confirmed),
             logo_url=logos.get(member.tenant_id),
         )
     return MeResponse(

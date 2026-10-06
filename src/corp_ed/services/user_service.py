@@ -6,8 +6,8 @@
 
 Учёток админ не заводит и паролей не выдаёт (решение 03.10): люди
 приходят по приглашению со своей учёткой kronto, пароль восстанавливают
-по почте. Админ меняет роль, блокирует, одобряет вступивших и убирает из
-компании.
+по почте. Админ меняет роль, блокирует, одобряет вступивших, подтверждает
+отдел, выбранный самим сотрудником, и убирает из компании.
 """
 
 from datetime import UTC, datetime
@@ -22,12 +22,20 @@ from corp_ed.core.exceptions import (
     NotFoundError,
     SelfModificationError,
 )
-from corp_ed.domain.models import MemberStatus, User, UserRole
+from corp_ed.domain.models import Department, MemberStatus, User, UserRole
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
+from corp_ed.repositories.department_repository import DepartmentRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.notification_service import (
+    Notice,
+    NotificationKind,
+    NotificationService,
+)
 from corp_ed.services.seats import ensure_free_seat
 
 logger = structlog.get_logger()
+
+PROFILE_PATH = "/settings/profile"
 
 
 class UserService:
@@ -140,6 +148,80 @@ class UserService:
             target_id=user.id,
         )
         await self.session.commit()
+
+    async def confirm_department(self, actor: User, user_id: UUID) -> User:
+        """Подтвердить отдел, выбранный сотрудником (ТЗ §7): с этого
+        момента ему открыты закрытые папки отдела. Повтор — без изменений."""
+        user, department = await self._with_department(user_id)
+        if user.department_confirmed:
+            return user
+        user.department_confirmed = True
+        self._record_department(AuditAction.USER_DEPARTMENT_CONFIRMED, actor, user)
+        NotificationService(self.session).notify_member(
+            user,
+            Notice(
+                kind=NotificationKind.DEPARTMENT_CONFIRMED,
+                title=f"Отдел подтверждён: {department.name}",
+                lines=[
+                    "Администратор подтвердил ваш отдел — вам открыты его "
+                    "закрытые папки."
+                ],
+                link=PROFILE_PATH,
+                action="Открыть профиль",
+            ),
+        )
+        await self.session.commit()
+        return user
+
+    async def reject_department(self, actor: User, user_id: UUID) -> User:
+        """Отклонить отдел, выбранный сотрудником: отдел снимается.
+        Подтверждённый так не снять — его меняют в профиле сотрудника."""
+        user, department = await self._with_department(user_id)
+        if user.department_confirmed:
+            raise ConflictError(
+                "Отдел уже подтверждён: изменить его можно в профиле сотрудника"
+            )
+        self._record_department(AuditAction.USER_DEPARTMENT_REJECTED, actor, user)
+        user.department_id = None
+        user.department_confirmed = False
+        NotificationService(self.session).notify_member(
+            user,
+            Notice(
+                kind=NotificationKind.DEPARTMENT_REJECTED,
+                title=f"Отдел не подтверждён: {department.name}",
+                lines=[
+                    f"Администратор не подтвердил отдел «{department.name}». "
+                    "Если это ошибка — уточните у администратора компании."
+                ],
+                link=PROFILE_PATH,
+                action="Открыть профиль",
+            ),
+        )
+        await self.session.commit()
+        return user
+
+    async def _with_department(self, user_id: UUID) -> tuple[User, Department]:
+        user = await self._get(user_id)
+        if user.status is not MemberStatus.ACTIVE:
+            raise NotFoundError("Пользователь не найден")
+        department = (
+            await DepartmentRepository(self.session).get_by_id(user.department_id)
+            if user.department_id
+            else None
+        )
+        if department is None:
+            raise ConflictError("Сотрудник не выбрал отдел")
+        return user, department
+
+    def _record_department(self, action: AuditAction, actor: User, user: User) -> None:
+        self.audit.record(
+            action,
+            tenant_id=user.tenant_id,
+            actor_id=actor.id,
+            target_type="user",
+            target_id=user.id,
+            details={"department_id": str(user.department_id)},
+        )
 
     async def remove(self, actor: User, user_id: UUID) -> None:
         """Убрать из компании: учётка человека остаётся, доступа к

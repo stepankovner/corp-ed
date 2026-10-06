@@ -576,18 +576,36 @@ async def _folder(
         f"документ папки виден: {_yes(leaked)}",
     )
 
-    moved = await client.request(
+    # ТЗ §7: отдел, выбранный самим сотрудником, ждёт подтверждения —
+    # закрытая папка отдела до него не открыта.
+    chosen = await staff.request(
         "PATCH",
         f"/people/{created['member']}",
         json={"department_id": created["department"]},
+    )
+    waiting = chosen.status_code == 200 and not chosen.json().get(
+        "department_confirmed"
+    )
+    pending = await _ask(staff, question)
+    pending_titles = [str(s.get("title")) for s in pending.get("sources", [])]
+    leaked = title in pending_titles or code in str(pending.get("content", ""))
+    report.add(
+        "сам выбрал отдел: папка закрыта до подтверждения",
+        waiting and not leaked,
+        f"выбор отдела: HTTP {chosen.status_code}, ждёт подтверждения: "
+        f"{_yes(waiting)}, документ папки виден: {_yes(leaked)}",
+    )
+
+    confirmed = await client.request(
+        "POST", f"/users/{created['member']}/department/confirm"
     )
     visible = await _ask(staff, question)
     visible_titles = [str(s.get("title")) for s in visible.get("sources", [])]
     found = title in visible_titles and code in str(visible.get("content", ""))
     report.add(
-        "сотрудник в отделе видит папку",
-        moved.status_code == 200 and found,
-        f"перевод в отдел: HTTP {moved.status_code}, документ папки в "
+        "отдел подтверждён: сотрудник видит папку",
+        confirmed.status_code == 200 and found,
+        f"подтверждение: HTTP {confirmed.status_code}, документ папки в "
         f"источниках и код в ответе: {_yes(found)}",
     )
 

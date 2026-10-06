@@ -2465,31 +2465,27 @@ async def test_frequent_question_of_three_people_is_suggested(kronto: Kronto) ->
     assert_no_leak(r.text, "Иванова", "Смирнов", first.email, second.email)
 
 
-async def test_employee_cannot_self_join_department_with_closed_folder(
+async def test_self_chosen_department_opens_closed_folder_only_after_admin(
     kronto: Kronto,
 ) -> None:
     """ТЗ §5, §7: закрытая папка — только отделам, которым она открыта.
     Добавлен при разборе 06.10: сотрудник выбирал себе отдел в профиле и
-    так открывал себе чужую закрытую папку. В такой отдел записывает
-    администратор; в обычный отдел — по-прежнему сам."""
+    так открывал себе чужую закрытую папку. Разбор 06.10 (вариант Б,
+    решение владельца): выбрать отдел можно, но закрытые папки отдела
+    откроет только подтверждение администратора."""
     r = await setup_restricted(kronto, insider=False)
     outsider = r.outsider
     assert outsider is not None
     me = await outsider.get(f"{API}/auth/me")
     member = me.json()["company"]["member_id"]
 
-    refused = await outsider.patch(
+    chosen = await outsider.patch(
         f"{API}/people/{member}", json={"department_id": r.dept_in}
     )
-    assert refused.status_code in DENIED, refused.text
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["department_confirmed"] is False, chosen.text
     await assert_secret_hidden_from(outsider, r.secret_id)
 
-    plain = await make_department(r.admin, "Склад")
-    ok = await outsider.patch(f"{API}/people/{member}", json={"department_id": plain})
-    assert ok.status_code == 200, ok.text
-
-    by_admin = await r.admin.patch(
-        f"{API}/people/{member}", json={"department_id": r.dept_in}
-    )
-    assert by_admin.status_code == 200, by_admin.text
+    confirmed = await r.admin.post(f"{API}/users/{member}/department/confirm")
+    assert confirmed.status_code == 200, confirmed.text
     await assert_secret_visible_to(outsider, r.secret_id)
