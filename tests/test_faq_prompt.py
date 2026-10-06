@@ -223,3 +223,12 @@ def test_general_prompt_leaves_advice_to_the_backend() -> None:
     assert "посоветуй уточнить" not in system
     assert "Не советуй, куда или к кому обратиться" in system
     assert "определяется документами компании" in system
+
+
+def test_excerpt_number_closes_its_text() -> None:
+    # faq-v2.7 (Р-15): номер и после текста выдержки — факт в конце длинной
+    # выдержки ближе к своему номеру, чем к заголовку следующей.
+    user = build_faq_messages("Вопрос?", [VACATION, SICK_LEAVE])[1].content
+
+    assert "Больничный оплачивается по закону.\n(конец выдержки [2])" in user
+    assert user.index("(конец выдержки [1])") < user.index("[2] Памятка")
