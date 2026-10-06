@@ -26,5 +26,8 @@ class UserResponse(BaseModel):
     status: MemberStatus
     position: str | None
     department_id: UUID | None
+    department_confirmed: bool
+    """Отдел подтверждён администратором (ТЗ §7); false — ждёт
+    подтверждения или отдела нет."""
     last_login_at: datetime | None
     created_at: datetime

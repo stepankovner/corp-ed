@@ -157,6 +157,9 @@ class CurrentCompany(BaseModel):
     position: str | None
     """Должность в этой компании (ТЗ §4)."""
     department: DepartmentRef | None
+    department_confirmed: bool = False
+    """Отдел подтверждён администратором (ТЗ §7): закрытые папки отдела
+    открыты только тогда."""
     logo_url: str | None = None
 
 
