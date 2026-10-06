@@ -19,6 +19,7 @@ from corp_ed.core.mail import (
 from corp_ed.domain.models import OutboxEmail
 from corp_ed.services import email_templates
 from corp_ed.services.email_service import EmailService
+from corp_ed.services.mail_check import check_mail
 from corp_ed.services.mail_worker import MAX_ATTEMPTS, MailWorker, retry_delay
 
 
@@ -200,3 +201,181 @@ def test_smtp_errors_are_classified(
     with pytest.raises(MailDeliveryError) as caught:
         sender._deliver(message)
     assert (caught.value.code, caught.value.retryable) == (code, retryable)
+
+
+def test_probe_logs_in_without_sending(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    class FakeSmtp:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            calls.append("connect")
+
+        def __enter__(self) -> "FakeSmtp":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            calls.append("quit")
+
+        def login(self, user: str, password: str) -> None:
+            calls.append(f"login {user}")
+
+        def send_message(self, message: object) -> None:
+            calls.append("send")
+
+    monkeypatch.setattr(smtplib, "SMTP_SSL", FakeSmtp)
+    sender = SmtpSender(
+        MailSettings(
+            backend="smtp",
+            smtp_host="smtp.example.ru",
+            smtp_username="noreply@krontoai.ru",
+            smtp_password="app-password",  # type: ignore[arg-type]
+        )
+    )
+
+    sender._deliver(None)
+
+    assert calls == ["connect", "login noreply@krontoai.ru", "quit"]
+
+
+def _smtp_settings(**overrides: object) -> MailSettings:
+    values: dict[str, object] = {
+        "backend": "smtp",
+        "smtp_host": "smtp.example.ru",
+        "smtp_username": "noreply@krontoai.ru",
+        "smtp_password": "app-password",
+        "from_address": "noreply@krontoai.ru",
+    }
+    values.update(overrides)
+    return MailSettings(**values)  # type: ignore[arg-type]
+
+
+class ProbeSender(SmtpSender):
+    def __init__(self, error: MailDeliveryError | None = None) -> None:
+        super().__init__(_smtp_settings())
+        self.error = error
+
+    async def probe(self) -> None:
+        if self.error is not None:
+            raise self.error
+
+
+async def test_mail_check_reports_queue_without_addresses(
+    session: AsyncSession, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    now = datetime.now(UTC)
+    session.add_all(
+        [
+            OutboxEmail(
+                to_email="anna@acme.ru",
+                kind="verify_email",
+                subject="s",
+                text_body="",
+                html_body="",
+                sent_at=now,
+            ),
+            OutboxEmail(
+                to_email="boris@acme.ru",
+                kind="invite",
+                subject="s",
+                text_body="",
+                html_body="",
+                failed_at=now,
+                last_error="smtp_553",
+            ),
+            OutboxEmail(
+                to_email="typo@acme",
+                kind="invite",
+                subject="s",
+                text_body="",
+                html_body="",
+                failed_at=now,
+                last_error="recipient_refused",
+            ),
+        ]
+    )
+    await session.commit()
+
+    report = await check_mail(
+        _smtp_settings(),
+        session_maker,
+        now=now + timedelta(seconds=1),
+        sender=ProbeSender(),
+    )
+
+    text = "\n".join(report.lines())
+    assert not report.ok
+    assert (report.sent, report.pending, report.failed) == (1, 0, 2)
+    assert "smtp_553" in text and "вход в ящик — ok" in text
+    # Опечатка в адресе — не поломка почты; адресов в выводе нет.
+    assert text.count("не отправлено 1 (invite): smtp_553") == 1
+    assert "recipient_refused" in text and "@acme" not in text
+
+
+async def test_mail_check_flags_disabled_sending_and_stuck_queue(
+    session: AsyncSession, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    now = datetime.now(UTC)
+    session.add(
+        OutboxEmail(
+            to_email="anna@acme.ru",
+            kind="login_code",
+            subject="s",
+            text_body="t",
+            html_body="h",
+            attempts=3,
+            last_error="smtp_unavailable",
+            created_at=now - timedelta(minutes=30),
+        )
+    )
+    await session.commit()
+
+    report = await check_mail(MailSettings(backend="console"), session_maker, now=now)
+
+    lines = report.lines()
+    assert lines[0].startswith("FAIL почта: console")
+    assert any("отправка выключена" in line for line in lines)
+    assert any("в очереди дольше 10 мин" in line and "30 мин" in line for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("settings", "probe_error", "problem"),
+    [
+        (_smtp_settings(), MailDeliveryError("smtp_auth", retryable=False), "пароль"),
+        (
+            _smtp_settings(),
+            MailDeliveryError("smtp_unavailable", retryable=True),
+            "нет связи",
+        ),
+        (_smtp_settings(from_address="hello@krontoai.ru"), None, "553"),
+        (_smtp_settings(smtp_password=None), None, "без входа"),
+    ],
+)
+async def test_mail_check_explains_smtp_problems(
+    session_maker: async_sessionmaker[AsyncSession],
+    settings: MailSettings,
+    probe_error: MailDeliveryError | None,
+    problem: str,
+) -> None:
+    report = await check_mail(
+        settings,
+        session_maker,
+        now=datetime.now(UTC),
+        sender=ProbeSender(probe_error),
+    )
+
+    assert not report.ok
+    assert any(problem in line for line in report.lines())
+
+
+async def test_mail_check_is_ok_when_everything_goes_out(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    report = await check_mail(
+        _smtp_settings(), session_maker, now=datetime.now(UTC), sender=ProbeSender()
+    )
+
+    assert report.ok
+    assert report.lines() == [
+        "OK   почта: smtp smtp.example.ru:465 ssl, вход в ящик — ok; "
+        "за 7 дн.: отправлено 0, ждут 0, не отправлено 0"
+    ]

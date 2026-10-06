@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.domain.models import OutboxEmail
@@ -16,6 +16,19 @@ class ClaimedEmail:
     text_body: str
     html_body: str
     attempts: int
+
+
+@dataclass(frozen=True)
+class OutboxGroup:
+    """Письма одного вида в одном состоянии с одной ошибкой — для
+    cli mail-check. Без адресов: вывод попадает в публичный лог выкатки."""
+
+    state: str  # sent | pending | failed
+    kind: str
+    last_error: str | None
+    count: int
+    oldest: datetime
+    max_attempts: int
 
 
 class OutboxRepository:
@@ -81,6 +94,28 @@ class OutboxRepository:
             .where(OutboxEmail.id == email_id)
             .values(failed_at=now, last_error=error, text_body="", html_body="")
         )
+
+    async def summary(self, since: datetime) -> list[OutboxGroup]:
+        """Письма, поставленные с since, по состоянию, виду и ошибке."""
+        state = case(
+            (OutboxEmail.sent_at.is_not(None), "sent"),
+            (OutboxEmail.failed_at.is_not(None), "failed"),
+            else_="pending",
+        )
+        rows = await self.session.execute(
+            select(
+                state,
+                OutboxEmail.kind,
+                OutboxEmail.last_error,
+                func.count(),
+                func.min(OutboxEmail.created_at),
+                func.max(OutboxEmail.attempts),
+            )
+            .where(OutboxEmail.created_at >= since)
+            .group_by(state, OutboxEmail.kind, OutboxEmail.last_error)
+            .order_by(state, OutboxEmail.kind, OutboxEmail.last_error)
+        )
+        return [OutboxGroup(*row) for row in rows]
 
     async def purge_before(self, before: datetime) -> int:
         result = await self.session.execute(

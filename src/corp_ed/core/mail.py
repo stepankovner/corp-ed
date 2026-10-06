@@ -86,7 +86,12 @@ class SmtpSender:
         message.add_alternative(email.html, subtype="html")
         return message
 
-    def _deliver(self, message: EmailMessage) -> None:
+    async def probe(self) -> None:
+        """Войти в ящик и выйти, ничего не отправляя (cli mail-check):
+        сеть до сервера, TLS и пароль приложения — без письма."""
+        await asyncio.to_thread(self._deliver, None)
+
+    def _deliver(self, message: EmailMessage | None) -> None:
         s = self.settings
         host = s.smtp_host or ""
         try:
@@ -104,7 +109,8 @@ class SmtpSender:
                     client.starttls(context=ssl.create_default_context())
                 if s.smtp_username and s.smtp_password:
                     client.login(s.smtp_username, s.smtp_password.get_secret_value())
-                client.send_message(message)
+                if message is not None:
+                    client.send_message(message)
         except smtplib.SMTPAuthenticationError as exc:
             # Неверный пароль приложения повтором не исправить.
             raise MailDeliveryError("smtp_auth", retryable=False) from exc

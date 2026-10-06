@@ -5,7 +5,8 @@
 # ответ по документу с настоящей моделью, уточняющий вопрос в диалоге,
 # вопрос вне документов, кредиты, сценарии этапов 1–10; в конце —
 # бэкап: свежий дамп поднимается во временной базе (restore-check.sh), и
-# его зашифрованная копия лежит вне сервера (offsite.sh, если настроена).
+# его зашифрованная копия лежит вне сервера (offsite.sh, если настроена);
+# почта: уходят ли письма (cli mail-check).
 #
 # Для проверки нужна компания с администратором. Её скрипт заводит сам
 # при первом запуске, а пароль хранит только на сервере
@@ -110,5 +111,16 @@ fi
 # сервере, без выхода наружу; в строке только счётчики.
 backup=$("$APP_DIR/deploy/stage/restore-check.sh" report 2>&1) || status=1
 offsite=$("$APP_DIR/deploy/stage/offsite.sh" report 2>&1) || status=1
-printf '%s\n%s\n%s\n' "$out" "$backup" "$offsite"
+# Почта: письма уходят воркером из очереди, и вход с приложением выше их не
+# видит. Включена ли отправка, пускает ли ящик (без письма), что с очередью
+# за неделю — без адресов (cli mail-check). Поток ошибок (stderr) не
+# печатаем: в трассировке настроек бывают строки подключения.
+mail_status=0
+mail=$(docker compose -f compose.yaml run --rm --no-deps -T api \
+    python -m corp_ed.cli mail-check 2>/dev/null) || mail_status=$?
+if ((mail_status > 1)) || [[ -z "$mail" ]]; then
+    mail="FAIL почта: mail-check не отработал (код $mail_status) — на сервере: docker compose -f compose.yaml run --rm api python -m corp_ed.cli mail-check"
+fi
+((mail_status == 0)) || status=1
+printf '%s\n%s\n%s\n%s\n' "$out" "$backup" "$offsite" "$mail"
 exit "$status"

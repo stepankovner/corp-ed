@@ -22,6 +22,8 @@
     python -m corp_ed.cli leads set-status --id <uuid> --status contacted
     python -m corp_ed.cli gaps (--code acme | --all)   # отчёт о пробелах
     python -m corp_ed.cli rotate-connector-secrets     # после смены ключа
+    python -m corp_ed.cli mail-check [--days 7] [--send-to you@example.ru]
+                                       # уходят ли письма (check.sh после выкатки)
     python -m corp_ed.cli connector-check --kind bitrix24 \\
         --config portal=https://b24-xxx.bitrix24.ru/ \\
         --credential webhook="$BITRIX24_TEST_WEBHOOK" \\
@@ -67,11 +69,13 @@ from corp_ed.core.config import (
     get_connector_settings,
     get_demo_settings,
     get_lead_settings,
+    get_mail_settings,
     get_settings,
 )
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
 from corp_ed.core.logging import configure_logging
+from corp_ed.core.mail import MailDeliveryError, OutgoingEmail, SmtpSender
 from corp_ed.core.outbound import (
     OutboundClient,
     OutboundURLError,
@@ -95,6 +99,7 @@ from corp_ed.services.demo_service import DemoService
 from corp_ed.services.digest_service import DigestService
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.lead_service import LeadService
+from corp_ed.services.mail_check import check_mail
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
 from corp_ed.services.seats import seats_check
@@ -285,6 +290,18 @@ def _parser() -> argparse.ArgumentParser:
     gaps_scope.add_argument("--code", help="одна компания")
     gaps_scope.add_argument("--all", action="store_true", help="все активные")
 
+    mail = commands.add_parser(
+        "mail-check",
+        help="уходят ли письма: настройки, вход в ящик без письма, очередь "
+        "(без адресов — вывод идёт в лог выкатки)",
+    )
+    mail.add_argument("--days", type=int, default=7, help="за сколько дней очередь")
+    mail.add_argument(
+        "--send-to",
+        metavar="EMAIL",
+        help="ещё и отправить тестовое письмо на этот адрес — сразу, мимо очереди",
+    )
+
     commands.add_parser(
         "rotate-connector-secrets",
         help="перешифровать учётные данные коннекторов первым ключом "
@@ -391,6 +408,9 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "gaps":
         return await _gaps(None if args.all else args.code)
+
+    if args.command == "mail-check":
+        return await _mail_check(args.days, args.send_to)
 
     if args.command == "rotate-connector-secrets":
         settings = get_connector_settings()
@@ -819,6 +839,38 @@ async def _gaps(company_code: str | None) -> int:
             f"подписано {report.labeled}"
         )
     return 1 if any(report.failed for report in reports) else 0
+
+
+async def _mail_check(days: int, send_to: str | None) -> int:
+    settings = get_mail_settings()
+    report = await check_mail(
+        settings, get_session_maker(), now=datetime.now(UTC), days=days
+    )
+    for line in report.lines():
+        print(line)
+    if send_to is None:
+        return 0 if report.ok else 1
+    if settings.backend != "smtp":
+        print("тестовое письмо: не отправлено — MAIL_BACKEND не smtp")
+        return 1
+    text = "Это проверочное письмо с сервера kronto. Отвечать не нужно."
+    try:
+        await SmtpSender(settings).send(
+            OutgoingEmail(
+                to=send_to,
+                subject="kronto: проверка почты",
+                text=text,
+                html=f"<p>{text}</p>",
+            )
+        )
+    except MailDeliveryError as exc:
+        print(f"тестовое письмо: не принято — {exc.code}")
+        return 1
+    print(
+        "тестовое письмо: принято почтовым сервером. Не пришло за пару минут — "
+        "папка «Спам» у получателя и входящие ящика отправителя (возврат)"
+    )
+    return 0 if report.ok else 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
