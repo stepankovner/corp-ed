@@ -870,3 +870,30 @@ def test_judge_needs_exactly_one_file_without_calibrate(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit):
         judge.main(["--results", str(tmp_path / "a.csv"), str(tmp_path / "b.csv")])
+
+
+def test_load_corpus_reads_files_like_the_product(tmp_path: Path) -> None:
+    # Сверка 04.10: стенд разбирает файлы функцией продукта — колонтитулы
+    # docx, txt в Windows-1251, .markdown; непринятый файл — не в корпусе.
+    from tests.ingest import samples
+
+    (tmp_path / "Положение.docx").write_bytes(
+        samples.docx(
+            [("Положение об отпусках", "Heading1"), ("Текст положения.", None)],
+            extra_parts={
+                "word/header1.xml": samples.running_part("hdr", ["Положение П-ОТП-07"])
+            },
+        )
+    )
+    (tmp_path / "Офис.txt").write_bytes("Пропуск — на ресепшене.".encode("cp1251"))
+    (tmp_path / "Глоссарий.markdown").write_text(
+        "# ЦУП\n\nЦентр учёта поставок.", "utf-8"
+    )
+    (tmp_path / "Пустой.txt").write_text("   \n", encoding="utf-8")
+
+    documents = {d.title: d.markdown for d in load_corpus(tmp_path)}
+
+    assert sorted(documents) == ["Глоссарий", "Офис", "Положение"]
+    assert "П-ОТП-07" in documents["Положение"]
+    assert "Пропуск — на ресепшене." in documents["Офис"]
+    assert "Центр учёта поставок." in documents["Глоссарий"]
