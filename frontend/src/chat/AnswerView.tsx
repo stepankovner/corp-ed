@@ -28,7 +28,7 @@ import styles from "./Chat.module.css";
 import { stripGeneralPrefix } from "./citations";
 import { conversationKey } from "./keys";
 import { Markdown } from "./Markdown";
-import { groupSources, sourceSection } from "./sources";
+import { citedSources, sourceSection, type SourceCard } from "./sources";
 import type { LiveAnswer } from "./store";
 
 export interface OpenSource {
@@ -36,28 +36,40 @@ export interface OpenSource {
   index: number;
 }
 
+/** Маркер в тексте — номер карточки источника (sources.ts, citedSources). */
 function CitationButton({
-  n,
-  sources,
+  card,
+  source,
   onOpen,
 }: {
-  n: number;
-  sources: Source[];
+  card: SourceCard<Source> | undefined;
+  /** Номер выдержки, на которую сослалась фраза: панель подсветит её. */
+  source: number;
   onOpen: (index: number) => void;
 }) {
-  const source = sources[n - 1];
-  if (!source) return <>[{n}]</>;
+  if (!card) return null;
+  const index = card.numbers.includes(source) ? source - 1 : card.index;
   return (
     <button
       type="button"
       className={styles.src}
-      onClick={() => onOpen(n - 1)}
-      aria-label={`Источник ${n}: ${source.title}`}
+      onClick={() => onOpen(index)}
+      aria-label={`Источник ${card.display}: ${card.source.title}`}
       aria-controls="source-panel"
     >
-      {n}
+      {card.display}
     </button>
   );
+}
+
+/** Подпись под названием карточки: раздел, файл сотрудника, сколько фрагментов. */
+function cardMeta(card: SourceCard<Source>): string {
+  const { source } = card;
+  const count = card.numbers.length;
+  const fragments = `${count} ${plural(count, "фрагмент", "фрагмента", "фрагментов")}`;
+  if (source.kind === "attachment") return count > 1 ? `ваш файл · ${fragments}` : "ваш файл";
+  if (source.content === null) return "недоступен";
+  return sourceSection(source) || (count > 1 ? fragments : `фрагмент ${source.position + 1}`);
 }
 
 const ERRORS: Record<string, string> = {
@@ -126,6 +138,7 @@ export function AnswerBody({
   const general = origin === "general_knowledge";
   const content = general ? stripGeneralPrefix(raw) : raw;
   const sources = live ? [] : message.sources;
+  const cited = citedSources(sources, content);
   return (
     <div className={`${styles.msg} ${styles.bot}`}>
       {general ? (
@@ -138,10 +151,13 @@ export function AnswerBody({
       ) : null}
       <div className={streaming ? styles.streaming : undefined}>
         <Markdown
+          citationMap={cited.displayOf}
           renderCitation={
             general || streaming
               ? undefined
-              : (n) => <CitationButton n={n} sources={sources} onOpen={onOpenSource} />
+              : (n, source) => (
+                  <CitationButton card={cited.cards[n - 1]} source={source} onOpen={onOpenSource} />
+                )
           }
         >
           {content}
@@ -154,42 +170,27 @@ export function AnswerBody({
           {ERRORS[message.error_code ?? ""] ?? ERRORS.internal} Ответ не дописан.
         </p>
       ) : null}
-      {sources.length > 0 && !general ? (
+      {cited.cards.length > 0 && !general ? (
         <div className={styles.sources}>
-          {groupSources(sources).map(({ source, index, numbers }) => {
+          {cited.cards.map((card) => {
             const expanded =
-              openSource?.messageId === message.id && numbers.includes(openSource.index + 1);
+              openSource?.messageId === message.id && card.numbers.includes(openSource.index + 1);
             return (
               <button
-                key={index}
+                key={card.display}
                 type="button"
                 className={styles.sourceBtn}
                 aria-expanded={expanded}
                 aria-controls="source-panel"
-                onClick={() => onOpenSource(index)}
+                onClick={() => onOpenSource(card.index)}
               >
                 <span className={styles.srcNumbers} aria-hidden>
-                  {numbers.map((n) => (
-                    <span key={n} className={`${styles.src} ${styles.srcStatic}`}>
-                      {n}
-                    </span>
-                  ))}
+                  <span className={`${styles.src} ${styles.srcStatic}`}>{card.display}</span>
                 </span>
                 <span className={styles.sourceText}>
-                  <span className="visually-hidden">
-                    {numbers.length > 1 ? "Источники" : "Источник"} {numbers.join(", ")}:{" "}
-                  </span>
-                  <span className={styles.sourceTitle}>{source.title}</span>
-                  <span className={`mono ${styles.sourceMeta}`}>
-                    {source.kind === "attachment"
-                      ? "ваш файл"
-                      : source.content === null
-                        ? "недоступен"
-                        : sourceSection(source) ||
-                          (numbers.length > 1
-                            ? `${numbers.length} ${plural(numbers.length, "фрагмент", "фрагмента", "фрагментов")}`
-                            : `фрагмент ${source.position + 1}`)}
-                  </span>
+                  <span className="visually-hidden">Источник {card.display}: </span>
+                  <span className={styles.sourceTitle}>{card.source.title}</span>
+                  <span className={`mono ${styles.sourceMeta}`}>{cardMeta(card)}</span>
                 </span>
               </button>
             );

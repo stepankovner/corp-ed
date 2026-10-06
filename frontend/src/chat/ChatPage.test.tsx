@@ -64,6 +64,74 @@ describe("новый диалог", () => {
     );
   });
 
+  it("файл сотрудника — одна карточка; маркеры подряд и повторы в абзаце сливаются", async () => {
+    signedIn();
+    // Владелец 06.10: девять фрагментов одного файла — девять карточек
+    // «ваш файл» и ①②③④⑤⑥⑧⑨ к одной фразе.
+    const sources = Array.from({ length: 9 }, (_, i) => ({
+      kind: "attachment" as const,
+      material_id: null,
+      attachment_id: "a-1",
+      title: "Детектив про театр.md",
+      heading_path: [`Глава ${i + 1}`],
+      position: i,
+      content: `Текст главы ${i + 1}.`,
+      source_url: null,
+    }));
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(
+          conversation([
+            question({ content: "О чём документ?" }),
+            reply({
+              content:
+                "Речь о детективе [1][2][3][4][5][6][8][9]. Убийца — Волков [8]. Сообщник — Завьялов [8].",
+              sources,
+            }),
+          ]),
+        ),
+      ),
+    );
+    renderApp("/c/c-1");
+    const user = userEvent.setup();
+
+    const card = await screen.findByRole("button", {
+      name: /^Источник 1:\s?Детектив про театр\.md\s?ваш файл · 8 фрагментов$/,
+    });
+    // Одна карточка и один маркер: весь абзац — из одного файла, маркер в
+    // конце; [1]…[9] к первой фразе — одна группа, она уходит в общий.
+    expect(screen.getAllByRole("button", { name: /^Источник/ })).toHaveLength(2);
+    expect(
+      screen.getByText(/Речь о детективе\. Убийца — Волков\. Сообщник — Завьялов/),
+    ).toBeInTheDocument();
+
+    // Маркер открывает тот фрагмент, на который ссылалась последняя фраза.
+    await user.click(screen.getByRole("button", { name: "Источник 1: Детектив про театр.md" }));
+    const panel = await screen.findByRole("dialog");
+    expect(within(panel).getByText("Фрагменты вашего файла")).toBeInTheDocument();
+    expect(within(panel).getByText("Глава 8")).toBeInTheDocument();
+    expect(within(panel).queryByText("Глава 7")).not.toBeInTheDocument();
+    expect(within(panel).getByText("Текст главы 8.").closest("div")).toHaveClass(/hl/);
+    expect(card).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("карточки — только источники, на которые ответ ссылается", async () => {
+    signedIn();
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(
+          conversation([question(), reply({ content: "За рубеж — 2500 [2].", sources: SOURCES })]),
+        ),
+      ),
+    );
+    renderApp("/c/c-1");
+
+    expect(
+      await screen.findByRole("button", { name: /^Источник 1:\s?Приказ о суточных\s?фрагмент 1$/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Положение о командировках.docx")).not.toBeInTheDocument();
+  });
+
   it("фрагменты одного раздела — одна карточка, в панели оба", async () => {
     signedIn();
     const [first, second] = SOURCES;
@@ -92,20 +160,23 @@ describe("новый диалог", () => {
     );
     renderApp("/c/c-1");
     const user = userEvent.setup();
+    // Номера — по карточкам (06.10): [1] и [3] из одного раздела — оба «1».
     const card = await screen.findByRole("button", {
-      name: /^Источники 1, 3:\s?Положение о командировках\.docx/,
+      name: /^Источник 1:\s?Положение о командировках\.docx\s?Положение о командировках › 2\. Суточные$/,
     });
     expect(screen.getAllByRole("button", { name: /^Источник/ })).toHaveLength(
       // две карточки и три ссылки [n] в тексте
       5,
     );
 
-    await user.click(
-      screen.getByRole("button", { name: "Источник 3: Положение о командировках.docx" }),
-    );
+    const markers = screen.getAllByRole("button", {
+      name: "Источник 1: Положение о командировках.docx",
+    });
+    await user.click(markers[1]!);
     const panel = await screen.findByRole("dialog");
-    expect(within(panel).getByText("источники 1, 3")).toBeInTheDocument();
+    expect(within(panel).getByText("источник 1")).toBeInTheDocument();
     expect(within(panel).getByText("фрагмент 1")).toBeInTheDocument();
+    expect(within(panel).getByText("фрагмент 2")).toBeInTheDocument();
     expect(
       within(panel).getByText("Суточные при командировках по России — 700 рублей в сутки."),
     ).toBeInTheDocument();

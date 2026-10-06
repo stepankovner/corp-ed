@@ -42,9 +42,8 @@ export function SharedPage() {
     );
   }
   const data = shared.data;
-  const sources = opened
-    ? data.messages.find((m) => m.id === opened.messageId)?.sources
-    : undefined;
+  const openedMessage = opened ? data.messages.find((m) => m.id === opened.messageId) : undefined;
+  const sources = openedMessage?.sources;
 
   return (
     <section className={styles.page} aria-labelledby="chat-title">
@@ -81,7 +80,12 @@ export function SharedPage() {
         </div>
       </div>
       {opened && sources?.[opened.index] ? (
-        <SourcePanel sources={sources} index={opened.index} onClose={close} />
+        <SourcePanel
+          sources={sources}
+          content={openedMessage?.content ?? ""}
+          index={opened.index}
+          onClose={close}
+        />
       ) : null}
     </section>
   );
