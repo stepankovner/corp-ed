@@ -58,10 +58,39 @@ def resolver_for(*addresses: str):  # type: ignore[no-untyped-def]
         "2002:7f00:1::",  # 6to4 → 127.0.0.1
         "2002:a00:1::",  # 6to4 → 10.0.0.1
         "2001:0:0:0:0:0:7f00:1",  # Teredo с частным адресом
+        "64:ff9b::7f00:1",  # NAT64 → 127.0.0.1
+        "64:ff9b::a00:1",  # NAT64 → 10.0.0.1
+        "64:ff9b::a9fe:a9fe",  # NAT64 → 169.254.169.254
+        "64:ff9b:1::a00:1",  # NAT64 local-use
+        "::7f00:1",  # IPv4-compatible → 127.0.0.1
+        "::a9fe:a9fe",  # IPv4-compatible → 169.254.169.254
+        "::ffff:0:a00:1",  # IPv4-translated → 10.0.0.1
     ],
 )
 def test_non_public_addresses_are_rejected(address: str) -> None:
     assert not is_public_address(ipaddress.ip_address(address))
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "64:ff9b::808:808",
+        "64:ff9b:1::808:808",
+        "::808:808",
+        "::ffff:0:808:808",
+    ],
+)
+def test_ipv4_translation_prefixes_are_rejected_whatever_they_embed(
+    address: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NAT64 и IPv4-compatible: настоящий адрес назначения выбирает
+    транслятор, а не мы. Такие адреса отвергаются сами по себе, а не
+    потому, что таблица ipaddress сегодня считает ::/8 зарезервированным."""
+    monkeypatch.setattr(ipaddress.IPv6Address, "is_reserved", property(lambda _: False))
+    monkeypatch.setattr(ipaddress.IPv6Address, "is_private", property(lambda _: False))
+    monkeypatch.setattr(ipaddress.IPv6Address, "is_global", property(lambda _: True))
+    assert not is_public_address(ipaddress.ip_address(address))
+    assert is_public_address(ipaddress.ip_address("2001:4860:4860::8888"))
 
 
 @pytest.mark.parametrize("address", [PUBLIC, "8.8.8.8", "2001:4860:4860::8888"])

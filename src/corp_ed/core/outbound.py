@@ -9,7 +9,8 @@
 - имя резолвится ЗДЕСЬ, и каждый адрес проверяется: публичный, не
   loopback, не частный (RFC 1918, ULA), не link-local, не multicast,
   не служебный; IPv6 с вложенным IPv4 (mapped, 6to4, Teredo)
-  проверяется по вложенному адресу;
+  проверяется по вложенному адресу, а префиксы трансляции (NAT64,
+  IPv4-compatible) отвергаются целиком;
 - запрос уходит на ПРОВЕРЕННЫЙ адрес (IP в URL, имя — в Host и SNI),
   а не на имя, которое DNS мог подменить между проверкой и подключением
   (DNS rebinding);
@@ -117,9 +118,25 @@ async def system_resolver(host: str) -> list[str]:
     return seen
 
 
+# Префиксы трансляции IPv6 → IPv4: NAT64 (RFC 6052, общий префикс, и
+# RFC 8215, локальный — где в нём лежит IPv4, решает оператор), устаревшие
+# IPv4-compatible (::a.b.c.d) и IPv4-translated (::ffff:0:a.b.c.d).
+# Настоящий адрес назначения выбирает транслятор, а не наша проверка, —
+# к таким адресам воркер не подключается вовсе. Явный список, а не
+# надежда на то, что таблица ipaddress считает ::/8 зарезервированным.
+_IPV4_TRANSLATION_NETWORKS = (
+    ipaddress.IPv6Network("64:ff9b::/96"),
+    ipaddress.IPv6Network("64:ff9b:1::/48"),
+    ipaddress.IPv6Network("::/96"),
+    ipaddress.IPv6Network("::ffff:0:0:0/96"),
+)
+
+
 def is_public_address(address: IPAddress) -> bool:
     """Публичный адрес, к которому воркеру можно подключаться."""
     if isinstance(address, ipaddress.IPv6Address):
+        if any(address in network for network in _IPV4_TRANSLATION_NETWORKS):
+            return False
         embedded = address.ipv4_mapped or address.sixtofour or address.teredo
         if isinstance(embedded, tuple):
             # Teredo: (сервер, клиент) — оба должны быть публичными.
