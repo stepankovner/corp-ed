@@ -27,10 +27,20 @@ class Base(DeclarativeBase):
     """Базовый класс для всех ORM-моделей."""
 
 
+def build_engine(url: str, *, echo: bool = False) -> AsyncEngine:
+    """Движок базы для приложения, воркера и CLI.
+
+    hide_parameters: текст ошибки SQLAlchemy (и echo-лог) без значений
+    параметров. Иначе `[parameters: (…)]` с почтой, текстом вопроса и
+    хешами уходит в трассировку, а она — в логи (unhandled_error).
+    """
+    return create_async_engine(url, echo=echo, hide_parameters=True)
+
+
 @lru_cache
 def get_engine() -> AsyncEngine:
     settings = get_settings()
-    return create_async_engine(settings.database_url, echo=settings.debug)
+    return build_engine(settings.database_url, echo=settings.debug)
 
 
 @lru_cache
