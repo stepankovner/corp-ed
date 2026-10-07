@@ -107,12 +107,15 @@ class UserRepository:
         return list(result)
 
     async def count_active_admins(self) -> int:
-        # count() — колоночный select: хук изоляции его тоже фильтрует,
-        # потому что в запросе участвует тенант-модель User (all_mappers).
+        # Компания — явным условием: в select(func.count()).select_from(User)
+        # сущности нет в списке колонок, хук изоляции его не фильтрует, и
+        # роль без RLS посчитала бы админов всех компаний (проверено 07.10).
         result = await self.session.scalar(
-            select(func.count())
-            .select_from(User)
-            .where(User.role == UserRole.ADMIN, User.status == MemberStatus.ACTIVE)
+            select(func.count(User.id)).where(
+                User.tenant_id == require_tenant(),
+                User.role == UserRole.ADMIN,
+                User.status == MemberStatus.ACTIVE,
+            )
         )
         return int(result or 0)
 

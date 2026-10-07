@@ -126,7 +126,7 @@ class DemoService:
                 member = await self._member(session)
                 if member is None:
                     raise _off()
-                if await _has_other_members(session, member.account_id):
+                if await _has_other_members(session, tenant.id, member.account_id):
                     # DEMO_COMPANY_CODE указывает на настоящую компанию:
                     # анонимно отвечать от её имени нельзя.
                     logger.error("demo_tenant_not_sandbox", tenant_id=str(tenant.id))
@@ -217,7 +217,9 @@ class DemoService:
                 account.hashed_password = NO_LOGIN_HASH
 
             with tenant_scope(tenant.id):
-                if not tenant_created and await _has_other_members(session, account.id):
+                if not tenant_created and await _has_other_members(
+                    session, tenant.id, account.id
+                ):
                     raise DomainError(
                         f"Компания {settings.company_code} уже есть и это не "
                         "песочница: в ней есть сотрудники. Проверьте "
@@ -312,13 +314,18 @@ def _source(match: ChunkMatch) -> DemoSource:
 
 
 async def _has_other_members(
-    session: AsyncSession, demo_account_id: UUID | None
+    session: AsyncSession, tenant_id: UUID, demo_account_id: UUID | None
 ) -> bool:
     """В компании песочницы есть кто-то, кроме её служебной учётки, — значит,
-    это не песочница (ошибка в DEMO_COMPANY_CODE). Сессия — в tenant_scope."""
+    это не песочница (ошибка в DEMO_COMPANY_CODE).
+
+    Компания — явным условием: в count() без сущности в списке колонок
+    ORM-фильтр тенанта не срабатывает, а роль без RLS (суперпользователь
+    в CI) посчитала бы людей всех компаний."""
     count = await session.scalar(
-        select(func.count())
-        .select_from(User)
-        .where(User.account_id.is_distinct_from(demo_account_id))
+        select(func.count(User.id)).where(
+            User.tenant_id == tenant_id,
+            User.account_id.is_distinct_from(demo_account_id),
+        )
     )
     return bool(count)
