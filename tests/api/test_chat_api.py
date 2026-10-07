@@ -20,6 +20,9 @@ from corp_ed.domain.models import (
     ChatAttachment,
     ChatMessage,
     Chunk,
+    Department,
+    Folder,
+    FolderDepartment,
     Material,
     MaterialAccess,
     QaLog,
@@ -31,6 +34,7 @@ from corp_ed.domain.types import NotFoundMode
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.main import app
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
+from corp_ed.services.chat_service import HIDDEN_ANSWER
 from corp_ed.services.retention_service import RetentionService
 from tests.api.conftest import bearer
 from tests.api.test_faq_api import BusyLLM, FailingLLM
@@ -189,6 +193,61 @@ async def test_follow_up_question_gets_history_from_the_conversation(
     logs = (await session.scalars(select(QaLog).order_by(QaLog.created_at))).all()
     assert [log.history_turns for log in logs] == [0, 1]
     assert logs[1].standalone_question is not None
+
+
+async def test_answer_from_a_closed_folder_is_hidden_after_access_is_lost(
+    api: httpx.AsyncClient,
+    employee: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    """Сотрудника убрали из отдела: в его прежнем диалоге ответ по закрытой
+    папке отдела больше не показывается и в модель с историей не уходит.
+    Ответ по удалённому документу так не скрывается — это не снятие прав."""
+    department = Department(tenant_id=tenant_ctx.id, name="Бухгалтерия")
+    folder = Folder(tenant_id=tenant_ctx.id, name="Закрытая", restricted=True)
+    session.add_all([department, folder])
+    await session.flush()
+    session.add(
+        FolderDepartment(
+            tenant_id=tenant_ctx.id, folder_id=folder.id, department_id=department.id
+        )
+    )
+    employee.department_id = department.id
+    employee.department_confirmed = True
+    await session.commit()
+    employee_id = employee.id
+    await _document(session, tenant_ctx, folder_id=folder.id)
+
+    first = await _ask(api, employee, "Сколько дней отпуска?")
+    conversation_id = first[0]["conversation"]["id"]
+    answer = final(first)["answer"]
+    assert answer["sources"][0]["content"]
+    assert answer["content"] != HIDDEN_ANSWER
+
+    with tenant_scope(tenant_ctx.id):
+        member = await session.get(User, employee_id)
+        assert member is not None
+        member.department_id = None
+        member.department_confirmed = False
+        await session.commit()
+
+    view = await api.get(f"{BASE}/{conversation_id}", headers=bearer(employee))
+    assert view.status_code == 200, view.text
+    shown = view.json()["messages"][-1]
+    assert shown["content"] == HIDDEN_ANSWER
+    assert shown["sources"][0]["content"] is None
+
+    follow = await _ask(
+        api,
+        employee,
+        "А для совместителей?",
+        conversation_id=conversation_id,
+        parent_id=answer["id"],
+    )
+    assert final(follow)["type"] == "done"
+    logs = (await session.scalars(select(QaLog).order_by(QaLog.created_at))).all()
+    assert [log.history_turns for log in logs] == [0, 0]
 
 
 async def test_general_answer_streams_without_service_prefix(

@@ -368,7 +368,7 @@ class ChatService:
             ),
             answer=MessageView(answer, tree.siblings(answer)),
             question_text=text,
-            history=self._history(path),
+            history=self._history(path, await self._closed_materials(path, member)),
             attachment_ids=self._path_attachments([*path, question_message]),
         )
         await self.session.commit()
@@ -407,7 +407,9 @@ class ChatService:
             question=MessageView(question, tree.siblings(question), attachments),
             answer=MessageView(answer, tree.siblings(answer)),
             question_text=question.content,
-            history=self._history(path[:-1]),
+            history=self._history(
+                path[:-1], await self._closed_materials(path, member)
+            ),
             attachment_ids=self._path_attachments(path),
         )
         await self.session.commit()
@@ -579,12 +581,14 @@ class ChatService:
             attachment.conversation_id = conversation.id
         return attachments
 
-    def _history(self, path: Sequence[ChatMessage]) -> list[Turn]:
+    def _history(self, path: Sequence[ChatMessage], closed: set[UUID]) -> list[Turn]:
         """Последние пары «вопрос — ответ» ветки для модели (BH-28).
 
         Вопрос — после mask_pii, как в журнале; ответ — что видел
         сотрудник, с той же обрезкой, что в Redis. Неудавшиеся ответы в
-        историю не идут.
+        историю не идут; ответы по документам, к которым у сотрудника
+        больше нет доступа (closed), — тоже: иначе снятый доступ
+        возвращался бы в модель через историю.
         """
         if self.history_turns <= 0:
             return []
@@ -596,6 +600,7 @@ class ChatService:
                 and answer.parent_id == question.id
                 and answer.status in ("complete", "stopped")
                 and answer.content
+                and not _material_ids(answer) & closed
             ):
                 turns.append(Turn(question=question.content, answer=answer.content))
         return [
@@ -611,13 +616,26 @@ class ChatService:
                 seen[attachment_id] = None
         return list(seen)
 
+    async def _closed_materials(
+        self, messages: Sequence[ChatMessage], viewer: User
+    ) -> set[UUID]:
+        ids = {i for message in messages for i in _material_ids(message)}
+        return await self.chunks.closed_material_ids(ids, viewer=viewer.id)
+
     async def _view(
         self, conversation: Conversation, tree: _Tree, *, viewer: User
     ) -> ConversationView:
         path = tree.path(conversation.current_message_id)
+        closed = await self._closed_materials(path, viewer)
         return ConversationView(
             conversation=conversation,
-            messages=await self._message_views(path, tree, viewer=viewer),
+            messages=[
+                _hide_answer(view)
+                if _material_ids(view.message) & closed
+                and view.message.role == "assistant"
+                else view
+                for view in await self._message_views(path, tree, viewer=viewer)
+            ],
         )
 
     async def _message_views(
@@ -650,16 +668,28 @@ class ChatService:
 HIDDEN_ANSWER = "Ответ опирается на документы, к которым у вас нет доступа."
 
 
+def _material_ids(message: ChatMessage) -> set[UUID]:
+    return {
+        UUID(source["material_id"])
+        for source in message.sources or []
+        if source.get("kind", "document") == "document" and source.get("material_id")
+    }
+
+
+def _hide_answer(view: MessageView) -> MessageView:
+    return replace(view, content=HIDDEN_ANSWER)
+
+
 def _hide_closed_answer(view: MessageView) -> MessageView:
     """Общая ссылка: текст источника без доступа скрыт, а ответ его
-    пересказывает — скрыть и ответ (разбор 06.10). Отличие от своего
-    диалога: там документ мог быть удалён после ответа, здесь смотрит
-    другой человек со своими правами."""
+    пересказывает — скрыть и ответ (разбор 06.10). Свой диалог скрывается
+    иначе (_view): только если доступ к документу снят, а не если документ
+    удалён — смотрит тот же человек, что спрашивал."""
     if view.message.role != "assistant" or not any(
         source.kind == "document" and source.content is None for source in view.sources
     ):
         return view
-    return replace(view, content=HIDDEN_ANSWER)
+    return _hide_answer(view)
 
 
 def source_view(raw: dict[str, Any], visible: set[UUID]) -> SourceView:

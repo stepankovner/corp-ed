@@ -119,6 +119,27 @@ class ChunkRepository:
         )
         return set(result.all())
 
+    async def closed_material_ids(
+        self, material_ids: Iterable[UUID], *, viewer: UUID
+    ) -> set[UUID]:
+        """Какие из документов есть в компании, но сотруднику сейчас не
+        видны: доступ снят (ушёл из отдела, папку закрыли). Удалённых
+        документов здесь нет — это не снятие прав."""
+        ids = set(material_ids)
+        if not ids:
+            return set()
+        tenant_id = require_tenant()
+        existing = set(
+            (
+                await self.session.scalars(
+                    select(Material.id).where(
+                        Material.id.in_(ids), Material.tenant_id == tenant_id
+                    )
+                )
+            ).all()
+        )
+        return existing - await self.visible_material_ids(existing, viewer=viewer)
+
     async def search(
         self, embedding: list[float], limit: int = 5, *, viewer: UUID
     ) -> list[ChunkMatch]:

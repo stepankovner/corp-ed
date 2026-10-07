@@ -2486,6 +2486,9 @@ async def test_self_chosen_department_opens_closed_folder_only_after_admin(
     assert chosen.json()["department_confirmed"] is False, chosen.text
     await assert_secret_hidden_from(outsider, r.secret_id)
 
-    confirmed = await r.admin.post(f"{API}/users/{member}/department/confirm")
+    confirmed = await r.admin.post(
+        f"{API}/users/{member}/department/confirm",
+        json={"department_id": r.dept_in},
+    )
     assert confirmed.status_code == 200, confirmed.text
     await assert_secret_visible_to(outsider, r.secret_id)

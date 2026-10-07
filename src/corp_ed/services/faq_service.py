@@ -243,14 +243,18 @@ class FaqService:
             user_id=user.id,
             conversation_id=conversation_id or uuid4(),
         )
-        history = await self._history(dialogue) if conversation_id else []
+        history = await self._history(dialogue, user) if conversation_id else []
         result = await self.answer_turn(
             question, user, history=history, conversation_id=dialogue.conversation_id
         )
         # После commit: реплика, которой нет в журнале, в историю не идёт.
         # Вопрос — как в журнале (после mask_pii), ответ — что видел
         # сотрудник; отказы — тоже реплики (контракт BH-28).
-        await self._remember(dialogue, Turn(mask_pii(question), result.content))
+        await self._remember(
+            dialogue,
+            Turn(mask_pii(question), result.content),
+            materials={match.material_id for match in result.sources},
+        )
         return result
 
     async def answer_turn(
@@ -588,19 +592,29 @@ class FaqService:
             ms=elapsed,
         )
 
-    async def _history(self, dialogue: DialogueKey) -> list[Turn]:
-        """Последние history_turns реплик диалога; сбой — без истории."""
+    async def _history(self, dialogue: DialogueKey, user: User) -> list[Turn]:
+        """Последние history_turns реплик диалога; сбой — без истории.
+
+        Реплики по документам, к которым у сотрудника больше нет доступа
+        (ушёл из отдела, папку закрыли), отбрасываются: снятый доступ не
+        возвращается в модель через историю."""
         if self.history_turns <= 0 or self.dialogue_store is None:
             return []
         try:
-            turns = await self.dialogue_store.load(dialogue)
+            remembered = await self.dialogue_store.load_remembered(dialogue)
         except DialogueStoreUnavailableError:
             logger.warning("faq_dialogue_store_unavailable", stage="load")
             FAQ_DEGRADED.labels("dialogue_store").inc()
             return []
+        closed = await self.chunk_repo.closed_material_ids(
+            {m for item in remembered for m in item.materials}, viewer=user.id
+        )
+        turns = [item.turn for item in remembered if not item.materials & closed]
         return recent_turns(turns, self.history_turns)
 
-    async def _remember(self, dialogue: DialogueKey, turn: Turn) -> None:
+    async def _remember(
+        self, dialogue: DialogueKey, turn: Turn, *, materials: set[UUID]
+    ) -> None:
         if self.history_turns <= 0 or self.dialogue_store is None:
             return
         try:
@@ -609,6 +623,7 @@ class FaqService:
                 turn,
                 keep=self.history_turns,
                 ttl_seconds=self.history_ttl_seconds,
+                materials=materials,
             )
         except DialogueStoreUnavailableError:
             logger.warning("faq_dialogue_store_unavailable", stage="append")
