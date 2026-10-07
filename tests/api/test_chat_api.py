@@ -966,3 +966,97 @@ async def test_admin_suggestions_and_frequent_questions(
         f"/api/v1/suggestions/{created[0]['id']}", headers=headers
     )
     assert deleted.status_code == 204
+
+
+async def test_frequent_questions_follow_the_viewers_access_to_sources(
+    api: httpx.AsyncClient,
+    admin: User,
+    employee: User,
+    colleague: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    """Частый вопрос, на который ответили только закрытые документы, не
+    подсказывается тому, кому они закрыты: формулировка выдала бы, о чём
+    эти документы. Права спрашивавших не важны — только смотрящего."""
+    sales = Department(tenant_id=tenant_ctx.id, name="Продажи")
+    closed = Folder(tenant_id=tenant_ctx.id, name="Продажи: закрыто", restricted=True)
+    session.add_all([sales, closed])
+    await session.flush()
+    session.add(
+        FolderDepartment(
+            tenant_id=tenant_ctx.id, folder_id=closed.id, department_id=sales.id
+        )
+    )
+    in_sales = make_user(
+        tenant_id=tenant_ctx.id,
+        email="sales@test.com",
+        department_id=sales.id,
+        department_confirmed=True,
+    )
+    # Отдел выбран самим сотрудником и ещё не подтверждён (ТЗ §7).
+    pending = make_user(
+        tenant_id=tenant_ctx.id,
+        email="pending@test.com",
+        department_id=sales.id,
+        department_confirmed=False,
+    )
+    session.add_all([in_sales, pending])
+    await session.commit()
+
+    folder_doc = await _document(
+        session, tenant_ctx, title="План сокращений", folder_id=closed.id
+    )
+    restricted_doc = await _document(
+        session, tenant_ctx, title="Бонусы руководителей", visibility="restricted"
+    )
+    open_doc = await _document(session, tenant_ctx, title="Пропуска")
+    session.add(MaterialAccess(material_id=restricted_doc.id, user_id=employee.id))
+    await session.commit()
+
+    async def chunk_of(material: Material) -> UUID:
+        return (
+            await session.scalars(
+                select(Chunk.id).where(Chunk.material_id == material.id)
+            )
+        ).one()
+
+    def log(user: User, question: str, source: UUID) -> QaLog:
+        return QaLog(
+            tenant_id=tenant_ctx.id,
+            user_id=user.id,
+            question=question,
+            question_embedding=[0.1] * EMBEDDING_DIM,
+            embedding_model="fake",
+            prompt_version="test",
+            answer_given=True,
+            origin="documents",
+            source_chunk_ids=[source],
+        )
+
+    asked = {
+        "Когда сокращение в отделе продаж?": await chunk_of(folder_doc),
+        "Какой бонус у руководителей?": await chunk_of(restricted_doc),
+        "Как заказать пропуск для гостя?": await chunk_of(open_doc),
+    }
+    session.add_all(
+        [
+            log(user, question, source)
+            for question, source in asked.items()
+            for user in (employee, colleague, in_sales)
+        ]
+    )
+    await session.commit()
+
+    async def frequent(viewer: User) -> set[str]:
+        response = await api.get("/api/v1/suggestions", headers=bearer(viewer))
+        assert response.status_code == 200, response.text
+        return set(response.json()["frequent"])
+
+    everyone = "Как заказать пропуск для гостя?"
+    assert await frequent(colleague) == {everyone}
+    assert await frequent(pending) == {everyone}
+    assert await frequent(in_sales) == {everyone, "Когда сокращение в отделе продаж?"}
+    assert await frequent(employee) == {everyone, "Какой бонус у руководителей?"}
+    # Закрытые папки администратору открыты, права источника — нет.
+    assert await frequent(admin) == {everyone, "Когда сокращение в отделе продаж?"}

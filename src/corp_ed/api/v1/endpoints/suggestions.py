@@ -38,7 +38,8 @@ async def list_suggestions(
 ) -> SuggestionsResponse:
     """Подсказки для пустого экрана: от администратора и частые вопросы
     компании (обезличенно, не меньше трёх разных людей)."""
-    suggestions = await service.for_chat()
+    # Частые вопросы — по документам, видимым этому сотруднику.
+    suggestions = await service.for_chat(member)
     return SuggestionsResponse(
         company=[_item(item) for item in suggestions.company],
         frequent=suggestions.frequent,

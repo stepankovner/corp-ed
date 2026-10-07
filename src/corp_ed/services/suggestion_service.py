@@ -3,7 +3,9 @@
 Два источника: заданные администратором (первыми, в его порядке) и
 частые вопросы компании — только обезличенно: текст из журнала после
 маски персональных данных и только если вопрос задали несколько разных
-людей (SuggestionRepository.frequent_questions).
+людей (SuggestionRepository.frequent_questions). Частые вопросы у
+каждого свои: в счёт идут только ответы из документов, которые
+сотруднику видны.
 """
 
 from dataclasses import dataclass
@@ -42,12 +44,19 @@ class SuggestionService:
         self.repo = SuggestionRepository(session)
         self.audit = audit
 
-    async def for_chat(self) -> Suggestions:
+    async def for_chat(self, viewer: User) -> Suggestions:
+        """Подсказки для пустого экрана чата сотрудника viewer.
+
+        Частые вопросы — только те, на которые ответили документы, видимые
+        viewer (SuggestionRepository.frequent_questions): вопрос, ответ на
+        который есть лишь в закрытых для него документах, выдал бы их тему.
+        """
         company = await self.repo.list_all()
         taken = {item.text.casefold() for item in company}
         frequent = [
             text
             for text in await self.repo.frequent_questions(
+                viewer=viewer.id,
                 since=datetime.now(UTC) - FREQUENT_WINDOW,
                 min_users=FREQUENT_MIN_USERS,
                 limit=FREQUENT_LIMIT,
