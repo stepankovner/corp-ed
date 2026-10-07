@@ -97,6 +97,11 @@ SEARCH_PER_USER = RatePolicy("search-user", limit=60, window=60, fail_open=True)
 ATTACHMENT_PER_USER = RatePolicy(
     "attachment-user", limit=30, window=3600, fail_open=True
 )
+# Просмотр диалога по общей ссылке: читают коллеги, перебор ссылок не
+# нужен и бессмыслен (токен 192 бита), но и без лимита ручку не оставляем.
+SHARED_VIEW_PER_USER = RatePolicy(
+    "shared-view-user", limit=120, window=60, fail_open=True
+)
 CHAT_EDIT_PER_USER = RatePolicy(
     "chat-edit-user", limit=240, window=3600, fail_open=True
 )

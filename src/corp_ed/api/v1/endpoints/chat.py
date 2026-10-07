@@ -23,7 +23,12 @@ from corp_ed.api.v1.dependencies import (
     get_current_user,
     get_stop_signals,
 )
-from corp_ed.api.v1.rate_limits import CHAT_EDIT_PER_USER, FAQ_PER_USER, limit_by_user
+from corp_ed.api.v1.rate_limits import (
+    CHAT_EDIT_PER_USER,
+    FAQ_PER_USER,
+    SHARED_VIEW_PER_USER,
+    limit_by_user,
+)
 from corp_ed.api.v1.schemas.chat import (
     AskRequest,
     ChatStreamEvent,
@@ -133,7 +138,11 @@ async def start_conversation(
     return _stream(turn, member, generator, runner)
 
 
-@router.get("/shared/{token}", response_model=SharedConversationResponse)
+@router.get(
+    "/shared/{token}",
+    response_model=SharedConversationResponse,
+    dependencies=[Depends(limit_by_user(SHARED_VIEW_PER_USER))],
+)
 async def shared_conversation(
     token: Annotated[str, Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
     chat: Chat,

@@ -718,6 +718,46 @@ async def test_share_is_a_snapshot_for_colleagues_only(
     ).status_code == 404
 
 
+async def test_viewing_a_shared_link_changes_nothing_in_the_owners_dialog(
+    api: httpx.AsyncClient,
+    employee: User,
+    colleague: User,
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+) -> None:
+    """Коллега только читает: зависший ответ автора помечает прерванным
+    сам автор, когда открывает диалог, а не просмотр по ссылке."""
+    events = await _ask(api, employee, "Сколько дней отпуска?")
+    conversation_id = UUID(events[0]["conversation"]["id"])
+    answer_id = UUID(final(events)["answer"]["id"])
+    token = (
+        await api.post(f"{BASE}/{conversation_id}/share", headers=bearer(employee))
+    ).json()["token"]
+    with tenant_scope(tenant_ctx.id):
+        stuck = ChatMessage(
+            conversation_id=conversation_id,
+            parent_id=answer_id,
+            role="user",
+            content="Ещё вопрос",
+            status="generating",
+            created_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+        session.add(stuck)
+        await session.commit()
+        stuck_id = stuck.id
+
+    view = await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
+
+    assert view.status_code == 200
+    with tenant_scope(tenant_ctx.id):
+        status = await session.scalar(
+            select(ChatMessage.status)
+            .where(ChatMessage.id == stuck_id)
+            .execution_options(populate_existing=True)
+        )
+    assert status == "generating"
+
+
 async def test_shared_sources_follow_viewer_access(
     api: httpx.AsyncClient,
     employee: User,

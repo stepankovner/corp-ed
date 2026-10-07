@@ -506,7 +506,9 @@ class ChatService:
         owner = await self.users.get_by_id(conversation.user_id)
         if owner is None or owner.status is not MemberStatus.ACTIVE:
             raise NotFoundError("Ссылка недействительна")
-        tree = await self._tree(conversation)
+        # Только чтение: зависшие ответы автора помечает его собственный
+        # просмотр, не коллега по ссылке.
+        tree = await self._tree(conversation, mark_stale=False)
         path = [
             m
             for m in tree.path(conversation.shared_message_id)
@@ -516,7 +518,6 @@ class ChatService:
             _hide_closed_answer(view)
             for view in await self._message_views(path, tree, viewer=viewer)
         ]
-        await self.session.commit()
         return SharedView(
             conversation=conversation,
             owner_name=owner.full_name or "Коллега",
@@ -536,8 +537,12 @@ class ChatService:
             raise NotFoundError("Диалог не найден")
         return conversation
 
-    async def _tree(self, conversation: Conversation) -> _Tree:
+    async def _tree(
+        self, conversation: Conversation, *, mark_stale: bool = True
+    ) -> _Tree:
         messages = await self.messages.list_for(conversation.id)
+        if not mark_stale:
+            return _Tree(messages)
         # Задача, писавшая ответ, умерла (перезапуск API): ответ прерван.
         # Пишет вызывающий: своей транзакцией с остальными изменениями.
         stale = _now() - STALE_GENERATION
