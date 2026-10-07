@@ -7397,8 +7397,18 @@
     },
     "/api/v1/account/passkeys/options": {
       "post": {
-        "description": "Параметры для navigator.credentials.create().",
+        "description": "Параметры для navigator.credentials.create(). Пароль — как у\n/account/totp/setup.",
         "operationId": "passkey_options_api_v1_account_passkeys_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -7409,6 +7419,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -7586,8 +7606,18 @@
     },
     "/api/v1/account/totp/setup": {
       "post": {
-        "description": "Секрет для приложения (QR из otpauth_uri). Действует после\nподтверждения кодом — /account/totp/enable.",
+        "description": "Секрет для приложения (QR из otpauth_uri). Действует после\nподтверждения кодом — /account/totp/enable.\n\nПароль — как при отключении: одного access-токена мало, чтобы\nпривязать к учётке новый фактор.",
         "operationId": "start_totp_setup_api_v1_account_totp_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -7598,6 +7628,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [

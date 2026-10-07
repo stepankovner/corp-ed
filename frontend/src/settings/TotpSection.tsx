@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId, useState, type SubmitEvent } from "react";
+import { useId, useRef, useState, type SubmitEvent } from "react";
 
 import { CopyButton } from "../admin/common";
 import { api, unwrap, type Schemas } from "../api/client";
@@ -12,7 +12,7 @@ import { TextField } from "../ui/Field";
 import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
 import { useToast } from "../ui/useToast";
-import { Section } from "./common";
+import { PasswordDialog, Section } from "./common";
 import { SECURITY_KEY } from "./keys";
 import { QrCode } from "./QrCode";
 import styles from "./Settings.module.css";
@@ -36,11 +36,24 @@ export function TotpSection({
   const queryClient = useQueryClient();
   const toast = useToast();
   const [setup, setSetup] = useState<Setup | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const [disabling, setDisabling] = useState(false);
+  // Пароль нужен и для нового QR-кода, если время настройки выйдет; живёт
+  // только пока открыт диалог настройки.
+  const password = useRef<string | null>(null);
   const start = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/v1/account/totp/setup")),
-    onSuccess: setSetup,
+    mutationFn: (value: string) =>
+      unwrap(api.POST("/api/v1/account/totp/setup", { body: { password: value } })),
+    onSuccess: (result, value) => {
+      password.current = value;
+      setSetup(result);
+    },
   });
+
+  function finishSetup() {
+    password.current = null;
+    setSetup(null);
+  }
   // Единственный надёжный способ, а он обязателен: сервер отключить не даст.
   const locked = security.strong_required && security.passkeys.length === 0;
 
@@ -68,23 +81,36 @@ export function TotpSection({
             Отключить приложение
           </Button>
         ) : (
-          <Button size="sm" busy={start.isPending} onClick={() => start.mutate()}>
+          <Button size="sm" busy={start.isPending} onClick={() => setConfirming(true)}>
             Подключить приложение
           </Button>
         )}
       </div>
+      {confirming ? (
+        <PasswordDialog
+          title="Подключить приложение"
+          description="Подтвердите, что это вы: новый способ входа привязывается к учётной записи."
+          confirmLabel="Продолжить"
+          onClose={() => setConfirming(false)}
+          onConfirm={async (value) => {
+            await start.mutateAsync(value);
+            setConfirming(false);
+          }}
+        />
+      ) : null}
       {setup ? (
         <TotpSetupDialog
           setup={setup}
-          onClose={() => setSetup(null)}
+          onClose={finishSetup}
           onExpired={() => {
             // Секрет настройки сгорел — новый секрет и новый QR-код.
-            setSetup(null);
+            const value = password.current;
+            finishSetup();
             toast.show("Время настройки вышло — отсканируйте новый QR-код", { tone: "info" });
-            start.mutate();
+            if (value) start.mutate(value);
           }}
           onEnabled={async (codes) => {
-            setSetup(null);
+            finishSetup();
             onCodes(codes);
             toast.show("Приложение подключено");
             await refresh();

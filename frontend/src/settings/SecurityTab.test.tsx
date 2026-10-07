@@ -154,24 +154,37 @@ describe("безопасность: пароль", () => {
   });
 });
 
+/** Подключить приложение: сначала пароль от учётной записи. */
+async function startTotp(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement = document.body,
+) {
+  await user.click(await within(scope).findByRole("button", { name: "Подключить приложение" }));
+  const confirm = await screen.findByRole("dialog", { name: "Подключить приложение" });
+  await user.type(within(confirm).getByLabelText("Пароль от учётной записи"), "верный пароль");
+  await user.click(within(confirm).getByRole("button", { name: "Продолжить" }));
+}
+
 describe("безопасность: приложение-аутентификатор", () => {
   it("QR и ключ → код → резервные коды показываются один раз", async () => {
     const user = userEvent.setup();
     let state = security();
     let profile = me();
     let enableBody: unknown;
+    let setupBody: unknown;
     signedIn();
     server.use(
       http.get("/api/v1/auth/me", () => HttpResponse.json(profile)),
       http.get("/api/v1/account/security", () => HttpResponse.json(state)),
-      http.post("/api/v1/account/totp/setup", () =>
-        HttpResponse.json({
+      http.post("/api/v1/account/totp/setup", async ({ request }) => {
+        setupBody = await request.json();
+        return HttpResponse.json({
           secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
           otpauth_uri:
             "otpauth://totp/kronto%3Aanna%40meridian-stroy.ru?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=kronto&digits=6&period=30",
           setup_token: "setup-token-0123456789abcdef",
-        }),
-      ),
+        });
+      }),
       http.post("/api/v1/account/totp/enable", async ({ request }) => {
         enableBody = await request.json();
         state = security({ totp_enabled: true, backup_codes_left: 10 });
@@ -185,9 +198,11 @@ describe("безопасность: приложение-аутентифика�
     expect(within(section).getByText("выключено")).toBeInTheDocument();
     // Без надёжного фактора резервных кодов нет.
     expect(screen.queryByRole("region", { name: "Резервные коды" })).not.toBeInTheDocument();
-    await user.click(within(section).getByRole("button", { name: "Подключить приложение" }));
+    await startTotp(user, section);
 
     const setup = await screen.findByRole("dialog", { name: "Подключение приложения" });
+    // Привязать новый фактор — только с паролем, как и отключить.
+    expect(setupBody).toEqual({ password: "верный пароль" });
     const qr = within(setup).getByRole("img", { name: "QR-код для приложения-аутентификатора" });
     expect(qr.querySelector("path")?.getAttribute("d")).toMatch(/^M\d+ \d+h1v1h-1z/);
     expect(within(setup).getByText("JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP")).toBeInTheDocument();
@@ -252,7 +267,7 @@ describe("безопасность: приложение-аутентифика�
     );
     renderApp("/settings/security");
 
-    await user.click(await screen.findByRole("button", { name: "Подключить приложение" }));
+    await startTotp(user);
     const setup = await screen.findByRole("dialog", { name: "Подключение приложения" });
     await user.type(within(setup).getByLabelText("Код из приложения"), "000000");
     await user.click(within(setup).getByRole("button", { name: "Включить" }));
@@ -287,7 +302,7 @@ describe("безопасность: приложение-аутентифика�
     );
     renderApp("/settings/security");
 
-    await user.click(await screen.findByRole("button", { name: "Подключить приложение" }));
+    await startTotp(user);
     let setup = await screen.findByRole("dialog", { name: "Подключение приложения" });
     await user.type(within(setup).getByLabelText("Код из приложения"), "000000");
     await user.click(within(setup).getByRole("button", { name: "Включить" }));
@@ -349,14 +364,16 @@ describe("безопасность: ключи доступа", () => {
     const user = userEvent.setup();
     let state = security();
     let body: unknown;
+    let optionsBody: unknown;
     const options = { challenge: "Y2hhbGxlbmdl", rp: { name: "kronto" } };
     vi.mocked(createPasskey).mockResolvedValue({ id: "cred-1", type: "public-key" });
     signedIn();
     server.use(
       http.get("/api/v1/account/security", () => HttpResponse.json(state)),
-      http.post("/api/v1/account/passkeys/options", () =>
-        HttpResponse.json({ options, setup_token: "passkey-setup-0123456789" }),
-      ),
+      http.post("/api/v1/account/passkeys/options", async ({ request }) => {
+        optionsBody = await request.json();
+        return HttpResponse.json({ options, setup_token: "passkey-setup-0123456789" });
+      }),
       http.post("/api/v1/account/passkeys", async ({ request }) => {
         body = await request.json();
         const passkey = {
@@ -376,9 +393,14 @@ describe("безопасность: ключи доступа", () => {
     await user.click(within(section).getByRole("button", { name: "Добавить ключ" }));
     const dialog = await screen.findByRole("dialog", { name: "Новый ключ доступа" });
     await user.type(within(dialog).getByLabelText(/Название/), "  Рабочий   ноутбук ");
-    await user.click(within(dialog).getByRole("button", { name: "Создать ключ" }));
+    const create = within(dialog).getByRole("button", { name: "Создать ключ" });
+    // Привязать новый фактор — только с паролем, как и удалить.
+    expect(create).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Пароль от учётной записи"), "верный пароль");
+    await user.click(create);
 
     expect(await screen.findByRole("dialog", { name: "Резервные коды" })).toBeInTheDocument();
+    expect(optionsBody).toEqual({ password: "верный пароль" });
     expect(createPasskey).toHaveBeenCalledWith(options);
     expect(body).toEqual({
       setup_token: "passkey-setup-0123456789",
@@ -413,6 +435,7 @@ describe("безопасность: ключи доступа", () => {
 
     await user.click(await screen.findByRole("button", { name: "Добавить ключ" }));
     const dialog = await screen.findByRole("dialog", { name: "Новый ключ доступа" });
+    await user.type(within(dialog).getByLabelText("Пароль от учётной записи"), "верный пароль");
     await user.click(within(dialog).getByRole("button", { name: "Создать ключ" }));
 
     expect(await within(dialog).findByText(/Ключ не подтверждён/)).toBeInTheDocument();

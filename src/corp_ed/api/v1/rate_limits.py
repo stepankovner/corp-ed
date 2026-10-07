@@ -84,6 +84,12 @@ LEADS_PER_DAY = RatePolicy("lead-all", limit=300, window=86400, fail_open=False)
 PASSWORD_CHANGE_PER_USER = RatePolicy(
     "password-user", limit=5, window=900, fail_open=False
 )
+# Остальные действия «подтвердите паролем» (второй фактор, резервные
+# коды, удаление учётки): общий счётчик на учётку — перебрать текущий
+# пароль украденным access-токеном через соседнюю ручку не выйдет.
+PASSWORD_CONFIRM_PER_ACCOUNT = RatePolicy(
+    "password-confirm", limit=10, window=900, fail_open=False
+)
 FAQ_PER_USER = RatePolicy("faq-user", limit=30, window=60, fail_open=True)
 SEARCH_PER_USER = RatePolicy("search-user", limit=60, window=60, fail_open=True)
 # Чат (ТЗ §6): вложения разбираются в песочнице и считают эмбеддинги;

@@ -253,7 +253,8 @@ export interface paths {
         put?: never;
         /**
          * Passkey Options
-         * @description Параметры для navigator.credentials.create().
+         * @description Параметры для navigator.credentials.create(). Пароль — как у
+         *     /account/totp/setup.
          */
         post: operations["passkey_options_api_v1_account_passkeys_options_post"];
         delete?: never;
@@ -343,6 +344,9 @@ export interface paths {
          * Start Totp Setup
          * @description Секрет для приложения (QR из otpauth_uri). Действует после
          *     подтверждения кодом — /account/totp/enable.
+         *
+         *     Пароль — как при отключении: одного access-токена мало, чтобы
+         *     привязать к учётке новый фактор.
          */
         post: operations["start_totp_setup_api_v1_account_totp_setup_post"];
         delete?: never;
@@ -5632,7 +5636,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5641,6 +5649,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PasskeySetupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5769,7 +5786,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5778,6 +5799,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TotpSetupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

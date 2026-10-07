@@ -16,7 +16,16 @@ from corp_ed.cli import _parser, _read_admin_password
 from corp_ed.core.exceptions import ConflictError, DomainError, WeakPasswordError
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import current_tenant, tenant_scope
-from corp_ed.domain.models import Account, AuditEvent, Tenant, User, UserRole
+from corp_ed.domain.models import (
+    Account,
+    AuditEvent,
+    BackupCode,
+    Passkey,
+    Tenant,
+    TrustedDevice,
+    User,
+    UserRole,
+)
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -478,6 +487,67 @@ async def test_operator_resets_forgotten_password(session: AsyncSession) -> None
     assert event.actor_user_id is None
     assert event.details == {"source": "cli", "account_id": str(account.id)}
     assert current_tenant.get() is None
+
+
+async def test_operator_resets_second_factor(session: AsyncSession) -> None:
+    """Потерял телефон и коды, или фактор привязал кто-то чужой: команда
+    снимает приложение, ключи, резервные коды и доверенные устройства —
+    учётка снова входит по паролю и коду на почту."""
+    service = await _provisioned(session)
+    account = (await session.execute(select(Account))).scalar_one()
+    account.totp_secret = "encrypted"
+    account.totp_enabled_at = account.created_at
+    account.totp_last_step = 7
+    session.add_all(
+        [
+            Passkey(
+                account_id=account.id,
+                credential_id=b"cred",
+                public_key=b"key",
+                name="Чужой",
+            ),
+            BackupCode(account_id=account.id, code_hash="0" * 64),
+            TrustedDevice(
+                account_id=account.id,
+                token_hash="1" * 64,
+                expires_at=account.created_at,
+            ),
+        ]
+    )
+    await session.commit()
+    version = account.token_version
+
+    reset = await service.reset_second_factor(" Admin@Acme.ru ")
+
+    assert reset.id == account.id
+    assert reset.totp_secret is None
+    assert reset.totp_enabled_at is None
+    assert reset.totp_last_step is None
+    assert reset.token_version == version + 1
+    for model in (Passkey, BackupCode, TrustedDevice):
+        left = await session.scalars(
+            select(model).where(model.account_id == account.id)
+        )
+        assert left.first() is None
+    event = (
+        await session.execute(
+            select(AuditEvent).where(AuditEvent.action == "account.mfa_disabled")
+        )
+    ).scalar_one()
+    assert event.actor_user_id is None
+    assert event.details == {
+        "source": "cli",
+        "account_id": str(account.id),
+        "method": "all",
+    }
+
+    with pytest.raises(ConflictError, match="Учётки с почтой"):
+        await service.reset_second_factor("nobody@acme.ru")
+
+
+def test_cli_reset_second_factor_args() -> None:
+    args = _parser().parse_args(["reset-second-factor", "--email", "a@b.ru"])
+    assert (args.command, args.email) == ("reset-second-factor", "a@b.ru")
 
 
 async def test_operator_reset_needs_existing_account(session: AsyncSession) -> None:

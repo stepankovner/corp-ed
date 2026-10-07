@@ -11,6 +11,7 @@ from corp_ed.api.v1.rate_limits import (
     FAQ_PER_USER,
     LOGIN_FAILURES_PER_ACCOUNT,
     LOGIN_PER_IP,
+    PASSWORD_CONFIRM_PER_ACCOUNT,
     REFRESH_PER_IP,
 )
 from corp_ed.core.rate_limit import (
@@ -89,6 +90,32 @@ async def test_ip_limit_stops_spraying_many_accounts(
 
     response = await login(api, account.email)
     assert response.status_code == 429
+
+
+async def test_password_confirmations_share_one_limit_per_account(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """Ручки «подтвердите паролем» считают попытки вместе: подобрать
+    текущий пароль украденным access-токеном, переходя от ручки к ручке,
+    не выйдет."""
+    headers = bearer(account)
+    wrong = {"password": "wrong-password-123"}
+    calls = [
+        ("/api/v1/account/backup-codes", wrong),
+        ("/api/v1/account/passkeys/" + str(uuid4()) + "/delete", wrong),
+        ("/api/v1/account/totp/setup", wrong),
+        ("/api/v1/account/passkeys/options", wrong),
+        ("/api/v1/account/delete", wrong),
+        ("/api/v1/account/totp/disable", {**wrong, "code": "000000"}),
+    ]
+    for attempt in range(PASSWORD_CONFIRM_PER_ACCOUNT.limit):
+        path, body = calls[attempt % len(calls)]
+        response = await api.post(path, json=body, headers=headers)
+        assert response.status_code == 400, (path, response.text)
+
+    for path, body in calls:
+        response = await api.post(path, json=body, headers=headers)
+        assert response.status_code == 429, path
 
 
 async def test_refresh_is_limited_per_ip(api: httpx.AsyncClient) -> None:

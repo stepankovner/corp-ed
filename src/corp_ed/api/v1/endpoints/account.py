@@ -21,6 +21,7 @@ from corp_ed.api.v1.rate_limits import (
     AVATAR_PER_ACCOUNT,
     COMPANY_REQUEST_PER_ACCOUNT,
     EMAIL_CHANGE_PER_ACCOUNT,
+    PASSWORD_CONFIRM_PER_ACCOUNT,
     VERIFY_PER_IP,
     client_ip,
     enforce,
@@ -112,6 +113,7 @@ async def request_email_change(
     почта сменится после перехода (ТЗ §3). Без приложения второй фактор
     — код на прежний адрес: первый запрос без кода его отправляет."""
     await enforce(limiter, EMAIL_CHANGE_PER_ACCOUNT, str(account.id))
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
     step = await service.request_email_change(
         account, str(data.new_email), data.password, data.code
     )
@@ -158,8 +160,10 @@ async def delete_account(
     data: PasswordConfirmRequest,
     account: CurrentAccount,
     service: Service,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> None:
     """Удалить учётку (152-ФЗ). Пароль — подтверждение, что это владелец."""
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
     await service.delete_account(account, data.password)
     clear_refresh_cookie(response)
 
@@ -228,10 +232,19 @@ async def read_security(account: CurrentAccount, mfa: Mfa) -> SecurityResponse:
 
 
 @router.post("/totp/setup", response_model=TotpSetupResponse)
-async def start_totp_setup(account: CurrentAccount, mfa: Mfa) -> TotpSetupResponse:
+async def start_totp_setup(
+    data: PasswordConfirmRequest,
+    account: CurrentAccount,
+    mfa: Mfa,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
+) -> TotpSetupResponse:
     """Секрет для приложения (QR из otpauth_uri). Действует после
-    подтверждения кодом — /account/totp/enable."""
-    secret, uri, token = await mfa.start_totp_setup(account)
+    подтверждения кодом — /account/totp/enable.
+
+    Пароль — как при отключении: одного access-токена мало, чтобы
+    привязать к учётке новый фактор."""
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
+    secret, uri, token = await mfa.start_totp_setup(account, data.password)
     return TotpSetupResponse(secret=secret, otpauth_uri=uri, setup_token=token)
 
 
@@ -257,17 +270,22 @@ async def disable_totp(
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> None:
     await enforce(limiter, VERIFY_PER_IP, client_ip(request))
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
     await mfa.disable_totp(account, data.password, data.code)
 
 
 @router.post("/passkeys/options", response_model=PasskeySetupResponse)
 async def passkey_options(
+    data: PasswordConfirmRequest,
     account: CurrentAccount,
     mfa: Mfa,
     rp: Annotated[RelyingParty, Depends(get_relying_party)],
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> PasskeySetupResponse:
-    """Параметры для navigator.credentials.create()."""
-    options, token = await mfa.passkey_registration_options(account, rp)
+    """Параметры для navigator.credentials.create(). Пароль — как у
+    /account/totp/setup."""
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
+    options, token = await mfa.passkey_registration_options(account, rp, data.password)
     return PasskeySetupResponse(options=json.loads(options), setup_token=token)
 
 
@@ -296,15 +314,21 @@ async def delete_passkey(
     data: PasswordConfirmRequest,
     account: CurrentAccount,
     mfa: Mfa,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> None:
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
     await mfa.delete_passkey(account, passkey_id, data.password)
 
 
 @router.post("/backup-codes", response_model=BackupCodesResponse)
 async def regenerate_backup_codes(
-    data: PasswordConfirmRequest, account: CurrentAccount, mfa: Mfa
+    data: PasswordConfirmRequest,
+    account: CurrentAccount,
+    mfa: Mfa,
+    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> BackupCodesResponse:
     """Новые 10 резервных кодов; старые перестают действовать."""
+    await enforce(limiter, PASSWORD_CONFIRM_PER_ACCOUNT, str(account.id))
     return BackupCodesResponse(
         backup_codes=await mfa.regenerate_backup_codes(account, data.password)
     )

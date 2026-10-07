@@ -496,9 +496,14 @@ class MfaService:
 
     # --- приложение-аутентификатор --------------------------------------------
 
-    async def start_totp_setup(self, account: Account) -> tuple[str, str, str]:
+    async def start_totp_setup(
+        self, account: Account, password: str
+    ) -> tuple[str, str, str]:
         """Секрет, otpauth:// для QR и токен настройки. Секрет действует
-        только после подтверждения кодом из приложения."""
+        только после подтверждения кодом из приложения. Токен настройки
+        выдаётся только по паролю."""
+        if not verify_password(password, account.hashed_password):
+            raise InvalidPasswordError()
         secret = totp.new_secret()
         raw = new_refresh_token()
         self.session.add(
@@ -565,8 +570,10 @@ class MfaService:
     # --- ключи доступа ---------------------------------------------------------
 
     async def passkey_registration_options(
-        self, account: Account, rp: RelyingParty
+        self, account: Account, rp: RelyingParty, password: str
     ) -> tuple[str, str]:
+        if not verify_password(password, account.hashed_password):
+            raise InvalidPasswordError()
         keys = await self.passkeys(account)
         options = generate_registration_options(
             rp_id=rp.id,

@@ -4,7 +4,7 @@ import { useId, useState, type SubmitEvent } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
-import { useAuth } from "../auth/context";
+import { useAuth, useMe } from "../auth/context";
 import { formatDate, formatDateTime, formatRelative } from "../lib/format";
 import { createPasskey, passkeysSupported, PasskeyError } from "../lib/webauthn";
 import { Button } from "../ui/Button";
@@ -154,8 +154,10 @@ function AddPasskeyDialog({
   onClose: () => void;
   onAdded: (key: Passkey, codes: string[] | null) => Promise<void>;
 }) {
+  const me = useMe();
   const formId = useId();
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,7 +166,9 @@ function AddPasskeyDialog({
     setError(null);
     setBusy(true);
     try {
-      const { options, setup_token } = await unwrap(api.POST("/api/v1/account/passkeys/options"));
+      const { options, setup_token } = await unwrap(
+        api.POST("/api/v1/account/passkeys/options", { body: { password } }),
+      );
       const credential = await createPasskey(options);
       const created = await unwrap(
         api.POST("/api/v1/account/passkeys", {
@@ -193,7 +197,7 @@ function AddPasskeyDialog({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Отмена
           </Button>
-          <Button type="submit" form={formId} size="sm" busy={busy}>
+          <Button type="submit" form={formId} size="sm" busy={busy} disabled={!password}>
             <KeyRound size={16} aria-hidden /> Создать ключ
           </Button>
         </>
@@ -210,6 +214,24 @@ function AddPasskeyDialog({
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus
+        />
+        {/* Менеджер паролей подставит пароль этой учётки. */}
+        <input
+          type="email"
+          name="username"
+          autoComplete="username"
+          value={me.email}
+          readOnly
+          hidden
+        />
+        <TextField
+          label="Пароль от учётной записи"
+          type="password"
+          autoComplete="current-password"
+          required
+          hint="Новый способ входа привязывается к учётной записи только с паролем."
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
         />
       </form>
     </Modal>

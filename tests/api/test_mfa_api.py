@@ -49,7 +49,11 @@ async def _verify(
 async def _enable_totp(
     api: httpx.AsyncClient, headers: dict[str, str]
 ) -> tuple[str, list[str]]:
-    setup = (await api.post("/api/v1/account/totp/setup", headers=headers)).json()
+    setup = (
+        await api.post(
+            "/api/v1/account/totp/setup", json={"password": PASSWORD}, headers=headers
+        )
+    ).json()
     code = totp.code_at(setup["secret"], totp.current_step())
     enabled = await api.post(
         "/api/v1/account/totp/enable",
@@ -209,7 +213,11 @@ async def test_totp_setup_needs_a_valid_code(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:
     headers = bearer(account)
-    setup = (await api.post("/api/v1/account/totp/setup", headers=headers)).json()
+    setup = (
+        await api.post(
+            "/api/v1/account/totp/setup", json={"password": PASSWORD}, headers=headers
+        )
+    ).json()
     assert setup["otpauth_uri"].startswith("otpauth://totp/kronto%3Aworker%40test.com")
 
     wrong = await api.post(
@@ -230,7 +238,11 @@ async def test_totp_setup_ends_after_attempts(
     """Попытки кончились — отдельный код: фронт предлагает начать заново,
     а не «код не подошёл» без конца."""
     headers = bearer(account)
-    setup = (await api.post("/api/v1/account/totp/setup", headers=headers)).json()
+    setup = (
+        await api.post(
+            "/api/v1/account/totp/setup", json={"password": PASSWORD}, headers=headers
+        )
+    ).json()
     body = {"setup_token": setup["setup_token"], "code": "000000"}
     for _ in range(5):
         await api.post("/api/v1/account/totp/enable", json=body, headers=headers)
@@ -344,6 +356,29 @@ async def test_reset_password_needs_second_factor_when_app_is_on(
     assert done.status_code == 200
 
 
+@pytest.mark.parametrize(
+    "path", ["/api/v1/account/totp/setup", "/api/v1/account/passkeys/options"]
+)
+async def test_adding_a_second_factor_asks_for_the_password(
+    api: httpx.AsyncClient, account: User, path: str
+) -> None:
+    """Подключить приложение или ключ — как и отключить: только с паролем.
+    Одного access-токена мало, иначе чужой фактор привязывается к учётке."""
+    headers = bearer(account)
+
+    missing = await api.post(path, headers=headers)
+    wrong = await api.post(
+        path, json={"password": "wrong-password-123"}, headers=headers
+    )
+    done = await api.post(path, json={"password": PASSWORD}, headers=headers)
+
+    assert missing.status_code == 422
+    assert wrong.status_code == 400
+    assert wrong.json()["code"] == "invalid_password"
+    assert done.status_code == 200, done.text
+    assert done.json()["setup_token"]
+
+
 # --- ключи доступа ------------------------------------------------------------
 
 
@@ -353,7 +388,13 @@ async def test_passkey_registration_and_login(
     headers = bearer(account)
     device = SoftAuthenticator()
 
-    setup = (await api.post("/api/v1/account/passkeys/options", headers=headers)).json()
+    setup = (
+        await api.post(
+            "/api/v1/account/passkeys/options",
+            json={"password": PASSWORD},
+            headers=headers,
+        )
+    ).json()
     assert setup["options"]["rp"]["id"] == "test"
     created = await api.post(
         "/api/v1/account/passkeys",
@@ -390,7 +431,13 @@ async def test_foreign_passkey_signature_is_rejected(
 ) -> None:
     headers = bearer(account)
     device = SoftAuthenticator()
-    setup = (await api.post("/api/v1/account/passkeys/options", headers=headers)).json()
+    setup = (
+        await api.post(
+            "/api/v1/account/passkeys/options",
+            json={"password": PASSWORD},
+            headers=headers,
+        )
+    ).json()
     await api.post(
         "/api/v1/account/passkeys",
         json={
@@ -424,7 +471,13 @@ async def test_passkey_for_another_site_is_rejected(
 ) -> None:
     headers = bearer(account)
     phishing = SoftAuthenticator(rp_id="evil.example", origin="https://evil.example")
-    setup = (await api.post("/api/v1/account/passkeys/options", headers=headers)).json()
+    setup = (
+        await api.post(
+            "/api/v1/account/passkeys/options",
+            json={"password": PASSWORD},
+            headers=headers,
+        )
+    ).json()
     response = await api.post(
         "/api/v1/account/passkeys",
         json={

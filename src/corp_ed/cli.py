@@ -8,6 +8,8 @@
         [--tariff extended] [--code acme]
     python -m corp_ed.cli requests reject --id <uuid>
     python -m corp_ed.cli reset-password --email admin@acme.ru [--password-stdin]
+    python -m corp_ed.cli reset-second-factor --email admin@acme.ru
+                                       # снять приложение, ключи и коды
     python -m corp_ed.cli set-totp --email stand-check@krontoai.ru --secret-stdin
                                        # приложение-аутентификатор служебной учётке
     python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
@@ -151,6 +153,13 @@ def _parser() -> argparse.ArgumentParser:
         help="временный пароль — первой строкой stdin; без флага — скрытый "
         "ввод в терминале",
     )
+
+    second = commands.add_parser(
+        "reset-second-factor",
+        help="снять приложение, ключи доступа и резервные коды, когда человек "
+        "их потерял; вход — снова по паролю и коду на почту",
+    )
+    second.add_argument("--email", required=True)
 
     seats = commands.add_parser("set-seats", help="изменить число оплаченных мест")
     seats.add_argument("--code", required=True)
@@ -481,6 +490,14 @@ async def _run(args: argparse.Namespace) -> int:
             print(
                 "Передайте пароль отдельным каналом; при входе система "
                 "потребует сменить его."
+            )
+            return 0
+
+        if args.command == "reset-second-factor":
+            account = await service.reset_second_factor(args.email)
+            print(
+                f"{account.email}: второй фактор снят, сессии закрыты. "
+                "Вход — по паролю и коду на почту."
             )
             return 0
 

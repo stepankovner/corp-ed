@@ -4,13 +4,23 @@ from datetime import UTC, datetime
 
 import structlog
 from pydantic import EmailStr, TypeAdapter, ValidationError
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import ConflictError, DomainError
 from corp_ed.core.password_policy import validate_password
 from corp_ed.core.security import hash_password
 from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import Account, MemberStatus, Tenant, User, UserRole
+from corp_ed.domain.models import (
+    Account,
+    BackupCode,
+    MemberStatus,
+    Passkey,
+    Tenant,
+    TrustedDevice,
+    User,
+    UserRole,
+)
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
 from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.repositories.account_repository import AccountRepository
@@ -346,6 +356,37 @@ class TenantService:
         )
         await self.session.commit()
         logger.info("password_reset_by_operator", account_id=str(account.id))
+        return account
+
+    async def reset_second_factor(self, email: str) -> Account:
+        """Снять с учётки второй фактор — из CLI на сервере.
+
+        Для поддержки: человек потерял телефон и резервные коды, или к
+        учётке привязан чужой фактор. Снимаются приложение, ключи
+        доступа, резервные коды и доверенные устройства; все сессии
+        закрываются. Дальше вход — по паролю и коду на почту, надёжный
+        фактор настраивается заново (админу это предложат при входе).
+        """
+        account = await AccountRepository(self.session).get_by_email(email)
+        if account is None:
+            raise ConflictError(f"Учётки с почтой {email.strip()} нет")
+        account.totp_secret = None
+        account.totp_enabled_at = None
+        account.totp_last_step = None
+        for model in (Passkey, BackupCode, TrustedDevice):
+            await self.session.execute(
+                delete(model).where(model.account_id == account.id)
+            )
+        account.token_version += 1
+        await RefreshTokenRepository(self.session).revoke_account(
+            account.id, datetime.now(UTC)
+        )
+        self.audit.record(
+            AuditAction.MFA_DISABLED,
+            details={"source": "cli", "account_id": str(account.id), "method": "all"},
+        )
+        await self.session.commit()
+        logger.info("second_factor_reset_by_operator", account_id=str(account.id))
         return account
 
 
