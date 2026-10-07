@@ -81,6 +81,30 @@ describe("где ищет ассистент", () => {
   });
 });
 
+describe("подключение своего аккаунта", () => {
+  it("адрес входа не http(s) — не переходим, объясняем", async () => {
+    signedIn();
+    let started = false;
+    server.use(
+      http.get("/api/v1/connectors/mine", () => HttpResponse.json([BITRIX])),
+      http.post("/api/v1/connectors/c-2/oauth/start", () => {
+        started = true;
+        return HttpResponse.json({ authorize_url: "javascript:alert(document.domain)" });
+      }),
+    );
+    const user = userEvent.setup();
+    renderApp("/settings/connections");
+
+    await user.click(await screen.findByRole("button", { name: "Подключить" }));
+
+    expect(
+      await screen.findByText("Источник вернул некорректный адрес входа. Попробуйте позже."),
+    ).toBeInTheDocument();
+    // Ошибка — из проверки адреса: переход (onSuccess) не вызывался.
+    expect(started).toBe(true);
+  });
+});
+
 describe("предложение подключить свой аккаунт", () => {
   it("на пустом экране чата ведёт в настройки и скрывается насовсем", async () => {
     signedIn();

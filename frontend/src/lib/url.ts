@@ -52,3 +52,9 @@ export function safeHttpUrl(value: string | null | undefined): string | null {
     return null;
   }
 }
+
+/** Ссылка из ответа сервера: свой путь («/privacy») или http(s)-адрес. */
+export function safeLinkHref(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return isOwnPath(value) ? value : safeHttpUrl(value);
+}
