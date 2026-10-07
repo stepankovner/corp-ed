@@ -208,6 +208,41 @@ def test_log_redaction_hides_secrets() -> None:
         assert redacted[key] == REDACTED
 
 
+def test_log_redaction_hides_contacts() -> None:
+    """Логи публичны (решение 30.09): адресатов и телефонов в них нет."""
+    contacts = {
+        "email": "anna@example.ru",
+        "new_email": "anna@example.ru",
+        "to_email": "anna@example.ru",
+        "Email": "anna@example.ru",
+        "emails": ["anna@example.ru"],
+        "to": "anna@example.ru",
+        "reply_to": "anna@example.ru",
+        "recipient": "anna@example.ru",
+        "recipients": ["anna@example.ru"],
+        "phone": "+79990000000",
+        "contact_phone": "+79990000000",
+        "phone_number": "+79990000000",
+    }
+    # Счётчики, идентификаторы и флаги — не контакты: остаются.
+    kept = {
+        "event": "debug",
+        "email_id": "42",
+        "email_verified": True,
+        "recipient_count": 3,
+        "tariff": "pro",
+        "topic": "billing",
+        "photo": "a.png",
+        "total": 7,
+    }
+    redacted = redact_sensitive(None, "info", {**contacts, **kept})
+
+    for key in contacts:
+        assert redacted[key] == REDACTED, key
+    for key, value in kept.items():
+        assert redacted[key] == value, key
+
+
 async def test_health_is_public_and_not_in_openapi(api: httpx.AsyncClient) -> None:
     """Живость для HEALTHCHECK: без токена, без базы, без строки в схеме."""
     response = await api.get("/health")

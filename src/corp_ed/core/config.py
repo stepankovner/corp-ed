@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from corp_ed.domain.rerank import RERANK_MAX_WORDS
@@ -508,6 +508,13 @@ class MailSettings(BaseSettings):
     """
 
     backend: Literal["postbox", "smtp", "console", "memory"] = "console"
+    # Общая ENVIRONMENT, не MAIL_ENVIRONMENT: префикс к ней не относится.
+    # В production console и memory не отправляют писем — воркер не
+    # стартует с ними (mail.build_sender).
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices("environment", "ENVIRONMENT"),
+    )
     smtp_host: str | None = None
     smtp_port: int = Field(default=465, gt=0, lt=65536)
     smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
