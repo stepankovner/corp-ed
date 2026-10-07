@@ -325,10 +325,39 @@ def _looks_russian(text: str) -> bool:
     return russian > 0.5 * len(letters) and controls <= len(text) // 1000
 
 
+def _reject_docx_dtd(data: bytes) -> None:
+    """Часть docx с DTD (`<!DOCTYPE`, `<!ENTITY`) — `corrupted`.
+
+    mammoth разбирает XML через minidom, а тот DTD не запрещает. Word DTD
+    не пишет, поэтому, как у xlsx и pptx (ooxml.parse), DTD отклоняет
+    разборщик с `forbid_dtd`. Проверяется каждая часть пакета: какие из них
+    читает mammoth, решают связи внутри файла. DTD стоит только до корня,
+    так что разбор каждой части останавливается на первом элементе; часть,
+    которая не XML (картинка), пропускается.
+    """
+    from corp_ed.ingest import ooxml
+
+    try:
+        with ooxml.open_archive(data) as archive:
+            for part in archive.namelist():
+                try:
+                    for _ in ooxml.parse(archive, part, ("start",)):
+                        break
+                except ooxml.READ_ERRORS:
+                    # Не XML или битая часть: если mammoth её читает,
+                    # он сам и скажет, что файл повреждён.
+                    continue
+    except ooxml.OfficeFileError as exc:
+        raise ExtractionError(exc.code) from exc
+    except zipfile.BadZipFile as exc:
+        raise ExtractionError("corrupted") from exc
+
+
 def _extract_docx(data: bytes) -> str:
     import mammoth  # type: ignore[import-untyped]
     import markdownify
 
+    _reject_docx_dtd(data)
     try:
         # Картинки не нужны: в текст они не превращаются, а base64 в
         # Markdown — мегабайты мусора в чанках.

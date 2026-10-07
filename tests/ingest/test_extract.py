@@ -188,6 +188,42 @@ def test_docx_running_text_is_extracted() -> None:
     assert "\n7" not in markdown
 
 
+_DOCTYPE = '<!DOCTYPE w:document [<!ENTITY a "aaaa">]>'
+
+
+@pytest.mark.parametrize("part", ["word/document.xml", "word/styles.xml"])
+@pytest.mark.parametrize(
+    "prolog",
+    [_DOCTYPE, "<!--" + "x" * 5000 + "-->" + _DOCTYPE],
+    ids=["direct", "padded"],
+)
+def test_docx_part_with_doctype_is_corrupted(part: str, prolog: str) -> None:
+    """DTD Word не пишет: часть с ним — повреждённый файл, как в xlsx и
+    pptx. mammoth разбирает части через minidom и сам DTD не запрещает."""
+    data = samples.docx([("Текст положения.", None)])
+    source = zipfile.ZipFile(io.BytesIO(data))
+    patched = io.BytesIO()
+    with zipfile.ZipFile(patched, "w", zipfile.ZIP_DEFLATED) as archive:
+        for item in source.infolist():
+            content = source.read(item)
+            if item.filename == part:
+                declaration, rest = content.split(b"?>", 1)
+                content = declaration + b"?>" + prolog.encode() + rest.lstrip()
+            archive.writestr(item, content)
+    assert _code(lambda: extract(SourceFormat.DOCX, patched.getvalue())) == (
+        "corrupted"
+    )
+
+
+def test_docx_with_images_and_binary_parts_is_read() -> None:
+    """Предпроверка DTD не спотыкается о части, которые не XML."""
+    data = samples.docx(
+        [("Текст положения.", None)],
+        extra_parts={"word/media/image1.png": "\x89PNG\r\n\x1a\n\x00\x00binary"},
+    )
+    assert "Текст положения." in extract(SourceFormat.DOCX, data)
+
+
 def test_broken_running_text_does_not_fail_docx() -> None:
     data = samples.docx(
         [("Текст положения.", None)],
