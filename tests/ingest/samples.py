@@ -126,7 +126,11 @@ def with_zip64(data: bytes, count: int, *, record: bool = True) -> bytes:
 
 
 def zip_bomb_docx() -> bytes:
-    """Валидный по структуре docx с членом, сжатым в сотни раз."""
+    """Валидный по структуре docx с членом, сжатым в сотни раз.
+
+    Размеры в каталоге честные — только такую бомбу и ловит предпроверка
+    (best-effort). Заниженные размеры упираются уже в RLIMIT_AS песочницы.
+    """
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", _CONTENT_TYPES)

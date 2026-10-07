@@ -31,7 +31,11 @@ MAX_UNCOMPRESSED = 200 * 1024 * 1024
 MAX_ENTRIES = 5000
 MAX_COMPRESSION_RATIO = 200
 """Как у docx в `extract.py`: zip-бомба — 40 КБ, которые распаковываются
-в гигабайты."""
+в гигабайты. Лимиты сверяются с размерами, которые объявляет каталог
+архива, а распаковка их не перепроверяет: архив, собранный вручную, может
+их занизить. Это дешёвый отсев честно описанных бомб (best-effort);
+настоящий потолок — лимит памяти (RLIMIT_AS, extract_worker.MEMORY_LIMIT)
+и время песочницы, где идёт разбор."""
 
 Event = Literal["start", "end"]
 
@@ -78,6 +82,8 @@ def check_package(data: bytes, kind: PackageKind) -> None:
 
     Тип — по `[Content_Types].xml` главной части пакета: .docx или .pptx,
     переименованный в .xlsx, — `format_mismatch`, а не пустой документ.
+    Zip-бомба — по размерам, заявленным в каталоге: проверка best-effort,
+    потолок — лимиты песочницы (см. MAX_COMPRESSION_RATIO).
     """
     if data.startswith(b"\xd0\xcf\x11\xe0"):
         # OLE2: либо файл с паролем (EncryptedPackage), либо старый .xls/.ppt.
