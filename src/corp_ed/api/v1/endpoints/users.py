@@ -5,7 +5,11 @@ from fastapi import APIRouter, Depends, status
 
 from corp_ed.api.v1.dependencies import get_user_service, require_role
 from corp_ed.api.v1.rate_limits import PEOPLE_EDIT_PER_TENANT, limit_by_tenant
-from corp_ed.api.v1.schemas.user import UserResponse, UserUpdateRequest
+from corp_ed.api.v1.schemas.user import (
+    DepartmentDecisionRequest,
+    UserResponse,
+    UserUpdateRequest,
+)
 from corp_ed.domain.models import User, UserRole
 from corp_ed.services.user_service import UserService
 
@@ -50,13 +54,17 @@ async def reject_user(user_id: UUID, service: Service, current_user: AdminUser) 
     dependencies=[Depends(limit_by_tenant(PEOPLE_EDIT_PER_TENANT))],
 )
 async def confirm_department(
-    user_id: UUID, service: Service, current_user: AdminUser
+    user_id: UUID,
+    data: DepartmentDecisionRequest,
+    service: Service,
+    current_user: AdminUser,
 ) -> UserResponse:
     """Подтвердить отдел, который сотрудник выбрал сам (ТЗ §7): с этого
     момента ему открыты закрытые папки отдела. Уже подтверждён — ответ
-    тот же, без изменений. Отдела нет — 409. Только работающий человек
+    тот же, без изменений. Отдела нет или он не тот, что видел
+    администратор (department_id), — 409. Только работающий человек
     своей компании, иначе 404. Человеку — уведомление, в журнал."""
-    user = await service.confirm_department(current_user, user_id)
+    user = await service.confirm_department(current_user, user_id, data.department_id)
     return UserResponse.model_validate(user)
 
 
@@ -66,13 +74,17 @@ async def confirm_department(
     dependencies=[Depends(limit_by_tenant(PEOPLE_EDIT_PER_TENANT))],
 )
 async def reject_department(
-    user_id: UUID, service: Service, current_user: AdminUser
+    user_id: UUID,
+    data: DepartmentDecisionRequest,
+    service: Service,
+    current_user: AdminUser,
 ) -> UserResponse:
     """Отклонить отдел, выбранный сотрудником (ТЗ §7): отдел у человека
-    снимается (department_id null). Отдела нет или он уже подтверждён —
-    409 (подтверждённый меняют в профиле сотрудника). Только работающий
-    человек своей компании, иначе 404. Человеку — уведомление, в журнал."""
-    user = await service.reject_department(current_user, user_id)
+    снимается (department_id null). Отдела нет, он не тот, что видел
+    администратор, или уже подтверждён — 409 (подтверждённый меняют в
+    профиле сотрудника). Только работающий человек своей компании, иначе
+    404. Человеку — уведомление, в журнал."""
+    user = await service.reject_department(current_user, user_id, data.department_id)
     return UserResponse.model_validate(user)
 
 

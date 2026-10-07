@@ -324,9 +324,11 @@ describe("подтверждение отдела (ТЗ §7)", () => {
     ]);
     const calls: string[] = [];
     server.use(
-      http.post("/api/v1/users/:id/department/:action", ({ params }) => {
+      http.post("/api/v1/users/:id/department/:action", async ({ params, request }) => {
         const id = String(params.id);
-        calls.push(`${String(params.action)} ${id}`);
+        // Решение — про отдел, который видел администратор.
+        const body = (await request.json()) as { department_id: string };
+        calls.push(`${String(params.action)} ${id} ${body.department_id}`);
         state.people = state.people.map((m) =>
           m.id !== id
             ? m
@@ -357,7 +359,7 @@ describe("подтверждение отдела (ТЗ §7)", () => {
         screen.queryByRole("heading", { name: "Ждут подтверждения отдела" }),
       ).not.toBeInTheDocument(),
     );
-    expect(calls).toEqual(["confirm m-2", "reject m-3"]);
+    expect(calls).toEqual(["confirm m-2 d-1", "reject m-3 d-1"]);
   });
 
   it("подтверждённого и без отдела в списке ждущих нет", async () => {
