@@ -1,10 +1,13 @@
 """Общее для файлов Office Open XML (.xlsx, .pptx): пакет, связи, разбор XML.
 
-.xlsx и .pptx — zip с XML (ECMA-376). Читаем их `zipfile` и
-`xml.etree.ElementTree.iterparse`, без сторонних библиотек: образ бэкенда
-не меняется. ElementTree не ходит за внешними сущностями, expat ≥ 2.4.1
-защищён от «billion laughs» (проверяется тестом); DTD Office не пишет —
-часть с `<!DOCTYPE` отклоняется как повреждённая.
+.xlsx и .pptx — zip с XML (ECMA-376). Читаем их `zipfile` и потоковым
+`iterparse` из defusedxml с `forbid_dtd=True`. DTD Office не пишет, поэтому
+любое объявление `<!DOCTYPE` (и `<!ENTITY` в нём) отклоняет сам разборщик —
+в любом месте пролога и в любой кодировке части (UTF-8, UTF-16), — и
+часть считается повреждённой. Это не поиск байтов в начале части:
+комментарий перед DTD или часть в UTF-16 такой поиск не видел.
+Внешние сущности не загружаются; expat ≥ 2.4.1 вдобавок защищён от
+«billion laughs» (проверяется тестом).
 
 Ошибки — `OfficeFileError(code)` с кодами `ExtractionError` бэкенда:
 `format_mismatch`, `encrypted`, `corrupted`, `archive_too_large`,
@@ -18,15 +21,16 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from posixpath import basename, dirname, join, normpath
 from typing import Literal
-from xml.etree.ElementTree import Element, ParseError, iterparse
+from xml.etree.ElementTree import Element, ParseError
+
+from defusedxml import DefusedXmlException  # type: ignore[import-untyped]
+from defusedxml.ElementTree import iterparse  # type: ignore[import-untyped]
 
 MAX_UNCOMPRESSED = 200 * 1024 * 1024
 MAX_ENTRIES = 5000
 MAX_COMPRESSION_RATIO = 200
 """Как у docx в `extract.py`: zip-бомба — 40 КБ, которые распаковываются
 в гигабайты."""
-
-_XML_HEAD_BYTES = 4096
 
 Event = Literal["start", "end"]
 
@@ -139,14 +143,14 @@ def child(element: Element, name: str) -> Element | None:
 def parse(
     archive: zipfile.ZipFile, part: str, events: tuple[Event, ...] = ("end",)
 ) -> Iterator[tuple[str, Element]]:
-    """Часть пакета потоком; с `<!DOCTYPE` / `<!ENTITY` — `corrupted`."""
+    """Часть пакета потоком; с DTD (`<!DOCTYPE`, `<!ENTITY`) — `corrupted`.
+
+    DTD отклоняет разборщик (docstring модуля), а не поиск байтов."""
     with archive.open(part) as stream:
-        head = stream.read(_XML_HEAD_BYTES)
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
-        raise OfficeFileError("corrupted")
-    with archive.open(part) as stream:
-        # Безопасность разбора — в docstring модуля.
-        yield from iterparse(stream, events=events)  # noqa: S314
+        try:
+            yield from iterparse(stream, events=events, forbid_dtd=True)
+        except DefusedXmlException as exc:
+            raise OfficeFileError("corrupted") from exc
 
 
 def parse_tree(archive: zipfile.ZipFile, part: str) -> Element:
