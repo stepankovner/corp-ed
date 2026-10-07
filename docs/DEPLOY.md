@@ -213,8 +213,14 @@ CORP_ED_EMAIL=admin@acme.ru CORP_ED_PASSWORD=… \
 
 Требования к прокси перед `api:8000`:
 
-- **TLS** терминируется на прокси. HSTS приложение отдаёт само в
-  `production`.
+- **TLS** терминируется на прокси. HSTS ставит прокси на каждом
+  ответе по HTTPS (сайт, приложение, ошибки, Grafana); свой заголовок
+  приложения на `/api` и `/health` прокси скрывает — источник один
+  (`deploy/nginx/kronto.conf`, 07.10). Неизвестное имя: 444 на 80,
+  отказ TLS на 443 (`default_server`, `ssl_reject_handshake`, nginx ≥ 1.19.4).
+  `/metrics`, `/docs`, `/redoc`, `/openapi.json` — 404 на прокси.
+  `proxy_read_timeout` для `/api` — 210 с: синхронный ответ модели в
+  худшем случае 3 × (5 + 60) с плюс паузы.
 - **`X-Forwarded-For`** и `X-Forwarded-Proto` прокси ставит сам, а
   входящие от клиента — перезаписывает. uvicorn запущен с
   `--proxy-headers` и верит этим заголовкам только от адресов из
