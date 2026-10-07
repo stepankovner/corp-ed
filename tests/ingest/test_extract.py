@@ -253,6 +253,20 @@ def test_docx_with_images_and_binary_parts_is_read() -> None:
     assert "Текст положения." in extract(SourceFormat.DOCX, data)
 
 
+def test_docx_with_unreadable_unused_part_is_read() -> None:
+    """Часть, которую zipfile не открывает (помечена зашифрованной), а
+    mammoth не читает, документ не валит — как и до предпроверки DTD."""
+    data = bytearray(
+        samples.docx(
+            [("Текст положения.", None)],
+            extra_parts={"word/media/locked.bin": "data"},
+        )
+    )
+    entry = data.rfind(b"PK\x01\x02", 0, data.rfind(b"word/media/locked.bin"))
+    data[entry + 8] |= 0x01  # флаг «зашифровано» в центральном каталоге
+    assert "Текст положения." in extract(SourceFormat.DOCX, bytes(data))
+
+
 def test_broken_running_text_does_not_fail_docx() -> None:
     data = samples.docx(
         [("Текст положения.", None)],

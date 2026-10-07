@@ -361,9 +361,11 @@ def _reject_docx_dtd(data: bytes) -> None:
                 try:
                     for _ in ooxml.parse(archive, part, ("start",)):
                         break
-                except ooxml.READ_ERRORS:
-                    # Не XML или битая часть: если mammoth её читает,
-                    # он сам и скажет, что файл повреждён.
+                except (*ooxml.READ_ERRORS, RuntimeError):
+                    # Не XML, битая часть или zipfile её не открывает
+                    # (зашифрована, неизвестное сжатие — RuntimeError и
+                    # NotImplementedError): если mammoth её читает, он сам
+                    # и скажет, что файл повреждён.
                     continue
     except ooxml.OfficeFileError as exc:
         raise ExtractionError(exc.code) from exc
