@@ -21,6 +21,7 @@ from corp_ed.connectors.confluence.client import BasicAuth, ConfluenceClient, To
 from corp_ed.connectors.confluence.storage import storage_to_html
 from corp_ed.connectors.html import html_to_markdown
 from corp_ed.connectors.registry import default_registry
+from corp_ed.core import outbound
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.domain.types import ConnectorMode, MaterialVisibility, RemoteDocumentKind
 from tests.connectors.fake_confluence import (
@@ -190,6 +191,17 @@ async def test_rate_limit_waits_retry_after_then_gives_up(
         await client.get("user/current")
     assert excinfo.value.code == "rate_limited" and excinfo.value.retryable
     assert sleeps.calls[2:] == [1.0, 2.0, 4.0]
+
+
+async def test_oversized_api_response_is_an_adapter_error(
+    server: FakeConfluence, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ответ API больше потолка — ошибка источника, а не сбой воркера."""
+    monkeypatch.setattr(outbound, "MAX_RESPONSE_BYTES", 16)
+    with pytest.raises(AdapterError) as excinfo:
+        await make_adapter(server).check()
+    assert excinfo.value.code == "response_too_large"
+    assert not excinfo.value.retryable
 
 
 async def test_server_error_is_retryable(server: FakeConfluence) -> None:

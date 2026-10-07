@@ -29,7 +29,7 @@ from corp_ed.connectors.base import (
     ExchangedCredentials,
 )
 from corp_ed.connectors.common import TokenSet, json_object
-from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 TOKEN_TIMEOUT = 20.0
 # Продлить, если до истечения меньше месяца: синхронизация идёт раз в
@@ -101,6 +101,8 @@ class YandexOAuth:
                 timeout=TOKEN_TIMEOUT,
                 allow_redirects=False,
             )
+        except OutboundTooLargeError as exc:
+            raise AdapterError("oauth_response_too_large") from exc
         except httpx.TimeoutException as exc:
             raise AdapterError("oauth_timeout", retryable=True) from exc
         except httpx.HTTPError as exc:

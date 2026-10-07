@@ -5,12 +5,15 @@
 DNS rebinding: запрос уходит на проверенный IP, а не на имя.
 """
 
+import gzip
 import ipaddress
+import json
 from collections.abc import AsyncIterator
 
 import httpx
 import pytest
 
+from corp_ed.core import outbound
 from corp_ed.core.outbound import (
     OutboundClient,
     OutboundTooLargeError,
@@ -465,3 +468,115 @@ async def test_query_survives_same_host_redirect() -> None:
     response = await client.get("https://wiki.example.com/old", params={"page": "2"})
     assert response.status_code == 200
     assert seen == ["page=2", "page=2"]
+
+
+# --- потолок тела ответа API --------------------------------------------------
+
+
+def _chunked_client(served: list[int], chunks: int = 100) -> OutboundClient:
+    async def body() -> AsyncIterator[bytes]:
+        for index in range(chunks):
+            served.append(index)
+            yield b"x" * 1024
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_Stream(body()))
+
+    return OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+
+
+async def test_api_response_stops_reading_past_the_limit() -> None:
+    """Портал, который отвечает на вызов API гигабайтом, не займёт память
+    воркера: чтение обрывается по ходу, как у download."""
+    served: list[int] = []
+    client = _chunked_client(served)
+    with pytest.raises(OutboundTooLargeError):
+        await client.get("https://portal.example.com/rest/x", max_bytes=4096)
+    assert len(served) < 100
+    with pytest.raises(OutboundTooLargeError):
+        await client.post("https://portal.example.com/rest/x", max_bytes=4096)
+
+    response = await client.get("https://portal.example.com/rest/x")
+    assert response.status_code == 200
+    assert len(response.content) == 100 * 1024
+    assert response.text == "x" * 100 * 1024
+
+
+async def test_api_response_has_a_default_ceiling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert outbound.MAX_RESPONSE_BYTES >= 16 * 1024 * 1024
+    monkeypatch.setattr(outbound, "MAX_RESPONSE_BYTES", 4096)
+    client = _chunked_client([])
+    with pytest.raises(OutboundTooLargeError) as exc:
+        await client.get("https://portal.example.com/rest/x")
+    assert exc.value.limit == 4096
+
+
+async def test_api_response_content_length_refused_early() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-length": "999999"}, content=b"{}")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    with pytest.raises(OutboundTooLargeError):
+        await client.get("https://portal.example.com/rest/x", max_bytes=10)
+
+
+async def test_api_response_under_the_ceiling_reads_as_usual() -> None:
+    """Сжатый JSON (Accept-Encoding по умолчанию) читается как раньше:
+    .json(), .text, заголовки и код ответа на месте."""
+    payload = {"result": ["ё" * 10, {"next": 50}]}
+
+    async def wire() -> AsyncIterator[bytes]:
+        yield gzip.compress(json.dumps(payload).encode())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            201,
+            headers={
+                "content-encoding": "gzip",
+                "content-type": "application/json; charset=utf-8",
+                "retry-after": "3",
+            },
+            stream=_Stream(wire()),
+        )
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    response = await client.get("https://portal.example.com/rest/x", max_bytes=4096)
+    assert response.status_code == 201
+    assert response.json() == payload
+    assert json.loads(response.text) == payload
+    assert response.headers["retry-after"] == "3"
+    assert response.request.url.host == PUBLIC
+
+
+async def test_redirect_returned_as_is_is_read_within_the_ceiling() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            301,
+            headers={"location": "https://new.example.com/x"},
+            content=b"m" * 5000,
+        )
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    response = await client.post(
+        "https://portal.example.com/rest/m", allow_redirects=False, max_bytes=8192
+    )
+    assert response.is_redirect
+    assert response.text == "m" * 5000
+    with pytest.raises(OutboundTooLargeError):
+        await client.post(
+            "https://portal.example.com/rest/m", allow_redirects=False, max_bytes=100
+        )

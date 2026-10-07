@@ -16,6 +16,7 @@ from corp_ed.connectors.bitrix24.client import (
     redact,
 )
 from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth, TokenSet
+from corp_ed.core import outbound
 from tests.connectors.fake_portal import (
     ACCESS_TOKEN,
     ADMIN_ID,
@@ -242,6 +243,28 @@ async def test_redirect_means_portal_moved(portal: FakePortal) -> None:
     client = make_client(portal)
     with pytest.raises(AdapterError, match="portal_moved"):
         await client.call("profile")
+
+
+async def test_oversized_api_response_is_an_adapter_error(
+    portal: FakePortal, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ответ метода или сервера авторизации больше потолка — ошибка
+    источника, а не сбой воркера."""
+    monkeypatch.setattr(outbound, "MAX_RESPONSE_BYTES", 16)
+    with pytest.raises(AdapterError) as excinfo:
+        await make_client(portal).call("profile")
+    assert excinfo.value.code == "response_too_large"
+    assert not excinfo.value.retryable
+    oauth = Bitrix24OAuth(
+        portal.client(),
+        portal=portal.portal,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+    with pytest.raises(AdapterError) as excinfo:
+        await oauth.refresh(REFRESH_TOKEN)
+    assert excinfo.value.code == "oauth_response_too_large"
 
 
 async def test_non_json_5xx_is_retryable(portal: FakePortal) -> None:

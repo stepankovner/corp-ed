@@ -268,6 +268,8 @@ class Bitrix24Client:
                 timeout=REQUEST_TIMEOUT,
                 allow_redirects=False,
             )
+        except OutboundTooLargeError as exc:
+            raise AdapterError("response_too_large") from exc
         except httpx.TimeoutException as exc:
             raise AdapterError("timeout", retryable=True) from exc
         except httpx.HTTPError as exc:

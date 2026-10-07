@@ -25,7 +25,7 @@ from corp_ed.connectors.base import (
     ExchangedCredentials,
 )
 from corp_ed.connectors.common import TokenSet, json_object
-from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 __all__ = ["Bitrix24OAuth", "TokenSet"]
 
@@ -86,6 +86,8 @@ class Bitrix24OAuth:
                 headers={"Accept": "application/json"},
                 timeout=TOKEN_TIMEOUT,
             )
+        except OutboundTooLargeError as exc:
+            raise AdapterError("oauth_response_too_large") from exc
         except httpx.TimeoutException as exc:
             raise AdapterError("oauth_timeout", retryable=True) from exc
         except httpx.HTTPError as exc:

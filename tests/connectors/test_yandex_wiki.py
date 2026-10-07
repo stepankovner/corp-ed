@@ -13,6 +13,7 @@ from corp_ed.connectors.base import (
 )
 from corp_ed.connectors.yandex.adapter import YandexAdapter, build_adapter
 from corp_ed.connectors.yandex.wiki import normalize_wiki_markup, parse_roots
+from corp_ed.core import outbound
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.domain.types import RemoteDocumentKind
 from tests.connectors.fake_yandex import (
@@ -131,6 +132,17 @@ async def test_fetch_refuses_oversized_pages(server: FakeYandex) -> None:
     documents = await listed(adapter)
     with pytest.raises(AdapterError, match="document_too_large"):
         await adapter.fetch(documents["ywiki:1"], max_bytes=5)
+
+
+async def test_oversized_api_response_is_an_adapter_error(
+    server: FakeYandex, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ответ Вики больше потолка — ошибка источника, а не сбой воркера."""
+    monkeypatch.setattr(outbound, "MAX_RESPONSE_BYTES", 16)
+    with pytest.raises(AdapterError) as excinfo:
+        await listed(make_adapter(server))
+    assert excinfo.value.code == "response_too_large"
+    assert not excinfo.value.retryable
 
 
 async def test_employee_who_never_opened_the_wiki_gets_a_grant_error(

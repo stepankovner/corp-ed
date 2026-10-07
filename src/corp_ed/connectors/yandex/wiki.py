@@ -37,7 +37,7 @@ from corp_ed.connectors.base import (
 )
 from corp_ed.connectors.common import Recorder, json_object, parse_datetime, redact
 from corp_ed.connectors.yandex.oauth import YandexAuth
-from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 from corp_ed.domain.types import RemoteDocumentKind
 
 logger = structlog.get_logger()
@@ -95,6 +95,8 @@ class YandexWikiClient:
                     timeout=REQUEST_TIMEOUT,
                     allow_redirects=False,
                 )
+            except OutboundTooLargeError as exc:
+                raise AdapterError("response_too_large") from exc
             except httpx.TimeoutException as exc:
                 raise AdapterError("timeout", retryable=True) from exc
             except httpx.HTTPError as exc:
