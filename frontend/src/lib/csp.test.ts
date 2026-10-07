@@ -23,4 +23,13 @@ describe("CSP статики", () => {
       }
     }
   });
+
+  it("запрет фрейма и для браузеров без frame-ancestors — там же, где CSP", () => {
+    // add_header в location отменяет заголовки сервера: каждый набор
+    // заголовков с CSP несёт и X-Frame-Options.
+    const policies = nginxConf.match(/frame-ancestors 'none'/g) ?? [];
+    const frameOptions = nginxConf.match(/add_header X-Frame-Options "DENY" always;/g) ?? [];
+    expect(policies).toHaveLength(2);
+    expect(frameOptions).toHaveLength(policies.length);
+  });
 });
