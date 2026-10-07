@@ -239,6 +239,11 @@ class MfaService:
         await self.session.commit()
         return LoginStep(token=raw, methods=methods, email_hint=hint)
 
+    async def login_email(self, raw: str) -> str:
+        """Почта учётки незавершённого шага входа — ключ лимита писем."""
+        _, account = await self._login_challenge(raw)
+        return account.email
+
     async def resend_login_code(self, raw: str) -> None:
         challenge, account = await self._login_challenge(raw)
         if await self.methods(account) != ["email"]:
@@ -756,7 +761,11 @@ class MfaService:
     async def end_session(self, account: Account, family_id: UUID) -> None:
         """Завершить свой сеанс. Чужой или несуществующий — «не найден»
         (одинаково: по ответу не узнать, есть ли такой сеанс у другого);
-        уже завершённый свой — без ошибки, повторное нажатие."""
+        уже завершённый свой — без ошибки, повторное нажатие.
+
+        Сеанс завершают обычно из-за подозрения: «запомненные» устройства
+        забываются (доверенное устройство не привязано к сеансу), и при
+        следующем входе везде снова нужен второй фактор."""
         known = await self.session.scalar(
             select(func.count())
             .select_from(RefreshToken)
@@ -776,6 +785,7 @@ class MfaService:
             )
             .values(revoked_at=_now())
         )
+        await self.forget_devices(account)
         await self.session.commit()
 
     # --- правила -------------------------------------------------------------------

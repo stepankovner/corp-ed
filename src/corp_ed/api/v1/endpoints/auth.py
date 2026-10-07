@@ -197,6 +197,10 @@ async def login(
             status="ok", access_token=token.access_token, expires_in=token.expires_in
         )
 
+    if await mfa.methods(account) == ["email"]:
+        # Код уйдёт на почту: новые шаги входа и «прислать ещё раз» —
+        # один счётчик на адрес, ящик письмами не завалить.
+        await enforce(limiter, MAIL_PER_ADDRESS, _login_code_key(account.email))
     step = await mfa.start_login(account, remember=data.remember)
     return LoginResponse(
         status="mfa_required",
@@ -240,8 +244,13 @@ async def resend_login_code(
 ) -> None:
     """Новый код на почту для того же шага входа."""
     await enforce(limiter, MAIL_PER_IP, client_ip(request))
-    await enforce(limiter, MAIL_PER_ADDRESS, f"mfa:{data.token[:16]}")
+    email = await mfa.login_email(data.token)
+    await enforce(limiter, MAIL_PER_ADDRESS, _login_code_key(email))
     await mfa.resend_login_code(data.token)
+
+
+def _login_code_key(email: str) -> str:
+    return f"login-code:{normalize_email(email)}"
 
 
 @router.post("/mfa/passkey-options", response_model=PasskeyOptionsResponse)

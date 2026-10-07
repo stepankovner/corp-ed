@@ -168,6 +168,30 @@ async def test_logout_everywhere_forgets_trusted_devices(
     )
 
 
+async def test_ending_a_session_forgets_trusted_devices(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """«Завершить сеанс» — обычно из-за подозрения: «запомненные»
+    устройства снова проходят второй фактор, как после «выйти везде»."""
+    trusted = await login(api, account.email or "", remember=True)
+    device = api.cookies.get(DEVICE_COOKIE)
+    assert device
+    other = await login(api, account.email or "", remember=False)
+    sessions = (await api.get("/api/v1/auth/sessions", headers=_auth(other))).json()
+    trusted_session = next(item for item in sessions if not item["current"])
+
+    ended = await api.post(
+        f"/api/v1/auth/sessions/{trusted_session['id']}/end", headers=_auth(other)
+    )
+
+    assert ended.status_code == 204
+    assert trusted.status_code == 200
+    api.cookies.set(DEVICE_COOKIE, device)
+    assert (await login_step(api, account.email or "")).json()["status"] == (
+        "mfa_required"
+    )
+
+
 # --- приложение-аутентификатор и резервные коды -----------------------------
 
 
