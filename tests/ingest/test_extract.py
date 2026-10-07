@@ -1,6 +1,8 @@
 """Извлечение текста из файлов: форматы, подмены, бомбы, кодировки."""
 
 import io
+import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import pytest
 from corp_ed.core.config import IngestSettings
 from corp_ed.ingest import extract as extract_module
 from corp_ed.ingest import pdf as pdf_module
+from corp_ed.ingest import sandbox
 from corp_ed.ingest.extract import (
     ExtractionError,
     SourceFormat,
@@ -360,6 +363,50 @@ async def test_sandbox_accepts_explicit_cpu_budget() -> None:
     data = samples.docx([("Раздел", "Heading1"), ("Текст.", None)])
     markdown = await extract_isolated(SourceFormat.DOCX, data, cpu_seconds=120)
     assert "# Раздел" in markdown
+
+
+def _fake_worker(monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+    """Вместо extract_worker — дочерний процесс с заданным поведением."""
+    monkeypatch.setattr(
+        sandbox,
+        "_worker_command",
+        lambda fmt, cpu_seconds: [sys.executable, "-I", "-c", script],
+    )
+
+
+async def test_sandbox_kills_child_that_floods_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сломанный дочерний процесс не забивает память API своим выводом:
+    после потолка его убивают, не дожидаясь таймаута."""
+    monkeypatch.setattr(sandbox, "MAX_OUTPUT_BYTES", 1024 * 1024)
+    _fake_worker(
+        monkeypatch,
+        "import sys, time\n"
+        "sys.stdout.buffer.write(b'x' * (2 * 1024 * 1024))\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(60)\n",
+    )
+    started = time.monotonic()
+    with pytest.raises(ExtractionError) as info:
+        await extract_isolated(SourceFormat.TXT, b"text", timeout=10)
+    assert info.value.code == "document_too_large"
+    assert time.monotonic() - started < 5
+
+
+async def test_sandbox_reads_answer_after_long_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Длинный stderr не мешает прочитать ответ; дочерний процесс, который
+    не дочитал stdin, — тоже."""
+    _fake_worker(
+        monkeypatch,
+        "import json, sys\n"
+        "sys.stderr.buffer.write(b'e' * (3 * 1024 * 1024))\n"
+        "sys.stdout.write(json.dumps({'ok': True, 'markdown': 'готово'}))\n",
+    )
+    data = b"x" * (4 * 1024 * 1024)
+    assert await extract_isolated(SourceFormat.TXT, data, timeout=30) == "готово"
 
 
 def test_sandbox_environment_has_no_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
