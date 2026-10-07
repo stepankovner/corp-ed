@@ -411,3 +411,57 @@ async def test_credentials_survive_same_host_redirect() -> None:
         "https://wiki.example.com/old", headers={"Authorization": "Bearer s"}
     )
     assert seen == ["Bearer s", "Bearer s"]
+
+
+async def test_query_and_body_are_dropped_on_cross_host_redirect() -> None:
+    """Секрет в параметрах запроса (client_secret, code) не уезжает на
+    другой хост вслед за редиректом — ни при 302, ни при 307 с телом."""
+    seen: list[tuple[str, str, str, bytes]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        host = request.headers["host"]
+        seen.append((host, request.method, request.url.query.decode(), request.content))
+        if host == "oauth.example.com":
+            status = 307 if request.method == "POST" else 302
+            return httpx.Response(
+                status, headers={"location": "https://other.example.com/token"}
+            )
+        return httpx.Response(200, json={"ok": True})
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    params = {"client_secret": "s3", "code": "c0"}
+    response = await client.get("https://oauth.example.com/token", params=params)
+    assert response.status_code == 200
+    response = await client.post(
+        "https://oauth.example.com/token", params=params, data={"code": "c0"}
+    )
+    assert response.status_code == 200
+    assert seen == [
+        ("oauth.example.com", "GET", "client_secret=s3&code=c0", b""),
+        ("other.example.com", "GET", "", b""),
+        ("oauth.example.com", "POST", "client_secret=s3&code=c0", b"code=c0"),
+        ("other.example.com", "POST", "", b""),
+    ]
+
+
+async def test_query_survives_same_host_redirect() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.query.decode())
+        if request.url.path == "/old":
+            return httpx.Response(
+                302, headers={"location": "https://wiki.example.com/new"}
+            )
+        return httpx.Response(200, content=b"ok")
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    response = await client.get("https://wiki.example.com/old", params={"page": "2"})
+    assert response.status_code == 200
+    assert seen == ["page=2", "page=2"]

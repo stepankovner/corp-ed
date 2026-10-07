@@ -14,7 +14,8 @@
   а не на имя, которое DNS мог подменить между проверкой и подключением
   (DNS rebinding);
 - редиректы не следуются автоматически: каждый новый адрес проходит ту
-  же проверку, не больше MAX_REDIRECTS.
+  же проверку, не больше MAX_REDIRECTS; на другой хост не уходят ни
+  заголовки с учётными данными, ни параметры запроса, ни тело.
 
 Одна функция для всех адаптеров, с тестами на каждый класс адресов
 (tests/security/test_outbound.py). Вторая линия — egress-политика
@@ -46,6 +47,9 @@ MAX_URL_LENGTH = 2048
 # токен служебной учётки Confluence не должен уехать на CDN или чужой
 # сервер, куда система клиента вдруг перенаправила скачивание.
 _CREDENTIAL_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
+# По той же причине на другой хост не уходят параметры запроса и тело:
+# в них бывают секреты (client_secret и code у OAuth Битрикс24 — в query).
+_PAYLOAD_ARGUMENTS = ("params", "content", "data", "json", "files")
 
 
 class OutboundURLError(ValueError):
@@ -238,6 +242,9 @@ class OutboundClient:
             origin = origin or target.host
             if target.host != origin:
                 request_headers = _without_credentials(request_headers)
+                kwargs = {
+                    k: v for k, v in kwargs.items() if k not in _PAYLOAD_ARGUMENTS
+                }
             send_url, route_headers, extensions = self._route(target)
             response = await self._client.request(
                 method,
