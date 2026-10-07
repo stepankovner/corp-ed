@@ -18,6 +18,33 @@ compose=(docker compose -f compose.yaml)
 
 [[ -f .env ]] || { echo ".env не найден: сначала bootstrap.sh" >&2; exit 1; }
 
+# Значение строки KEY=… без пробелов и комментария; нет строки — пусто и код 1.
+env_value() { awk -v k="$1" -F= '$1 == k { sub(/^[^=]*=/, ""); sub(/[ \t]*#.*$/, ""); v = $0; f = 1 } END { print v; exit !f }' "$2"; }
+# Заменить все строки KEY=… на KEY=<значение> как есть. Не sed: «|», «&» и
+# «\» в значении сломали бы выражение замены. Значение — через окружение
+# awk (ENVIRON), а не -v: -v разбирает обратные слэши.
+set_env_value() {
+    local tmp
+    tmp=$(mktemp .env.XXXXXX)
+    if ! KEY="$1" VALUE="$2" awk 'BEGIN { k = ENVIRON["KEY"]; v = ENVIRON["VALUE"] }
+        index($0, k "=") == 1 { print k "=" v; next } { print }' .env >"$tmp"; then
+        rm -f "$tmp"
+        return 1
+    fi
+    chmod --reference=.env "$tmp"
+    mv "$tmp" .env
+}
+
+# Стенд работает в боевом режиме (make-env.sh). Без него молча выключаются
+# HSTS, запрет «*» в ALLOWED_HOSTS и CORS, запрет LLM_PROVIDER=fake и
+# скрытие /docs — выкатку останавливаем до скачивания образов.
+environment=$(env_value ENVIRONMENT .env || true)
+environment=${environment//[\"\']/}
+if [[ "$environment" != production ]]; then
+    echo ".env: ENVIRONMENT=${environment:-(нет)}, нужно production — выкатка остановлена" >&2
+    exit 1
+fi
+
 echo "==> образы $sha"
 # Токен GHCR из workflow (stdin, живёт до конца его job): пакеты могут
 # оставаться приватными. Вход — во временный конфиг Docker, чтобы токен
@@ -54,13 +81,11 @@ answer_keys=(
     RAG_HISTORY_TURNS RAG_HISTORY_TTL_MINUTES RAG_CONDENSE_TIMEOUT_SECONDS
     RAG_RERANK_MAX_WORDS
 )
-# Значение строки KEY=… без пробелов и комментария; нет строки — пусто и код 1.
-env_value() { awk -v k="$1" -F= '$1 == k { sub(/^[^=]*=/, ""); sub(/[ \t]*#.*$/, ""); v = $0; f = 1 } END { print v; exit !f }' "$2"; }
 for key in "${answer_keys[@]}"; do
     want=$(env_value "$key" .env.example) || continue
     if have=$(env_value "$key" .env); then
         [[ "$have" == "$want" ]] && continue
-        sed -i -E "s|^$key=.*|$key=$want|" .env
+        set_env_value "$key" "$want"
     else
         have="(нет)"
         printf '%s=%s\n' "$key" "$want" >> .env
@@ -87,6 +112,16 @@ for svc in api worker web; do
         sleep 5
     done
 done
+
+echo "==> боевой режим"
+# Приложение действительно в production: схема API закрыта. Напрямую в
+# api (порт на 127.0.0.1, он есть в ALLOWED_HOSTS), мимо HTTPS_PROXY.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --noproxy '*' \
+    http://127.0.0.1:8000/openapi.json || true)
+if [[ "$code" != 404 ]]; then
+    echo "api отдал /openapi.json с кодом $code, а не 404: не боевой режим?" >&2
+    exit 1
+fi
 
 echo "==> песочница сайта"
 # Вымышленная компания для /demo (ТЗ §1): заводится один раз, дальше —
