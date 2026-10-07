@@ -44,6 +44,7 @@ from corp_ed.connectors.common import (
     Recorder,
     note_too_large,
     note_unsupported,
+    path_segment,
     to_int,
 )
 from corp_ed.connectors.confluence.client import (
@@ -212,7 +213,7 @@ class ConfluenceAdapter:
         if document.external_id.startswith(PAGE_PREFIX):
             page_id = document.external_id.removeprefix(PAGE_PREFIX)
             page = await self._client.get(
-                f"content/{page_id}", {"expand": "body.storage,version"}
+                f"content/{path_segment(page_id)}", {"expand": "body.storage,version"}
             )
             body = page.get("body", {}).get("storage", {}).get("value")
             if not isinstance(body, str) or not body.strip():
@@ -223,7 +224,7 @@ class ConfluenceAdapter:
         if document.external_id.startswith(ATTACHMENT_PREFIX):
             attachment_id = document.external_id.removeprefix(ATTACHMENT_PREFIX)
             info = await self._client.get(
-                f"content/{attachment_id}", {"expand": "version"}
+                f"content/{path_segment(attachment_id)}", {"expand": "version"}
             )
             size = to_int(info.get("extensions", {}).get("fileSize"))
             if size is not None and size > max_bytes:
@@ -244,7 +245,7 @@ class ConfluenceAdapter:
         if self._spaces:
             for key in self._spaces:
                 try:
-                    yield await self._client.get(f"space/{key}")
+                    yield await self._client.get(f"space/{path_segment(key)}")
                 except AdapterError as exc:
                     if exc.retryable or isinstance(exc, AdapterAuthError):
                         raise
@@ -264,7 +265,7 @@ class ConfluenceAdapter:
 
     async def _attachments(self, page_id: str) -> AsyncIterator[dict[str, Any]]:
         listing = self._client.paginate(
-            f"content/{page_id}/child/attachment", {"expand": "version"}
+            f"content/{path_segment(page_id)}/child/attachment", {"expand": "version"}
         )
         try:
             async for attachment in listing:
@@ -330,7 +331,7 @@ class ConfluenceAdapter:
         if page_id in self._restrictions:
             return self._restrictions[page_id]
         data = await self._client.get(
-            f"content/{page_id}/restriction/byOperation",
+            f"content/{path_segment(page_id)}/restriction/byOperation",
             {"expand": _RESTRICTION_EXPAND},
         )
         read = data.get("read") or {}
@@ -364,7 +365,7 @@ class ConfluenceAdapter:
                 [
                     str(user["username"])
                     async for user in self._client.paginate(
-                        f"group/{group}/member", limit=GROUP_LIMIT
+                        f"group/{path_segment(group)}/member", limit=GROUP_LIMIT
                     )
                     if user.get("username")
                 ]

@@ -13,7 +13,7 @@ CQL и `user/memberof` открыты; `basic_disabled` — как у 10.2.17.
 
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 import httpx
 
@@ -177,6 +177,11 @@ class FakeConfluence:
             return httpx.Response(403, json={"message": message})
         user = self._user(request)
         route = path.removeprefix("/rest/api/")
+        # Маршрут — по сырому пути: %2F внутри id или имени группы — часть
+        # сегмента, а не разделитель (как у настоящего сервера).
+        raw_route = (
+            request.url.raw_path.decode().split("?", 1)[0].removeprefix("/rest/api/")
+        )
         if route == "user/current":
             if user is None:
                 return _json(
@@ -189,7 +194,7 @@ class FakeConfluence:
             return _json({"type": "known", "username": user, "displayName": "Service"})
         if user is None:
             return httpx.Response(401, json={"message": "Unauthorized"})
-        return self._route(route, query)
+        return self._route(raw_route, query)
 
     def _user(self, request: httpx.Request) -> str | None:
         auth = request.headers.get("authorization", "")
@@ -209,7 +214,7 @@ class FakeConfluence:
         return None
 
     def _route(self, route: str, query: dict[str, str]) -> httpx.Response:
-        parts = route.split("/")
+        parts = [unquote(part) for part in route.split("/")]
         if route == "space":
             wanted_type = query.get("type")
             items = [

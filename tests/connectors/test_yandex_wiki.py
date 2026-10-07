@@ -127,6 +127,23 @@ async def test_fetch_returns_normalized_markdown(server: FakeYandex) -> None:
     assert "{%" not in sales.markdown and "{{" not in sales.markdown
 
 
+async def test_page_id_is_one_path_segment(server: FakeYandex) -> None:
+    """locator с /, ? и # не уводит запрос на другую страницу Вики."""
+    adapter = make_adapter(server)
+    for locator in ("7/../1", "1?fields=content#x", "../pages/1", ".."):
+        document = RemoteDocument(
+            external_id=f"ywiki:{locator}",
+            title="",
+            url="",
+            version="",
+            kind=RemoteDocumentKind.PAGE,
+            module="wiki",
+            locator=locator,
+        )
+        with pytest.raises(AdapterError, match="not_found"):
+            await adapter.fetch(document, max_bytes=MAX_BYTES)
+
+
 async def test_fetch_refuses_oversized_pages(server: FakeYandex) -> None:
     adapter = make_adapter(server)
     documents = await listed(adapter)

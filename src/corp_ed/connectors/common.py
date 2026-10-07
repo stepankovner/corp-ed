@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import PurePath
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -98,6 +98,20 @@ def json_object(response: httpx.Response) -> dict[str, Any] | None:
     except ValueError:
         return None
     return data if isinstance(data, dict) else None
+
+
+def path_segment(value: object) -> str:
+    """Идентификатор из источника или настройки → один сегмент пути API.
+
+    id страницы, имя группы, ключ пространства подставляются в путь:
+    без кодирования `/`, `?`, `#` и `..` в них увели бы запрос на другой
+    адрес того же хоста (чужие права, чужая страница). Сегмент из одних
+    точек кодируется целиком: иначе `..` схлопнулся бы при разборе URL.
+    """
+    segment = quote(str(value), safe="")
+    if segment in {".", ".."}:
+        return segment.replace(".", "%2E")
+    return segment
 
 
 def to_int(value: Any) -> int | None:

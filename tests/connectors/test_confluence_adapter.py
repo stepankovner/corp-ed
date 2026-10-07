@@ -290,6 +290,48 @@ async def test_restrictions_are_cached_per_run(server: FakeConfluence) -> None:
     assert group_calls == ["group/hr-team/member"]
 
 
+async def test_group_name_is_one_path_segment(server: FakeConfluence) -> None:
+    """Имя группы с /, ? и # — один сегмент пути, а не другой запрос."""
+    server.groups["ops/eu?x=1#top"] = ["dora"]
+    server.groups[".."] = ["dora", "egor"]
+    server.add_page(
+        "104",
+        "HR",
+        "Склад",
+        "<p>Остатки.</p>",
+        readers=(set(), {"ops/eu?x=1#top"}),
+    )
+    server.add_page("105", "HR", "Касса", "<p>Остатки.</p>", readers=(set(), {".."}))
+    documents = await listed(make_adapter(server, spaces="HR"), "pages")
+    assert documents["page:104"].allowed_emails == frozenset({"dora"})
+    assert documents["page:105"].allowed_emails == frozenset({"dora", "egor"})
+
+
+async def test_space_key_from_settings_is_one_path_segment(
+    server: FakeConfluence,
+) -> None:
+    server.add_space("../content?x#y", "Странное")
+    server.add_page("106", "../content?x#y", "Внутри", "<p>Текст.</p>")
+    documents = await listed(make_adapter(server, spaces="../content?x#y"), "pages")
+    assert set(documents) == {"page:106"}
+
+
+async def test_document_id_is_one_path_segment(server: FakeConfluence) -> None:
+    """id из external_id не уводит запрос на другую страницу."""
+    adapter = make_adapter(server)
+    for external_id in ("page:999/../101", "page:101?expand=x#y", "att:999/../500"):
+        document = RemoteDocument(
+            external_id=external_id,
+            title="",
+            url="",
+            version="",
+            kind=RemoteDocumentKind.PAGE,
+            module="pages",
+        )
+        with pytest.raises(AdapterError, match="not_found"):
+            await adapter.fetch(document, max_bytes=MAX_BYTES)
+
+
 async def test_unreadable_group_grants_nobody(server: FakeConfluence) -> None:
     server.unreadable_groups.add("hr-team")
     documents = await listed(make_adapter(server, spaces="HR"), "pages")

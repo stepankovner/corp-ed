@@ -35,7 +35,13 @@ from corp_ed.connectors.base import (
     FetchedMarkdown,
     RemoteDocument,
 )
-from corp_ed.connectors.common import Recorder, json_object, parse_datetime, redact
+from corp_ed.connectors.common import (
+    Recorder,
+    json_object,
+    parse_datetime,
+    path_segment,
+    redact,
+)
 from corp_ed.connectors.yandex.oauth import YandexAuth
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 from corp_ed.domain.types import RemoteDocumentKind
@@ -166,7 +172,7 @@ class YandexWikiModule:
         if not document.locator:
             raise AdapterError("locator_missing")
         page = await self._client.get(
-            f"pages/{document.locator}",
+            f"pages/{path_segment(document.locator)}",
             {"fields": "content", "raise_on_redirect": "true"},
         )
         content = page.get("content")
@@ -209,7 +215,8 @@ class YandexWikiModule:
     async def _document(self, page_id: str) -> RemoteDocument | None:
         try:
             page = await self._client.get(
-                f"pages/{page_id}", {"fields": "attributes,breadcrumbs,redirect"}
+                f"pages/{path_segment(page_id)}",
+                {"fields": "attributes,breadcrumbs,redirect"},
             )
         except AdapterError as exc:
             if (
