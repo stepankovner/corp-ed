@@ -77,6 +77,10 @@ _CONTENT_EXPAND = "version,ancestors,space"
 _RESTRICTION_EXPAND = "read.restrictions.user,read.restrictions.group"
 # Ошибки одной страницы или группы, после которых обход продолжается.
 _SKIPPABLE = frozenset({"forbidden", "not_found"})
+# Состав группы: имя уходит одним закодированным сегментом пути, а Tomcat
+# без разрешённого %2F отвечает на такое 400 — группа пропускается, как
+# недоступная (её участники прав не получат), а не роняет весь запуск.
+_GROUP_SKIPPABLE = _SKIPPABLE | {"http_400"}
 DIRECTORY_LIMIT = 2000
 """Обратный ход по составу групп (7.x, 8.x) — запрос на каждого пользователя:
 2 000 — минуты на запуск; больше — права администратора Confluence
@@ -376,7 +380,7 @@ class ConfluenceAdapter:
             # не потеряется: обратный ход получит тот же 401 и поднимет его.
             members = (await self._directory()).get(group, frozenset())
         except AdapterError as exc:
-            if exc.retryable or exc.code not in _SKIPPABLE:
+            if exc.retryable or exc.code not in _GROUP_SKIPPABLE:
                 raise
             # Группу не видно служебной учётке: её участники прав не получат.
             logger.warning("confluence_group_unreadable", group=group, code=exc.code)

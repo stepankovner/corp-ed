@@ -338,6 +338,17 @@ async def test_unreadable_group_grants_nobody(server: FakeConfluence) -> None:
     assert documents["page:101"].allowed_emails == frozenset({"anna"})
 
 
+async def test_group_name_the_server_rejects_grants_nobody(
+    server: FakeConfluence,
+) -> None:
+    """Имя группы уходит закодированным одним сегментом; сервер без
+    разрешённого %2F отвечает 400 — группа пропускается, как недоступная,
+    а не роняет весь запуск."""
+    server.rejected_groups.add("hr-team")
+    documents = await listed(make_adapter(server, spaces="HR"), "pages")
+    assert documents["page:101"].allowed_emails == frozenset({"anna"})
+
+
 async def test_groups_from_directory_when_members_are_admin_only(
     server: FakeConfluence,
 ) -> None:

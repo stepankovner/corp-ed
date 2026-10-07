@@ -42,6 +42,8 @@ class FakeConfluence:
     hidden_pages: set[str] = field(default_factory=set)
     """Страницы, которые служебной учётке не видны (403 по id, нет в списке)."""
     unreadable_groups: set[str] = field(default_factory=set)
+    rejected_groups: set[str] = field(default_factory=set)
+    """Имя группы сервер не принимает в пути (Tomcat без %2F) — 400."""
     members_admin_only: bool = False
     """7.x, 8.x: `group/{name}/member` — 401 для не-администратора."""
     directory_status: int = 200
@@ -297,6 +299,8 @@ class FakeConfluence:
             name = parts[1]
             if name in self.unreadable_groups:
                 return httpx.Response(403, json={"message": "Forbidden"})
+            if name in self.rejected_groups:
+                return httpx.Response(400, json={"message": "Bad request"})
             if name not in self.groups:
                 return httpx.Response(404, json={"message": "No group"})
             return self._page(
