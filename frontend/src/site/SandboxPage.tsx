@@ -186,7 +186,7 @@ export function SandboxPage() {
                 </div>
               </div>
             ) : (
-              <ol className={styles.thread} aria-live="polite">
+              <ol className={styles.thread}>
                 {turns.map((turn) => (
                   <li key={turn.id} className={styles.turn}>
                     <p className={styles.question}>
@@ -198,6 +198,11 @@ export function SandboxPage() {
                 ))}
               </ol>
             )}
+            {/* Поток не зачитываем по кускам — только готовность ответа;
+                ошибки объявляет role="alert" у самого ответа. */}
+            <p className="visually-hidden" role="status">
+              {completion(turns.at(-1))}
+            </p>
 
             <form className={styles.composer} onSubmit={submit} noValidate>
               <label htmlFor={inputId} className="visually-hidden">
@@ -267,6 +272,12 @@ export function SandboxPage() {
       </div>
     </SiteLayout>
   );
+}
+
+/** Для скринридера: последний ответ готов (пусто, пока он пишется). */
+function completion(turn: Turn | undefined): string {
+  if (!turn?.answer) return "";
+  return turn.answer.origin === "none" ? "Готово: в документах нет ответа." : "Ответ готов.";
 }
 
 function askError(error: unknown): string {
