@@ -751,7 +751,12 @@ class ConnectorSettings(BaseSettings):
     команды 25.09).
     """
 
-    environment: str = "development"
+    # Общая ENVIRONMENT, не CONNECTOR_ENVIRONMENT: префикс к ней не
+    # относится, иначе боевые проверки ниже на стенде не включались бы.
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices("environment", "ENVIRONMENT"),
+    )
     secrets_keys: SecretStr | None = None
     max_per_tenant: int = Field(default=20, gt=0, le=1000)
     default_sync_interval_minutes: int = Field(default=60, ge=15, le=1440)
