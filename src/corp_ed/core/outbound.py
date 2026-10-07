@@ -9,12 +9,14 @@
 - имя резолвится ЗДЕСЬ, и каждый адрес проверяется: публичный, не
   loopback, не частный (RFC 1918, ULA), не link-local, не multicast,
   не служебный; IPv6 с вложенным IPv4 (mapped, 6to4, Teredo)
-  проверяется по вложенному адресу;
+  проверяется по вложенному адресу, а префиксы трансляции (NAT64,
+  IPv4-compatible) отвергаются целиком;
 - запрос уходит на ПРОВЕРЕННЫЙ адрес (IP в URL, имя — в Host и SNI),
   а не на имя, которое DNS мог подменить между проверкой и подключением
   (DNS rebinding);
 - редиректы не следуются автоматически: каждый новый адрес проходит ту
-  же проверку, не больше MAX_REDIRECTS.
+  же проверку, не больше MAX_REDIRECTS; на другой хост не уходят ни
+  заголовки с учётными данными, ни параметры запроса, ни тело.
 
 Одна функция для всех адаптеров, с тестами на каждый класс адресов
 (tests/security/test_outbound.py). Вторая линия — egress-политика
@@ -42,10 +44,20 @@ Resolver = Callable[[str], Awaitable[list[str]]]
 
 MAX_REDIRECTS = 3
 MAX_URL_LENGTH = 2048
+MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+"""Потолок тела ответа API (request/get/post; у download — свой лимит).
+
+Страница списка Confluence, Битрикс24 или Яндекса — килобайты, тело
+страницы Confluence — до единиц мегабайт; 20 МиБ — с большим запасом.
+Больше — портал сломан или враждебен: чтение обрывается, а не
+занимает память общего воркера. Вызов может задать свой max_bytes."""
 # Заголовки с учётными данными не уходят на другой хост при редиректе:
 # токен служебной учётки Confluence не должен уехать на CDN или чужой
 # сервер, куда система клиента вдруг перенаправила скачивание.
 _CREDENTIAL_HEADERS = frozenset({"authorization", "cookie", "proxy-authorization"})
+# По той же причине на другой хост не уходят параметры запроса и тело:
+# в них бывают секреты (client_secret и code у OAuth Битрикс24 — в query).
+_PAYLOAD_ARGUMENTS = ("params", "content", "data", "json", "files")
 
 
 class OutboundURLError(ValueError):
@@ -106,9 +118,25 @@ async def system_resolver(host: str) -> list[str]:
     return seen
 
 
+# Префиксы трансляции IPv6 → IPv4: NAT64 (RFC 6052, общий префикс, и
+# RFC 8215, локальный — где в нём лежит IPv4, решает оператор), устаревшие
+# IPv4-compatible (::a.b.c.d) и IPv4-translated (::ffff:0:a.b.c.d).
+# Настоящий адрес назначения выбирает транслятор, а не наша проверка, —
+# к таким адресам воркер не подключается вовсе. Явный список, а не
+# надежда на то, что таблица ipaddress считает ::/8 зарезервированным.
+_IPV4_TRANSLATION_NETWORKS = (
+    ipaddress.IPv6Network("64:ff9b::/96"),
+    ipaddress.IPv6Network("64:ff9b:1::/48"),
+    ipaddress.IPv6Network("::/96"),
+    ipaddress.IPv6Network("::ffff:0:0:0/96"),
+)
+
+
 def is_public_address(address: IPAddress) -> bool:
     """Публичный адрес, к которому воркеру можно подключаться."""
     if isinstance(address, ipaddress.IPv6Address):
+        if any(address in network for network in _IPV4_TRANSLATION_NETWORKS):
+            return False
         embedded = address.ipv4_mapped or address.sixtofour or address.teredo
         if isinstance(embedded, tuple):
             # Teredo: (сервер, клиент) — оба должны быть публичными.
@@ -183,6 +211,46 @@ def _without_credentials(headers: dict[str, str]) -> dict[str, str]:
     return {k: v for k, v in headers.items() if k.lower() not in _CREDENTIAL_HEADERS}
 
 
+async def _read_limited(response: httpx.Response, max_bytes: int) -> bytes:
+    """Тело потокового ответа, не больше max_bytes.
+
+    Content-Length проверяется до чтения, но ему нельзя верить —
+    считаем и сами, уже распакованные байты (gzip-бомба тоже упрётся).
+    """
+    length = response.headers.get("content-length")
+    if length is not None and length.isdigit() and int(length) > max_bytes:
+        raise OutboundTooLargeError(max_bytes)
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > max_bytes:
+            raise OutboundTooLargeError(max_bytes)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+# Тело прочитано и распаковано: эти заголовки описывали байты на проводе.
+_TRANSFER_HEADERS = ("content-encoding", "content-length", "transfer-encoding")
+
+
+def _buffered(response: httpx.Response, body: bytes) -> httpx.Response:
+    """Прочитанный ответ — обычный httpx.Response: .json(), .text, коды
+    и заголовки как у ответа без потокового чтения."""
+    headers = httpx.Headers(response.headers)
+    for name in _TRANSFER_HEADERS:
+        if name in headers:
+            del headers[name]
+    return httpx.Response(
+        response.status_code,
+        headers=headers,
+        content=body,
+        request=response.request,
+        extensions=response.extensions,
+        default_encoding=response.default_encoding,
+    )
+
+
 class OutboundClient:
     """httpx-клиент, который ходит только по проверенным адресам.
 
@@ -224,12 +292,20 @@ class OutboundClient:
         headers: dict[str, str] | None = None,
         timeout: float = 30.0,
         allow_redirects: bool = True,
+        max_bytes: int | None = None,
         **kwargs: Any,
     ) -> httpx.Response:
-        """allow_redirects=False — вернуть ответ-редирект как есть: REST
+        """Вызов API системы клиента; ответ возвращается прочитанным.
+
+        Тело читается потоково и не больше max_bytes (по умолчанию
+        MAX_RESPONSE_BYTES): больше — OutboundTooLargeError, как у
+        download. Портал одной компании не займёт память общего воркера.
+
+        allow_redirects=False — вернуть ответ-редирект как есть: REST
         Битрикс24 отвечает 301/302 при смене адреса портала, и повторять
         POST как GET (без тела) значит получить ошибку метода вместо
         понятного «портал переехал»."""
+        limit = MAX_RESPONSE_BYTES if max_bytes is None else max_bytes
         current = url
         request_headers = dict(headers or {})
         origin: str | None = None
@@ -238,31 +314,41 @@ class OutboundClient:
             origin = origin or target.host
             if target.host != origin:
                 request_headers = _without_credentials(request_headers)
+                kwargs = {
+                    k: v for k, v in kwargs.items() if k not in _PAYLOAD_ARGUMENTS
+                }
             send_url, route_headers, extensions = self._route(target)
-            response = await self._client.request(
+            request = self._client.build_request(
                 method,
                 send_url,
                 headers={**request_headers, **route_headers},
                 timeout=timeout,
-                follow_redirects=False,
                 extensions=extensions,
                 **kwargs,
             )
-            if not allow_redirects:
-                return response
-            if response.is_redirect and "location" in response.headers:
+            response = await self._client.send(
+                request, stream=True, follow_redirects=False
+            )
+            try:
+                if (
+                    allow_redirects
+                    and response.is_redirect
+                    and "location" in response.headers
+                ):
+                    current = urljoin(target.url, response.headers["location"])
+                    # После редиректа тело и метод не повторяются: адаптеры
+                    # ходят GET/POST к API, где редиректы — признак смены
+                    # домена портала, а не часть протокола.
+                    if response.status_code in (301, 302, 303):
+                        method = "GET"
+                        kwargs.pop("content", None)
+                        kwargs.pop("json", None)
+                        kwargs.pop("data", None)
+                    continue
+                body = await _read_limited(response, limit)
+            finally:
                 await response.aclose()
-                current = urljoin(target.url, response.headers["location"])
-                # После редиректа тело и метод не повторяются: адаптеры
-                # ходят GET/POST к API, где редиректы — признак смены
-                # домена портала, а не часть протокола.
-                if response.status_code in (301, 302, 303):
-                    method = "GET"
-                    kwargs.pop("content", None)
-                    kwargs.pop("json", None)
-                    kwargs.pop("data", None)
-                continue
-            return response
+            return _buffered(response, body)
         raise OutboundURLError("too_many_redirects")
 
     async def download(
@@ -302,19 +388,8 @@ class OutboundClient:
                 if response.is_redirect and "location" in response.headers:
                     current = urljoin(target.url, response.headers["location"])
                     continue
-                length = response.headers.get("content-length")
-                if length is not None and length.isdigit() and int(length) > max_bytes:
-                    raise OutboundTooLargeError(max_bytes)
-                chunks: list[bytes] = []
-                total = 0
-                async for chunk in response.aiter_bytes():
-                    total += len(chunk)
-                    if total > max_bytes:
-                        raise OutboundTooLargeError(max_bytes)
-                    chunks.append(chunk)
-                return Downloaded(
-                    response.status_code, response.headers, b"".join(chunks)
-                )
+                content = await _read_limited(response, max_bytes)
+                return Downloaded(response.status_code, response.headers, content)
             finally:
                 await response.aclose()
         raise OutboundURLError("too_many_redirects")

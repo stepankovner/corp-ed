@@ -290,7 +290,7 @@ class CompanyService:
             f"Ответить администратору и поменять — cli set-tariff.{note}"
         )
         logger.info(
-            "tariff_change_requested", tenant_id=str(tenant.id), to=tariff.value
+            "tariff_change_requested", tenant_id=str(tenant.id), tariff=tariff.value
         )
 
     async def _tenant(self) -> Tenant:

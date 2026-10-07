@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import PurePath
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
@@ -98,6 +98,35 @@ def json_object(response: httpx.Response) -> dict[str, Any] | None:
     except ValueError:
         return None
     return data if isinstance(data, dict) else None
+
+
+def path_segment(value: object) -> str:
+    """Идентификатор из источника или настройки → один сегмент пути API.
+
+    id страницы, имя группы, ключ пространства подставляются в путь:
+    без кодирования `/`, `?`, `#` и `..` в них увели бы запрос на другой
+    адрес того же хоста (чужие права, чужая страница). Сегмент из одних
+    точек кодируется целиком: иначе `..` схлопнулся бы при разборе URL.
+    """
+    segment = quote(str(value), safe="")
+    if segment in {".", ".."}:
+        return segment.replace(".", "%2E")
+    return segment
+
+
+MAX_CODE_LENGTH = 64
+_UNSAFE_CODE_CHARS = re.compile(r"[^a-z0-9_]")
+
+
+def safe_code(value: object, *, prefix: str = "") -> str:
+    """Код ошибки из ответа источника → наш код: латиница, цифры и _.
+
+    Такой код уходит в ответ API, в журнал аудита и в адрес возврата
+    фронтенда — строка под контролем чужой системы туда не попадает.
+    Всё прочее заменяется на _, длина — не больше MAX_CODE_LENGTH.
+    """
+    clean = _UNSAFE_CODE_CHARS.sub("_", str(value).strip().lower())
+    return f"{prefix}{clean}"[:MAX_CODE_LENGTH]
 
 
 def to_int(value: Any) -> int | None:

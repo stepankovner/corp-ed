@@ -425,6 +425,9 @@ Postbox платный по числу писем (тарифы — в конс�
    # сохранить: Ctrl+O, Enter; выйти: Ctrl+X
    cd /opt/kronto && sudo -u deploy docker compose -f compose.yaml up -d
    ```
+   С 07.10 `MAIL_BACKEND` в боевом режиме обязателен: с `console` или
+   без строки (по умолчанию `console`) воркер не стартует, и выкатка
+   остановится на ожидании healthy.
 6. **Проверить:** тестовое письмо себе прямо с сервера —
    ```bash
    cd /opt/kronto && sudo -u deploy docker compose -f compose.yaml run --rm api \

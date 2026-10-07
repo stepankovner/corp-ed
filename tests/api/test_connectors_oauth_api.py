@@ -19,6 +19,7 @@ from corp_ed.api.v1.dependencies import (
     get_connector_service,
     get_session,
 )
+from corp_ed.api.v1.endpoints.connectors import OAUTH_BROWSER_COOKIE
 from corp_ed.api.v1.rate_limits import CONNECTOR_OAUTH_CALLBACK_PER_IP
 from corp_ed.connectors.registry import default_registry
 from corp_ed.core.config import ConnectorSettings
@@ -394,6 +395,83 @@ async def test_callback_exchanges_code_and_creates_grant(
     assert mine.json()[0]["grant_status"] == "active"
     # Токен проверен на портале прямо в обратном вызове.
     assert ("profile", {}) in portal.calls
+
+
+async def test_start_binds_the_flow_to_this_browser(
+    oauth_api: httpx.AsyncClient, admin_account: User, account: User, portal: FakePortal
+) -> None:
+    """Начало подключения ставит httpOnly-cookie только для обратного
+    вызова; в state — её отпечаток, а не значение."""
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    response = await oauth_api.post(
+        f"{URL}/{connector_id}/oauth/start", headers=bearer(account)
+    )
+
+    assert response.status_code == 200, response.text
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith(f"{OAUTH_BROWSER_COOKIE}=")
+    assert "HttpOnly" in cookie
+    assert "SameSite=lax" in cookie
+    assert f"Path={URL}/oauth/callback" in cookie
+    nonce = oauth_api.cookies[OAUTH_BROWSER_COOKIE]
+    state = parse_qs(urlsplit(response.json()["authorize_url"]).query)["state"][0]
+    assert nonce not in state
+    assert decode_oauth_state(state)["bnd"]
+
+
+async def test_callback_in_another_browser_creates_no_grant(
+    oauth_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    portal: FakePortal,
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+) -> None:
+    """Ссылку авторизации, начатую одним сотрудником, открыл другой
+    (переслали): портал вернёт браузер с кодом второго и state первого.
+    Без cookie того браузера, что начинал, грант не создаётся."""
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, state = await start(oauth_api, account, connector_id)
+    oauth_api.cookies.clear()
+
+    response = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": AUTH_CODE, "state": state}
+    )
+
+    assert redirect_query(response) == {
+        "tab": "mine",
+        "status": "error",
+        "connector_id": str(connector_id),
+        "error_code": "browser_mismatch",
+    }
+    with tenant_scope(require_tenant()):
+        grants = await session.scalars(
+            select(ConnectorUserGrant).where(
+                ConnectorUserGrant.connector_id == connector_id
+            )
+        )
+        assert grants.first() is None
+    assert ("profile", {}) not in portal.calls
+
+
+async def test_only_the_latest_start_in_a_browser_completes(
+    oauth_api: httpx.AsyncClient, admin_account: User, account: User, portal: FakePortal
+) -> None:
+    """Cookie одна на браузер: незавершённое прежнее подключение
+    перестаёт действовать, как только начато новое."""
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, first = await start(oauth_api, account, connector_id)
+    _, second = await start(oauth_api, account, connector_id)
+
+    stale = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": AUTH_CODE, "state": first}
+    )
+    done = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": AUTH_CODE, "state": second}
+    )
+
+    assert redirect_query(stale)["error_code"] == "browser_mismatch"
+    assert redirect_query(done)["status"] == "ok"
 
 
 async def test_state_is_single_use(

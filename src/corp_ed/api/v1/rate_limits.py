@@ -84,12 +84,23 @@ LEADS_PER_DAY = RatePolicy("lead-all", limit=300, window=86400, fail_open=False)
 PASSWORD_CHANGE_PER_USER = RatePolicy(
     "password-user", limit=5, window=900, fail_open=False
 )
+# Остальные действия «подтвердите паролем» (второй фактор, резервные
+# коды, удаление учётки): общий счётчик на учётку — перебрать текущий
+# пароль украденным access-токеном через соседнюю ручку не выйдет.
+PASSWORD_CONFIRM_PER_ACCOUNT = RatePolicy(
+    "password-confirm", limit=10, window=900, fail_open=False
+)
 FAQ_PER_USER = RatePolicy("faq-user", limit=30, window=60, fail_open=True)
 SEARCH_PER_USER = RatePolicy("search-user", limit=60, window=60, fail_open=True)
 # Чат (ТЗ §6): вложения разбираются в песочнице и считают эмбеддинги;
 # правки диалогов (переименовать, закрепить, оценить) — дешёвые.
 ATTACHMENT_PER_USER = RatePolicy(
     "attachment-user", limit=30, window=3600, fail_open=True
+)
+# Просмотр диалога по общей ссылке: читают коллеги, перебор ссылок не
+# нужен и бессмыслен (токен 192 бита), но и без лимита ручку не оставляем.
+SHARED_VIEW_PER_USER = RatePolicy(
+    "shared-view-user", limit=120, window=60, fail_open=True
 )
 CHAT_EDIT_PER_USER = RatePolicy(
     "chat-edit-user", limit=240, window=3600, fail_open=True

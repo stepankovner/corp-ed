@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
-import { errorMessage } from "../api/errors";
+import { ApiError, errorMessage } from "../api/errors";
 import { isAdmin, useMe } from "../auth/context";
 import { describeCode } from "../lib/codes";
 import { formatNumber, plural } from "../lib/format";
 import { useDocumentTitle } from "../lib/title";
+import { safeHttpUrl } from "../lib/url";
 import styles from "../admin/Admin.module.css";
 import { ConfirmDialog } from "../admin/common";
 import { Badge } from "../ui/Badge";
@@ -53,14 +54,21 @@ export function ConnectionsTab() {
   }, [params, setParams]);
 
   const start = useMutation({
-    mutationFn: (id: string) =>
-      unwrap(
+    mutationFn: async (id: string) => {
+      const { authorize_url } = await unwrap(
         api.POST("/api/v1/connectors/{connector_id}/oauth/start", {
           params: { path: { connector_id: id } },
         }),
-      ),
-    onSuccess: ({ authorize_url }) => {
-      window.location.assign(authorize_url);
+      );
+      // Переходим только по http(s): javascript: и прочее не открываем.
+      const url = safeHttpUrl(authorize_url);
+      if (!url) {
+        throw new ApiError(502, "Источник вернул некорректный адрес входа. Попробуйте позже.");
+      }
+      return url;
+    },
+    onSuccess: (url) => {
+      window.location.assign(url);
     },
   });
 

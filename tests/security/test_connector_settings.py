@@ -71,3 +71,15 @@ def test_development_allows_proxy_mode_without_a_proxy(
     monkeypatch.delenv("https_proxy", raising=False)
     settings = ConnectorSettings(environment="development", outbound_via_proxy=True)  # type: ignore[call-arg]
     assert settings.outbound_via_proxy is True
+
+
+def test_common_environment_variable_turns_on_production_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Боевые проверки включает общая ENVIRONMENT, как у остальных
+    настроек, а не отдельная CONNECTOR_ENVIRONMENT."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.delenv("CONNECTOR_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("CONNECTOR_SECRETS_KEYS", raising=False)
+    with pytest.raises(ValueError, match="CONNECTOR_SECRETS_KEYS"):
+        ConnectorSettings()  # type: ignore[call-arg]

@@ -33,7 +33,9 @@ env:
 # Исполнитель — переменная репозитория RUNS_ON: ["self-hosted","kronto"] —
 # свой runner (docs/CI-RUNNER.md), не задана — машины GitHub. На своём
 # runner задания делят одну машину и один Docker: порты сервисов на хосте
-# случайные, теги образов — с номером прогона.
+# случайные, теги образов — с номером прогона. PR из другого репозитория
+# (форка) — всегда машины GitHub, даже при заданной RUNS_ON: чужой код на
+# своём runner не исполняется.
 jobs:
   # Новый коммит в PR меняет только документацию, а предыдущий коммит PR
   # прошёл CI целиком (или сам был таким же коммитом) — остальные задания
@@ -42,7 +44,7 @@ jobs:
   # остался бы непроверенным.
   changes:
     name: Code changed
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -86,7 +88,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     name: Lint, types, tests
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
 
     services:
@@ -158,7 +160,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     name: Frontend lint, types, tests, build
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
     defaults:
       run:
@@ -208,7 +210,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     name: End-to-end (browser against the API, fake LLM)
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
 
     services:
@@ -393,7 +395,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     name: Migrations on a fresh database
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
 
     services:
@@ -483,7 +485,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     name: Docker image builds and runs unprivileged
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
     # Тег — свой у прогона: на своём runner Docker общий, и kronto-api:ci
     # параллельного прогона подменил бы проверяемый образ.

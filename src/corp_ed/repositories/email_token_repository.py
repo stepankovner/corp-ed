@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.domain.models import EmailToken
@@ -55,3 +55,15 @@ class EmailTokenRepository:
             )
             .values(used_at=now)
         )
+
+    async def delete_expired_before(self, cutoff: datetime) -> int:
+        """Удалить ссылки и коды, истёкшие раньше cutoff (cli purge).
+
+        Использованная, истёкшая и удалённая ссылка отвечают одинаково
+        (AccountService._active_token), поэтому удаление ничего не меняет
+        для того, кто откроет старое письмо.
+        """
+        result = await self.session.execute(
+            delete(EmailToken).where(EmailToken.expires_at < cutoff)
+        )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]

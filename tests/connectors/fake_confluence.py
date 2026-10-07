@@ -13,7 +13,7 @@ CQL и `user/memberof` открыты; `basic_disabled` — как у 10.2.17.
 
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, unquote
 
 import httpx
 
@@ -42,6 +42,8 @@ class FakeConfluence:
     hidden_pages: set[str] = field(default_factory=set)
     """Страницы, которые служебной учётке не видны (403 по id, нет в списке)."""
     unreadable_groups: set[str] = field(default_factory=set)
+    rejected_groups: set[str] = field(default_factory=set)
+    """Имя группы сервер не принимает в пути (Tomcat без %2F) — 400."""
     members_admin_only: bool = False
     """7.x, 8.x: `group/{name}/member` — 401 для не-администратора."""
     directory_status: int = 200
@@ -177,6 +179,11 @@ class FakeConfluence:
             return httpx.Response(403, json={"message": message})
         user = self._user(request)
         route = path.removeprefix("/rest/api/")
+        # Маршрут — по сырому пути: %2F внутри id или имени группы — часть
+        # сегмента, а не разделитель (как у настоящего сервера).
+        raw_route = (
+            request.url.raw_path.decode().split("?", 1)[0].removeprefix("/rest/api/")
+        )
         if route == "user/current":
             if user is None:
                 return _json(
@@ -189,7 +196,7 @@ class FakeConfluence:
             return _json({"type": "known", "username": user, "displayName": "Service"})
         if user is None:
             return httpx.Response(401, json={"message": "Unauthorized"})
-        return self._route(route, query)
+        return self._route(raw_route, query)
 
     def _user(self, request: httpx.Request) -> str | None:
         auth = request.headers.get("authorization", "")
@@ -209,7 +216,7 @@ class FakeConfluence:
         return None
 
     def _route(self, route: str, query: dict[str, str]) -> httpx.Response:
-        parts = route.split("/")
+        parts = [unquote(part) for part in route.split("/")]
         if route == "space":
             wanted_type = query.get("type")
             items = [
@@ -292,6 +299,8 @@ class FakeConfluence:
             name = parts[1]
             if name in self.unreadable_groups:
                 return httpx.Response(403, json={"message": "Forbidden"})
+            if name in self.rejected_groups:
+                return httpx.Response(400, json={"message": "Bad request"})
             if name not in self.groups:
                 return httpx.Response(404, json={"message": "No group"})
             return self._page(

@@ -353,8 +353,7 @@ class AccountService:
         new_email = normalize_email(new_email)
         if new_email == account.email:
             raise EmailTakenError()
-        if await self.accounts.get_by_email(new_email) is not None:
-            raise EmailTakenError()
+        await self._ensure_free(new_email, account)
         if await self.mfa.has_strong(account):
             if not second_factor:
                 raise SecondFactorRequiredError()
@@ -450,8 +449,7 @@ class AccountService:
         account = await self.accounts.get(token.account_id)
         if account is None or token.email is None:
             raise InvalidEmailCodeError()
-        if await self.accounts.get_by_email(token.email) is not None:
-            raise EmailTakenError()
+        await self._ensure_free(token.email, account, release=True)
         now = _now()
         old_email = account.email
         account.email = token.email
@@ -489,9 +487,7 @@ class AccountService:
         account = await self.accounts.get(token.account_id)
         if account is None or token.email is None:
             raise InvalidEmailCodeError()
-        taken = await self.accounts.get_by_email(token.email)
-        if taken is not None and taken.id != account.id:
-            raise EmailTakenError()
+        await self._ensure_free(token.email, account, release=True)
         account.email = token.email
         token.used_at = _now()
         await self.auth.invalidate_sessions(account)
@@ -500,6 +496,23 @@ class AccountService:
             AuditAction.ACCOUNT_EMAIL_REVERTED, details={"account_id": str(account.id)}
         )
         await self.session.commit()
+
+    async def _ensure_free(
+        self, email: str, account: Account, *, release: bool = False
+    ) -> None:
+        """Адрес не занят другой учёткой. Регистрация без подтверждения
+        адрес не держит — как и при повторной регистрации: иначе заглушка
+        на чужой адрес «бронировала» бы его и отключала «это не я» (адрес
+        вернуть было бы некуда). release=True — заглушка удаляется, адрес
+        переходит этой учётке."""
+        other = await self.accounts.get_by_email(email)
+        if other is None or other.id == account.id:
+            return
+        if other.email_verified_at is not None:
+            raise EmailTakenError()
+        if release:
+            await self.accounts.delete(other)
+            logger.info("unverified_account_released", account_id=str(other.id))
 
     # --- профиль, компании, удаление ------------------------------------------
 

@@ -20,6 +20,8 @@
 # В строке отчёта — имя, размер и сверка хеша: адрес хранилища, бакет и
 # ошибки rclone — в /var/log/kronto/offsite.log на сервере.
 set -euo pipefail
+# Зашифрованная копия, лог и результат — только для владельца.
+umask 077
 
 CONF="${KRONTO_OFFSITE_ENV:-/etc/kronto/offsite.env}"
 BACKUPS="${KRONTO_BACKUPS:-/var/backups/kronto}"
@@ -69,7 +71,6 @@ upload() {
     lock || return 1
     local name state=ok detail started=$SECONDS work enc sent got size
     name="$(basename "$dump").age"
-    umask 077
     work=$(mktemp -d "$BACKUPS/.offsite.XXXXXX") || return 1
     # shellcheck disable=SC2064 # путь известен сейчас
     trap "rm -rf '$work'" EXIT

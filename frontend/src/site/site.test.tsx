@@ -104,6 +104,9 @@ describe("песочница", () => {
 
     expect(await screen.findByText(/Суточные — 700 ₽ в день/)).toBeVisible();
     expect(asked).toEqual([{ question: "Какие суточные?", website: "" }]);
+    // Скринридер не зачитывает каждый кусок потока — только готовность.
+    expect(screen.getByText("Какие суточные?").closest("ol")).not.toHaveAttribute("aria-live");
+    expect(await screen.findByText("Ответ готов.")).toHaveAttribute("role", "status");
     const source = await screen.findByRole("button", {
       name: /Положение о служебных командировках › Раздел 4/,
     });
@@ -171,6 +174,7 @@ describe("песочница", () => {
     expect(
       await screen.findByText("В документах компании нет ответа на этот вопрос."),
     ).toBeVisible();
+    expect(screen.getByText("Готово: в документах нет ответа.")).toHaveAttribute("role", "status");
 
     await user.type(screen.getByLabelText("Ваш вопрос"), "А премия?");
     await user.click(screen.getByRole("button", { name: "Спросить" }));

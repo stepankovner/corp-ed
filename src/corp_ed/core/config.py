@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal, Self
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from corp_ed.domain.rerank import RERANK_MAX_WORDS
@@ -508,6 +508,13 @@ class MailSettings(BaseSettings):
     """
 
     backend: Literal["postbox", "smtp", "console", "memory"] = "console"
+    # Общая ENVIRONMENT, не MAIL_ENVIRONMENT: префикс к ней не относится.
+    # В production console и memory не отправляют писем — воркер не
+    # стартует с ними (mail.build_sender).
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices("environment", "ENVIRONMENT"),
+    )
     smtp_host: str | None = None
     smtp_port: int = Field(default=465, gt=0, lt=65536)
     smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
@@ -744,7 +751,12 @@ class ConnectorSettings(BaseSettings):
     команды 25.09).
     """
 
-    environment: str = "development"
+    # Общая ENVIRONMENT, не CONNECTOR_ENVIRONMENT: префикс к ней не
+    # относится, иначе боевые проверки ниже на стенде не включались бы.
+    environment: str = Field(
+        default="development",
+        validation_alias=AliasChoices("environment", "ENVIRONMENT"),
+    )
     secrets_keys: SecretStr | None = None
     max_per_tenant: int = Field(default=20, gt=0, le=1000)
     default_sync_interval_minutes: int = Field(default=60, ge=15, le=1440)

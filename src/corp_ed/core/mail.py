@@ -52,7 +52,7 @@ class MailSender(Protocol):
 
 
 class ConsoleSender:
-    """Разработка: письмо — в лог. В production не используется."""
+    """Разработка: письмо — в лог. В production build_sender его не выдаст."""
 
     async def send(self, email: OutgoingEmail) -> None:
         logger.info("mail_console", to=email.to, subject=email.subject, text=email.text)
@@ -197,6 +197,16 @@ def build_sender(
     settings: MailSettings, client: httpx.AsyncClient | None = None
 ) -> MailSender:
     """client нужен Postbox — HTTP-клиент процесса (воркер, CLI)."""
+    if settings.environment == "production" and settings.backend in (
+        "console",
+        "memory",
+    ):
+        # console пишет адрес и текст письма (ссылки сброса пароля) в лог,
+        # memory молча теряет письмо. Лучше не стартовать воркер.
+        raise ValueError(
+            f"MAIL_BACKEND={settings.backend} does not send mail; "
+            "set MAIL_BACKEND=postbox or smtp in production"
+        )
     if settings.backend == "postbox":
         if client is None:
             raise ValueError("MAIL_BACKEND=postbox needs an HTTP client")

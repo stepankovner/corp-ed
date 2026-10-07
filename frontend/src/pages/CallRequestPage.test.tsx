@@ -45,6 +45,23 @@ describe("тарифы и запись на созвон", () => {
     expect(screen.queryByText(/Пилот/)).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["/privacy", "/privacy"],
+    ["https://krontoai.ru/privacy", "https://krontoai.ru/privacy"],
+    ["javascript:alert(1)", "#"],
+    ["data:text/html,x", "#"],
+  ])("ссылка на политику %s — только свой путь или http(s)", async (policyUrl, href) => {
+    server.use(
+      http.get("/api/v1/leads/form", () => HttpResponse.json(form({ policy_url: policyUrl }))),
+    );
+    renderApp("/pricing/request", { signedIn: false });
+
+    expect(await screen.findByRole("link", { name: "политике обработки данных" })).toHaveAttribute(
+      "href",
+      href,
+    );
+  });
+
   it("пока политика не задана, форма закрыта", async () => {
     server.use(
       http.get("/api/v1/leads/form", () =>

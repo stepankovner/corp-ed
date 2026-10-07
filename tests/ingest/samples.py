@@ -3,6 +3,7 @@
 """Файлы для тестов извлечения, собранные в коде — без бинарников в git."""
 
 import io
+import struct
 import zipfile
 
 _CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -84,8 +85,52 @@ def pdf(pages: list[list[tuple[str, int]]]) -> bytes:
     return build(built)
 
 
+_EOCD = struct.Struct("<4s4H2LH")
+
+
+def declare_entries(data: bytes, count: int) -> bytes:
+    """Тот же zip, но конец каталога (EOCD) объявляет count записей."""
+    patched = bytearray(data)
+    end = patched.rfind(b"PK\x05\x06")
+    struct.pack_into("<HH", patched, end + 8, count, count)
+    return bytes(patched)
+
+
+def with_entries(data: bytes, extra: int) -> bytes:
+    """Тот же zip и ещё extra пустых записей."""
+    source = zipfile.ZipFile(io.BytesIO(data))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for item in source.infolist():
+            archive.writestr(item, source.read(item))
+        for index in range(extra):
+            archive.writestr(f"pad/{index}", b"")
+    return buffer.getvalue()
+
+
+def with_zip64(data: bytes, count: int, *, record: bool = True) -> bytes:
+    """Тот же zip с концом каталога ZIP64: число записей — в записи ZIP64
+    (count), в обычном EOCD — 0xFFFF. record=False — локатор ZIP64 есть,
+    а самой записи нет."""
+    end = data.rfind(b"PK\x05\x06")
+    *_, cd_size, cd_offset, comment = _EOCD.unpack_from(data, end)
+    assert comment == 0
+    zip64 = struct.pack(
+        "<4sQ2H2L4Q", b"PK\x06\x06", 44, 45, 45, 0, 0, count, count, cd_size, cd_offset
+    )
+    if not record:
+        zip64 = b"\x00" * len(zip64)
+    locator = struct.pack("<4sLQL", b"PK\x06\x07", 0, end, 1)
+    eocd = _EOCD.pack(b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    return data[:end] + zip64 + locator + eocd
+
+
 def zip_bomb_docx() -> bytes:
-    """Валидный по структуре docx с членом, сжатым в сотни раз."""
+    """Валидный по структуре docx с членом, сжатым в сотни раз.
+
+    Размеры в каталоге честные — только такую бомбу и ловит предпроверка
+    (best-effort). Заниженные размеры упираются уже в RLIMIT_AS песочницы.
+    """
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", _CONTENT_TYPES)

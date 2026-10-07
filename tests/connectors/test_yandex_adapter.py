@@ -17,6 +17,7 @@ from corp_ed.connectors.registry import UserAuth, default_registry
 from corp_ed.connectors.yandex import KIND, SPEC
 from corp_ed.connectors.yandex.adapter import YandexAdapter, build_adapter
 from corp_ed.connectors.yandex.oauth import YandexOAuth
+from corp_ed.core import outbound
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.domain.types import ConnectorMode, RemoteDocumentKind
 from tests.connectors.fake_yandex import (
@@ -130,6 +131,53 @@ async def test_check_reads_uid(server: FakeYandex) -> None:
     await adapter.check()
     # uid — идентификатор сотрудника в API Яндекс 360; логин может смениться.
     assert adapter.external_user_id == UID
+
+
+async def test_oversized_api_response_is_an_adapter_error(
+    server: FakeYandex, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ответ Диска или OAuth больше потолка — ошибка источника, а не сбой
+    воркера."""
+    monkeypatch.setattr(outbound, "MAX_RESPONSE_BYTES", 16)
+    with pytest.raises(AdapterError) as excinfo:
+        await make_adapter(server).check()
+    assert excinfo.value.code == "response_too_large"
+    assert not excinfo.value.retryable
+    flow = YandexOAuth(
+        server.client(),
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+    with pytest.raises(AdapterError) as excinfo:
+        await flow.exchange(AUTH_CODE)
+    assert excinfo.value.code == "oauth_response_too_large"
+
+
+async def test_unknown_error_codes_from_yandex_are_scrubbed(
+    server: FakeYandex,
+) -> None:
+    """Код ошибки из ответа Диска и OAuth уходит в API, аудит и
+    интерфейс — только латиница, цифры и _, не длиннее 64."""
+    server.api_error = (400, {"error": "Odd Error\n<b>"})
+    with pytest.raises(AdapterError) as excinfo:
+        await make_adapter(server).check()
+    assert excinfo.value.code == "odd_error__b_"
+    server.api_error = (500, {"error": "Ошибка" + "!" * 100})
+    with pytest.raises(AdapterError) as excinfo:
+        await make_adapter(server).check()
+    assert excinfo.value.code == "_" * 64 and excinfo.value.retryable
+    server.api_error = None
+    server.oauth_error = "Odd Error\n<b>"
+    flow = YandexOAuth(
+        server.client(),
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+    with pytest.raises(AdapterError) as excinfo:
+        await flow.exchange(AUTH_CODE)
+    assert excinfo.value.code == "oauth_odd_error__b_"
 
 
 async def test_dead_token_is_auth_error_after_one_refresh_attempt(

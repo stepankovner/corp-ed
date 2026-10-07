@@ -22,12 +22,38 @@ from corp_ed.core.security import (
 
 def test_state_roundtrip_carries_user_tenant_connector() -> None:
     user_id, tenant_id, connector_id = uuid4(), uuid4(), uuid4()
-    state = create_oauth_state(user_id, tenant_id, connector_id, ttl_minutes=5)
+    state = create_oauth_state(
+        user_id, tenant_id, connector_id, browser="b" * 64, ttl_minutes=5
+    )
     payload = decode_oauth_state(state)
     assert payload["sub"] == str(user_id)
     assert payload["tenant_id"] == str(tenant_id)
     assert payload["connector_id"] == str(connector_id)
     assert payload["typ"] == OAUTH_STATE_TYPE
+    assert payload["bnd"] == "b" * 64
+
+
+def test_state_without_browser_binding_is_rejected() -> None:
+    """state старого образца (без отпечатка браузера) не принимается."""
+    now = datetime.now(UTC)
+    unbound = jwt.encode(
+        {
+            "sub": str(uuid4()),
+            "tenant_id": str(uuid4()),
+            "connector_id": str(uuid4()),
+            "typ": OAUTH_STATE_TYPE,
+            "iss": ISSUER,
+            "aud": AUDIENCE,
+            "iat": now,
+            "nbf": now,
+            "exp": now + timedelta(minutes=5),
+            "jti": "x",
+        },
+        get_settings().secret_key.get_secret_value(),
+        algorithm=ALGORITHM,
+    )
+    with pytest.raises(jwt.PyJWTError):
+        decode_oauth_state(unbound)
 
 
 def test_access_token_is_not_a_state_and_vice_versa() -> None:
@@ -36,13 +62,17 @@ def test_access_token_is_not_a_state_and_vice_versa() -> None:
     )
     with pytest.raises(jwt.PyJWTError):
         decode_oauth_state(access)
-    state = create_oauth_state(uuid4(), uuid4(), uuid4(), ttl_minutes=5)
+    state = create_oauth_state(
+        uuid4(), uuid4(), uuid4(), browser="b" * 64, ttl_minutes=5
+    )
     with pytest.raises(jwt.PyJWTError):
         decode_access_token(state)
 
 
 def test_tampered_or_expired_state_is_rejected() -> None:
-    state = create_oauth_state(uuid4(), uuid4(), uuid4(), ttl_minutes=5)
+    state = create_oauth_state(
+        uuid4(), uuid4(), uuid4(), browser="b" * 64, ttl_minutes=5
+    )
     with pytest.raises(jwt.PyJWTError):
         decode_oauth_state(state[:-3] + "abc")
     now = datetime.now(UTC)
@@ -51,6 +81,7 @@ def test_tampered_or_expired_state_is_rejected() -> None:
             "sub": str(uuid4()),
             "tenant_id": str(uuid4()),
             "connector_id": str(uuid4()),
+            "bnd": "b" * 64,
             "typ": OAUTH_STATE_TYPE,
             "iss": ISSUER,
             "aud": AUDIENCE,

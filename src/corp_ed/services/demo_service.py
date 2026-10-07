@@ -20,13 +20,18 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import DemoSettings
-from corp_ed.core.exceptions import CreditsExhaustedError, DemoUnavailableError
+from corp_ed.core.exceptions import (
+    CreditsExhaustedError,
+    DemoUnavailableError,
+    DomainError,
+)
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.demo import COMPANY_NAME, SUGGESTED_QUESTIONS, TENANT_NAME, documents
 from corp_ed.domain.models import (
@@ -121,6 +126,11 @@ class DemoService:
                 member = await self._member(session)
                 if member is None:
                     raise _off()
+                if await _has_other_members(session, tenant.id, member.account_id):
+                    # DEMO_COMPANY_CODE указывает на настоящую компанию:
+                    # анонимно отвечать от её имени нельзя.
+                    logger.error("demo_tenant_not_sandbox", tenant_id=str(tenant.id))
+                    raise _off()
                 faq = self.build_faq(session)
                 try:
                     result = await faq.answer_turn(
@@ -207,6 +217,14 @@ class DemoService:
                 account.hashed_password = NO_LOGIN_HASH
 
             with tenant_scope(tenant.id):
+                if not tenant_created and await _has_other_members(
+                    session, tenant.id, account.id
+                ):
+                    raise DomainError(
+                        f"Компания {settings.company_code} уже есть и это не "
+                        "песочница: в ней есть сотрудники. Проверьте "
+                        "DEMO_COMPANY_CODE."
+                    )
                 users = UserRepository(session)
                 member = await users.get_by_account(account.id)
                 if member is None:
@@ -293,3 +311,21 @@ def _source(match: ChunkMatch) -> DemoSource:
     return DemoSource(
         title=match.title, heading_path=list(match.heading_path), content=content
     )
+
+
+async def _has_other_members(
+    session: AsyncSession, tenant_id: UUID, demo_account_id: UUID | None
+) -> bool:
+    """В компании песочницы есть кто-то, кроме её служебной учётки, — значит,
+    это не песочница (ошибка в DEMO_COMPANY_CODE).
+
+    Компания — явным условием: в count() без сущности в списке колонок
+    ORM-фильтр тенанта не срабатывает, а роль без RLS (суперпользователь
+    в CI) посчитала бы людей всех компаний."""
+    count = await session.scalar(
+        select(func.count(User.id)).where(
+            User.tenant_id == tenant_id,
+            User.account_id.is_distinct_from(demo_account_id),
+        )
+    )
+    return bool(count)

@@ -1769,6 +1769,22 @@
         "title": "DepartmentBrief",
         "type": "object"
       },
+      "DepartmentDecisionRequest": {
+        "additionalProperties": false,
+        "description": "Решение по отделу, выбранному сотрудником: отдел, который видел\nадминистратор. Сотрудник успел сменить отдел — 409.",
+        "properties": {
+          "department_id": {
+            "format": "uuid",
+            "title": "Department Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "department_id"
+        ],
+        "title": "DepartmentDecisionRequest",
+        "type": "object"
+      },
       "DepartmentRef": {
         "properties": {
           "id": {
@@ -7397,8 +7413,18 @@
     },
     "/api/v1/account/passkeys/options": {
       "post": {
-        "description": "Параметры для navigator.credentials.create().",
+        "description": "Параметры для navigator.credentials.create(). Пароль — как у\n/account/totp/setup.",
         "operationId": "passkey_options_api_v1_account_passkeys_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -7409,6 +7435,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -7586,8 +7622,18 @@
     },
     "/api/v1/account/totp/setup": {
       "post": {
-        "description": "Секрет для приложения (QR из otpauth_uri). Действует после\nподтверждения кодом — /account/totp/enable.",
+        "description": "Секрет для приложения (QR из otpauth_uri). Действует после\nподтверждения кодом — /account/totp/enable.\n\nПароль — как при отключении: одного access-токена мало, чтобы\nпривязать к учётке новый фактор.",
         "operationId": "start_totp_setup_api_v1_account_totp_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -7598,6 +7644,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -9286,7 +9342,7 @@
     },
     "/api/v1/connectors/{connector_id}/oauth/start": {
       "post": {
-        "description": "Адрес авторизации на портале: фронт открывает его в браузере\nсотрудника, портал вернёт браузер на /connectors/oauth/callback.",
+        "description": "Адрес авторизации на портале: фронт открывает его в браузере\nсотрудника, портал вернёт браузер на /connectors/oauth/callback.\n\nБраузер получает httpOnly-cookie со случайным значением, в state —\nеё отпечаток: обратный вызов примется только в этом браузере. Cookie\nживёт столько же, сколько state, и уходит только на обратный вызов;\nновое подключение в том же браузере заменяет её.",
         "operationId": "oauth_start_api_v1_connectors__connector_id__oauth_start_post",
         "parameters": [
           {
@@ -13377,7 +13433,7 @@
     },
     "/api/v1/users/{user_id}/department/confirm": {
       "post": {
-        "description": "Подтвердить отдел, который сотрудник выбрал сам (ТЗ §7): с этого\nмомента ему открыты закрытые папки отдела. Уже подтверждён — ответ\nтот же, без изменений. Отдела нет — 409. Только работающий человек\nсвоей компании, иначе 404. Человеку — уведомление, в журнал.",
+        "description": "Подтвердить отдел, который сотрудник выбрал сам (ТЗ §7): с этого\nмомента ему открыты закрытые папки отдела. Уже подтверждён — ответ\nтот же, без изменений. Отдела нет или он не тот, что видел\nадминистратор (department_id), — 409. Только работающий человек\nсвоей компании, иначе 404. Человеку — уведомление, в журнал.",
         "operationId": "confirm_department_api_v1_users__user_id__department_confirm_post",
         "parameters": [
           {
@@ -13391,6 +13447,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepartmentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -13426,7 +13492,7 @@
     },
     "/api/v1/users/{user_id}/department/reject": {
       "post": {
-        "description": "Отклонить отдел, выбранный сотрудником (ТЗ §7): отдел у человека\nснимается (department_id null). Отдела нет или он уже подтверждён —\n409 (подтверждённый меняют в профиле сотрудника). Только работающий\nчеловек своей компании, иначе 404. Человеку — уведомление, в журнал.",
+        "description": "Отклонить отдел, выбранный сотрудником (ТЗ §7): отдел у человека\nснимается (department_id null). Отдела нет, он не тот, что видел\nадминистратор, или уже подтверждён — 409 (подтверждённый меняют в\nпрофиле сотрудника). Только работающий человек своей компании, иначе\n404. Человеку — уведомление, в журнал.",
         "operationId": "reject_department_api_v1_users__user_id__department_reject_post",
         "parameters": [
           {
@@ -13440,6 +13506,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepartmentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {

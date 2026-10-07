@@ -1,6 +1,8 @@
 """Извлечение текста из файлов: форматы, подмены, бомбы, кодировки."""
 
 import io
+import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import pytest
 from corp_ed.core.config import IngestSettings
 from corp_ed.ingest import extract as extract_module
 from corp_ed.ingest import pdf as pdf_module
+from corp_ed.ingest import sandbox
 from corp_ed.ingest.extract import (
     ExtractionError,
     SourceFormat,
@@ -114,6 +117,32 @@ def test_rejects_broken_zip() -> None:
     assert _code(lambda: detect_format("a.docx", b"PK\x03\x04garbage")) == "corrupted"
 
 
+def test_rejects_docx_declaring_too_many_entries() -> None:
+    data = samples.declare_entries(
+        samples.docx([("Текст", None)]), extract_module.MAX_DOCX_ENTRIES + 1
+    )
+    assert _code(lambda: detect_format("a.docx", data)) == "archive_too_large"
+
+
+def test_docx_entries_are_counted_before_directory_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Каталог zip в процессе API не строится, если записей больше
+    лимита, даже когда конец архива объявляет их меньше."""
+    data = samples.declare_entries(
+        samples.with_entries(
+            samples.docx([("Текст", None)]), extract_module.MAX_DOCX_ENTRIES
+        ),
+        3,
+    )
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("zip directory was built")
+
+    monkeypatch.setattr(extract_module.zipfile, "ZipFile", fail)
+    assert _code(lambda: detect_format("a.docx", data)) == "archive_too_large"
+
+
 @pytest.mark.parametrize(
     ("raw", "clean"),
     [
@@ -186,6 +215,56 @@ def test_docx_running_text_is_extracted() -> None:
     assert markdown.count("П-ОТП-07") == 1
     assert markdown.rstrip().endswith("Вопросы — внутренний телефон 2318")
     assert "\n7" not in markdown
+
+
+_DOCTYPE = '<!DOCTYPE w:document [<!ENTITY a "aaaa">]>'
+
+
+@pytest.mark.parametrize("part", ["word/document.xml", "word/styles.xml"])
+@pytest.mark.parametrize(
+    "prolog",
+    [_DOCTYPE, "<!--" + "x" * 5000 + "-->" + _DOCTYPE],
+    ids=["direct", "padded"],
+)
+def test_docx_part_with_doctype_is_corrupted(part: str, prolog: str) -> None:
+    """DTD Word не пишет: часть с ним — повреждённый файл, как в xlsx и
+    pptx. mammoth разбирает части через minidom и сам DTD не запрещает."""
+    data = samples.docx([("Текст положения.", None)])
+    source = zipfile.ZipFile(io.BytesIO(data))
+    patched = io.BytesIO()
+    with zipfile.ZipFile(patched, "w", zipfile.ZIP_DEFLATED) as archive:
+        for item in source.infolist():
+            content = source.read(item)
+            if item.filename == part:
+                declaration, rest = content.split(b"?>", 1)
+                content = declaration + b"?>" + prolog.encode() + rest.lstrip()
+            archive.writestr(item, content)
+    assert _code(lambda: extract(SourceFormat.DOCX, patched.getvalue())) == (
+        "corrupted"
+    )
+
+
+def test_docx_with_images_and_binary_parts_is_read() -> None:
+    """Предпроверка DTD не спотыкается о части, которые не XML."""
+    data = samples.docx(
+        [("Текст положения.", None)],
+        extra_parts={"word/media/image1.png": "\x89PNG\r\n\x1a\n\x00\x00binary"},
+    )
+    assert "Текст положения." in extract(SourceFormat.DOCX, data)
+
+
+def test_docx_with_unreadable_unused_part_is_read() -> None:
+    """Часть, которую zipfile не открывает (помечена зашифрованной), а
+    mammoth не читает, документ не валит — как и до предпроверки DTD."""
+    data = bytearray(
+        samples.docx(
+            [("Текст положения.", None)],
+            extra_parts={"word/media/locked.bin": "data"},
+        )
+    )
+    entry = data.rfind(b"PK\x01\x02", 0, data.rfind(b"word/media/locked.bin"))
+    data[entry + 8] |= 0x01  # флаг «зашифровано» в центральном каталоге
+    assert "Текст положения." in extract(SourceFormat.DOCX, bytes(data))
 
 
 def test_broken_running_text_does_not_fail_docx() -> None:
@@ -324,6 +403,50 @@ async def test_sandbox_accepts_explicit_cpu_budget() -> None:
     data = samples.docx([("Раздел", "Heading1"), ("Текст.", None)])
     markdown = await extract_isolated(SourceFormat.DOCX, data, cpu_seconds=120)
     assert "# Раздел" in markdown
+
+
+def _fake_worker(monkeypatch: pytest.MonkeyPatch, script: str) -> None:
+    """Вместо extract_worker — дочерний процесс с заданным поведением."""
+    monkeypatch.setattr(
+        sandbox,
+        "_worker_command",
+        lambda fmt, cpu_seconds: [sys.executable, "-I", "-c", script],
+    )
+
+
+async def test_sandbox_kills_child_that_floods_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Сломанный дочерний процесс не забивает память API своим выводом:
+    после потолка его убивают, не дожидаясь таймаута."""
+    monkeypatch.setattr(sandbox, "MAX_OUTPUT_BYTES", 1024 * 1024)
+    _fake_worker(
+        monkeypatch,
+        "import sys, time\n"
+        "sys.stdout.buffer.write(b'x' * (2 * 1024 * 1024))\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(60)\n",
+    )
+    started = time.monotonic()
+    with pytest.raises(ExtractionError) as info:
+        await extract_isolated(SourceFormat.TXT, b"text", timeout=10)
+    assert info.value.code == "document_too_large"
+    assert time.monotonic() - started < 5
+
+
+async def test_sandbox_reads_answer_after_long_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Длинный stderr не мешает прочитать ответ; дочерний процесс, который
+    не дочитал stdin, — тоже."""
+    _fake_worker(
+        monkeypatch,
+        "import json, sys\n"
+        "sys.stderr.buffer.write(b'e' * (3 * 1024 * 1024))\n"
+        "sys.stdout.write(json.dumps({'ok': True, 'markdown': 'готово'}))\n",
+    )
+    data = b"x" * (4 * 1024 * 1024)
+    assert await extract_isolated(SourceFormat.TXT, data, timeout=30) == "готово"
 
 
 def test_sandbox_environment_has_no_secrets(monkeypatch: pytest.MonkeyPatch) -> None:

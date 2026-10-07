@@ -253,7 +253,8 @@ export interface paths {
         put?: never;
         /**
          * Passkey Options
-         * @description Параметры для navigator.credentials.create().
+         * @description Параметры для navigator.credentials.create(). Пароль — как у
+         *     /account/totp/setup.
          */
         post: operations["passkey_options_api_v1_account_passkeys_options_post"];
         delete?: never;
@@ -343,6 +344,9 @@ export interface paths {
          * Start Totp Setup
          * @description Секрет для приложения (QR из otpauth_uri). Действует после
          *     подтверждения кодом — /account/totp/enable.
+         *
+         *     Пароль — как при отключении: одного access-токена мало, чтобы
+         *     привязать к учётке новый фактор.
          */
         post: operations["start_totp_setup_api_v1_account_totp_setup_post"];
         delete?: never;
@@ -1091,6 +1095,11 @@ export interface paths {
          * Oauth Start
          * @description Адрес авторизации на портале: фронт открывает его в браузере
          *     сотрудника, портал вернёт браузер на /connectors/oauth/callback.
+         *
+         *     Браузер получает httpOnly-cookie со случайным значением, в state —
+         *     её отпечаток: обратный вызов примется только в этом браузере. Cookie
+         *     живёт столько же, сколько state, и уходит только на обратный вызов;
+         *     новое подключение в том же браузере заменяет её.
          */
         post: operations["oauth_start_api_v1_connectors__connector_id__oauth_start_post"];
         delete?: never;
@@ -2489,7 +2498,8 @@ export interface paths {
          * Confirm Department
          * @description Подтвердить отдел, который сотрудник выбрал сам (ТЗ §7): с этого
          *     момента ему открыты закрытые папки отдела. Уже подтверждён — ответ
-         *     тот же, без изменений. Отдела нет — 409. Только работающий человек
+         *     тот же, без изменений. Отдела нет или он не тот, что видел
+         *     администратор (department_id), — 409. Только работающий человек
          *     своей компании, иначе 404. Человеку — уведомление, в журнал.
          */
         post: operations["confirm_department_api_v1_users__user_id__department_confirm_post"];
@@ -2511,9 +2521,10 @@ export interface paths {
         /**
          * Reject Department
          * @description Отклонить отдел, выбранный сотрудником (ТЗ §7): отдел у человека
-         *     снимается (department_id null). Отдела нет или он уже подтверждён —
-         *     409 (подтверждённый меняют в профиле сотрудника). Только работающий
-         *     человек своей компании, иначе 404. Человеку — уведомление, в журнал.
+         *     снимается (department_id null). Отдела нет, он не тот, что видел
+         *     администратор, или уже подтверждён — 409 (подтверждённый меняют в
+         *     профиле сотрудника). Только работающий человек своей компании, иначе
+         *     404. Человеку — уведомление, в журнал.
          */
         post: operations["reject_department_api_v1_users__user_id__department_reject_post"];
         delete?: never;
@@ -3230,6 +3241,18 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+        };
+        /**
+         * DepartmentDecisionRequest
+         * @description Решение по отделу, выбранному сотрудником: отдел, который видел
+         *     администратор. Сотрудник успел сменить отдел — 409.
+         */
+        DepartmentDecisionRequest: {
+            /**
+             * Department Id
+             * Format: uuid
+             */
+            department_id: string;
         };
         /** DepartmentRef */
         DepartmentRef: {
@@ -5632,7 +5655,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5641,6 +5668,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PasskeySetupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5769,7 +5805,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordConfirmRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -5778,6 +5818,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TotpSetupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -9600,7 +9649,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentDecisionRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -9631,7 +9684,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepartmentDecisionRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

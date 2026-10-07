@@ -29,11 +29,12 @@ env:
   UV_VERSION: "0.8.17"
   NODE_VERSION: "22"
 
-# Исполнитель — переменная репозитория RUNS_ON (docs/CI-RUNNER.md, как в ci.yaml).
+# Исполнитель — переменная репозитория RUNS_ON (docs/CI-RUNNER.md, как в ci.yaml);
+# PR из форка — всегда машины GitHub.
 jobs:
   dependencies:
     name: Known vulnerabilities in dependencies (pip-audit)
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +51,7 @@ jobs:
 
   frontend-dependencies:
     name: Known vulnerabilities in frontend dependencies (npm audit)
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
     defaults:
       run:
@@ -68,7 +69,7 @@ jobs:
 
   secrets:
     name: Secrets in history (gitleaks)
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -86,7 +87,7 @@ jobs:
   codeql:
     name: Static analysis (CodeQL)
     if: github.event_name != 'pull_request'
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -109,7 +110,7 @@ jobs:
   codeql-frontend:
     name: Static analysis of the frontend (CodeQL)
     if: github.event_name != 'pull_request'
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -128,7 +129,7 @@ jobs:
   image:
     name: Image vulnerabilities and SBOM (Trivy)
     if: github.event_name != 'pull_request'
-    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 20
     # Тег — свой у прогона: на своём runner Docker общий у параллельных
     # заданий. Кэш Trivy — свой у каждого runner ($RUNNER_NAME): Trivy держит

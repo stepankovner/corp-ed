@@ -436,6 +436,58 @@ async def test_change_email_confirm_and_revert(
     assert await _mails(session, old_email, "reset_password")
 
 
+async def _change_email(
+    api: httpx.AsyncClient, session: AsyncSession, account: User, new_email: str
+) -> httpx.Response:
+    """Смена почты до письма со ссылкой: код на прежний адрес и ссылка."""
+    old_email = account.email
+    assert old_email is not None
+    headers = bearer(account)
+    body = {"new_email": new_email, "password": PASSWORD}
+    asked = await api.post("/api/v1/account/email", json=body, headers=headers)
+    assert asked.status_code == 202, asked.text
+    code = _change_code(await _last_mail(session, old_email, "change_email_code"))
+    return await api.post(
+        "/api/v1/account/email", json={**body, "code": code}, headers=headers
+    )
+
+
+async def test_unverified_signup_does_not_block_email_change_or_revert(
+    api: httpx.AsyncClient, account: User, session: AsyncSession
+) -> None:
+    """Регистрация без подтверждения адрес не занимает (ТЗ §3): ни новый
+    адрес при смене почты, ни прежний — для «это не я» из письма."""
+    old_email = account.email
+    assert old_email is not None
+    assert (
+        await api.post("/api/v1/auth/register", json=_register_body("anna@new.ru"))
+    ).status_code == 202
+
+    sent = await _change_email(api, session, account, "anna@new.ru")
+    assert sent.status_code == 202, sent.text
+    confirm = _link_token(
+        await _last_mail(session, "anna@new.ru", "change_email"), "/confirm-email"
+    )
+    confirmed = await api.post("/api/v1/account/email/confirm", json={"token": confirm})
+    assert confirmed.status_code == 204, confirmed.text
+
+    # Кто-то регистрируется на прежний адрес и не подтверждает его.
+    assert (
+        await api.post("/api/v1/auth/register", json=_register_body(old_email))
+    ).status_code == 202
+    revert = _link_token(
+        await _last_mail(session, old_email, "email_changed"), "/revert-email"
+    )
+    reverted = await api.post("/api/v1/account/email/revert", json={"token": revert})
+
+    assert reverted.status_code == 204, reverted.text
+    accounts = (
+        await session.scalars(select(Account).where(Account.email == old_email))
+    ).all()
+    assert len(accounts) == 1
+    assert accounts[0].email_verified_at is not None
+
+
 async def test_change_email_code_attempts_are_limited(
     api: httpx.AsyncClient, account: User, session: AsyncSession
 ) -> None:

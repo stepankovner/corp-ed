@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Row, delete, exists, func, or_, select
+from sqlalchemy import Row, any_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
@@ -19,9 +19,12 @@ from corp_ed.domain.models import (
     ChatAttachmentChunk,
     ChatMessage,
     ChatSuggestion,
+    Chunk,
     Conversation,
+    Material,
     QaLog,
 )
+from corp_ed.repositories.chunk_repository import visible_to
 
 
 def like_pattern(query: str) -> str:
@@ -208,7 +211,13 @@ class SuggestionRepository:
         await self.session.delete(suggestion)
 
     async def frequent_questions(
-        self, *, since: datetime, min_users: int, limit: int, max_length: int
+        self,
+        *,
+        viewer: UUID,
+        since: datetime,
+        min_users: int,
+        limit: int,
+        max_length: int,
     ) -> list[str]:
         """Частые вопросы компании, на которые документы ответили.
 
@@ -217,7 +226,31 @@ class SuggestionRepository:
         человек со своим вопросом в подсказки коллегам не попадает.
         Без вопросов-уточнений (в диалоге они непонятны вне его), без
         вопросов к вложениям, с маской персональных данных и с 👎.
+
+        Только то, что смотрящий (viewer) мог бы узнать сам: запись
+        журнала засчитывается, если среди выдержек её ответа есть фрагмент
+        документа, который смотрящему сейчас виден (visible_to — то же
+        правило, что в поиске), или выдержек из документов компании не
+        было вовсе — тогда раскрывать нечего. Ответ только из закрытой
+        папки, из документа с правами источника или из папки отдела,
+        который ещё не подтвердил администратор, не засчитывается тому,
+        кому они закрыты: формулировка вопроса выдала бы, о чём эти
+        документы. Порог min_users и 👎 считаются по засчитанным записям.
+        Документ удалён или переиндексирован (фрагментов с этими id
+        больше нет) — запись тоже не засчитывается: лучше потерять
+        подсказку, чем показать лишнее.
         """
+        tenant_id = require_tenant()
+        sources_visible = or_(
+            func.cardinality(QaLog.source_chunk_ids) == 0,
+            exists().where(
+                Chunk.id == any_(QaLog.source_chunk_ids),
+                Chunk.tenant_id == tenant_id,
+                Material.id == Chunk.material_id,
+                Material.tenant_id == tenant_id,
+                visible_to(viewer, tenant_id),
+            ),
+        )
         normalized = func.lower(
             func.regexp_replace(
                 func.regexp_replace(func.btrim(QaLog.question), r"\s+", " ", "g"),
@@ -229,13 +262,14 @@ class SuggestionRepository:
         stmt = (
             select(func.mode().within_group(QaLog.question).label("sample"))
             .where(
-                QaLog.tenant_id == require_tenant(),
+                QaLog.tenant_id == tenant_id,
                 QaLog.created_at >= since,
                 QaLog.answer_given.is_(True),
                 QaLog.history_turns == 0,
                 QaLog.attachment_chunks == 0,
                 func.length(QaLog.question) <= max_length,
                 ~QaLog.question.contains("["),
+                sources_visible,
             )
             .group_by(normalized)
             .having(users >= min_users, func.coalesce(func.min(QaLog.feedback), 0) >= 0)

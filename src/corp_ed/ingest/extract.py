@@ -8,20 +8,26 @@
   PAGE_BREAK (\\f) — по ним preprocess находит колонтитулы;
 - txt, md: как есть; UTF-8, а ещё UTF-16 с BOM и Windows-1251;
 - xlsx, pptx, doc (Р-5, BH-33…BH-35): разбор ML — ingest/xlsx.py,
-  ingest/pptx.py, ingest/doc.py, только стандартная библиотека. Каждый
+  ingest/pptx.py, ingest/doc.py: стандартная библиотека и defusedxml
+  для XML в xlsx и pptx. Каждый
   включён флагом INGEST_EXTRA_FORMATS: формат выключается без выкладки
   кода, если его качество на живых данных упадёт.
 
 Файл пришёл от клиента и считается враждебным. Здесь — проверки,
 которые дешёво сделать до парсера: формат по сигнатуре, а не по
 расширению; zip-бомба в docx, xlsx и pptx; документ Office с паролем.
+Проверка zip-бомбы верит размерам, которые объявляет каталог архива, —
+это best-effort отсев: вручную собранный архив их занизит. Потолок памяти
+и времени при распаковке держит песочница (RLIMIT_AS в extract_worker.py
+и таймаут в sandbox.py).
 Пароль и число страниц PDF проверяет сам разбор (ingest/pdf.py): чтобы их
 узнать, pdfminer читает файл — это работа песочницы.
 Сам разбор запускается в отдельном процессе с лимитами
 (ingest/sandbox.py), этот модуль не вызывается из API напрямую.
 
 Лицензии — только разрешительные: pdfplumber и pdfminer.six — MIT,
-pypdfium2 — BSD-3 / Apache-2.0, mammoth — BSD-2, markdownify — MIT.
+pypdfium2 — BSD-3 / Apache-2.0, mammoth — BSD-2, markdownify — MIT,
+defusedxml — PSF-2.0.
 """
 
 import io
@@ -147,8 +153,12 @@ def error_message(code: str, filename: str | None = None) -> str:
     return supported
 
 
-# docx — zip. Лимиты на распакованный объём и число файлов закрывают
-# zip-бомбу: 40 КБ архива, которые распаковываются в гигабайты.
+# docx — zip. Лимиты на распакованный объём и число файлов отсеивают
+# zip-бомбу: 40 КБ архива, которые распаковываются в гигабайты. Объём и
+# степень сжатия берутся из каталога архива — их можно занизить, так что
+# это best-effort; настоящий потолок — RLIMIT_AS песочницы
+# (extract_worker.MEMORY_LIMIT). Число записей считается до построения
+# каталога и не только по объявленному (ooxml.check_entry_count).
 MAX_DOCX_UNCOMPRESSED = 200 * 1024 * 1024
 MAX_DOCX_ENTRIES = 5000
 MAX_COMPRESSION_RATIO = 200
@@ -251,6 +261,14 @@ def _check_docx_container(data: bytes) -> None:
         raise ExtractionError("encrypted")
     if not data.startswith(b"PK\x03\x04"):
         raise ExtractionError("format_mismatch")
+
+    from corp_ed.ingest.ooxml import OfficeFileError, check_entry_count
+
+    try:
+        # До каталога zipfile: он строит ZipInfo на каждую запись.
+        check_entry_count(data, MAX_DOCX_ENTRIES)
+    except OfficeFileError as exc:
+        raise ExtractionError(exc.code) from exc
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             entries = archive.infolist()
@@ -325,10 +343,41 @@ def _looks_russian(text: str) -> bool:
     return russian > 0.5 * len(letters) and controls <= len(text) // 1000
 
 
+def _reject_docx_dtd(data: bytes) -> None:
+    """Часть docx с DTD (`<!DOCTYPE`, `<!ENTITY`) — `corrupted`.
+
+    mammoth разбирает XML через minidom, а тот DTD не запрещает. Word DTD
+    не пишет, поэтому, как у xlsx и pptx (ooxml.parse), DTD отклоняет
+    разборщик с `forbid_dtd`. Проверяется каждая часть пакета: какие из них
+    читает mammoth, решают связи внутри файла. DTD стоит только до корня,
+    так что разбор каждой части останавливается на первом элементе; часть,
+    которая не XML (картинка), пропускается.
+    """
+    from corp_ed.ingest import ooxml
+
+    try:
+        with ooxml.open_archive(data) as archive:
+            for part in archive.namelist():
+                try:
+                    for _ in ooxml.parse(archive, part, ("start",)):
+                        break
+                except (*ooxml.READ_ERRORS, RuntimeError):
+                    # Не XML, битая часть или zipfile её не открывает
+                    # (зашифрована, неизвестное сжатие — RuntimeError и
+                    # NotImplementedError): если mammoth её читает, он сам
+                    # и скажет, что файл повреждён.
+                    continue
+    except ooxml.OfficeFileError as exc:
+        raise ExtractionError(exc.code) from exc
+    except zipfile.BadZipFile as exc:
+        raise ExtractionError("corrupted") from exc
+
+
 def _extract_docx(data: bytes) -> str:
     import mammoth  # type: ignore[import-untyped]
     import markdownify
 
+    _reject_docx_dtd(data)
     try:
         # Картинки не нужны: в текст они не превращаются, а base64 в
         # Markdown — мегабайты мусора в чанках.

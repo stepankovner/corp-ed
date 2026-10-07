@@ -82,6 +82,8 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        # Значения параметров SQL — не в текст ошибок и не в лог.
+        hide_parameters=True,
     )
 
     async with connectable.connect() as connection:

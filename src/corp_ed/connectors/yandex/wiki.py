@@ -35,9 +35,16 @@ from corp_ed.connectors.base import (
     FetchedMarkdown,
     RemoteDocument,
 )
-from corp_ed.connectors.common import Recorder, json_object, parse_datetime, redact
+from corp_ed.connectors.common import (
+    Recorder,
+    json_object,
+    parse_datetime,
+    path_segment,
+    redact,
+    safe_code,
+)
 from corp_ed.connectors.yandex.oauth import YandexAuth
-from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 from corp_ed.domain.types import RemoteDocumentKind
 
 logger = structlog.get_logger()
@@ -95,6 +102,8 @@ class YandexWikiClient:
                     timeout=REQUEST_TIMEOUT,
                     allow_redirects=False,
                 )
+            except OutboundTooLargeError as exc:
+                raise AdapterError("response_too_large") from exc
             except httpx.TimeoutException as exc:
                 raise AdapterError("timeout", retryable=True) from exc
             except httpx.HTTPError as exc:
@@ -127,12 +136,12 @@ class YandexWikiClient:
                 # сотрудника, а не приложение — ему открыть Вики.
                 raise AdapterAuthError("wiki_login_required")
             if status == 403:
-                logger.info("yandex_wiki_forbidden", path=path, error=error[:64])
+                logger.info("yandex_wiki_forbidden", path=path, error=safe_code(error))
                 raise AdapterError("forbidden")
             if status == 404:
                 raise AdapterError("not_found")
-            code = (error or f"http_{status}").lower()
-            raise AdapterError(f"wiki_{code}"[:64], retryable=status >= 500)
+            code = safe_code(error or f"http_{status}", prefix="wiki_")
+            raise AdapterError(code, retryable=status >= 500)
 
 
 class YandexWikiModule:
@@ -164,7 +173,7 @@ class YandexWikiModule:
         if not document.locator:
             raise AdapterError("locator_missing")
         page = await self._client.get(
-            f"pages/{document.locator}",
+            f"pages/{path_segment(document.locator)}",
             {"fields": "content", "raise_on_redirect": "true"},
         )
         content = page.get("content")
@@ -207,7 +216,8 @@ class YandexWikiModule:
     async def _document(self, page_id: str) -> RemoteDocument | None:
         try:
             page = await self._client.get(
-                f"pages/{page_id}", {"fields": "attributes,breadcrumbs,redirect"}
+                f"pages/{path_segment(page_id)}",
+                {"fields": "attributes,breadcrumbs,redirect"},
             )
         except AdapterError as exc:
             if (

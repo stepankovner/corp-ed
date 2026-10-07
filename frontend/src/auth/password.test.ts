@@ -24,14 +24,44 @@ describe("passwordProblem", () => {
 });
 
 describe("safeNext", () => {
-  it("keeps own paths", () => {
-    expect(safeNext("/admin/users?x=1")).toBe("/admin/users?x=1");
+  it.each([
+    "/admin/users?x=1",
+    "/c/42#answer",
+    "/search?q=a%20b",
+    "/search?q=100%25",
+    "/settings/connections?status=ok",
+    "/чат",
+  ])("keeps own path %s", (value) => {
+    expect(safeNext(value)).toBe(value);
   });
 
-  it.each([null, "", "https://evil.example", "//evil.example", "javascript:alert(1)"])(
-    "falls back to the root for %s",
-    (value) => {
-      expect(safeNext(value)).toBe("/");
-    },
-  );
+  it.each([
+    null,
+    "",
+    "https://evil.example",
+    "//evil.example",
+    "javascript:alert(1)",
+    "evil.example/x",
+    // Браузер читает «\» как «/»: «/\» — это «//», другой сайт.
+    "/\\evil.example",
+    "\\\\evil.example",
+    "/x\\y",
+    // Таб, перевод строки и прочие управляющие браузер выбрасывает из адреса.
+    "/\t/evil.example",
+    "/\n/evil.example",
+    "/x\u0000",
+    "/x\u007f",
+    // Закодированные «/», «\» и управляющие — в том числе дважды.
+    "/%2F%2Fevil.example",
+    "/%2f/evil.example",
+    "/%5Cevil.example",
+    "/%252F%252Fevil.example",
+    "/%0A/evil.example",
+    "/%E0%A4%A",
+    // После разбора путь начинается с «//».
+    "/..//evil.example",
+    "/./%2E%2E//evil.example",
+  ])("falls back to the root for %j", (value) => {
+    expect(safeNext(value)).toBe("/");
+  });
 });

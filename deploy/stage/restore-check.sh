@@ -15,6 +15,8 @@
 # В строке отчёта — только счётчики: подробности ошибки pg_restore могут
 # содержать данные из базы, они — в /var/log/kronto/restore-check.log.
 set -euo pipefail
+# Лог и результат проверки могут содержать данные базы: только владельцу.
+umask 077
 # shellcheck source=/dev/null
 . /etc/kronto/stage.env
 

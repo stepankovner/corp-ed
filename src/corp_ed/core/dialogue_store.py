@@ -22,8 +22,8 @@ RedisDialogueStore — бой, InMemoryDialogueStore — разработка и
 import json
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -51,31 +51,58 @@ class DialogueStoreUnavailableError(Exception):
     """Хранилище реплик недоступно (Redis лежит). Ответ идёт без истории."""
 
 
+@dataclass(frozen=True)
+class Remembered:
+    """Реплика и документы, на которые опирался ответ: перед тем как дать
+    историю модели, реплики по документам, к которым у сотрудника больше
+    нет доступа, отбрасываются."""
+
+    turn: Turn
+    materials: frozenset[UUID] = field(default_factory=frozenset)
+
+
 class DialogueStore(ABC):
-    @abstractmethod
     async def load(self, key: DialogueKey) -> list[Turn]:
         """Реплики диалога по порядку, старые первыми; нет — пусто."""
+        return [item.turn for item in await self.load_remembered(key)]
+
+    @abstractmethod
+    async def load_remembered(self, key: DialogueKey) -> list[Remembered]:
+        """Реплики с документами ответа, старые первыми; нет — пусто."""
 
     @abstractmethod
     async def append(
-        self, key: DialogueKey, turn: Turn, *, keep: int, ttl_seconds: int
+        self,
+        key: DialogueKey,
+        turn: Turn,
+        *,
+        keep: int,
+        ttl_seconds: int,
+        materials: Iterable[UUID] = (),
     ) -> None:
         """Добавить реплику, оставить последние keep и продлить срок жизни
         диалога до ttl_seconds от этого момента."""
 
 
-def _encode(turn: Turn) -> str:
+def _encode(turn: Turn, materials: Iterable[UUID] = ()) -> str:
     return json.dumps(
-        {"q": turn.question, "a": turn.answer[:MAX_STORED_ANSWER_CHARS]},
+        {
+            "q": turn.question,
+            "a": turn.answer[:MAX_STORED_ANSWER_CHARS],
+            "m": sorted(str(m) for m in set(materials)),
+        },
         ensure_ascii=False,
     )
 
 
-def _decode(raw: bytes | str) -> Turn | None:
+def _decode(raw: bytes | str) -> Remembered | None:
     try:
         data = json.loads(raw)
-        return Turn(question=str(data["q"]), answer=str(data["a"]))
-    except (ValueError, TypeError, KeyError):
+        return Remembered(
+            turn=Turn(question=str(data["q"]), answer=str(data["a"])),
+            materials=frozenset(UUID(str(m)) for m in data.get("m") or []),
+        )
+    except (ValueError, TypeError, KeyError, AttributeError):
         return None
 
 
@@ -83,20 +110,26 @@ class RedisDialogueStore(DialogueStore):
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
 
-    async def load(self, key: DialogueKey) -> list[Turn]:
+    async def load_remembered(self, key: DialogueKey) -> list[Remembered]:
         try:
             raw = await self._redis.lrange(key.redis_key(), 0, -1)
         except RedisError as exc:
             raise DialogueStoreUnavailableError from exc
-        return [turn for turn in map(_decode, raw) if turn is not None]
+        return [item for item in map(_decode, raw) if item is not None]
 
     async def append(
-        self, key: DialogueKey, turn: Turn, *, keep: int, ttl_seconds: int
+        self,
+        key: DialogueKey,
+        turn: Turn,
+        *,
+        keep: int,
+        ttl_seconds: int,
+        materials: Iterable[UUID] = (),
     ) -> None:
         name = key.redis_key()
         try:
             async with self._redis.pipeline(transaction=True) as pipe:
-                pipe.rpush(name, _encode(turn))
+                pipe.rpush(name, _encode(turn, materials))
                 pipe.ltrim(name, -keep, -1)
                 pipe.expire(name, ttl_seconds)
                 await pipe.execute()
@@ -111,7 +144,7 @@ class InMemoryDialogueStore(DialogueStore):
         self._clock = clock
         self._items: dict[str, tuple[float, list[str]]] = {}
 
-    async def load(self, key: DialogueKey) -> list[Turn]:
+    async def load_remembered(self, key: DialogueKey) -> list[Remembered]:
         name = key.redis_key()
         item = self._items.get(name)
         if item is None:
@@ -120,14 +153,20 @@ class InMemoryDialogueStore(DialogueStore):
         if expires_at <= self._clock():
             del self._items[name]
             return []
-        return [turn for turn in map(_decode, raw) if turn is not None]
+        return [entry for entry in map(_decode, raw) if entry is not None]
 
     async def append(
-        self, key: DialogueKey, turn: Turn, *, keep: int, ttl_seconds: int
+        self,
+        key: DialogueKey,
+        turn: Turn,
+        *,
+        keep: int,
+        ttl_seconds: int,
+        materials: Iterable[UUID] = (),
     ) -> None:
         name = key.redis_key()
         now = self._clock()
         item = self._items.get(name)
         raw = item[1] if item is not None and item[0] > now else []
-        raw = [*raw, _encode(turn)][-keep:]
+        raw = [*raw, _encode(turn, materials)][-keep:]
         self._items[name] = (now + ttl_seconds, raw)

@@ -164,6 +164,25 @@ def test_smtp_backend_needs_a_host() -> None:
     assert isinstance(build_sender(MailSettings(backend="memory")), MemorySender)
 
 
+@pytest.mark.parametrize("backend", ["console", "memory"])
+def test_production_refuses_senders_that_do_not_send(backend: str) -> None:
+    """console пишет письмо (адрес, ссылку со сбросом пароля) в лог, memory —
+    теряет его. В production — отказ на старте воркера, а не тишина."""
+    settings = MailSettings(backend=backend, environment="production")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="MAIL_BACKEND"):
+        build_sender(settings)
+
+
+def test_mail_settings_read_the_common_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ENVIRONMENT, а не MAIL_ENVIRONMENT: префикс MAIL_ к нему не относится.
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    assert MailSettings(_env_file=None).environment == "production"  # type: ignore[call-arg]
+    monkeypatch.delenv("ENVIRONMENT")
+    assert MailSettings(_env_file=None).environment == "development"  # type: ignore[call-arg]
+
+
 def test_smtp_message_headers() -> None:
     sender = SmtpSender(
         MailSettings(

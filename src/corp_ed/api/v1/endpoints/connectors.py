@@ -2,7 +2,7 @@ from typing import Annotated
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from corp_ed.api.v1.dependencies import (
@@ -37,9 +37,15 @@ from corp_ed.api.v1.schemas.connector import (
     TariffAllowanceResponse,
 )
 from corp_ed.connectors.registry import FieldSpec, KindSpec, UnknownKindError
+from corp_ed.core.config import get_http_settings
+from corp_ed.core.security import new_oauth_browser_nonce
 from corp_ed.domain.models import Connector, User, UserRole
 from corp_ed.domain.types import ConnectorMode, GrantStatus
 from corp_ed.services.connector_service import ConnectorService
+
+OAUTH_BROWSER_COOKIE = "kronto_oauth"
+"""httpOnly-cookie браузера, начавшего OAuth-подключение (oauth_start)."""
+OAUTH_CALLBACK_PATH = "/api/v1/connectors/oauth/callback"
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
@@ -204,6 +210,7 @@ async def my_connectors(
     dependencies=[Depends(limit_by_ip(CONNECTOR_OAUTH_CALLBACK_PER_IP))],
 )
 async def oauth_callback(
+    request: Request,
     service: Service,
     state: Annotated[str, Query(min_length=1, max_length=2048)],
     code: Annotated[str | None, Query(max_length=256)] = None,
@@ -217,7 +224,13 @@ async def oauth_callback(
     Ошибка — тоже 200 с кодом: браузеру некуда «упасть». Отказ в
     согласии приходит без code, с параметром error (OAuth 2.0).
     """
-    result = await service.oauth_callback(state, code, provider_error=error)
+    nonce = request.cookies.get(OAUTH_BROWSER_COOKIE)
+    result = await service.oauth_callback(
+        state,
+        code,
+        browser_nonce=nonce if nonce and len(nonce) <= 128 else None,
+        provider_error=error,
+    )
     return_url = service.settings.oauth_return_url
     if return_url is None:
         return JSONResponse(
@@ -243,13 +256,31 @@ async def oauth_callback(
     dependencies=[Depends(limit_by_user(CONNECTOR_GRANT_PER_USER))],
 )
 async def oauth_start(
-    connector_id: UUID, service: Service, current_user: AnyUser
+    connector_id: UUID, response: Response, service: Service, current_user: AnyUser
 ) -> OAuthStartResponse:
     """Адрес авторизации на портале: фронт открывает его в браузере
-    сотрудника, портал вернёт браузер на /connectors/oauth/callback."""
-    return OAuthStartResponse(
-        authorize_url=await service.oauth_start(current_user, connector_id)
+    сотрудника, портал вернёт браузер на /connectors/oauth/callback.
+
+    Браузер получает httpOnly-cookie со случайным значением, в state —
+    её отпечаток: обратный вызов примется только в этом браузере. Cookie
+    живёт столько же, сколько state, и уходит только на обратный вызов;
+    новое подключение в том же браузере заменяет её."""
+    nonce = new_oauth_browser_nonce()
+    authorize_url = await service.oauth_start(
+        current_user, connector_id, browser_nonce=nonce
     )
+    response.set_cookie(
+        OAUTH_BROWSER_COOKIE,
+        nonce,
+        max_age=service.settings.oauth_state_ttl_minutes * 60,
+        path=OAUTH_CALLBACK_PATH,
+        secure=get_http_settings().is_production,
+        httponly=True,
+        # Lax: портал возвращает браузер обычным переходом (GET верхнего
+        # уровня) — с Lax cookie приходит, со Strict — нет.
+        samesite="lax",
+    )
+    return OAuthStartResponse(authorize_url=authorize_url)
 
 
 def _with_query(url: str, params: dict[str, str]) -> str:

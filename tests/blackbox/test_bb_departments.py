@@ -412,16 +412,38 @@ async def _target(who: Person | str) -> str:
     return who if isinstance(who, str) else await who.user_id()
 
 
-async def confirm(browser: httpx.AsyncClient, who: Person | str) -> httpx.Response:
+async def _seen_department(browser: httpx.AsyncClient, user_id: str) -> str:
+    """Отдел человека, каким его видит вызывающий в «Людях» (ТЗ §7:
+    решение — про тот отдел, что видел администратор). Не видно (не админ,
+    чужой, без отдела) — случайный id: сервер всё равно откажет."""
+    response = await browser.get(f"{API}/users")
+    if response.status_code == 200:
+        for row in response.json():
+            if row["id"] == user_id and row.get("department_id"):
+                return str(row["department_id"])
+    return str(uuid.uuid4())
+
+
+async def confirm(
+    browser: httpx.AsyncClient, who: Person | str, department_id: str | None = None
+) -> httpx.Response:
     """Подтвердить отдел человека (кто вызывает — тот и решает)."""
     user_id = await _target(who)
-    return await browser.post(f"{API}/users/{user_id}/department/confirm")
+    seen = department_id or await _seen_department(browser, user_id)
+    return await browser.post(
+        f"{API}/users/{user_id}/department/confirm", json={"department_id": seen}
+    )
 
 
-async def reject(browser: httpx.AsyncClient, who: Person | str) -> httpx.Response:
+async def reject(
+    browser: httpx.AsyncClient, who: Person | str, department_id: str | None = None
+) -> httpx.Response:
     """Отклонить отдел человека (кто вызывает — тот и решает)."""
     user_id = await _target(who)
-    return await browser.post(f"{API}/users/{user_id}/department/reject")
+    seen = department_id or await _seen_department(browser, user_id)
+    return await browser.post(
+        f"{API}/users/{user_id}/department/reject", json={"department_id": seen}
+    )
 
 
 def _dept_id(body: dict) -> str | None:
@@ -679,6 +701,27 @@ async def test_confirm_opens_closed_folder(kronto: Kronto) -> None:
     await assert_state(company, anna, world.dept_a, True)
     await assert_visible(anna.browser, world.secret_a, in_chat=True)
     await assert_hidden(anna.browser, world.secret_b)
+
+
+async def test_confirm_is_for_the_department_the_admin_saw(kronto: Kronto) -> None:
+    """ТЗ §7: подтверждают и отклоняют тот отдел, что видел администратор.
+    Сотрудник успел сменить отдел — 409, новый отдел не подтверждается,
+    закрытая папка закрыта."""
+    world = await build_world(kronto)
+    company = world.company
+    anna = await join(kronto, company, "anna", "Анна")
+    await pick_department(anna, world.dept_b)
+    seen = (await user_row(company, await anna.user_id()))["department_id"]
+    assert seen == world.dept_b
+
+    await pick_department(anna, world.dept_a)
+    confirmed = await confirm(company.admin, anna, seen)
+    rejected = await reject(company.admin, anna, seen)
+
+    assert confirmed.status_code == 409, confirmed.text
+    assert rejected.status_code == 409, rejected.text
+    await assert_state(company, anna, world.dept_a, False)
+    await assert_hidden(anna.browser, world.secret_a)
 
 
 async def test_repeated_confirm_returns_same_answer_without_changes(

@@ -64,6 +64,8 @@ class FakeYandex:
     wiki_pages: dict[int, dict[str, Any]] = field(default_factory=dict)
     wiki_hidden: set[int] = field(default_factory=set)
     wiki_needs_sync: bool = False
+    api_error: tuple[int, dict[str, Any]] | None = None
+    """Ответ Диска и Вики на любой авторизованный запрос (статус, тело)."""
     calls: list[tuple[str, dict[str, str]]] = field(default_factory=list)
     downloads: list[tuple[str, str]] = field(default_factory=list)
     """(хост, Authorization) каждого запроса к ссылке на файл."""
@@ -242,6 +244,8 @@ class FakeYandex:
         token = self._token_of(request)
         if token is None:
             return _error(401, "UnauthorizedError", "Не авторизован.")
+        if self.api_error is not None:
+            return httpx.Response(self.api_error[0], json=self.api_error[1])
         if self.rate_limit_hits > 0:
             self.rate_limit_hits -= 1
             return _error(429, "TooManyRequestsError")
@@ -382,6 +386,8 @@ class FakeYandex:
             return httpx.Response(
                 403, json={"error_code": "ORG_NOT_FOUND", "debug_message": "org"}
             )
+        if self.api_error is not None:
+            return httpx.Response(self.api_error[0], json=self.api_error[1])
         if self.wiki_needs_sync:
             return httpx.Response(
                 403,

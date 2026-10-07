@@ -606,7 +606,9 @@ async def _folder(
     )
 
     confirmed = await client.request(
-        "POST", f"/users/{created['member']}/department/confirm"
+        "POST",
+        f"/users/{created['member']}/department/confirm",
+        json={"department_id": created["department"]},
     )
     visible = await _ask(staff, question)
     visible_titles = [str(s.get("title")) for s in visible.get("sources", [])]

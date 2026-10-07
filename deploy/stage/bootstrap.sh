@@ -142,6 +142,14 @@ DOMAIN=$DOMAIN
 EOF
 install -m 755 "$APP_DIR/deploy/stage/ssh-entry.sh" /usr/local/bin/kronto-deploy
 install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/log/kronto
+# Логи ночных задач и проверок бэкапа могут содержать данные базы (ошибки
+# pg_restore, rclone): только владельцу. cron.log открывает оболочка cron
+# ещё до запуска скрипта (с её umask) — поэтому файлы создаются заранее.
+for name in cron restore-check offsite; do
+    log_file="/var/log/kronto/$name.log"
+    [[ -e "$log_file" ]] || install -m 600 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /dev/null "$log_file"
+    chmod 600 "$log_file"
+done
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/backups/kronto
 # Пароль компании для сквозной проверки (check.sh) — только здесь.
 install -d -m 700 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/lib/kronto

@@ -148,7 +148,7 @@ class NotificationService:
             "admins_notified",
             tenant_id=str(tenant_id),
             kind=notice.kind.value,
-            recipients=len(rows),
+            recipient_count=len(rows),
         )
         return len(rows)
 

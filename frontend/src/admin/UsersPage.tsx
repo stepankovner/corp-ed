@@ -156,6 +156,9 @@ export function UsersPage() {
       unwrap(
         api.POST("/api/v1/users/{user_id}/department/confirm", {
           params: { path: { user_id: member.id } },
+          // Отдел, который видит администратор: если сотрудник успел его
+          // сменить, сервер ответит 409, а не решит за другой отдел.
+          body: { department_id: member.department_id ?? "" },
         }),
       ),
     onSuccess: (_, member) =>
@@ -168,6 +171,9 @@ export function UsersPage() {
       unwrap(
         api.POST("/api/v1/users/{user_id}/department/reject", {
           params: { path: { user_id: member.id } },
+          // Отдел, который видит администратор: если сотрудник успел его
+          // сменить, сервер ответит 409, а не решит за другой отдел.
+          body: { department_id: member.department_id ?? "" },
         }),
       ),
     onSuccess: (_, member) => toast.show(`Отдел снят: ${memberName(member)}`),

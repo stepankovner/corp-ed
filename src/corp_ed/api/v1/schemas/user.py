@@ -7,6 +7,13 @@ from corp_ed.api.v1.schemas.base import RequestModel
 from corp_ed.domain.models import MemberStatus, UserRole
 
 
+class DepartmentDecisionRequest(RequestModel):
+    """Решение по отделу, выбранному сотрудником: отдел, который видел
+    администратор. Сотрудник успел сменить отдел — 409."""
+
+    department_id: UUID
+
+
 class UserUpdateRequest(RequestModel):
     role: UserRole | None = None
     blocked: bool | None = None

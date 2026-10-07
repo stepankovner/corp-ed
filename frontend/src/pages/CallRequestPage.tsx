@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router";
 import { api, unwrap, type Schemas } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { formatCalendarDate } from "../lib/format";
+import { safeLinkHref } from "../lib/url";
 import { priceLabel, tariffByCode, TARIFFS, type TariffCode } from "../lib/tariffs";
 import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
@@ -208,7 +209,11 @@ function RequestForm({ form }: { form: Schemas["LeadFormResponse"] }) {
         label={
           <>
             Согласен на обработку персональных данных по{" "}
-            <a href={form.policy_url ?? "#"} target="_blank" rel="noopener noreferrer">
+            <a
+              href={safeLinkHref(form.policy_url) ?? "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               политике обработки данных
             </a>
           </>

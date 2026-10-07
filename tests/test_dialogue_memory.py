@@ -6,6 +6,7 @@
 
 import asyncio
 import os
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -22,8 +23,19 @@ from corp_ed.core.dialogue_store import (
     DialogueStoreUnavailableError,
     InMemoryDialogueStore,
     RedisDialogueStore,
+    Remembered,
 )
-from corp_ed.domain.models import Chunk, Material, QaLog, Tenant, User, UserRole
+from corp_ed.domain.models import (
+    Chunk,
+    Department,
+    Folder,
+    FolderDepartment,
+    Material,
+    QaLog,
+    Tenant,
+    User,
+    UserRole,
+)
 from corp_ed.domain.types import AnswerOrigin, NotFoundMode, Retriever
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
@@ -115,11 +127,17 @@ class DialogueLLM(LLMGateway):
 
 
 class BrokenStore(DialogueStore):
-    async def load(self, key: DialogueKey) -> list[Turn]:
+    async def load_remembered(self, key: DialogueKey) -> list[Remembered]:
         raise DialogueStoreUnavailableError
 
     async def append(
-        self, key: DialogueKey, turn: Turn, *, keep: int, ttl_seconds: int
+        self,
+        key: DialogueKey,
+        turn: Turn,
+        *,
+        keep: int,
+        ttl_seconds: int,
+        materials: Iterable[UUID] = (),
     ) -> None:
         raise DialogueStoreUnavailableError
 
@@ -391,6 +409,49 @@ async def test_history_does_not_cross_users(
     conversation = await _dialogue(service, employee)
 
     result = await service.answer(FOLLOW_UP, other, conversation_id=conversation)
+
+    assert llm.condense_calls == []
+    assert result.diagnostics is not None
+    assert result.diagnostics.history_turns == 0
+
+
+@pytest.mark.usefixtures("grant_doc")
+async def test_history_drops_turns_from_documents_no_longer_visible(
+    session: AsyncSession,
+    fake_embeddings: FakeEmbeddingAdapter,
+    employee: User,
+    material: Material,
+    tenant_ctx: Tenant,
+) -> None:
+    """Сотрудника убрали из отдела: реплика по документу закрытой папки
+    отдела остаётся в Redis до конца срока, но в модель больше не уходит."""
+    department = Department(tenant_id=tenant_ctx.id, name="Гранты")
+    folder = Folder(tenant_id=tenant_ctx.id, name="Закрытая", restricted=True)
+    session.add_all([department, folder])
+    await session.flush()
+    session.add(
+        FolderDepartment(
+            tenant_id=tenant_ctx.id, folder_id=folder.id, department_id=department.id
+        )
+    )
+    material.folder_id = folder.id
+    employee.department_id = department.id
+    employee.department_confirmed = True
+    await session.commit()
+    llm = DialogueLLM()
+    store = InMemoryDialogueStore()
+    service = _service(session, llm, fake_embeddings, store)
+    conversation = await _dialogue(service, employee)
+    assert (
+        await store.load_remembered(
+            DialogueKey(employee.tenant_id, employee.id, conversation)
+        )
+    )[0].materials == {material.id}
+
+    employee.department_id = None
+    employee.department_confirmed = False
+    await session.commit()
+    result = await service.answer(FOLLOW_UP, employee, conversation_id=conversation)
 
     assert llm.condense_calls == []
     assert result.diagnostics is not None

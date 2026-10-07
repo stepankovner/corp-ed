@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.exceptions import (
@@ -149,10 +150,13 @@ class UserService:
         )
         await self.session.commit()
 
-    async def confirm_department(self, actor: User, user_id: UUID) -> User:
+    async def confirm_department(
+        self, actor: User, user_id: UUID, seen_department_id: UUID
+    ) -> User:
         """Подтвердить отдел, выбранный сотрудником (ТЗ §7): с этого
-        момента ему открыты закрытые папки отдела. Повтор — без изменений."""
-        user, department = await self._with_department(user_id)
+        момента ему открыты закрытые папки отдела. Повтор — без изменений.
+        seen_department_id — отдел, который видел администратор."""
+        user, department = await self._with_department(user_id, seen_department_id)
         if user.department_confirmed:
             return user
         user.department_confirmed = True
@@ -173,10 +177,12 @@ class UserService:
         await self.session.commit()
         return user
 
-    async def reject_department(self, actor: User, user_id: UUID) -> User:
+    async def reject_department(
+        self, actor: User, user_id: UUID, seen_department_id: UUID
+    ) -> User:
         """Отклонить отдел, выбранный сотрудником: отдел снимается.
         Подтверждённый так не снять — его меняют в профиле сотрудника."""
-        user, department = await self._with_department(user_id)
+        user, department = await self._with_department(user_id, seen_department_id)
         if user.department_confirmed:
             raise ConflictError(
                 "Отдел уже подтверждён: изменить его можно в профиле сотрудника"
@@ -200,8 +206,21 @@ class UserService:
         await self.session.commit()
         return user
 
-    async def _with_department(self, user_id: UUID) -> tuple[User, Department]:
+    async def _with_department(
+        self, user_id: UUID, seen_department_id: UUID
+    ) -> tuple[User, Department]:
+        """Человек и его отдел. Решение — только про тот отдел, что видел
+        администратор: сотрудник мог сменить его, пока открыт список, и
+        подтверждение «вслепую» открыло бы ему чужие закрытые папки."""
         user = await self._get(user_id)
+        # Строка блокируется до конца решения: смена отдела сотрудником
+        # подождёт, а не проскочит между проверкой и записью.
+        await self.session.execute(
+            select(User.id).where(User.id == user.id).with_for_update()
+        )
+        await self.session.refresh(
+            user, attribute_names=["status", "department_id", "department_confirmed"]
+        )
         if user.status is not MemberStatus.ACTIVE:
             raise NotFoundError("Пользователь не найден")
         department = (
@@ -211,6 +230,10 @@ class UserService:
         )
         if department is None:
             raise ConflictError("Сотрудник не выбрал отдел")
+        if department.id != seen_department_id:
+            raise ConflictError(
+                "Сотрудник сменил отдел — обновите страницу и проверьте заново"
+            )
         return user, department
 
     def _record_department(self, action: AuditAction, actor: User, user: User) -> None:

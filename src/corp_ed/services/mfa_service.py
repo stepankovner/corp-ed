@@ -239,6 +239,11 @@ class MfaService:
         await self.session.commit()
         return LoginStep(token=raw, methods=methods, email_hint=hint)
 
+    async def login_email(self, raw: str) -> str:
+        """Почта учётки незавершённого шага входа — ключ лимита писем."""
+        _, account = await self._login_challenge(raw)
+        return account.email
+
     async def resend_login_code(self, raw: str) -> None:
         challenge, account = await self._login_challenge(raw)
         if await self.methods(account) != ["email"]:
@@ -496,9 +501,14 @@ class MfaService:
 
     # --- приложение-аутентификатор --------------------------------------------
 
-    async def start_totp_setup(self, account: Account) -> tuple[str, str, str]:
+    async def start_totp_setup(
+        self, account: Account, password: str
+    ) -> tuple[str, str, str]:
         """Секрет, otpauth:// для QR и токен настройки. Секрет действует
-        только после подтверждения кодом из приложения."""
+        только после подтверждения кодом из приложения. Токен настройки
+        выдаётся только по паролю."""
+        if not verify_password(password, account.hashed_password):
+            raise InvalidPasswordError()
         secret = totp.new_secret()
         raw = new_refresh_token()
         self.session.add(
@@ -565,8 +575,10 @@ class MfaService:
     # --- ключи доступа ---------------------------------------------------------
 
     async def passkey_registration_options(
-        self, account: Account, rp: RelyingParty
+        self, account: Account, rp: RelyingParty, password: str
     ) -> tuple[str, str]:
+        if not verify_password(password, account.hashed_password):
+            raise InvalidPasswordError()
         keys = await self.passkeys(account)
         options = generate_registration_options(
             rp_id=rp.id,
@@ -749,7 +761,11 @@ class MfaService:
     async def end_session(self, account: Account, family_id: UUID) -> None:
         """Завершить свой сеанс. Чужой или несуществующий — «не найден»
         (одинаково: по ответу не узнать, есть ли такой сеанс у другого);
-        уже завершённый свой — без ошибки, повторное нажатие."""
+        уже завершённый свой — без ошибки, повторное нажатие.
+
+        Сеанс завершают обычно из-за подозрения: «запомненные» устройства
+        забываются (доверенное устройство не привязано к сеансу), и при
+        следующем входе везде снова нужен второй фактор."""
         known = await self.session.scalar(
             select(func.count())
             .select_from(RefreshToken)
@@ -769,6 +785,7 @@ class MfaService:
             )
             .values(revoked_at=_now())
         )
+        await self.forget_devices(account)
         await self.session.commit()
 
     # --- правила -------------------------------------------------------------------

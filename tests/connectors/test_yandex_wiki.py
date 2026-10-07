@@ -13,6 +13,7 @@ from corp_ed.connectors.base import (
 )
 from corp_ed.connectors.yandex.adapter import YandexAdapter, build_adapter
 from corp_ed.connectors.yandex.wiki import normalize_wiki_markup, parse_roots
+from corp_ed.core import outbound
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.domain.types import RemoteDocumentKind
 from tests.connectors.fake_yandex import (
@@ -126,11 +127,50 @@ async def test_fetch_returns_normalized_markdown(server: FakeYandex) -> None:
     assert "{%" not in sales.markdown and "{{" not in sales.markdown
 
 
+async def test_page_id_is_one_path_segment(server: FakeYandex) -> None:
+    """locator с /, ? и # не уводит запрос на другую страницу Вики."""
+    adapter = make_adapter(server)
+    for locator in ("7/../1", "1?fields=content#x", "../pages/1", ".."):
+        document = RemoteDocument(
+            external_id=f"ywiki:{locator}",
+            title="",
+            url="",
+            version="",
+            kind=RemoteDocumentKind.PAGE,
+            module="wiki",
+            locator=locator,
+        )
+        with pytest.raises(AdapterError, match="not_found"):
+            await adapter.fetch(document, max_bytes=MAX_BYTES)
+
+
 async def test_fetch_refuses_oversized_pages(server: FakeYandex) -> None:
     adapter = make_adapter(server)
     documents = await listed(adapter)
     with pytest.raises(AdapterError, match="document_too_large"):
         await adapter.fetch(documents["ywiki:1"], max_bytes=5)
+
+
+async def test_oversized_api_response_is_an_adapter_error(
+    server: FakeYandex, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ответ Вики больше потолка — ошибка источника, а не сбой воркера."""
+    monkeypatch.setattr(outbound, "MAX_RESPONSE_BYTES", 16)
+    with pytest.raises(AdapterError) as excinfo:
+        await listed(make_adapter(server))
+    assert excinfo.value.code == "response_too_large"
+    assert not excinfo.value.retryable
+
+
+async def test_unknown_error_code_from_the_wiki_is_scrubbed(
+    server: FakeYandex,
+) -> None:
+    """Код ошибки из ответа Вики уходит в API, аудит и интерфейс —
+    только латиница, цифры и _, не длиннее 64."""
+    server.api_error = (400, {"error_code": "Odd Error\n<b>", "debug_message": "…"})
+    with pytest.raises(AdapterError) as excinfo:
+        await listed(make_adapter(server))
+    assert excinfo.value.code == "wiki_odd_error__b_"
 
 
 async def test_employee_who_never_opened_the_wiki_gets_a_grant_error(

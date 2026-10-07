@@ -20,6 +20,9 @@ from corp_ed.domain.models import (
     ChatAttachment,
     ChatMessage,
     Chunk,
+    Department,
+    Folder,
+    FolderDepartment,
     Material,
     MaterialAccess,
     QaLog,
@@ -31,6 +34,7 @@ from corp_ed.domain.types import NotFoundMode
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.main import app
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
+from corp_ed.services.chat_service import HIDDEN_ANSWER
 from corp_ed.services.retention_service import RetentionService
 from tests.api.conftest import bearer
 from tests.api.test_faq_api import BusyLLM, FailingLLM
@@ -189,6 +193,61 @@ async def test_follow_up_question_gets_history_from_the_conversation(
     logs = (await session.scalars(select(QaLog).order_by(QaLog.created_at))).all()
     assert [log.history_turns for log in logs] == [0, 1]
     assert logs[1].standalone_question is not None
+
+
+async def test_answer_from_a_closed_folder_is_hidden_after_access_is_lost(
+    api: httpx.AsyncClient,
+    employee: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    """Сотрудника убрали из отдела: в его прежнем диалоге ответ по закрытой
+    папке отдела больше не показывается и в модель с историей не уходит.
+    Ответ по удалённому документу так не скрывается — это не снятие прав."""
+    department = Department(tenant_id=tenant_ctx.id, name="Бухгалтерия")
+    folder = Folder(tenant_id=tenant_ctx.id, name="Закрытая", restricted=True)
+    session.add_all([department, folder])
+    await session.flush()
+    session.add(
+        FolderDepartment(
+            tenant_id=tenant_ctx.id, folder_id=folder.id, department_id=department.id
+        )
+    )
+    employee.department_id = department.id
+    employee.department_confirmed = True
+    await session.commit()
+    employee_id = employee.id
+    await _document(session, tenant_ctx, folder_id=folder.id)
+
+    first = await _ask(api, employee, "Сколько дней отпуска?")
+    conversation_id = first[0]["conversation"]["id"]
+    answer = final(first)["answer"]
+    assert answer["sources"][0]["content"]
+    assert answer["content"] != HIDDEN_ANSWER
+
+    with tenant_scope(tenant_ctx.id):
+        member = await session.get(User, employee_id)
+        assert member is not None
+        member.department_id = None
+        member.department_confirmed = False
+        await session.commit()
+
+    view = await api.get(f"{BASE}/{conversation_id}", headers=bearer(employee))
+    assert view.status_code == 200, view.text
+    shown = view.json()["messages"][-1]
+    assert shown["content"] == HIDDEN_ANSWER
+    assert shown["sources"][0]["content"] is None
+
+    follow = await _ask(
+        api,
+        employee,
+        "А для совместителей?",
+        conversation_id=conversation_id,
+        parent_id=answer["id"],
+    )
+    assert final(follow)["type"] == "done"
+    logs = (await session.scalars(select(QaLog).order_by(QaLog.created_at))).all()
+    assert [log.history_turns for log in logs] == [0, 0]
 
 
 async def test_general_answer_streams_without_service_prefix(
@@ -659,6 +718,46 @@ async def test_share_is_a_snapshot_for_colleagues_only(
     ).status_code == 404
 
 
+async def test_viewing_a_shared_link_changes_nothing_in_the_owners_dialog(
+    api: httpx.AsyncClient,
+    employee: User,
+    colleague: User,
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+) -> None:
+    """Коллега только читает: зависший ответ автора помечает прерванным
+    сам автор, когда открывает диалог, а не просмотр по ссылке."""
+    events = await _ask(api, employee, "Сколько дней отпуска?")
+    conversation_id = UUID(events[0]["conversation"]["id"])
+    answer_id = UUID(final(events)["answer"]["id"])
+    token = (
+        await api.post(f"{BASE}/{conversation_id}/share", headers=bearer(employee))
+    ).json()["token"]
+    with tenant_scope(tenant_ctx.id):
+        stuck = ChatMessage(
+            conversation_id=conversation_id,
+            parent_id=answer_id,
+            role="user",
+            content="Ещё вопрос",
+            status="generating",
+            created_at=datetime.now(UTC) - timedelta(hours=1),
+        )
+        session.add(stuck)
+        await session.commit()
+        stuck_id = stuck.id
+
+    view = await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
+
+    assert view.status_code == 200
+    with tenant_scope(tenant_ctx.id):
+        status = await session.scalar(
+            select(ChatMessage.status)
+            .where(ChatMessage.id == stuck_id)
+            .execution_options(populate_existing=True)
+        )
+    assert status == "generating"
+
+
 async def test_shared_sources_follow_viewer_access(
     api: httpx.AsyncClient,
     employee: User,
@@ -867,3 +966,97 @@ async def test_admin_suggestions_and_frequent_questions(
         f"/api/v1/suggestions/{created[0]['id']}", headers=headers
     )
     assert deleted.status_code == 204
+
+
+async def test_frequent_questions_follow_the_viewers_access_to_sources(
+    api: httpx.AsyncClient,
+    admin: User,
+    employee: User,
+    colleague: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    """Частый вопрос, на который ответили только закрытые документы, не
+    подсказывается тому, кому они закрыты: формулировка выдала бы, о чём
+    эти документы. Права спрашивавших не важны — только смотрящего."""
+    sales = Department(tenant_id=tenant_ctx.id, name="Продажи")
+    closed = Folder(tenant_id=tenant_ctx.id, name="Продажи: закрыто", restricted=True)
+    session.add_all([sales, closed])
+    await session.flush()
+    session.add(
+        FolderDepartment(
+            tenant_id=tenant_ctx.id, folder_id=closed.id, department_id=sales.id
+        )
+    )
+    in_sales = make_user(
+        tenant_id=tenant_ctx.id,
+        email="sales@test.com",
+        department_id=sales.id,
+        department_confirmed=True,
+    )
+    # Отдел выбран самим сотрудником и ещё не подтверждён (ТЗ §7).
+    pending = make_user(
+        tenant_id=tenant_ctx.id,
+        email="pending@test.com",
+        department_id=sales.id,
+        department_confirmed=False,
+    )
+    session.add_all([in_sales, pending])
+    await session.commit()
+
+    folder_doc = await _document(
+        session, tenant_ctx, title="План сокращений", folder_id=closed.id
+    )
+    restricted_doc = await _document(
+        session, tenant_ctx, title="Бонусы руководителей", visibility="restricted"
+    )
+    open_doc = await _document(session, tenant_ctx, title="Пропуска")
+    session.add(MaterialAccess(material_id=restricted_doc.id, user_id=employee.id))
+    await session.commit()
+
+    async def chunk_of(material: Material) -> UUID:
+        return (
+            await session.scalars(
+                select(Chunk.id).where(Chunk.material_id == material.id)
+            )
+        ).one()
+
+    def log(user: User, question: str, source: UUID) -> QaLog:
+        return QaLog(
+            tenant_id=tenant_ctx.id,
+            user_id=user.id,
+            question=question,
+            question_embedding=[0.1] * EMBEDDING_DIM,
+            embedding_model="fake",
+            prompt_version="test",
+            answer_given=True,
+            origin="documents",
+            source_chunk_ids=[source],
+        )
+
+    asked = {
+        "Когда сокращение в отделе продаж?": await chunk_of(folder_doc),
+        "Какой бонус у руководителей?": await chunk_of(restricted_doc),
+        "Как заказать пропуск для гостя?": await chunk_of(open_doc),
+    }
+    session.add_all(
+        [
+            log(user, question, source)
+            for question, source in asked.items()
+            for user in (employee, colleague, in_sales)
+        ]
+    )
+    await session.commit()
+
+    async def frequent(viewer: User) -> set[str]:
+        response = await api.get("/api/v1/suggestions", headers=bearer(viewer))
+        assert response.status_code == 200, response.text
+        return set(response.json()["frequent"])
+
+    everyone = "Как заказать пропуск для гостя?"
+    assert await frequent(colleague) == {everyone}
+    assert await frequent(pending) == {everyone}
+    assert await frequent(in_sales) == {everyone, "Когда сокращение в отделе продаж?"}
+    assert await frequent(employee) == {everyone, "Какой бонус у руководителей?"}
+    # Закрытые папки администратору открыты, права источника — нет.
+    assert await frequent(admin) == {everyone, "Когда сокращение в отделе продаж?"}

@@ -355,7 +355,12 @@ async def login_by_totp(
 async def enable_totp_in_settings(kronto: Kronto, user: User) -> list[str]:
     """Приложение-аутентификатор через «Настройки → Безопасность»; резервные коды."""
     setup = expect(
-        await user.browser.post(f"{API}/account/totp/setup", headers=user.auth), 200
+        await user.browser.post(
+            f"{API}/account/totp/setup",
+            headers=user.auth,
+            json={"password": user.password},
+        ),
+        200,
     )
     body = expect(
         await user.browser.post(
@@ -377,7 +382,11 @@ async def add_passkey(
 ) -> tuple[Any, dict[str, Any]]:
     key = kronto.passkey()
     setup = expect(
-        await user.browser.post(f"{API}/account/passkeys/options", headers=user.auth),
+        await user.browser.post(
+            f"{API}/account/passkeys/options",
+            headers=user.auth,
+            json={"password": user.password},
+        ),
         200,
     )
     credential = await maybe_await(key.register(setup["options"]))
@@ -1440,7 +1449,12 @@ async def test_enable_app_in_settings(kronto: Kronto) -> None:
     assert state["passkeys"] == []
 
     setup = expect(
-        await user.browser.post(f"{API}/account/totp/setup", headers=user.auth), 200
+        await user.browser.post(
+            f"{API}/account/totp/setup",
+            headers=user.auth,
+            json={"password": user.password},
+        ),
+        200,
     )
     assert setup["otpauth_uri"].startswith("otpauth://totp/"), setup["otpauth_uri"]
     assert setup["secret"] in setup["otpauth_uri"]

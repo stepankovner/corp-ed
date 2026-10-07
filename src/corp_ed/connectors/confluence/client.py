@@ -92,6 +92,8 @@ class ConfluenceClient:
                     headers=self._headers(accept="application/json"),
                     timeout=REQUEST_TIMEOUT,
                 )
+            except OutboundTooLargeError as exc:
+                raise AdapterError("response_too_large") from exc
             except httpx.TimeoutException as exc:
                 raise AdapterError("timeout", retryable=True) from exc
             except httpx.HTTPError as exc:

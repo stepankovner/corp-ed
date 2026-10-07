@@ -181,6 +181,8 @@ describe("меню учётной записи", () => {
     const user = userEvent.setup();
     signedInAs(me({ full_name: "Анна Смирнова" }));
     server.use(http.post("/api/v1/auth/logout", () => new HttpResponse(null, { status: 204 })));
+    // Скрытые предложения подключить источник — id подключений компании.
+    localStorage.setItem("kronto:connect-banner-hidden", JSON.stringify(["c-1"]));
     renderApp("/");
     await user.click(await screen.findByRole("button", { name: /^Профиль/ }));
     const menu = await screen.findByRole("menu");
@@ -207,6 +209,9 @@ describe("меню учётной записи", () => {
     // Вышли — на главной сайт для гостя с кнопкой «Войти».
     expect(await screen.findByRole("link", { name: "Войти" })).toHaveAttribute("href", "/login");
     expect(getSession()).toBeNull();
+    // Следующему человеку за этим браузером не достаётся чужое; тема — настройка устройства.
+    expect(localStorage.getItem("kronto:connect-banner-hidden")).toBeNull();
+    expect(localStorage.getItem("kronto.theme")).toBe("dark");
   });
 });
 

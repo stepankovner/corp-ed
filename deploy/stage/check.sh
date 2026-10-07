@@ -13,6 +13,9 @@
 # (/var/lib/kronto/stand-check.env, 600) — ни в GitHub, ни в чат он не
 # попадает. Вручную: sudo -u deploy SSH_ORIGINAL_COMMAND=check /usr/local/bin/kronto-deploy
 set -euo pipefail
+# Пароли служебных учёток и всё, что пишут вызванные скрипты, — только
+# для владельца.
+umask 077
 # shellcheck source=/dev/null
 . /etc/kronto/stage.env
 

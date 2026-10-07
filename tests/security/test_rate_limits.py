@@ -11,6 +11,8 @@ from corp_ed.api.v1.rate_limits import (
     FAQ_PER_USER,
     LOGIN_FAILURES_PER_ACCOUNT,
     LOGIN_PER_IP,
+    MAIL_PER_ADDRESS,
+    PASSWORD_CONFIRM_PER_ACCOUNT,
     REFRESH_PER_IP,
 )
 from corp_ed.core.rate_limit import (
@@ -22,7 +24,7 @@ from corp_ed.core.rate_limit import (
 )
 from corp_ed.domain.models import User
 from corp_ed.main import app
-from tests.api.conftest import PASSWORD, bearer, login, refresh_with
+from tests.api.conftest import PASSWORD, bearer, login, login_step, refresh_with
 
 
 class DownLimiter(RateLimiter):
@@ -89,6 +91,54 @@ async def test_ip_limit_stops_spraying_many_accounts(
 
     response = await login(api, account.email)
     assert response.status_code == 429
+
+
+async def test_password_confirmations_share_one_limit_per_account(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """Ручки «подтвердите паролем» считают попытки вместе: подобрать
+    текущий пароль украденным access-токеном, переходя от ручки к ручке,
+    не выйдет."""
+    headers = bearer(account)
+    wrong = {"password": "wrong-password-123"}
+    calls = [
+        ("/api/v1/account/backup-codes", wrong),
+        ("/api/v1/account/passkeys/" + str(uuid4()) + "/delete", wrong),
+        ("/api/v1/account/totp/setup", wrong),
+        ("/api/v1/account/passkeys/options", wrong),
+        ("/api/v1/account/delete", wrong),
+        ("/api/v1/account/totp/disable", {**wrong, "code": "000000"}),
+    ]
+    for attempt in range(PASSWORD_CONFIRM_PER_ACCOUNT.limit):
+        path, body = calls[attempt % len(calls)]
+        response = await api.post(path, json=body, headers=headers)
+        assert response.status_code == 400, (path, response.text)
+
+    for path, body in calls:
+        response = await api.post(path, json=body, headers=headers)
+        assert response.status_code == 429, path
+
+
+async def test_login_codes_by_email_are_limited_per_address(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    """Код входа на почту: и новый шаг входа, и «прислать ещё раз» идут в
+    один счётчик на адрес — почтовый ящик не завалить письмами, даже
+    начиная вход заново."""
+    first = await login_step(api, account.email, PASSWORD)
+    assert first.json()["status"] == "mfa_required"
+    token = first.json()["mfa"]["token"]
+    for _ in range(MAIL_PER_ADDRESS.limit - 2):
+        response = await login_step(api, account.email, PASSWORD)
+        assert response.status_code == 200, response.text
+    resent = await api.post("/api/v1/auth/mfa/resend", json={"token": token})
+    assert resent.status_code == 202, resent.text
+
+    again = await login_step(api, account.email, PASSWORD)
+    resend_again = await api.post("/api/v1/auth/mfa/resend", json={"token": token})
+
+    assert again.status_code == 429
+    assert resend_again.status_code == 429
 
 
 async def test_refresh_is_limited_per_ip(api: httpx.AsyncClient) -> None:
