@@ -22,7 +22,7 @@ import { Composer, type Draft } from "./Composer";
 import { conversationKey, SUGGESTIONS_KEY } from "./keys";
 import { ShareDialog } from "./ShareDialog";
 import { SourcePanel } from "./SourcePanel";
-import { NEW_KEY, useChat, type LiveAnswer } from "./store";
+import { HIDDEN_CONNECT_KEY, NEW_KEY, useChat, type LiveAnswer } from "./store";
 
 /** Вопросы (ТЗ §6): новый диалог на «/», открытый — на «/c/:id». */
 export function ChatPage() {
@@ -149,11 +149,9 @@ function PendingAnswer({ live }: { live: LiveAnswer }) {
   );
 }
 
-const HIDDEN_KEY = "kronto:connect-banner-hidden";
-
 function readHidden(): string[] {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]");
+    const value: unknown = JSON.parse(localStorage.getItem(HIDDEN_CONNECT_KEY) ?? "[]");
     return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
   } catch {
     return [];
@@ -182,7 +180,7 @@ function ConnectBanner() {
     const next = [...hidden, id];
     setHidden(next);
     try {
-      localStorage.setItem(HIDDEN_KEY, JSON.stringify(next));
+      localStorage.setItem(HIDDEN_CONNECT_KEY, JSON.stringify(next));
     } catch {
       // Хранилище недоступно (приватный режим) — скрываем до перезагрузки.
     }

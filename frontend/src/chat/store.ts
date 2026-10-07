@@ -47,8 +47,18 @@ export function useChat(): ChatApi {
 const LEGACY_PREFIX = "kronto.chat.";
 
 /**
- * До этапа 6 переписка жила во вкладке (sessionStorage). Теперь диалоги на
- * сервере; остатки старой переписки стираем при входе и выходе.
+ * Предложения подключить свой аккаунт, скрытые на экране чата (ChatPage,
+ * ConnectBanner): id подключений компании — данные человека, а не
+ * настройка браузера.
+ */
+export const HIDDEN_CONNECT_KEY = "kronto:connect-banner-hidden";
+
+/**
+ * Данные человека в браузере — при входе, выходе и смене компании.
+ * До этапа 6 переписка жила во вкладке (sessionStorage); теперь диалоги
+ * на сервере, а здесь стираются её остатки и скрытые предложения
+ * подключить источник. Тема и вид панели — настройки устройства, их не
+ * трогаем.
  */
 export function clearChatHistory(): void {
   try {
@@ -57,5 +67,10 @@ export function clearChatHistory(): void {
     }
   } catch {
     // Нечего чистить.
+  }
+  try {
+    localStorage.removeItem(HIDDEN_CONNECT_KEY);
+  } catch {
+    // Хранилище недоступно (приватный режим) — нечего чистить.
   }
 }
