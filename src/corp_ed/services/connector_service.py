@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import hmac
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -48,7 +49,11 @@ from corp_ed.core.outbound import (
 )
 from corp_ed.core.rate_limit import RateLimiter, RateLimiterUnavailableError
 from corp_ed.core.secrets import SecretBox, SecretDecryptionError
-from corp_ed.core.security import create_oauth_state, decode_oauth_state
+from corp_ed.core.security import (
+    create_oauth_state,
+    decode_oauth_state,
+    oauth_browser_binding,
+)
 from corp_ed.core.tenant_context import require_tenant, tenant_scope
 from corp_ed.domain.models import (
     Connector,
@@ -390,11 +395,14 @@ class ConnectorService:
 
     # --- OAuth (режим per_user) ---------------------------------------------------
 
-    async def oauth_start(self, user: User, connector_id: UUID) -> str:
+    async def oauth_start(
+        self, user: User, connector_id: UUID, *, browser_nonce: str
+    ) -> str:
         """Адрес авторизации на портале для этого сотрудника и подключения.
 
-        state подписан и привязан к сотруднику, компании и подключению:
-        обратный вызов придёт без нашего токена.
+        state подписан и привязан к сотруднику, компании, подключению и
+        браузеру (browser_nonce — значение его httpOnly-cookie): обратный
+        вызов придёт без нашего токена.
         """
         connector = await self.connectors.get_with_credentials(connector_id)
         if connector is None:
@@ -427,16 +435,25 @@ class ConnectorService:
             user.id,
             connector.tenant_id,
             connector.id,
+            browser=oauth_browser_binding(browser_nonce),
             ttl_minutes=self.settings.oauth_state_ttl_minutes,
         )
         return flow.authorize_url(state)
 
     async def oauth_callback(
-        self, state: str, code: str | None, *, provider_error: str | None = None
+        self,
+        state: str,
+        code: str | None,
+        *,
+        browser_nonce: str | None,
+        provider_error: str | None = None,
     ) -> OAuthResult:
         """Обменять код на токены сотрудника и записать грант.
 
-        Вызывается без аутентификации: кто и куда — только из state.
+        Вызывается без аутентификации: кто и куда — только из state, и
+        только в браузере, который начинал подключение (browser_nonce —
+        его cookie). Иначе — browser_mismatch: ссылку авторизации
+        открыли в другом браузере, грант не создаётся, state не гасится.
         Любая ошибка — код в результате и событие аудита, не исключение.
         Без code — сотрудник отказал в согласии или система вернула
         ошибку (provider_error): грант не создаётся, state гасится.
@@ -447,9 +464,17 @@ class ConnectorService:
             tenant_id = UUID(str(payload["tenant_id"]))
             connector_id = UUID(str(payload["connector_id"]))
             jti = str(payload["jti"])
+            bound = str(payload["bnd"])
         except (jwt.PyJWTError, KeyError, ValueError, TypeError):
             logger.warning("connector_oauth_state_invalid")
             return OAuthResult(None, "state_invalid")
+        if browser_nonce is None or not hmac.compare_digest(
+            oauth_browser_binding(browser_nonce), bound
+        ):
+            with tenant_scope(tenant_id):
+                return await self._oauth_failed(
+                    tenant_id, connector_id, user_id, "browser_mismatch"
+                )
         reused = await self._state_reused(jti)
         if reused is not None:
             return OAuthResult(None, reused)

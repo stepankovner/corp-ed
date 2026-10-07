@@ -30,7 +30,7 @@ REFRESH_TOKEN_BYTES = 32
 
 _REQUIRED_CLAIMS = ["exp", "iat", "nbf", "iss", "aud", "sub", "jti"]
 _ACCESS_CLAIMS = [*_REQUIRED_CLAIMS, "sid"]
-_OAUTH_STATE_CLAIMS = [*_REQUIRED_CLAIMS, "tenant_id", "connector_id"]
+_OAUTH_STATE_CLAIMS = [*_REQUIRED_CLAIMS, "tenant_id", "connector_id", "bnd"]
 
 # Параметры argon2-cffi по умолчанию (RFC 9106, «низкая память»):
 # t=3, m=64 МиБ, p=4. Совпадают с тем, что писал passlib, поэтому
@@ -144,7 +144,12 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 
 def create_oauth_state(
-    user_id: UUID, tenant_id: UUID, connector_id: UUID, *, ttl_minutes: int
+    user_id: UUID,
+    tenant_id: UUID,
+    connector_id: UUID,
+    *,
+    browser: str,
+    ttl_minutes: int,
 ) -> str:
     """Подписанный state для OAuth-обмена коннектора (режим per_user).
 
@@ -153,6 +158,11 @@ def create_oauth_state(
     авторизуется, ядро узнаёт только из state, поэтому он подписан тем же
     ключом, что access-токены, с отдельным typ (access-токен в роли
     state не пройдёт и наоборот) и коротким сроком.
+
+    browser — отпечаток (oauth_browser_binding) случайного значения из
+    httpOnly-cookie браузера, который начал подключение: обратный вызов
+    принимается только в нём, пересланная ссылка в чужом браузере грант
+    не создаст.
     """
     settings = get_settings()
     now = datetime.now(UTC)
@@ -160,6 +170,7 @@ def create_oauth_state(
         "sub": str(user_id),
         "tenant_id": str(tenant_id),
         "connector_id": str(connector_id),
+        "bnd": browser,
         "typ": OAUTH_STATE_TYPE,
         "iss": ISSUER,
         "aud": AUDIENCE,
@@ -171,6 +182,17 @@ def create_oauth_state(
     return jwt.encode(
         payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM
     )
+
+
+def new_oauth_browser_nonce() -> str:
+    """Значение cookie, привязывающей OAuth-подключение к браузеру."""
+    return secrets.token_urlsafe(32)
+
+
+def oauth_browser_binding(nonce: str) -> str:
+    """Отпечаток значения cookie для state: само значение в state не
+    кладём — state уходит на портал и в его журналы."""
+    return hashlib.sha256(nonce.encode()).hexdigest()
 
 
 def decode_oauth_state(state: str) -> dict[str, Any]:
