@@ -1,3 +1,5 @@
+import re
+
 import structlog
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
@@ -6,6 +8,9 @@ from fastapi.responses import JSONResponse
 from corp_ed.llm.throttle import ThrottleBusyError
 
 logger = structlog.get_logger()
+
+# Код ответа провайдера в начале текста LLMError («429 …», llm/errors.py).
+_LEADING_STATUS = re.compile(r"(\d{3})\b")
 
 
 def _body(exc: Exception) -> dict[str, str]:
@@ -144,11 +149,18 @@ async def llm_error_handler(
             },
             headers={"Retry-After": "30"},
         )
-    logger.warning(
-        "llm_unavailable",
-        error=str(exc),
-        path=request.url.path,
-    )
+    # Текст ошибки собран из тела ответа провайдера (llm/errors.py) и может
+    # повторять запрос — вопрос сотрудника. В лог — код, класс и причина.
+    details: dict[str, object] = {
+        "error_type": type(exc).__name__,
+        "retryable": getattr(exc, "retryable", None),
+    }
+    status_code = _LEADING_STATUS.match(str(exc))
+    if status_code:
+        details["status"] = int(status_code.group(1))
+    if exc.__cause__ is not None:
+        details["cause"] = type(exc.__cause__).__name__
+    logger.warning("llm_unavailable", path=request.url.path, **details)
 
     return JSONResponse(
         status_code=status.HTTP_502_BAD_GATEWAY,
