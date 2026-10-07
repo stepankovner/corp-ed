@@ -117,6 +117,32 @@ def test_rejects_broken_zip() -> None:
     assert _code(lambda: detect_format("a.docx", b"PK\x03\x04garbage")) == "corrupted"
 
 
+def test_rejects_docx_declaring_too_many_entries() -> None:
+    data = samples.declare_entries(
+        samples.docx([("Текст", None)]), extract_module.MAX_DOCX_ENTRIES + 1
+    )
+    assert _code(lambda: detect_format("a.docx", data)) == "archive_too_large"
+
+
+def test_docx_entries_are_counted_before_directory_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Каталог zip в процессе API не строится, если записей больше
+    лимита, даже когда конец архива объявляет их меньше."""
+    data = samples.declare_entries(
+        samples.with_entries(
+            samples.docx([("Текст", None)]), extract_module.MAX_DOCX_ENTRIES
+        ),
+        3,
+    )
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("zip directory was built")
+
+    monkeypatch.setattr(extract_module.zipfile, "ZipFile", fail)
+    assert _code(lambda: detect_format("a.docx", data)) == "archive_too_large"
+
+
 @pytest.mark.parametrize(
     ("raw", "clean"),
     [

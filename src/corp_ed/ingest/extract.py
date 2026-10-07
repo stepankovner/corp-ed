@@ -251,6 +251,14 @@ def _check_docx_container(data: bytes) -> None:
         raise ExtractionError("encrypted")
     if not data.startswith(b"PK\x03\x04"):
         raise ExtractionError("format_mismatch")
+
+    from corp_ed.ingest.ooxml import OfficeFileError, check_entry_count
+
+    try:
+        # До каталога zipfile: он строит ZipInfo на каждую запись.
+        check_entry_count(data, MAX_DOCX_ENTRIES)
+    except OfficeFileError as exc:
+        raise ExtractionError(exc.code) from exc
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             entries = archive.infolist()

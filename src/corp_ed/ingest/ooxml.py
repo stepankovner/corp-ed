@@ -15,6 +15,7 @@
 """
 
 import io
+import struct
 import zipfile
 import zlib
 from collections.abc import Iterator
@@ -85,6 +86,7 @@ def check_package(data: bytes, kind: PackageKind) -> None:
         raise OfficeFileError("format_mismatch")
     if not data.startswith(b"PK\x03\x04"):
         raise OfficeFileError("format_mismatch")
+    check_entry_count(data)
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             entries = archive.infolist()
@@ -110,6 +112,70 @@ def check_package(data: bytes, kind: PackageKind) -> None:
                 raise OfficeFileError("format_mismatch")
     except (zipfile.BadZipFile, zlib.error, EOFError, ParseError, ValueError) as exc:
         raise OfficeFileError("corrupted") from exc
+
+
+_EOCD = struct.Struct("<4s4H2LH")
+_EOCD_SIGNATURE = b"PK\x05\x06"
+_ZIP64_LOCATOR = struct.Struct("<4sLQL")
+_ZIP64_LOCATOR_SIGNATURE = b"PK\x06\x07"
+_ZIP64_EOCD = struct.Struct("<4sQ2H2L4Q")
+_ZIP64_EOCD_SIGNATURE = b"PK\x06\x06"
+_CENTRAL_HEADER_SIGNATURE = b"PK\x01\x02"
+_MAX_ZIP_COMMENT = 0xFFFF
+
+
+def check_entry_count(data: bytes, limit: int = MAX_ENTRIES) -> None:
+    """Записей в zip не больше limit — до того, как zipfile построит каталог.
+
+    `zipfile.ZipFile` сразу создаёт ZipInfo на каждую запись центрального
+    каталога: 25 МБ — сотни тысяч записей и сотни мегабайт памяти в
+    процессе API. Поэтому до него две проверки без разбора каталога:
+
+    - число записей, которое объявляет конец каталога (EOCD; у ZIP64 —
+      его запись ZIP64);
+    - сигнатуры записей каталога (`PK\\x01\\x02`) во всём файле. На
+      объявленное число zipfile не смотрит — читает каталог целиком, а
+      каждая его запись начинается с такой сигнатуры, так что их число —
+      верхняя граница числа ZipInfo. Лишние совпадения дают только
+      несжатые вложенные zip с тысячами записей; Office таких не пишет.
+
+    Больше limit — `archive_too_large`; локатор ZIP64 без записи —
+    `corrupted`.
+    """
+    declared = _declared_entries(data)
+    if declared > limit or data.count(_CENTRAL_HEADER_SIGNATURE) > limit:
+        raise OfficeFileError("archive_too_large")
+
+
+def _declared_entries(data: bytes) -> int:
+    """Число записей из конца каталога; 0 — конца нет (это скажет zipfile).
+
+    Конец ищется, как в zipfile: последние 22 байта без комментария,
+    иначе последняя сигнатура в пределах длины комментария от конца."""
+    end = len(data) - _EOCD.size
+    if not (
+        end >= 0
+        and data.startswith(_EOCD_SIGNATURE, end)
+        and data.endswith(b"\x00\x00")
+    ):
+        end = data.rfind(_EOCD_SIGNATURE, max(0, end - _MAX_ZIP_COMMENT - 1))
+        if end < 0 or end + _EOCD.size > len(data):
+            return 0
+    _, _, _, on_disk, total, _, _, _ = _EOCD.unpack_from(data, end)
+
+    locator = end - _ZIP64_LOCATOR.size
+    if locator < 0 or not data.startswith(_ZIP64_LOCATOR_SIGNATURE, locator):
+        return max(int(on_disk), int(total))
+    # ZIP64: настоящее число — в записи ZIP64. Она там, куда указывает
+    # локатор, или вплотную перед ним (если перед архивом есть данные).
+    _, _, record, _ = _ZIP64_LOCATOR.unpack_from(data, locator)
+    for offset in (record, locator - _ZIP64_EOCD.size):
+        if 0 <= offset <= len(data) - _ZIP64_EOCD.size and data.startswith(
+            _ZIP64_EOCD_SIGNATURE, offset
+        ):
+            fields = _ZIP64_EOCD.unpack_from(data, offset)
+            return max(int(fields[6]), int(fields[7]))
+    raise OfficeFileError("corrupted")
 
 
 def open_archive(data: bytes) -> zipfile.ZipFile:
