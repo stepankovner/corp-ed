@@ -54,7 +54,9 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    sourcemap: true,
+    // Карты собираются (разбор ошибок по стеку), но ссылки на них в
+    // скриптах нет, а nginx отдаёт на *.map 404.
+    sourcemap: "hidden",
     rolldownOptions: {
       output: {
         // Библиотеки меняются реже кода приложения — отдельные чанки
