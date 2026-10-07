@@ -44,6 +44,7 @@ from corp_ed.connectors.common import (
     note_unsupported,
     parse_datetime,
     redact,
+    safe_code,
     to_int,
 )
 from corp_ed.connectors.yandex.oauth import YandexAuth
@@ -154,14 +155,14 @@ class YandexDiskClient:
                 # Причин 403 у Диска несколько (нет прав, Диск только на
                 # чтение, пользователь заблокирован), имена в документации
                 # не названы — наружу один код, подробность — в журнал.
-                logger.info("yandex_disk_forbidden", path=path, error=error[:64])
+                logger.info("yandex_disk_forbidden", path=path, error=safe_code(error))
                 raise AdapterError("forbidden")
             if status == 404:
                 raise AdapterError("not_found")
             if status == 423:
                 raise AdapterError("maintenance", retryable=True)
-            code = (error or f"http_{status}").lower()
-            raise AdapterError(code[:64], retryable=status >= 500)
+            code = safe_code(error or f"http_{status}")
+            raise AdapterError(code, retryable=status >= 500)
 
     async def download(self, href: str, *, max_bytes: int) -> bytes:
         parts = urlsplit(href)

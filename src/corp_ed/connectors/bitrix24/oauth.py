@@ -24,7 +24,7 @@ from corp_ed.connectors.base import (
     AdapterError,
     ExchangedCredentials,
 )
-from corp_ed.connectors.common import TokenSet, json_object
+from corp_ed.connectors.common import TokenSet, json_object, safe_code
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 __all__ = ["Bitrix24OAuth", "TokenSet"]
@@ -107,7 +107,7 @@ class Bitrix24OAuth:
                 raise AdapterAuthError("invalid_grant")
             if code in _CONFIG_ERRORS:
                 raise AdapterConfigError(code)
-            raise AdapterError(f"oauth_{code}"[:64])
+            raise AdapterError(safe_code(code, prefix="oauth_"))
         return _tokens(data)
 
 

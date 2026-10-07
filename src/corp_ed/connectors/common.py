@@ -114,6 +114,21 @@ def path_segment(value: object) -> str:
     return segment
 
 
+MAX_CODE_LENGTH = 64
+_UNSAFE_CODE_CHARS = re.compile(r"[^a-z0-9_]")
+
+
+def safe_code(value: object, *, prefix: str = "") -> str:
+    """Код ошибки из ответа источника → наш код: латиница, цифры и _.
+
+    Такой код уходит в ответ API, в журнал аудита и в адрес возврата
+    фронтенда — строка под контролем чужой системы туда не попадает.
+    Всё прочее заменяется на _, длина — не больше MAX_CODE_LENGTH.
+    """
+    clean = _UNSAFE_CODE_CHARS.sub("_", str(value).strip().lower())
+    return f"{prefix}{clean}"[:MAX_CODE_LENGTH]
+
+
 def to_int(value: Any) -> int | None:
     try:
         return int(value)

@@ -2,6 +2,7 @@
 коды ошибок, скачивание только с хоста портала, запись фикстур."""
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from corp_ed.connectors.bitrix24.client import (
     redact,
 )
 from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth, TokenSet
+from corp_ed.connectors.common import safe_code
 from corp_ed.core import outbound
 from tests.connectors.fake_portal import (
     ACCESS_TOKEN,
@@ -267,6 +269,40 @@ async def test_oversized_api_response_is_an_adapter_error(
     assert excinfo.value.code == "oauth_response_too_large"
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        "Odd Code\r\n<script>x</script>",
+        {"code": "BITRIX_REST_V3_EXCEPTION_Odd/Code?#"},
+        "Ошибка доступа",
+        "x" * 500,
+    ],
+)
+async def test_unknown_error_code_from_portal_is_scrubbed(
+    portal: FakePortal, error: Any
+) -> None:
+    """Код ошибки из ответа портала уходит в API, аудит и интерфейс —
+    только латиница, цифры и _, не длиннее 64."""
+    portal.canned["profile"] = (400, {"error": error})
+    with pytest.raises(AdapterError) as excinfo:
+        await make_client(portal).call("profile")
+    assert re.fullmatch(r"[a-z0-9_]{1,64}", excinfo.value.code)
+
+
+async def test_unknown_oauth_error_is_scrubbed(portal: FakePortal) -> None:
+    portal.oauth_error = "Odd Error\n<b>"
+    oauth = Bitrix24OAuth(
+        portal.client(),
+        portal=portal.portal,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+    with pytest.raises(AdapterError) as excinfo:
+        await oauth.refresh(REFRESH_TOKEN)
+    assert excinfo.value.code == "oauth_odd_error__b_"
+
+
 async def test_non_json_5xx_is_retryable(portal: FakePortal) -> None:
     portal.canned["profile"] = (502, "<html>bad gateway</html>")
     client = make_client(portal)
@@ -343,6 +379,15 @@ async def test_recorder_receives_redacted_calls(portal: FakePortal) -> None:
     assert "auth=%3Credacted%3E" in url
     assert "token=%3Credacted%3E" in url
     assert ACCESS_TOKEN not in json.dumps(response)
+
+
+def test_safe_code_keeps_only_safe_characters() -> None:
+    assert safe_code("Expired_Token") == "expired_token"
+    assert safe_code(" Odd Code\n<b> ", prefix="oauth_") == "oauth_odd_code__b_"
+    assert safe_code("Ошибка") == "______"
+    assert safe_code({"a": 1}) == "__a___1_"
+    long = safe_code("x" * 500, prefix="wiki_")
+    assert len(long) == 64 and long.startswith("wiki_x")
 
 
 def test_redact_masks_webhook_code_in_url_path() -> None:

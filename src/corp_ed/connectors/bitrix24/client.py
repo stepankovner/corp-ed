@@ -28,7 +28,13 @@ import httpx
 
 from corp_ed.connectors.base import AdapterAuthError, AdapterConfigError, AdapterError
 from corp_ed.connectors.bitrix24.oauth import Bitrix24OAuth
-from corp_ed.connectors.common import Recorder, TokenSet, json_object, redact
+from corp_ed.connectors.common import (
+    Recorder,
+    TokenSet,
+    json_object,
+    redact,
+    safe_code,
+)
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 USER_AGENT = "corp-ed-connector/1.0"
@@ -311,13 +317,16 @@ _V3_CODES = {
 
 
 def _error_code(error: Any) -> str:
-    """Код ошибки старого REST (строка) и REST 3.0 (объект) — одной строкой."""
+    """Код ошибки старого REST (строка) и REST 3.0 (объект) — одной строкой.
+
+    Код пишет портал, а уходит он в ответ API и аудит — только латиница,
+    цифры и _ (safe_code)."""
     if isinstance(error, dict):
         error = error.get("code", "")
-    code = str(error or "").lower()
+    code = safe_code(error or "")
     if code.startswith(_V3_PREFIX):
         short = code.removeprefix(_V3_PREFIX)
-        return _V3_CODES.get(short, f"v3_{short}")
+        return _V3_CODES.get(short, safe_code(short, prefix="v3_"))
     return code
 
 
@@ -335,5 +344,5 @@ def _error(status: int, code: str) -> AdapterError:
     if code in _FATAL_CODES:
         return AdapterError(code)
     if code:
-        return AdapterError(code[:64], retryable=status >= 500)
+        return AdapterError(code, retryable=status >= 500)
     return AdapterError(f"http_{status}", retryable=status >= 500)

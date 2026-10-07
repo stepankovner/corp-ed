@@ -162,6 +162,17 @@ async def test_oversized_api_response_is_an_adapter_error(
     assert not excinfo.value.retryable
 
 
+async def test_unknown_error_code_from_the_wiki_is_scrubbed(
+    server: FakeYandex,
+) -> None:
+    """Код ошибки из ответа Вики уходит в API, аудит и интерфейс —
+    только латиница, цифры и _, не длиннее 64."""
+    server.api_error = (400, {"error_code": "Odd Error\n<b>", "debug_message": "…"})
+    with pytest.raises(AdapterError) as excinfo:
+        await listed(make_adapter(server))
+    assert excinfo.value.code == "wiki_odd_error__b_"
+
+
 async def test_employee_who_never_opened_the_wiki_gets_a_grant_error(
     server: FakeYandex,
 ) -> None:

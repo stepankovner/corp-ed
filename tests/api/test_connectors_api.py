@@ -42,7 +42,7 @@ from corp_ed.repositories.connector_sync_job_repository import (
     ConnectorSyncJobRepository,
 )
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.services.connector_service import ConnectorService
+from corp_ed.services.connector_service import ConnectorService, _provider_code
 from tests.api.conftest import bearer
 from tests.fake_connector import (
     FAKE_KIND,
@@ -735,3 +735,13 @@ async def test_admin_sees_how_many_connected_and_employee_sees_sources(
     assert source["id"] == connector_id
     assert source["mode"] == "per_user"
     assert source["grant_status"] == "active"
+
+
+def test_provider_error_code_keeps_only_safe_characters() -> None:
+    """Код отказа от провайдера — тот же scrub, что у кодов ошибок
+    адаптеров: латиница, цифры и _, не длиннее 64."""
+    assert _provider_code("access_denied") == "provider_access_denied"
+    assert _provider_code(" Access Denied\n<b> ") == "provider_access_denied__b_"
+    assert _provider_code("Отказ") == "provider______"
+    assert len(_provider_code("x" * 500)) == 64
+    assert _provider_code(None) == "code_missing"

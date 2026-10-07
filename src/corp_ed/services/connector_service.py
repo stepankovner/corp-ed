@@ -25,6 +25,7 @@ from corp_ed.connectors.base import (
     SourceAdapter,
     refreshed_credentials,
 )
+from corp_ed.connectors.common import safe_code
 from corp_ed.connectors.registry import (
     AdapterRegistry,
     FieldSpec,
@@ -742,8 +743,7 @@ def _provider_code(error: str | None) -> str:
     """Код отказа от системы (OAuth 2.0 `error`) → наш код без мусора."""
     if not error:
         return "code_missing"
-    clean = "".join(ch if ch.isalnum() else "_" for ch in error.strip().lower())
-    return f"provider_{clean}"[:64]
+    return safe_code(error, prefix="provider_")
 
 
 def _validate_modules(spec: KindSpec, modules: list[str]) -> list[str]:

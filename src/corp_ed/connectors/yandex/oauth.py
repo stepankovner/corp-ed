@@ -28,7 +28,7 @@ from corp_ed.connectors.base import (
     AdapterError,
     ExchangedCredentials,
 )
-from corp_ed.connectors.common import TokenSet, json_object
+from corp_ed.connectors.common import TokenSet, json_object, safe_code
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 TOKEN_TIMEOUT = 20.0
@@ -120,7 +120,7 @@ class YandexOAuth:
                 raise AdapterAuthError("invalid_grant")
             if code in _CONFIG_ERRORS:
                 raise AdapterConfigError(code)
-            raise AdapterError(f"oauth_{code}"[:64])
+            raise AdapterError(safe_code(code, prefix="oauth_"))
         access = data.get("access_token")
         if not isinstance(access, str) or not access:
             raise AdapterError("oauth_bad_response")

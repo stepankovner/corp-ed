@@ -154,6 +154,32 @@ async def test_oversized_api_response_is_an_adapter_error(
     assert excinfo.value.code == "oauth_response_too_large"
 
 
+async def test_unknown_error_codes_from_yandex_are_scrubbed(
+    server: FakeYandex,
+) -> None:
+    """Код ошибки из ответа Диска и OAuth уходит в API, аудит и
+    интерфейс — только латиница, цифры и _, не длиннее 64."""
+    server.api_error = (400, {"error": "Odd Error\n<b>"})
+    with pytest.raises(AdapterError) as excinfo:
+        await make_adapter(server).check()
+    assert excinfo.value.code == "odd_error__b_"
+    server.api_error = (500, {"error": "Ошибка" + "!" * 100})
+    with pytest.raises(AdapterError) as excinfo:
+        await make_adapter(server).check()
+    assert excinfo.value.code == "_" * 64 and excinfo.value.retryable
+    server.api_error = None
+    server.oauth_error = "Odd Error\n<b>"
+    flow = YandexOAuth(
+        server.client(),
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+    with pytest.raises(AdapterError) as excinfo:
+        await flow.exchange(AUTH_CODE)
+    assert excinfo.value.code == "oauth_odd_error__b_"
+
+
 async def test_dead_token_is_auth_error_after_one_refresh_attempt(
     server: FakeYandex,
 ) -> None:

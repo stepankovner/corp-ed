@@ -41,6 +41,7 @@ from corp_ed.connectors.common import (
     parse_datetime,
     path_segment,
     redact,
+    safe_code,
 )
 from corp_ed.connectors.yandex.oauth import YandexAuth
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
@@ -135,12 +136,12 @@ class YandexWikiClient:
                 # сотрудника, а не приложение — ему открыть Вики.
                 raise AdapterAuthError("wiki_login_required")
             if status == 403:
-                logger.info("yandex_wiki_forbidden", path=path, error=error[:64])
+                logger.info("yandex_wiki_forbidden", path=path, error=safe_code(error))
                 raise AdapterError("forbidden")
             if status == 404:
                 raise AdapterError("not_found")
-            code = (error or f"http_{status}").lower()
-            raise AdapterError(f"wiki_{code}"[:64], retryable=status >= 500)
+            code = safe_code(error or f"http_{status}", prefix="wiki_")
+            raise AdapterError(code, retryable=status >= 500)
 
 
 class YandexWikiModule:
