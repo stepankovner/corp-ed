@@ -8,7 +8,8 @@
   PAGE_BREAK (\\f) — по ним preprocess находит колонтитулы;
 - txt, md: как есть; UTF-8, а ещё UTF-16 с BOM и Windows-1251;
 - xlsx, pptx, doc (Р-5, BH-33…BH-35): разбор ML — ingest/xlsx.py,
-  ingest/pptx.py, ingest/doc.py, только стандартная библиотека. Каждый
+  ingest/pptx.py, ingest/doc.py: стандартная библиотека и defusedxml
+  для XML в xlsx и pptx. Каждый
   включён флагом INGEST_EXTRA_FORMATS: формат выключается без выкладки
   кода, если его качество на живых данных упадёт.
 
@@ -25,7 +26,8 @@
 (ingest/sandbox.py), этот модуль не вызывается из API напрямую.
 
 Лицензии — только разрешительные: pdfplumber и pdfminer.six — MIT,
-pypdfium2 — BSD-3 / Apache-2.0, mammoth — BSD-2, markdownify — MIT.
+pypdfium2 — BSD-3 / Apache-2.0, mammoth — BSD-2, markdownify — MIT,
+defusedxml — PSF-2.0.
 """
 
 import io
