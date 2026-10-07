@@ -2,13 +2,19 @@
 вопрос без входа — ответ по её документам, лимиты закрыты без Redis."""
 
 import json
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from corp_ed.api.v1.endpoints import demo as demo_endpoints
+from corp_ed.api.v1.rate_limits import DEMO_PER_DAY
 from corp_ed.core.config import EMBEDDING_DIM, DemoSettings
+from corp_ed.core.exceptions import DomainError
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.demo import COMPANY_NAME, SUGGESTED_QUESTIONS, documents
 from corp_ed.domain.models import (
@@ -16,10 +22,12 @@ from corp_ed.domain.models import (
     Chunk,
     IngestJob,
     Material,
+    MemberStatus,
     NotificationSetting,
     QaLog,
     Tenant,
     User,
+    UserRole,
 )
 from corp_ed.domain.types import NotFoundMode
 from corp_ed.llm.fake import FakeAdapter
@@ -258,6 +266,58 @@ async def test_honeypot_answers_without_model_or_log(
     with tenant_scope(tenant.id):
         async with session_maker() as session:
             assert await session.scalar(select(func.count()).select_from(QaLog)) == 0
+
+
+async def test_honeypot_does_not_spend_the_daily_limit(
+    api: httpx.AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Боты со скрытым полем не выбирают общий суточный лимит песочницы:
+    проверка поля — до него."""
+    await _setup(session_maker)
+    monkeypatch.setattr(demo_endpoints, "DEMO_PER_DAY", replace(DEMO_PER_DAY, limit=1))
+
+    bot = await _ask(api, "Какие суточные?", website="https://spam.example")
+    person = await _ask(api, "Какие суточные?")
+
+    assert bot.status_code == 200
+    assert person.status_code == 200, person.text
+
+
+async def test_sandbox_refuses_a_company_with_real_members(
+    api: httpx.AsyncClient,
+    session_maker: async_sessionmaker[AsyncSession],
+    fake_llm: FakeAdapter,
+) -> None:
+    """DEMO_COMPANY_CODE по ошибке указывает на настоящую компанию:
+    песочница не отвечает от её имени — и setup не заводит туда учётку."""
+    tenant = await _setup(session_maker)
+    with tenant_scope(tenant.id):
+        async with session_maker() as session:
+            person = Account(
+                email="real@acme.ru",
+                hashed_password=NO_LOGIN_HASH,
+                email_verified_at=datetime.now(UTC),
+            )
+            session.add(person)
+            await session.flush()
+            session.add(
+                User(
+                    account_id=person.id,
+                    role=UserRole.EMPLOYEE,
+                    status=MemberStatus.ACTIVE,
+                )
+            )
+            await session.commit()
+
+    response = await _ask(api, "Какие суточные?")
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "demo_off"
+    assert fake_llm.calls == []
+    with pytest.raises(DomainError, match="не песочница"):
+        await DemoService(session_maker, SETTINGS).setup()
 
 
 async def test_question_is_short_and_body_strict(

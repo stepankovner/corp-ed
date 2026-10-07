@@ -129,10 +129,11 @@ async def _admit(
     вызова модели). False — бот заполнил скрытое поле: отвечаем как на
     вопрос вне документов, модель не вызываем."""
     await enforce(limiter, DEMO_PER_IP, client_ip(request))
-    await enforce(limiter, DEMO_PER_DAY, "all")
+    # Скрытое поле — до общего суточного лимита: боты его не выбирают.
     if data.website:
         logger.info("demo_honeypot")
         return False
+    await enforce(limiter, DEMO_PER_DAY, "all")
     return True
 
 
