@@ -377,7 +377,11 @@ async def _run(args: argparse.Namespace) -> int:
         print(
             f"qa_log: {purged.qa_log}, audit_events: {purged.audit_events}, "
             f"sync_runs: {purged.sync_runs}, leads: {purged.leads}, "
-            f"attachments: {purged.attachments}"
+            f"attachments: {purged.attachments}, "
+            f"refresh_tokens: {purged.refresh_tokens}, "
+            f"auth_challenges: {purged.auth_challenges}, "
+            f"email_tokens: {purged.email_tokens}, "
+            f"trusted_devices: {purged.trusted_devices}"
         )
         return 0
 

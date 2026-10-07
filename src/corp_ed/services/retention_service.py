@@ -7,14 +7,46 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.db_policies import AUDIT_RETENTION_DAYS
 from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import AuditEvent
+from corp_ed.domain.models import AuditEvent, AuthChallenge, TrustedDevice
 from corp_ed.repositories.chat_repository import AttachmentRepository
 from corp_ed.repositories.connector_repository import SyncRunRepository
+from corp_ed.repositories.email_token_repository import EmailTokenRepository
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
+from corp_ed.repositories.refresh_token_repository import RefreshTokenRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 
 logger = structlog.get_logger()
+
+REFRESH_TOKEN_GRACE = timedelta(days=30)
+"""Сколько запись refresh-токена хранится после своего срока (expires_at).
+
+Удаляются только истёкшие записи — по expires_at, не по used_at или
+revoked_at. Это не ломает ни одну из проверок, которым записи нужны:
+
+- закрытый сеанс (family_revoked): access-токен выдаётся вместе с
+  refresh-записью (AuthService._issue), и она живёт дольше него — не
+  меньше SESSION_REFRESH_TTL_HOURS (от часа) против
+  ACCESS_TOKEN_TTL_MINUTES (до 60 минут). Пока действует хоть один
+  access-токен сеанса, его refresh-запись не истекла и с отметкой
+  revoked_at остаётся в таблице при любом запасе.
+- повтор украденного токена (AuthService.refresh): used_at и revoked_at
+  проверяются раньше срока, а used_at ставится только неистёкшей записи.
+  Использованный токен отзывает цепочку весь свой срок
+  (REFRESH_TOKEN_TTL_DAYS) и ещё REFRESH_TOKEN_GRACE после него. Позже
+  украденный токен и так не действует — теряется лишь позднее
+  обнаружение кражи и запись о нём в аудите.
+
+Тридцать дней — с запасом на смену сроков в настройках и на
+расследование. Первую запись живой цепочки репозиторий не удаляет: по
+ней список сеансов показывает, когда начался вход."""
+
+AUTH_RECORD_GRACE = timedelta(days=1)
+"""Запас для шагов входа, ссылок из писем и доверенных устройств.
+
+Их проверки одинаково отвечают на истёкшую, использованную и
+отсутствующую запись, поэтому истёкшие удаляются почти сразу; сутки — на
+расхождение часов и разбор жалобы «код не подошёл»."""
 
 
 @dataclass(frozen=True)
@@ -24,6 +56,10 @@ class PurgeReport:
     sync_runs: int = 0
     leads: int = 0
     attachments: int = 0
+    refresh_tokens: int = 0
+    auth_challenges: int = 0
+    email_tokens: int = 0
+    trusted_devices: int = 0
 
 
 class RetentionService:
@@ -32,6 +68,9 @@ class RetentionService:
     Запускать по расписанию (cron / systemd timer раз в сутки). Журнал
     вопросов — по компании в своём tenant_scope (RLS); журнал аудита —
     одним запросом, триггер в базе пропустит только записи старше срока.
+    Записи входа (refresh-токены, шаги входа, ссылки из писем, доверенные
+    устройства) принадлежат учётке, а не компании, и вне RLS — тоже одним
+    запросом на таблицу.
     """
 
     def __init__(
@@ -89,6 +128,20 @@ class RetentionService:
             )
             await session.commit()
 
+        auth_cutoff = now - AUTH_RECORD_GRACE
+        async with self.session_maker() as session:
+            refresh_deleted = await RefreshTokenRepository(
+                session
+            ).delete_expired_before(now - REFRESH_TOKEN_GRACE)
+            email_deleted = await EmailTokenRepository(session).delete_expired_before(
+                auth_cutoff
+            )
+            challenges_deleted = await _delete_expired(
+                session, AuthChallenge, auth_cutoff
+            )
+            devices_deleted = await _delete_expired(session, TrustedDevice, auth_cutoff)
+            await session.commit()
+
         logger.info(
             "retention_purged",
             qa_log=qa_deleted,
@@ -96,6 +149,10 @@ class RetentionService:
             sync_runs=runs_deleted,
             leads=leads_deleted,
             attachments=attachments_deleted,
+            refresh_tokens=refresh_deleted,
+            auth_challenges=challenges_deleted,
+            email_tokens=email_deleted,
+            trusted_devices=devices_deleted,
         )
         return PurgeReport(
             qa_log=qa_deleted,
@@ -103,4 +160,17 @@ class RetentionService:
             sync_runs=runs_deleted,
             leads=leads_deleted,
             attachments=attachments_deleted,
+            refresh_tokens=refresh_deleted,
+            auth_challenges=challenges_deleted,
+            email_tokens=email_deleted,
+            trusted_devices=devices_deleted,
         )
+
+
+async def _delete_expired(
+    session: AsyncSession,
+    model: type[AuthChallenge] | type[TrustedDevice],
+    cutoff: datetime,
+) -> int:
+    result = await session.execute(delete(model).where(model.expires_at < cutoff))
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]

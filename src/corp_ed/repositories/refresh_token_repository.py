@@ -1,8 +1,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from corp_ed.domain.models import RefreshToken
 
@@ -39,8 +40,9 @@ class RefreshTokenRepository:
         revoke_family и revoke_account, и всей цепочке сразу, поэтому одна
         отозванная запись значит закрытый сеанс. Сеанс без записей — не
         отозван, поэтому отозванные записи нельзя удалять раньше, чем
-        истекут access-токены (ACCESS_TOKEN_TTL_MINUTES): сейчас их не
-        удаляет никто, кроме удаления самой учётки."""
+        истекут access-токены (ACCESS_TOKEN_TTL_MINUTES): purge удаляет
+        только записи, истёкшие больше REFRESH_TOKEN_GRACE назад
+        (delete_expired_before, retention_service)."""
         result = await self.session.execute(
             select(RefreshToken.id)
             .where(
@@ -69,3 +71,34 @@ class RefreshTokenRepository:
             )
             .values(revoked_at=now)
         )
+
+    async def delete_expired_before(self, cutoff: datetime) -> int:
+        """Удалить записи, истёкшие раньше cutoff (cli purge).
+
+        Только по expires_at, не по used_at/revoked_at — почему это не
+        ломает отзыв сеанса и повтор украденного токена, см.
+        REFRESH_TOKEN_GRACE в retention_service.
+
+        Первая запись цепочки, в которой ещё есть запись не старше
+        cutoff, остаётся: по ней список сеансов показывает, когда начался
+        вход (min(created_at) семьи). Цепочка, целиком истёкшая до
+        cutoff, удаляется вся.
+        """
+        live = aliased(RefreshToken)
+        older = aliased(RefreshToken)
+        result = await self.session.execute(
+            delete(RefreshToken).where(
+                RefreshToken.expires_at < cutoff,
+                or_(
+                    ~exists().where(
+                        live.family_id == RefreshToken.family_id,
+                        live.expires_at >= cutoff,
+                    ),
+                    exists().where(
+                        older.family_id == RefreshToken.family_id,
+                        older.created_at < RefreshToken.created_at,
+                    ),
+                ),
+            )
+        )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
