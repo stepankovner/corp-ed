@@ -7,6 +7,10 @@
 - «PDF-бомба» или бесконечный цикл в парсере занимали бы воркер API;
 - разбор PDF — секунды CPU; в event loop он остановил бы все запросы.
 
+Так же — фото профиля и логотип компании (images.py): декодеры
+JPEG, PNG и WebP в Pillow тоже на C. Наружу — WebP в base64 или код
+ошибки; любой сбой дочернего процесса — «картинка не читается».
+
 Дочерний процесс получает пустое окружение (кроме PATH и локали) и
 только stdin, stdout и stderr из дескрипторов API, закрывает себе сеть
 (seccomp, no_network.py), урезает память, CPU и запись файлов
@@ -21,6 +25,7 @@
 """
 
 import asyncio
+import base64
 import json
 import math
 import os
@@ -38,10 +43,13 @@ from corp_ed.ingest.extract import (
     ExtractionError,
     SourceFormat,
 )
+from corp_ed.ingest.images import IMAGE_ERROR_CODES, ImageError, ImageKind
 
 logger = structlog.get_logger()
 
 TIMEOUT_SECONDS = 90.0
+IMAGE_TIMEOUT_SECONDS = 30.0
+"""Фото на 40 Мп обрабатывается за секунду-две; дольше — что-то не так."""
 MAX_OUTPUT_BYTES = 6 * MAX_EXTRACTED_CHARS + 64 * 1024
 """Потолок ответа дочернего процесса. Честный ответ меньше: в Markdown не
 больше MAX_EXTRACTED_CHARS символов, в JSON символ — до 6 байт (`\\u001f`).
@@ -236,3 +244,27 @@ async def extract_isolated(
     code = result.get("code")
     # Код из дочернего процесса — тоже вход извне: только известные.
     raise ExtractionError(code if code in ERROR_MESSAGES else "corrupted")
+
+
+async def process_image_isolated(
+    kind: ImageKind, data: bytes, *, timeout: float = IMAGE_TIMEOUT_SECONDS
+) -> bytes:
+    """Картинка → WebP 256×256 (images.py) в дочернем процессе.
+
+    ImageError: `invalid` — и для битого файла, и для таймаута, нехватки
+    памяти или падения дочернего процесса (человеку одинаково: картинка
+    не читается); `too_many_pixels`; `sandbox_unavailable`.
+    """
+    try:
+        result = await _run_worker(kind.value, data, timeout=timeout, cpu_seconds=None)
+    except ExtractionError:
+        raise ImageError("invalid") from None
+    if result.get("ok") is True and isinstance(result.get("image"), str):
+        try:
+            webp = base64.b64decode(result["image"], validate=True)
+        except ValueError:  # и binascii.Error, и не-ASCII в строке
+            raise ImageError("invalid") from None
+        if webp:
+            return webp
+    code = result.get("code")
+    raise ImageError(code if code in IMAGE_ERROR_CODES else "invalid")

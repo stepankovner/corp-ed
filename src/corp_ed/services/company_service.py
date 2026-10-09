@@ -8,10 +8,8 @@
 только оставляет заявку, она приходит команде в Telegram (П-5).
 """
 
-import asyncio
 import hashlib
 import hmac
-import io
 import re
 import time
 from dataclasses import dataclass
@@ -19,7 +17,6 @@ from typing import Any
 from uuid import UUID
 
 import structlog
-from PIL import Image, ImageOps
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,13 +26,13 @@ from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import MemberStatus, Tenant, TenantLogo, User
 from corp_ed.domain.tariffs import PLANS, Tariff, plan_for
 from corp_ed.domain.types import NotFoundMode
+from corp_ed.ingest.images import ImageKind
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
-from corp_ed.services.avatar_service import MAX_AVATAR_BYTES, open_image
+from corp_ed.services.avatar_service import MAX_AVATAR_BYTES, reencode_image
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
 
 logger = structlog.get_logger()
 
-LOGO_SIZE = 256
 MAX_DOMAINS = 10
 URL_LIFETIME_S = 86_400
 _DAY = 86_400
@@ -103,22 +100,6 @@ def check_logo_signature(
     if expires < (time.time() if now is None else now):
         return False
     return hmac.compare_digest(_signature(tenant_id, version, expires), sig)
-
-
-def _process_logo(raw: bytes) -> bytes:
-    """Картинка → вписана в квадрат 256×256 без обрезки, прозрачный фон,
-    WebP без метаданных. Логотипы бывают вытянутыми — обрезать их нельзя."""
-    image = open_image(raw, _invalid_logo).convert("RGBA")
-    image = ImageOps.contain(
-        image, (LOGO_SIZE, LOGO_SIZE), method=Image.Resampling.LANCZOS
-    )
-    square = Image.new("RGBA", (LOGO_SIZE, LOGO_SIZE), (0, 0, 0, 0))
-    square.paste(
-        image, ((LOGO_SIZE - image.width) // 2, (LOGO_SIZE - image.height) // 2)
-    )
-    out = io.BytesIO()
-    square.save(out, format="WEBP", quality=90, method=6)
-    return out.getvalue()
 
 
 class _Unset:
@@ -216,7 +197,8 @@ class CompanyService:
     async def save_logo(self, actor: User, raw: bytes) -> str:
         if not raw or len(raw) > MAX_AVATAR_BYTES:
             raise InvalidLogoError()
-        content = await asyncio.to_thread(_process_logo, raw)
+        # Вписывается в квадрат 256×256 без обрезки (ingest/images.py).
+        content = await reencode_image(ImageKind.LOGO, raw, _invalid_logo)
         version = hashlib.sha256(content).hexdigest()[:16]
         tenant_id = require_tenant()
         logo = await self.session.get(TenantLogo, tenant_id)

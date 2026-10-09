@@ -4,6 +4,8 @@
 на число пикселей — защита от «бомб» распаковки), поворачивает по EXIF,
 вырезает квадрат по центру и сохраняет 256×256 WebP. Метаданные снимка —
 геометка, модель телефона, дата — не переживают перекодирование.
+Декодирует картинку не процесс API, а дочерний процесс песочницы с
+лимитами и без сети (ingest/images.py, ingest/sandbox.py).
 
 Тег <img> не умеет слать заголовок Authorization, а access-токен живёт
 только в памяти вкладки. Поэтому фото отдаётся по подписанной ссылке:
@@ -12,30 +14,26 @@
 суток. Ссылка одна на сутки: браузер берёт фото из кэша.
 """
 
-import asyncio
 import hashlib
 import hmac
-import io
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
-from PIL import Image, ImageOps, UnidentifiedImageError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.config import get_settings
-from corp_ed.core.exceptions import DomainError
+from corp_ed.core.exceptions import DomainError, ServiceUnavailableError
 from corp_ed.domain.models import Account, AccountAvatar
+from corp_ed.ingest.images import ImageError, ImageKind
+from corp_ed.ingest.sandbox import process_image_isolated
 
-AVATAR_SIZE = 256
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
-"""Исходный файл: фото с телефона редко больше 5 МБ."""
-MAX_PIXELS = 40_000_000
-"""40 Мп: снимок современного телефона проходит, «бомба» на гигапиксели —
-нет: размер из заголовка проверяется до распаковки."""
-ACCEPTED_FORMATS = frozenset({"JPEG", "PNG", "WEBP"})
+"""Исходный файл: фото с телефона редко больше 5 МБ. Проверяется до
+запуска песочницы."""
+TOO_MANY_PIXELS_MESSAGE = "Картинка слишком большая — до 40 мегапикселей"
 URL_LIFETIME_S = 86_400
 _DAY = 86_400
 
@@ -80,54 +78,24 @@ def check_signature(
     return hmac.compare_digest(_signature(account_id, version, expires), sig)
 
 
-def open_image(raw: bytes, invalid: Callable[[str | None], DomainError]) -> Image.Image:
-    """Открыть присланную картинку: только JPEG, PNG, WebP, не больше
-    MAX_PIXELS, с поворотом по EXIF. Любая неудача — invalid(текст)."""
+async def reencode_image(
+    kind: ImageKind, raw: bytes, invalid: Callable[[str | None], DomainError]
+) -> bytes:
+    """Картинка → WebP 256×256 в песочнице. Любая неудача с файлом —
+    invalid(текст): битый файл, не тот формат, сбой дочернего процесса;
+    больше 40 Мп — со своим текстом. Песочница без фильтра сети в
+    production — 503: дело не в файле."""
     try:
-        # open читает только заголовок: размер проверяем до распаковки.
-        # Глобальный Image.MAX_IMAGE_PIXELS не трогаем — им пользуются и
-        # разборщики документов.
-        with Image.open(io.BytesIO(raw)) as source:
-            if source.format not in ACCEPTED_FORMATS:
-                raise invalid(None)
-            width, height = source.size
-            if width * height > MAX_PIXELS:
-                raise invalid("Картинка слишком большая — до 40 мегапикселей")
-            image = ImageOps.exif_transpose(source)
-            image.load()
-    except (
-        UnidentifiedImageError,
-        Image.DecompressionBombError,
-        OSError,
-        SyntaxError,
-    ) as exc:
-        raise invalid(None) from exc
-    return image
+        return await process_image_isolated(kind, raw)
+    except ImageError as exc:
+        if exc.code == "sandbox_unavailable":
+            raise ServiceUnavailableError() from None
+        too_many = exc.code == "too_many_pixels"
+        raise invalid(TOO_MANY_PIXELS_MESSAGE if too_many else None) from None
 
 
 def _invalid_avatar(message: str | None) -> DomainError:
     return InvalidAvatarError(message) if message else InvalidAvatarError()
-
-
-def _process(raw: bytes) -> bytes:
-    """Файл → квадрат 256×256 WebP без метаданных. Блокирующая работа:
-    вызывается в отдельном потоке."""
-    image = open_image(raw, _invalid_avatar)
-    # Прозрачность — на белый фон: в списке коллег фото на любой теме
-    # должно читаться одинаково.
-    if image.mode in ("RGBA", "LA", "P"):
-        image = image.convert("RGBA")
-        background = Image.new("RGB", image.size, (255, 255, 255))
-        background.paste(image, mask=image.getchannel("A"))
-        image = background
-    else:
-        image = image.convert("RGB")
-    square = ImageOps.fit(
-        image, (AVATAR_SIZE, AVATAR_SIZE), method=Image.Resampling.LANCZOS
-    )
-    out = io.BytesIO()
-    square.save(out, format="WEBP", quality=85, method=6)
-    return out.getvalue()
 
 
 @dataclass(frozen=True)
@@ -144,7 +112,7 @@ class AvatarService:
         """Новое фото; возвращает подписанную ссылку на него."""
         if not raw or len(raw) > MAX_AVATAR_BYTES:
             raise InvalidAvatarError()
-        content = await asyncio.to_thread(_process, raw)
+        content = await reencode_image(ImageKind.AVATAR, raw, _invalid_avatar)
         version = hashlib.sha256(content).hexdigest()[:16]
         avatar = await self.session.get(AccountAvatar, account.id)
         if avatar is None:

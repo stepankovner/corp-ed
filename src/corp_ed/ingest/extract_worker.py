@@ -1,9 +1,12 @@
-"""Дочерний процесс извлечения текста.
+"""Дочерний процесс разбора присланных файлов: документов и картинок.
 
-Запуск: python -I -m corp_ed.ingest.extract_worker FMT [CPU_SECONDS [NETWORK]]
+Запуск: python -I -m corp_ed.ingest.extract_worker MODE [CPU_SECONDS [NETWORK]]
 
-Читает файл из stdin, пишет JSON в stdout: {"ok": true, "markdown": …}
-или {"ok": false, "code": …}. Запускается только из ingest/sandbox.py.
+MODE — формат документа (SourceFormat) или `avatar` / `logo` (images.py).
+Читает файл из stdin, пишет JSON в stdout: для документа
+{"ok": true, "markdown": …}, для картинки {"ok": true, "image": WebP в
+base64}; при ошибке {"ok": false, "code": …}. Запускается только из
+ingest/sandbox.py.
 
 До импорта парсеров процесс сам себя ограничивает: закрывает себе сеть
 (seccomp, no_network.py), уходит в пустой удалённый каталог и урезает
@@ -17,6 +20,7 @@ NETWORK — что делать, если фильтр сети не стави�
 `lenient` (разработка) — разбирать, в ответе "network": "open".
 """
 
+import base64
 import json
 import os
 import resource
@@ -67,6 +71,38 @@ def _confine() -> bool:
     return True
 
 
+_IMAGE_MODES = ("avatar", "logo")
+
+
+def _document(mode: str) -> dict[str, object]:
+    from corp_ed.ingest.extract import ExtractionError, SourceFormat, extract
+
+    try:
+        fmt = SourceFormat(mode)
+        data = sys.stdin.buffer.read()
+        return {"ok": True, "markdown": extract(fmt, data)}
+    except ExtractionError as exc:
+        return {"ok": False, "code": exc.code}
+    except MemoryError:
+        return {"ok": False, "code": "document_too_large"}
+    except Exception:  # noqa: BLE001 — наружу только код, без трассировки
+        return {"ok": False, "code": "corrupted"}
+
+
+def _image(mode: str) -> dict[str, object]:
+    # Только Pillow: разборщики документов и настройки картинке не нужны,
+    # а процесс стартует на каждую загрузку фото.
+    from corp_ed.ingest.images import ImageError, ImageKind, process
+
+    try:
+        webp = process(ImageKind(mode), sys.stdin.buffer.read())
+    except ImageError as exc:
+        return {"ok": False, "code": exc.code}
+    except Exception:  # noqa: BLE001 — и MemoryError: картинка не читается
+        return {"ok": False, "code": "invalid"}
+    return {"ok": True, "image": base64.b64encode(webp).decode("ascii")}
+
+
 def main() -> int:
     cpu_seconds = DEFAULT_CPU_SECONDS
     if len(sys.argv) > 2 and sys.argv[2].isdigit():
@@ -81,20 +117,8 @@ def main() -> int:
         sys.stdout.write(json.dumps({"ok": False, "code": "sandbox_unavailable"}))
         return 0
 
-    from corp_ed.ingest.extract import ExtractionError, SourceFormat, extract
-
-    result: dict[str, object]
-    try:
-        fmt = SourceFormat(sys.argv[1])
-        data = sys.stdin.buffer.read()
-        result = {"ok": True, "markdown": extract(fmt, data)}
-    except ExtractionError as exc:
-        result = {"ok": False, "code": exc.code}
-    except MemoryError:
-        result = {"ok": False, "code": "document_too_large"}
-    except Exception:  # noqa: BLE001 — наружу только код, без трассировки
-        result = {"ok": False, "code": "corrupted"}
-
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    result = _image(mode) if mode in _IMAGE_MODES else _document(mode)
     if not confined:
         result["network"] = "open"
     sys.stdout.write(json.dumps(result, ensure_ascii=False))

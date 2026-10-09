@@ -3,6 +3,7 @@
 
 import io
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,7 @@ from corp_ed.domain.models import (
     User,
     UserRole,
 )
+from corp_ed.ingest import sandbox
 from corp_ed.main import app
 from tests.api.conftest import account_bearer, bearer
 from tests.factories import make_account, make_user
@@ -196,6 +198,29 @@ async def test_logo_is_fitted_into_square_and_shown_to_members(
     ).status_code == 204
     me = (await api.get("/api/v1/auth/me", headers=bearer(employee))).json()
     assert me["company"]["logo_url"] is None
+
+
+async def test_logo_is_decoded_outside_the_api_process(
+    api: httpx.AsyncClient, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sandbox,
+        "_worker_command",
+        lambda mode, cpu_seconds: [
+            sys.executable,
+            "-I",
+            "-c",
+            "import os, signal; os.kill(os.getpid(), signal.SIGKILL)",
+        ],
+    )
+    response = await api.put(
+        "/api/v1/company/logo",
+        files={"file": ("logo.png", _png(), "image/png")},
+        headers=bearer(admin),
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_logo"
+    assert response.json()["detail"] == "Загрузите логотип в PNG, JPEG или WebP до 5 МБ"
 
 
 # --- тариф -----------------------------------------------------------------------
