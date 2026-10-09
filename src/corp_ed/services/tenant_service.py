@@ -222,6 +222,8 @@ class TenantService:
         tenant = await self.tenant_repo.get_by_company_code(company_code)
         if tenant is None:
             raise ConflictError(f"Компании с кодом '{company_code}' нет")
+        if active and tenant.data_deleted_at is not None:
+            raise ConflictError("Данные компании удалены — вернуть её нельзя")
         tenant.is_active = active
         self.audit.record(
             AuditAction.TENANT_RESUMED if active else AuditAction.TENANT_SUSPENDED,

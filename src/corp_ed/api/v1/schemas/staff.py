@@ -24,9 +24,14 @@ class StaffOverviewResponse(BaseModel):
 
 class StaffCompanyResponse(BaseModel):
     id: UUID
+    ref: str
+    """Первые 8 символов id: так компания названа в уведомлениях команде
+    (Telegram), без кода — он повторяет название, у ИП это фамилия."""
     name: str
     company_code: str
     is_active: bool
+    data_deleted_at: datetime | None
+    """Данные удалены после расторжения; остались заказы кредитов."""
     tariff: Tariff
     seats: int
     pilot_until: date | None
@@ -70,6 +75,17 @@ class StaffRequestResponse(BaseModel):
     applicant_name: str | None
 
 
+class StaffCompanyDeleteRequest(RequestModel):
+    company_code: str = Field(max_length=200)
+    """Код компании, введённый вручную, — подтверждение."""
+
+
+class StaffCompanyDeletedResponse(BaseModel):
+    company: StaffCompanyResponse
+    deleted: dict[str, int]
+    """Таблица → сколько строк удалено: для записи об уничтожении."""
+
+
 class StaffApproveRequest(RequestModel):
     tariff: Tariff = Tariff.BASE
     seats: int | None = Field(default=None, ge=1, le=MAX_SEATS)
@@ -93,6 +109,7 @@ class SpendModelResponse(BaseModel):
 
 class SpendCompanyResponse(BaseModel):
     tenant_id: UUID
+    ref: str
     name: str
     company_code: str
     questions: int

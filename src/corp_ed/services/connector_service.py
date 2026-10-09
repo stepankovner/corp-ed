@@ -120,7 +120,7 @@ class CheckResult:
 
 
 @dataclass(frozen=True)
-class _Revocation:
+class TokenRevocation:
     """Что нужно для отзыва токенов, собранное до удаления: после него
     ни подключения, ни грантов в базе уже нет. Только плоские значения."""
 
@@ -774,98 +774,11 @@ class ConnectorService:
 
     def _revocation(
         self, connector: Connector, grant_tokens: Sequence[str]
-    ) -> _Revocation | None:
-        """Отзывать есть что — только у OAuth режима per_user: в режиме
-        organization учётные данные — вебхук или токен служебной учётки,
-        их выпускал и отзывает админ системы клиента."""
-        if connector.mode != ConnectorMode.PER_USER.value or not grant_tokens:
-            return None
-        try:
-            spec = self.registry.spec(connector.kind)
-        except UnknownKindError:
-            return None
-        if not spec.oauth or connector.credentials is None:
-            return None
-        try:
-            app_credentials = self.secrets.decrypt(connector.credentials)
-        except SecretDecryptionError:
-            logger.warning(
-                "connector_token_revoke_failed",
-                connector_id=str(connector.id),
-                kind=connector.kind,
-                error="SecretDecryptionError",
-                code="credentials_unreadable",
-            )
-            return None
-        tokens: list[Mapping[str, str]] = []
-        for token in grant_tokens:
-            try:
-                tokens.append(self.secrets.decrypt(token))
-            except SecretDecryptionError:
-                continue
-        return _Revocation(
-            connector.id,
-            connector.kind,
-            {str(k): str(v) for k, v in connector.config.items()},
-            app_credentials,
-            tokens,
-        )
+    ) -> TokenRevocation | None:
+        return collect_revocation(connector, grant_tokens, self.registry, self.secrets)
 
-    async def _revoke(self, revocation: _Revocation | None) -> None:
-        """Отозвать токены у провайдера. Никогда не бросает: в журнал —
-        тип ошибки и её код (с кодом ответа HTTP), без токенов и тел."""
-        if revocation is None or not revocation.tokens:
-            return
-        fields = {
-            "connector_id": str(revocation.connector_id),
-            "kind": revocation.kind,
-        }
-        try:
-            flow = self.registry.build_oauth(
-                revocation.kind,
-                revocation.config,
-                revocation.app_credentials,
-                self.http,
-            )
-        except (OAuthNotSupportedError, AdapterError) as exc:
-            logger.warning(
-                "connector_token_revoke_failed",
-                **fields,
-                error=type(exc).__name__,
-                code=getattr(exc, "code", None),
-            )
-            return
-        slots = asyncio.Semaphore(REVOKE_CONCURRENCY)
-
-        async def one(tokens: Mapping[str, str]) -> None:
-            async with slots:
-                try:
-                    revoked = await flow.revoke(tokens)
-                except Exception as exc:
-                    # Не str(exc): в тексте ошибки httpx бывает адрес, а
-                    # тело ответа провайдера в журнал не идёт вовсе.
-                    logger.warning(
-                        "connector_token_revoke_failed",
-                        **fields,
-                        error=type(exc).__name__,
-                        code=getattr(exc, "code", None),
-                    )
-                    return
-            if revoked:
-                logger.info("connector_token_revoked", **fields)
-            else:
-                logger.info("connector_token_not_revocable", **fields)
-
-        try:
-            async with asyncio.timeout(REVOKE_TIMEOUT):
-                await asyncio.gather(*(one(t) for t in revocation.tokens))
-        except TimeoutError:
-            logger.warning(
-                "connector_token_revoke_failed",
-                **fields,
-                error="TimeoutError",
-                code="timeout",
-            )
+    async def _revoke(self, revocation: TokenRevocation | None) -> None:
+        await revoke_tokens(revocation, self.registry, self.http)
 
     async def _grant_with_credentials(
         self, connector_id: UUID, user_id: UUID
@@ -973,3 +886,118 @@ def _check_invariant(
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def collect_revocation(
+    connector: Connector,
+    grant_tokens: Sequence[str],
+    registry: AdapterRegistry,
+    secrets: SecretBox,
+) -> TokenRevocation | None:
+    """Отзывать есть что — только у OAuth режима per_user: в режиме
+    organization учётные данные — вебхук или токен служебной учётки,
+    их выпускал и отзывает админ системы клиента."""
+    if connector.mode != ConnectorMode.PER_USER.value or not grant_tokens:
+        return None
+    try:
+        spec = registry.spec(connector.kind)
+    except UnknownKindError:
+        return None
+    if not spec.oauth or connector.credentials is None:
+        return None
+    try:
+        app_credentials = secrets.decrypt(connector.credentials)
+    except SecretDecryptionError:
+        logger.warning(
+            "connector_token_revoke_failed",
+            connector_id=str(connector.id),
+            kind=connector.kind,
+            error="SecretDecryptionError",
+            code="credentials_unreadable",
+        )
+        return None
+    tokens: list[Mapping[str, str]] = []
+    for token in grant_tokens:
+        try:
+            tokens.append(secrets.decrypt(token))
+        except SecretDecryptionError:
+            continue
+    return TokenRevocation(
+        connector.id,
+        connector.kind,
+        {str(k): str(v) for k, v in connector.config.items()},
+        app_credentials,
+        tokens,
+    )
+
+
+async def revoke_tokens(
+    revocation: TokenRevocation | None,
+    registry: AdapterRegistry,
+    http: OutboundClient,
+) -> None:
+    """Отозвать токены у провайдера. Никогда не бросает: в журнал —
+    тип ошибки и её код (с кодом ответа HTTP), без токенов и тел."""
+    if revocation is None or not revocation.tokens:
+        return
+    fields = {
+        "connector_id": str(revocation.connector_id),
+        "kind": revocation.kind,
+    }
+    try:
+        flow = registry.build_oauth(
+            revocation.kind,
+            revocation.config,
+            revocation.app_credentials,
+            http,
+        )
+    except (OAuthNotSupportedError, AdapterError) as exc:
+        logger.warning(
+            "connector_token_revoke_failed",
+            **fields,
+            error=type(exc).__name__,
+            code=getattr(exc, "code", None),
+        )
+        return
+    slots = asyncio.Semaphore(REVOKE_CONCURRENCY)
+
+    async def one(tokens: Mapping[str, str]) -> None:
+        async with slots:
+            try:
+                revoked = await flow.revoke(tokens)
+            except Exception as exc:
+                # Не str(exc): в тексте ошибки httpx бывает адрес, а
+                # тело ответа провайдера в журнал не идёт вовсе.
+                logger.warning(
+                    "connector_token_revoke_failed",
+                    **fields,
+                    error=type(exc).__name__,
+                    code=getattr(exc, "code", None),
+                )
+                return
+        if revoked:
+            logger.info("connector_token_revoked", **fields)
+        else:
+            logger.info("connector_token_not_revocable", **fields)
+
+    try:
+        async with asyncio.timeout(REVOKE_TIMEOUT):
+            await asyncio.gather(*(one(t) for t in revocation.tokens))
+    except TimeoutError:
+        logger.warning(
+            "connector_token_revoke_failed",
+            **fields,
+            error="TimeoutError",
+            code="timeout",
+        )
+
+
+async def revoke_all(
+    revocations: Sequence[TokenRevocation],
+    registry: AdapterRegistry,
+    http: OutboundClient,
+) -> None:
+    """Отозвать токены нескольких подключений (удаление данных компании):
+    по очереди, каждое — со своим сроком и без исключений наружу."""
+    for revocation in revocations:
+        await revoke_tokens(revocation, registry, http)

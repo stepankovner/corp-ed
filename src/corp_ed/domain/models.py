@@ -170,6 +170,10 @@ class Tenant(Base):
     # день может потратить один человек, включая администратора. NULL —
     # без лимита (по умолчанию). Меняет администратор компании.
     daily_credits_per_member: Mapped[int | None]
+    # Данные компании удалены после расторжения (TenantDeletionService):
+    # строка остаётся обезличенной ради заказов и начислений кредитов,
+    # которые хранятся для бухгалтерии.
+    data_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class StaffMember(Base):

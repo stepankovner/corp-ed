@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from functools import lru_cache
@@ -92,7 +92,11 @@ from corp_ed.services.chat_generation import (
 from corp_ed.services.chat_service import ChatService
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.company_service import CompanyService
-from corp_ed.services.connector_service import ConnectorService
+from corp_ed.services.connector_service import (
+    ConnectorService,
+    TokenRevocation,
+    revoke_all,
+)
 from corp_ed.services.credit_order_service import (
     CreditOrderService,
     StaffCreditService,
@@ -117,6 +121,7 @@ from corp_ed.services.staff_service import StaffService
 from corp_ed.services.suggestion_service import SuggestionService
 from corp_ed.services.support_service import SupportService
 from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
+from corp_ed.services.tenant_deletion_service import TenantDeletionService
 from corp_ed.services.tenant_service import TenantService
 from corp_ed.services.user_service import UserService
 
@@ -860,6 +865,29 @@ def get_staff_service(
         zone=billing.zone,
         credits_per_seat=billing.credits_per_seat,
         rub_per_1k_tokens=billing.llm_rub_per_1k_tokens,
+    )
+
+
+def get_tenant_deletion_service(
+    request: Request,
+    session_maker: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+    registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
+    secrets: Annotated[SecretBox, Depends(get_secret_box)],
+) -> TenantDeletionService:
+    async def revoke(revocations: Sequence[TokenRevocation]) -> None:
+        # Клиент наружу — только если есть что отзывать.
+        if revocations:
+            http = get_outbound_client(get_outbound_http_client(request))
+            await revoke_all(revocations, registry, http)
+
+    return TenantDeletionService(
+        session_maker,
+        registry=registry,
+        secrets=secrets,
+        revoke=revoke,
+        protected_codes=(get_demo_settings().company_code,),
     )
 
 
