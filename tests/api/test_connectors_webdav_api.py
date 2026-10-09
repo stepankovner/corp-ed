@@ -126,8 +126,10 @@ async def test_webdav_kinds_wait_for_live_check(
     webdav_api: httpx.AsyncClient, admin_account: User
 ) -> None:
     response = await webdav_api.get(f"{URL}/kinds", headers=bearer(admin_account))
-    assert "nextcloud" not in {k["kind"] for k in response.json()}
-    response = await create(webdav_api, admin_account, "nextcloud", {"server": SERVER})
+    assert "vk_workspace_disk" not in {k["kind"] for k in response.json()}
+    response = await create(
+        webdav_api, admin_account, "vk_workspace_disk", {"server": SERVER}
+    )
     assert response.status_code == 422
     assert response.json()["code"] == "kind_unknown"
 

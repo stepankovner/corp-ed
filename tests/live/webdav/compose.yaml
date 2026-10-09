@@ -1,0 +1,25 @@
+# Сетевой диск по WebDAV (как NAS: Synology, QNAP) для живой проверки вида
+# `webdav`: Apache httpd с mod_dav, TLS на 127.0.0.1 и два пользователя.
+# Только для тестов на своей машине или в песочнице, данные выдуманные.
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls docker compose -f tests/live/webdav/compose.yaml up -d
+#   дальше — seed.py и тесты: README.md рядом.
+name: corp-ed-webdav
+
+services:
+  webdav:
+    image: httpd:${HTTPD_VERSION:-2.4.69}
+    command: ["sh", "/stand/start.sh"]
+    environment:
+      STAND_PASSWORD: Kronto-Test-1
+    volumes:
+      - ./start.sh:/stand/start.sh:ro
+      - ./dav.conf:/stand/dav.conf:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+      - dav:/dav
+    ports:
+      - "127.0.0.1:${WEBDAV_PORT:-8443}:443"
+
+volumes:
+  dav:

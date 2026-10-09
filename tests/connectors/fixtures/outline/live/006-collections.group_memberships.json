@@ -1,0 +1,42 @@
+{
+  "method": "collections.group_memberships",
+  "params": {
+    "id": "2aada539-2907-409a-9a0d-c1d1661e0740",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/collections.group_memberships?limit=100&offset=100",
+      "total": 1
+    },
+    "data": {
+      "groupMemberships": [
+        {
+          "id": "c6203c19-8243-41f5-870f-79cd95d21dea",
+          "groupId": "dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+          "documentId": null,
+          "collectionId": "2aada539-2907-409a-9a0d-c1d1661e0740",
+          "permission": "read",
+          "sourceId": null
+        }
+      ],
+      "groups": [
+        {
+          "id": "dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+          "name": "hr",
+          "description": null,
+          "externalId": null,
+          "memberCount": 2,
+          "disableMentions": false,
+          "createdAt": "2026-10-09T20:42:47.477Z",
+          "updatedAt": "2026-10-09T20:42:47.477Z"
+        }
+      ]
+    },
+    "status": 200,
+    "ok": true
+  }
+}

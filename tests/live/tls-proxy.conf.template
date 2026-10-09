@@ -1,0 +1,23 @@
+# TLS перед стендом (Nextcloud, ownCloud, Seafile): их официальные образы
+# слушают только http, а адаптер WebDAV ходит лишь по https. Сертификат —
+# `python -m tests.live.dav_stand tls`, адрес сервиса — переменная UPSTREAM
+# (nginx подставляет её при старте, остальные $… — переменные nginx).
+server {
+    listen 443 ssl;
+    ssl_certificate /tls/cert.pem;
+    ssl_certificate_key /tls/key.pem;
+
+    client_max_body_size 0;
+    proxy_request_buffering off;
+    proxy_buffering off;
+
+    location / {
+        proxy_pass ${UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+    }
+}

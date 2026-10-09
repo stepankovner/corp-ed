@@ -45,6 +45,9 @@ class FakeOutline:
     collections: dict[str, dict[str, Any]] = field(default_factory=dict)
     collection_members: dict[str, list[str]] = field(default_factory=dict)
     collection_groups: dict[str, list[str]] = field(default_factory=dict)
+    collection_groups_key: str = "groupMemberships"
+    """Ключ списка в ответе collections.group_memberships: так отвечает
+    Outline 1.10 (стенд 09.10); collectionGroupMemberships — прежнее имя."""
     groups: dict[str, list[str]] = field(default_factory=dict)
     documents: dict[str, dict[str, Any]] = field(default_factory=dict)
     texts: dict[str, str] = field(default_factory=dict)
@@ -185,7 +188,7 @@ class FakeOutline:
             return self._memberships(body, ids, "memberships")
         if method == "collections.group_memberships":
             groups = self.collection_groups.get(body.get("id", ""), [])
-            return self._groups_page(body, groups, "collectionGroupMemberships")
+            return self._groups_page(body, groups, self.collection_groups_key)
         if method == "groups.memberships":
             if body.get("id") not in self.groups:
                 return _error(404, "not_found", "Not found")

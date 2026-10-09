@@ -1,0 +1,71 @@
+# Seafile для живой проверки вида `seafile` (SeafDAV): официальный образ
+# seafileltd/seafile-mc, MariaDB, memcached и TLS-прокси на 127.0.0.1.
+# Только для тестов на своей машине или в песочнице, данные и пароли
+# выдуманные (ключ JWT — тоже, только для стенда).
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls docker compose -f tests/live/seafile/compose.yaml up -d
+#   дальше — включить SeafDAV, seed.py и тесты: README.md рядом.
+name: corp-ed-seafile
+
+services:
+  db:
+    image: mariadb:${MARIADB_VERSION:-10.11.19}
+    environment:
+      MYSQL_ROOT_PASSWORD: seafile-root
+      MYSQL_LOG_CONSOLE: "true"
+      MARIADB_AUTO_UPGRADE: "1"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 30
+
+  memcached:
+    image: memcached:${MEMCACHED_VERSION:-1.6.45}
+    entrypoint: memcached -m 64
+
+  seafile:
+    image: seafileltd/seafile-mc:${SEAFILE_VERSION:-13.0.28}
+    depends_on:
+      db:
+        condition: service_healthy
+      memcached:
+        condition: service_started
+    environment:
+      SEAFILE_MYSQL_DB_HOST: db
+      SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: seafile
+      SEAFILE_MYSQL_DB_PASSWORD: seafile
+      INIT_SEAFILE_MYSQL_ROOT_PASSWORD: seafile-root
+      SEAFILE_MYSQL_DB_CCNET_DB_NAME: ccnet_db
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: seafile_db
+      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: seahub_db
+      TIME_ZONE: Europe/Moscow
+      INIT_SEAFILE_ADMIN_EMAIL: admin@example.com
+      INIT_SEAFILE_ADMIN_PASSWORD: Kronto-Admin-1
+      SEAFILE_SERVER_HOSTNAME: "127.0.0.1:${SEAFILE_PORT:-8446}"
+      SEAFILE_SERVER_PROTOCOL: https
+      SITE_ROOT: /
+      NON_ROOT: "false"
+      JWT_PRIVATE_KEY: kronto-stand-jwt-key-not-a-secret-0123456789
+      SEAFILE_LOG_TO_STDOUT: "true"
+      ENABLE_SEADOC: "false"
+      CACHE_PROVIDER: memcached
+      MEMCACHED_HOST: memcached
+      MEMCACHED_PORT: "11211"
+    volumes:
+      - seafile:/shared
+
+  tls:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [seafile]
+    environment:
+      UPSTREAM: http://seafile:80
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${SEAFILE_PORT:-8446}:443"
+
+volumes:
+  seafile:

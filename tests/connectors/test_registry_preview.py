@@ -28,14 +28,32 @@ def test_flag_enables_preview_module() -> None:
 
 def test_nothing_is_hidden_by_default() -> None:
     kinds = [spec.kind for spec in default_registry(ConnectorSettings()).kinds()]
-    assert kinds == ["bitrix24", "confluence", "yandex360"]
+    assert kinds == [
+        "bitrix24",
+        "confluence",
+        "nextcloud",
+        "nextcloud_oauth",
+        "outline",
+        "owncloud",
+        "seafile",
+        "webdav",
+        "yandex360",
+    ]
 
 
 def test_hidden_kinds_leave_the_catalog_but_keep_working() -> None:
     settings = ConnectorSettings(hidden_kinds=" yandex360 , bitrix24 ")
     registry = default_registry(settings)
 
-    assert [spec.kind for spec in registry.kinds()] == ["confluence"]
+    assert [spec.kind for spec in registry.kinds()] == [
+        "confluence",
+        "nextcloud",
+        "nextcloud_oauth",
+        "outline",
+        "owncloud",
+        "seafile",
+        "webdav",
+    ]
     assert not registry.offered("yandex360")
     assert registry.offered("confluence")
     assert not registry.offered("salesforce")
@@ -46,7 +64,16 @@ def test_hidden_kinds_leave_the_catalog_but_keep_working() -> None:
 def test_misspelt_hidden_kind_is_reported() -> None:
     registry = default_registry(ConnectorSettings(hidden_kinds="yandex,confluence"))
     assert registry.unknown_hidden() == frozenset({"yandex"})
-    assert [spec.kind for spec in registry.kinds()] == ["bitrix24", "yandex360"]
+    assert [spec.kind for spec in registry.kinds()] == [
+        "bitrix24",
+        "nextcloud",
+        "nextcloud_oauth",
+        "outline",
+        "owncloud",
+        "seafile",
+        "webdav",
+        "yandex360",
+    ]
 
 
 def _preview_kind_registry(enabled: frozenset[str] = frozenset()) -> AdapterRegistry:

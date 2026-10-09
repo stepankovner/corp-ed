@@ -119,7 +119,7 @@ async def test_unverified_kinds_are_not_offered(
     kinds_api: httpx.AsyncClient, admin_account: User
 ) -> None:
     kinds = await _kinds(kinds_api, admin_account)
-    assert not {"kaiten", "outline", "yonote"} & set(kinds)
+    assert not {"kaiten", "yonote"} & set(kinds)
     response = await kinds_api.post(
         URL,
         json={

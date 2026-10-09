@@ -7,6 +7,7 @@ fileid, ссылки за пределы сервера и корня не пр�
 глубины и числа элементов — ошибка, а не молча обрезанный листинг.
 """
 
+import contextlib
 import time
 from urllib.parse import quote
 
@@ -61,6 +62,10 @@ IVAN_CREDENTIALS = {"login": IVAN_LOGIN, "password": IVAN_PASSWORD}
 MARIA_CREDENTIALS = {"login": MARIA_LOGIN, "password": MARIA_PASSWORD}
 
 
+LIVE_CHECKED = {"nextcloud", "nextcloud_oauth", "owncloud", "seafile", "webdav"}
+"""Проверены на настоящем сервере (tests/live/test_*_live.py) — без preview."""
+
+
 def settings(**overrides: str) -> ConnectorSettings:
     return ConnectorSettings(max_document_bytes=MAX_BYTES, **overrides)  # type: ignore[arg-type]
 
@@ -100,7 +105,7 @@ def server() -> FakeDav:
 # --- каталог --------------------------------------------------------------------
 
 
-def test_every_kind_is_per_user_preview_and_base() -> None:
+def test_every_kind_is_per_user_base_and_preview_until_checked() -> None:
     kinds = {spec.kind for spec in SPECS}
     assert kinds == {
         "nextcloud",
@@ -113,7 +118,9 @@ def test_every_kind_is_per_user_preview_and_base() -> None:
     }
     for spec in SPECS:
         assert spec.mode is ConnectorMode.PER_USER
-        assert spec.preview and spec.base
+        assert spec.base
+        # В каталоге — только виды, проверенные живьём (tests/live/).
+        assert spec.preview is (spec.kind not in LIVE_CHECKED), spec.kind
         assert [m.name for m in spec.modules] == ["files"]
     for spec in (NEXTCLOUD, OWNCLOUD, SEAFILE, VK_WORKSPACE, MAILRU, WEBDAV):
         assert spec.user_auth is UserAuth.FIELDS
@@ -130,13 +137,15 @@ def test_every_kind_is_per_user_preview_and_base() -> None:
 
 def test_kinds_are_offered_only_after_live_check() -> None:
     registry = default_registry(ConnectorSettings())
-    assert "nextcloud" not in {spec.kind for spec in registry.kinds()}
+    offered = {spec.kind for spec in registry.kinds()}
+    assert offered & {spec.kind for spec in SPECS} == LIVE_CHECKED
+    assert "vk_workspace_disk" not in offered
     # Живой проверке (cli connector-check) вид доступен и без флага.
-    assert registry.spec("nextcloud").preview
-    enabled = default_registry(ConnectorSettings(preview_kinds="nextcloud,webdav"))
+    assert registry.spec("vk_workspace_disk").preview
+    enabled = default_registry(ConnectorSettings(preview_kinds="vk_workspace_disk"))
     offered = {spec.kind for spec in enabled.kinds()}
-    assert {"nextcloud", "webdav"} <= offered
-    assert "owncloud" not in offered
+    assert "vk_workspace_disk" in offered
+    assert "mailru_cloud" not in offered
 
 
 @pytest.mark.parametrize(
@@ -309,6 +318,41 @@ async def test_forbidden_subfolder_is_skipped_root_is_error(server: FakeDav) -> 
     with pytest.raises(AdapterError) as caught:
         await listed(make(server))
     assert caught.value.code == "forbidden"
+
+
+async def test_subfolder_closed_with_401_is_skipped_not_auth_failed(
+    server: FakeDav,
+) -> None:
+    """Apache mod_dav (и NAS на нём) на чужую папку отвечает 401, а не 403,
+    хотя пароль верный (стенд 09.10). Корень пускает — значит, пароль
+    жив, и это закрытая папка; иначе сотрудник терял бы подключение
+    из-за одной папки, которую ему не открыли."""
+    server.unauthorized.add((IVAN, "Проекты"))
+    documents = await listed(make(server))
+    assert "Проекты/План 100%.md" not in documents
+    assert "Документы/Отпуск.txt" in documents
+
+    server.unauthorized.add((IVAN, ""))
+    with pytest.raises(AdapterAuthError) as caught:
+        await listed(make(server))
+    assert caught.value.code == "auth_failed"
+
+
+async def test_password_revoked_mid_walk_is_still_auth_failed(
+    server: FakeDav,
+) -> None:
+    """401 на папке и на повторной проверке корня — пароль отозван посреди
+    обхода: ошибка учётки, а не пропуск папок (иначе ядро удалило бы всё,
+    что в них лежало)."""
+    adapter = make(server)
+    walked: list[str] = []
+    async with contextlib.aclosing(adapter.list(["files"])) as documents:
+        with pytest.raises(AdapterAuthError) as caught:
+            async for document in documents:
+                walked.append(document.title)
+                server.users[IVAN_LOGIN] = "revoked"
+    assert caught.value.code == "auth_failed"
+    assert walked
 
 
 async def test_links_outside_the_server_or_folder_are_ignored(

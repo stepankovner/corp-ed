@@ -1,0 +1,229 @@
+{
+  "method": "collections.list",
+  "params": {
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/collections.list?limit=100&offset=100",
+      "total": 3
+    },
+    "data": [
+      {
+        "id": "f6ee6384-9bc9-4030-a311-5b31f6dd37dc",
+        "url": "/collection/proekty-j9KvVDm2dG",
+        "urlId": "j9KvVDm2dG",
+        "name": "Проекты",
+        "description": null,
+        "sort": {
+          "field": "index",
+          "direction": "asc"
+        },
+        "icon": null,
+        "color": null,
+        "createdAt": "2026-10-09T20:42:47.672Z",
+        "updatedAt": "2026-10-09T20:42:48.226Z",
+        "index": "&",
+        "sharing": true,
+        "commenting": null,
+        "templateManagement": "admin",
+        "permission": null,
+        "deletedAt": null,
+        "archivedAt": null
+      },
+      {
+        "id": "2aada539-2907-409a-9a0d-c1d1661e0740",
+        "url": "/collection/kadry-p5k6euqdyS",
+        "urlId": "p5k6euqdyS",
+        "name": "Кадры",
+        "description": null,
+        "sort": {
+          "field": "index",
+          "direction": "asc"
+        },
+        "icon": null,
+        "color": null,
+        "createdAt": "2026-10-09T20:42:47.631Z",
+        "updatedAt": "2026-10-09T20:42:48.045Z",
+        "index": ",",
+        "sharing": true,
+        "commenting": null,
+        "templateManagement": "admin",
+        "permission": null,
+        "deletedAt": null,
+        "archivedAt": null
+      },
+      {
+        "id": "25c99987-6449-40d2-b6a4-02e485255977",
+        "url": "/collection/obshaya-jnV4dyDILx",
+        "urlId": "jnV4dyDILx",
+        "name": "Общая",
+        "description": null,
+        "sort": {
+          "field": "index",
+          "direction": "asc"
+        },
+        "icon": null,
+        "color": null,
+        "createdAt": "2026-10-09T20:42:47.584Z",
+        "updatedAt": "2026-10-09T20:45:32.708Z",
+        "index": "8",
+        "sharing": true,
+        "commenting": null,
+        "templateManagement": "admin",
+        "permission": "read",
+        "deletedAt": null,
+        "archivedAt": null
+      }
+    ],
+    "policies": [
+      {
+        "id": "f6ee6384-9bc9-4030-a311-5b31f6dd37dc",
+        "abilities": {
+          "read": true,
+          "update": true,
+          "delete": true,
+          "move": true,
+          "duplicate": true,
+          "download": true,
+          "readDocument": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "star": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "unstar": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "subscribe": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "unsubscribe": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "share": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "updateDocument": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "createDocument": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "deleteDocument": [
+            "84150e08-4e39-4101-b74d-4defeefe19d1"
+          ],
+          "createTemplate": true,
+          "manageTemplate": true,
+          "archive": true,
+          "export": true,
+          "restore": false
+        }
+      },
+      {
+        "id": "2aada539-2907-409a-9a0d-c1d1661e0740",
+        "abilities": {
+          "read": true,
+          "update": true,
+          "delete": true,
+          "move": true,
+          "duplicate": true,
+          "download": true,
+          "readDocument": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "star": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "unstar": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "subscribe": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "unsubscribe": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "share": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "updateDocument": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "createDocument": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "deleteDocument": [
+            "2e7077e7-3b1f-4465-acb6-0d7065ef3f67"
+          ],
+          "createTemplate": true,
+          "manageTemplate": true,
+          "archive": true,
+          "export": true,
+          "restore": false
+        }
+      },
+      {
+        "id": "25c99987-6449-40d2-b6a4-02e485255977",
+        "abilities": {
+          "read": true,
+          "update": true,
+          "delete": true,
+          "move": true,
+          "duplicate": true,
+          "download": true,
+          "readDocument": true,
+          "star": true,
+          "unstar": true,
+          "subscribe": true,
+          "unsubscribe": true,
+          "share": true,
+          "updateDocument": [
+            "b6311f2e-62b9-4774-827e-631c53f10318"
+          ],
+          "createDocument": [
+            "b6311f2e-62b9-4774-827e-631c53f10318"
+          ],
+          "deleteDocument": [
+            "b6311f2e-62b9-4774-827e-631c53f10318"
+          ],
+          "createTemplate": true,
+          "manageTemplate": true,
+          "archive": true,
+          "export": true,
+          "restore": false
+        }
+      },
+      {
+        "id": "e0bf3a7a-34b8-4baf-a048-390381310326",
+        "abilities": {
+          "read": true,
+          "update": true,
+          "delete": true,
+          "move": true,
+          "duplicate": true,
+          "download": true,
+          "readDocument": true,
+          "star": true,
+          "unstar": true,
+          "subscribe": true,
+          "unsubscribe": true,
+          "share": true,
+          "updateDocument": true,
+          "createDocument": true,
+          "deleteDocument": true,
+          "createTemplate": true,
+          "manageTemplate": true,
+          "archive": true,
+          "export": true,
+          "restore": false
+        }
+      }
+    ],
+    "status": 200,
+    "ok": true
+  }
+}

@@ -80,7 +80,8 @@ def server() -> FakeOutline:
 def test_specs_mirror_rights_with_admin_key(spec: Any, kind: str) -> None:
     assert spec.kind == kind
     assert spec.mode is ConnectorMode.ORGANIZATION and not spec.oauth
-    assert spec.preview and spec.base
+    # Outline проверен живьём (tests/live/test_outline_live.py), Yonote — нет.
+    assert spec.preview is (kind == "yonote") and spec.base
     assert [m.name for m in spec.modules] == ["documents"]
     assert [(f.name, f.required) for f in spec.config_fields] == [("base_url", False)]
     assert [(f.name, f.secret) for f in spec.credential_fields] == [("token", True)]
@@ -88,10 +89,9 @@ def test_specs_mirror_rights_with_admin_key(spec: Any, kind: str) -> None:
 
 
 def test_kinds_are_offered_only_when_enabled() -> None:
-    assert not {"outline", "yonote"} & {
-        s.kind for s in default_registry(settings()).kinds()
-    }
-    enabled = default_registry(settings(preview_kinds="outline,yonote"))
+    offered = {s.kind for s in default_registry(settings()).kinds()}
+    assert "outline" in offered and "yonote" not in offered
+    enabled = default_registry(settings(preview_kinds="yonote"))
     assert {"outline", "yonote"} <= {s.kind for s in enabled.kinds()}
 
 
@@ -223,6 +223,16 @@ async def test_private_collection_members_groups_and_document_members(
     }
     bonus = documents["doc:d-bonus"]
     assert bonus.allowed_emails == budget.allowed_emails | {"vera@example.com"}
+
+
+async def test_collection_groups_under_the_old_key_are_read_too(
+    server: FakeOutline,
+) -> None:
+    """Outline 1.10 отдаёт группы коллекции в groupMemberships (стенд
+    09.10), прежние версии — в collectionGroupMemberships: читаются оба."""
+    server.collection_groups_key = "collectionGroupMemberships"
+    documents = await listed(make_adapter(server))
+    assert "boris@example.com" in documents["doc:d-budget"].allowed_emails
 
 
 async def test_drafts_templates_and_loose_documents_are_skipped(

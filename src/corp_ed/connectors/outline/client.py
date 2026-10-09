@@ -127,22 +127,26 @@ class OutlineClient:
         method: str,
         body: Mapping[str, Any] | None = None,
         *,
-        key: str | None = None,
+        key: str | tuple[str, ...] | None = None,
         limit: int = 100,
     ) -> AsyncIterator[dict[str, Any]]:
         """Постраничный обход: элементы data (key=None) или data[key].
 
         Для ответов вида {data: {memberships: [...], users: [...]}} key —
-        основной список, по длине которого виден конец.
+        основной список, по длине которого виден конец. Несколько ключей —
+        имя списка менялось между версиями Outline: берётся первый, что
+        есть в ответе.
         """
+        keys = (key,) if isinstance(key, str) else key
         offset = 0
         while True:
             page = await self.call(
                 method, {**(body or {}), "offset": offset, "limit": limit}
             )
             data = page.get("data")
-            if key is not None:
-                data = data.get(key) if isinstance(data, dict) else None
+            if keys is not None:
+                found = data if isinstance(data, dict) else {}
+                data = next((found[k] for k in keys if k in found), None)
             items = data if isinstance(data, list) else []
             for item in items:
                 if isinstance(item, dict):

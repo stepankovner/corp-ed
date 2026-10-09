@@ -1,0 +1,153 @@
+{
+  "method": "users.list",
+  "params": {
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/users.list?limit=100&offset=100",
+      "total": 4
+    },
+    "data": [
+      {
+        "id": "dedbeca9-ec69-48f6-a6d0-5fbd922b8834",
+        "name": "petr",
+        "avatarUrl": null,
+        "color": "#0300cc",
+        "role": "member",
+        "isSuspended": false,
+        "createdAt": "2026-10-09T20:42:07.581Z",
+        "updatedAt": "2026-10-09T20:42:08.116Z",
+        "deletedAt": null,
+        "lastActiveAt": "2026-10-09T20:42:07.592Z",
+        "timezone": null,
+        "email": "petr@example.com",
+        "language": "en_US",
+        "preferences": null,
+        "notificationSettings": {}
+      },
+      {
+        "id": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+        "name": "maria",
+        "avatarUrl": null,
+        "color": "#2930FF",
+        "role": "member",
+        "isSuspended": false,
+        "createdAt": "2026-10-09T20:42:04.517Z",
+        "updatedAt": "2026-10-09T20:42:05.190Z",
+        "deletedAt": null,
+        "lastActiveAt": "2026-10-09T20:42:04.545Z",
+        "timezone": null,
+        "email": "maria@example.com",
+        "language": "en_US",
+        "preferences": null,
+        "notificationSettings": {}
+      },
+      {
+        "id": "d470e479-d080-4b0b-b4f5-4ef1438182cb",
+        "name": "ivan",
+        "avatarUrl": null,
+        "color": "#0300cc",
+        "role": "member",
+        "isSuspended": false,
+        "createdAt": "2026-10-09T20:42:01.342Z",
+        "updatedAt": "2026-10-09T20:43:13.332Z",
+        "deletedAt": null,
+        "lastActiveAt": "2026-10-09T20:43:13.332Z",
+        "timezone": null,
+        "email": "ivan@example.com",
+        "language": "en_US",
+        "preferences": null,
+        "notificationSettings": {}
+      },
+      {
+        "id": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+        "name": "admin",
+        "avatarUrl": null,
+        "color": "#e600e0",
+        "role": "admin",
+        "isSuspended": false,
+        "createdAt": "2026-10-09T20:40:54.112Z",
+        "updatedAt": "2026-10-09T20:41:49.393Z",
+        "deletedAt": null,
+        "lastActiveAt": "2026-10-09T20:41:49.393Z",
+        "timezone": "UTC",
+        "email": "admin@example.com",
+        "language": "en_US",
+        "preferences": null,
+        "notificationSettings": {}
+      }
+    ],
+    "policies": [
+      {
+        "id": "dedbeca9-ec69-48f6-a6d0-5fbd922b8834",
+        "abilities": {
+          "listApiKeys": true,
+          "read": true,
+          "update": true,
+          "delete": true,
+          "readDetails": true,
+          "readEmail": true,
+          "activate": true,
+          "suspend": true,
+          "promote": true,
+          "demote": true,
+          "resendInvite": false
+        }
+      },
+      {
+        "id": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+        "abilities": {
+          "listApiKeys": true,
+          "read": true,
+          "update": true,
+          "delete": true,
+          "readDetails": true,
+          "readEmail": true,
+          "activate": true,
+          "suspend": true,
+          "promote": true,
+          "demote": true,
+          "resendInvite": false
+        }
+      },
+      {
+        "id": "d470e479-d080-4b0b-b4f5-4ef1438182cb",
+        "abilities": {
+          "listApiKeys": true,
+          "read": true,
+          "update": true,
+          "delete": true,
+          "readDetails": true,
+          "readEmail": true,
+          "activate": true,
+          "suspend": true,
+          "promote": true,
+          "demote": true,
+          "resendInvite": false
+        }
+      },
+      {
+        "id": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+        "abilities": {
+          "listApiKeys": true,
+          "read": true,
+          "update": true,
+          "delete": true,
+          "readDetails": true,
+          "readEmail": true,
+          "activate": false,
+          "suspend": false,
+          "promote": false,
+          "demote": false,
+          "resendInvite": false
+        }
+      }
+    ],
+    "status": 200,
+    "ok": true
+  }
+}

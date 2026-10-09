@@ -179,8 +179,8 @@ async def test_preview_module_needs_the_flag(
 async def test_check_walks_nextcloud_with_app_password(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    """Живая проверка WebDAV-видов — тем же CLI: вид в preview, но
-    connector-check видит его без флага; запись — ответы PROPFIND."""
+    """Живая проверка WebDAV-видов — тем же CLI (и для видов в preview,
+    их connector-check видит без флага); запись — ответы PROPFIND."""
     from tests.connectors.fake_webdav import IVAN_LOGIN, IVAN_PASSWORD, sample_nextcloud
 
     server = sample_nextcloud(host=HOST)

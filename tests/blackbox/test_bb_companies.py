@@ -436,7 +436,16 @@ def _sample_value(kind: str, field: str, variant: int = 0) -> str:
     tag = f"kronto-test{variant}" if variant else "kronto-test"
     if any(
         w in name
-        for w in ("url", "portal", "domain", "host", "site", "address", "endpoint")
+        for w in (
+            "url",
+            "portal",
+            "domain",
+            "host",
+            "site",
+            "address",
+            "endpoint",
+            "server",
+        )
     ):
         if "bitrix" in kind:
             return f"https://{tag}.bitrix24.ru"
@@ -476,8 +485,27 @@ def creatable(
         preferred = [k for k in candidates if k["mode"] == prefer_mode]
         candidates = preferred or candidates
     return min(
-        candidates, key=lambda k: sum(1 for f in k["config_fields"] if f["required"])
+        candidates,
+        key=lambda k: (
+            _own_address(k),
+            sum(1 for f in k["config_fields"] if f["required"]),
+        ),
     )
+
+
+def _own_address(spec: dict[str, Any]) -> bool:
+    """Нужен адрес своей установки (Nextcloud, NAS): выдуманное имя не
+    резолвится, и создание отклонят проверкой адреса — такие виды в конец.
+    У Битрикс24 и Confluence облачные домены с wildcard-DNS."""
+    for field in spec["config_fields"]:
+        if not field["required"]:
+            continue
+        value = _sample_value(spec["kind"], field["name"])
+        if value.startswith("https://") and not value.endswith(
+            (".bitrix24.ru", ".atlassian.net/wiki")
+        ):
+            return True
+    return False
 
 
 async def create_connector(

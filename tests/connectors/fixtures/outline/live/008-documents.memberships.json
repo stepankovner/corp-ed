@@ -1,0 +1,22 @@
+{
+  "method": "documents.memberships",
+  "params": {
+    "id": "7963340d-46ef-4244-b3ea-828aaccf1f46",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/documents.memberships?limit=100&offset=100",
+      "total": 0
+    },
+    "data": {
+      "memberships": [],
+      "users": []
+    },
+    "status": 200,
+    "ok": true
+  }
+}

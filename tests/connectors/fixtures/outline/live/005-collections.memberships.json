@@ -1,0 +1,47 @@
+{
+  "method": "collections.memberships",
+  "params": {
+    "id": "2aada539-2907-409a-9a0d-c1d1661e0740",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/collections.memberships?limit=100&offset=100",
+      "total": 1
+    },
+    "data": {
+      "memberships": [
+        {
+          "id": "2e7077e7-3b1f-4465-acb6-0d7065ef3f67",
+          "userId": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "documentId": null,
+          "collectionId": "2aada539-2907-409a-9a0d-c1d1661e0740",
+          "permission": "admin",
+          "createdById": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "sourceId": null,
+          "index": null
+        }
+      ],
+      "users": [
+        {
+          "id": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "name": "admin",
+          "avatarUrl": null,
+          "color": "#e600e0",
+          "role": "admin",
+          "isSuspended": false,
+          "createdAt": "2026-10-09T20:40:54.112Z",
+          "updatedAt": "2026-10-09T20:41:49.393Z",
+          "deletedAt": null,
+          "lastActiveAt": "2026-10-09T20:41:49.393Z",
+          "timezone": "UTC"
+        }
+      ]
+    },
+    "status": 200,
+    "ok": true
+  }
+}
