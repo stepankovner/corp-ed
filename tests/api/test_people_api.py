@@ -6,6 +6,7 @@
 """
 
 import io
+import sys
 import time
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from corp_ed.domain.models import (
     User,
     UserRole,
 )
+from corp_ed.ingest import sandbox
 from corp_ed.repositories.audit_repository import AuditAction
 from corp_ed.services.avatar_service import avatar_url
 from tests.api.conftest import account_bearer, bearer, enable_test_totp
@@ -195,6 +197,55 @@ async def test_giant_dimensions_are_rejected_before_decoding(
     )
     assert response.status_code == 400
     assert "мегапикселей" in response.json()["detail"]
+
+
+async def test_avatar_is_decoded_outside_the_api_process(
+    api: httpx.AsyncClient, account: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Фото разбирает дочерний процесс песочницы: его падение — та же
+    ошибка, что для битой картинки, а не 500 и не фото без обработки."""
+    monkeypatch.setattr(
+        sandbox,
+        "_worker_command",
+        lambda mode, cpu_seconds: [
+            sys.executable,
+            "-I",
+            "-c",
+            "import os, signal; os.kill(os.getpid(), signal.SIGSEGV)",
+        ],
+    )
+    response = await api.put(
+        "/api/v1/account/avatar",
+        files={"file": ("photo.jpg", _image(), "image/jpeg")},
+        headers=bearer(account),
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_avatar"
+    assert response.json()["detail"] == "Загрузите фото в JPEG, PNG или WebP до 5 МБ"
+
+
+async def test_avatar_waits_when_sandbox_cannot_close_network(
+    api: httpx.AsyncClient, account: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """В production песочница без фильтра сети не работает: это не вина
+    файла — 503, а не «загрузите другое фото»."""
+    monkeypatch.setattr(
+        sandbox,
+        "_worker_command",
+        lambda mode, cpu_seconds: [
+            sys.executable,
+            "-I",
+            "-c",
+            "import json; print(json.dumps("
+            "{'ok': False, 'code': 'sandbox_unavailable'}))",
+        ],
+    )
+    response = await api.put(
+        "/api/v1/account/avatar",
+        files={"file": ("photo.jpg", _image(), "image/jpeg")},
+        headers=bearer(account),
+    )
+    assert response.status_code == 503
 
 
 async def test_avatar_link_needs_a_valid_fresh_signature(
