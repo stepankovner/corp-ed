@@ -1,3 +1,4 @@
+import calendar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -8,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from corp_ed.core.db_policies import AUDIT_RETENTION_DAYS
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import AuditEvent, AuthChallenge, TrustedDevice
-from corp_ed.repositories.chat_repository import AttachmentRepository
+from corp_ed.repositories.chat_repository import (
+    AttachmentRepository,
+    ConversationRepository,
+)
 from corp_ed.repositories.connector_repository import SyncRunRepository
 from corp_ed.repositories.email_token_repository import EmailTokenRepository
 from corp_ed.repositories.lead_repository import LeadRepository
@@ -49,6 +53,25 @@ AUTH_RECORD_GRACE = timedelta(days=1)
 расхождение часов и разбор жалобы «код не подошёл»."""
 
 
+def months_before(moment: datetime, months: int) -> datetime:
+    """moment минус months календарных месяцев, время суток то же.
+
+    Если такого числа в том месяце нет, берётся последний день месяца:
+    31 марта минус месяц — 28 февраля (29-е в високосный год), 31
+    декабря минус полгода — 30 июня. Граница от этого только раньше, так
+    что диалог никогда не удаляется до истечения полных N месяцев; зато
+    в конце месяца у нескольких дней подряд граница одна (31.03, 30.03 и
+    29.03 минус месяц — все 28.02), и диалог от 28.02 проживёт до 1.04 —
+    на пару дней дольше, а не короче. Считается в UTC: по Москве граница
+    сдвинута на три часа, для срока в месяцы это неважно.
+    """
+    total = moment.year * 12 + (moment.month - 1) - months
+    year, month = divmod(total, 12)
+    month += 1
+    day = min(moment.day, calendar.monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
+
+
 @dataclass(frozen=True)
 class PurgeReport:
     qa_log: int
@@ -60,13 +83,16 @@ class PurgeReport:
     auth_challenges: int = 0
     email_tokens: int = 0
     trusted_devices: int = 0
+    conversations: int = 0
 
 
 class RetentionService:
     """Удаление данных по истечении срока хранения: python -m corp_ed.cli purge.
 
     Запускать по расписанию (cron / systemd timer раз в сутки). Журнал
-    вопросов — по компании в своём tenant_scope (RLS); журнал аудита —
+    вопросов, запуски коннекторов, неотправленные вложения и диалоги чата
+    — по компании в своём tenant_scope (RLS); у диалогов срок свой у
+    каждой компании (chat_retention_months). Журнал аудита —
     одним запросом, триггер в базе пропустит только записи старше срока.
     Записи входа (refresh-токены, шаги входа, ссылки из писем, доверенные
     устройства) принадлежат учётке, а не компании, и вне RLS — тоже одним
@@ -100,7 +126,11 @@ class RetentionService:
         qa_deleted = 0
         runs_deleted = 0
         attachments_deleted = 0
+        conversations_deleted = 0
         for tenant in tenants:
+            # Диалоги — без активности дольше срока своей компании,
+            # целиком: с сообщениями, вложениями и общей ссылкой.
+            chat_cutoff = months_before(now, tenant.chat_retention_months)
             with tenant_scope(tenant.id):
                 async with self.session_maker() as session:
                     qa_deleted += await QaLogRepository(session).delete_older_than(
@@ -112,6 +142,9 @@ class RetentionService:
                     attachments_deleted += await AttachmentRepository(
                         session
                     ).delete_pending_older_than(attachments_cutoff)
+                    conversations_deleted += await ConversationRepository(
+                        session
+                    ).delete_inactive_before(chat_cutoff)
                     await session.commit()
 
         async with self.session_maker() as session:
@@ -153,6 +186,7 @@ class RetentionService:
             auth_challenges=challenges_deleted,
             email_tokens=email_deleted,
             trusted_devices=devices_deleted,
+            conversations=conversations_deleted,
         )
         return PurgeReport(
             qa_log=qa_deleted,
@@ -164,6 +198,7 @@ class RetentionService:
             auth_challenges=challenges_deleted,
             email_tokens=email_deleted,
             trusted_devices=devices_deleted,
+            conversations=conversations_deleted,
         )
 
 

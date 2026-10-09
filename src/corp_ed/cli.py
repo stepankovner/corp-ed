@@ -381,7 +381,8 @@ async def _run(args: argparse.Namespace) -> int:
             f"refresh_tokens: {purged.refresh_tokens}, "
             f"auth_challenges: {purged.auth_challenges}, "
             f"email_tokens: {purged.email_tokens}, "
-            f"trusted_devices: {purged.trusted_devices}"
+            f"trusted_devices: {purged.trusted_devices}, "
+            f"conversations: {purged.conversations}"
         )
         return 0
 
