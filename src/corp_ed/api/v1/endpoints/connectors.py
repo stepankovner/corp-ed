@@ -39,7 +39,7 @@ from corp_ed.api.v1.schemas.connector import (
 from corp_ed.connectors.registry import FieldSpec, KindSpec, UnknownKindError
 from corp_ed.core.config import get_http_settings
 from corp_ed.core.security import new_oauth_browser_nonce
-from corp_ed.domain.models import Connector, User, UserRole
+from corp_ed.domain.models import Connector, ConnectorUserGrant, User, UserRole
 from corp_ed.domain.types import ConnectorMode, GrantStatus
 from corp_ed.services.connector_service import ConnectorService
 
@@ -87,11 +87,29 @@ def _kind(
     )
 
 
-def _is_oauth(service: ConnectorService, kind: str) -> bool:
+def _spec_or_none(service: ConnectorService, kind: str) -> KindSpec | None:
     try:
-        return service.registry.spec(kind).oauth
+        return service.registry.spec(kind)
     except UnknownKindError:
-        return False
+        return None
+
+
+def _mine(
+    connector: Connector, grant: ConnectorUserGrant | None, spec: KindSpec | None
+) -> MyConnectorResponse:
+    oauth = spec is not None and spec.oauth
+    return MyConnectorResponse(
+        id=connector.id,
+        kind=connector.kind,
+        name=connector.name,
+        grant_status=GrantStatus(grant.status) if grant else None,
+        grant_error_code=grant.error_code if grant else None,
+        oauth=oauth,
+        # Вид без адаптера в этой сборке — без формы: подключать нечем.
+        credential_fields=(
+            _fields(spec.credential_fields) if spec is not None and not oauth else []
+        ),
+    )
 
 
 # --- каталог и список (ADMIN) ---------------------------------------------------
@@ -200,16 +218,10 @@ async def create_connector(
 async def my_connectors(
     service: Service, current_user: AnyUser
 ) -> list[MyConnectorResponse]:
-    """Подключения, которые сотрудник авторизует сам, и его состояние в них."""
+    """Подключения, которые сотрудник авторизует сам, его состояние в них
+    и поля формы для видов без OAuth."""
     return [
-        MyConnectorResponse(
-            id=connector.id,
-            kind=connector.kind,
-            name=connector.name,
-            grant_status=GrantStatus(grant.status) if grant else None,
-            grant_error_code=grant.error_code if grant else None,
-            oauth=_is_oauth(service, connector.kind),
-        )
+        _mine(connector, grant, _spec_or_none(service, connector.kind))
         for connector, grant in await service.my_connectors(current_user)
     ]
 
@@ -313,8 +325,10 @@ async def set_my_credentials(
     service: Service,
     current_user: AnyUser,
 ) -> None:
-    """Авторизовать себя в источнике (режим per_user). Документы из
-    листинга сотрудника появятся после ближайшей синхронизации."""
+    """Авторизовать себя в источнике (режим per_user). Учётные данные
+    сразу проверяются в источнике: не приняты — 422 с кодом (auth_failed),
+    грант не сохраняется. Документы из листинга сотрудника появятся после
+    ближайшей синхронизации."""
     await service.set_my_credentials(current_user, connector_id, data.credentials)
 
 

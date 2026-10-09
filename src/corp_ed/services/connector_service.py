@@ -119,6 +119,19 @@ class CheckResult:
     error_code: str | None = None
 
 
+class _CheckFailedError(Exception):
+    """Источник не принял учётные данные при проверке. adapter — если
+    успел собраться (проверка могла продлить токены)."""
+
+    def __init__(
+        self, code: str, adapter: SourceAdapter | None, *, auth: bool = False
+    ) -> None:
+        super().__init__(code)
+        self.code = code
+        self.adapter = adapter
+        self.auth = auth
+
+
 @dataclass(frozen=True)
 class _Revocation:
     """Что нужно для отзыва токенов, собранное до удаления: после него
@@ -425,25 +438,42 @@ class ConnectorService:
             credentials = self.secrets.decrypt(token)
         except SecretDecryptionError:
             return CheckResult(False, "credentials_unreadable")
-        config = {str(k): str(v) for k, v in connector.config.items()}
         adapter: SourceAdapter | None = None
         try:
-            adapter = self.registry.build(
-                connector.kind, config, {**app_credentials, **credentials}, self.http
+            adapter = await self._checked_adapter(
+                connector, {**app_credentials, **credentials}
             )
-            async with asyncio.timeout(CHECK_TIMEOUT):
-                await adapter.check()
-        except AdapterAuthError as exc:
+        except _CheckFailedError as exc:
+            adapter = exc.adapter
             return CheckResult(False, exc.code)
-        except (AdapterError, OutboundURLError) as exc:
-            return CheckResult(False, getattr(exc, "code", "source_unavailable"))
-        except TimeoutError:
-            return CheckResult(False, "timeout")
         finally:
             # Проверка могла продлить токены: новый refresh — единственный.
             if grant is not None and adapter is not None:
                 await self._persist_refresh(grant, adapter)
         return CheckResult(True)
+
+    async def _checked_adapter(
+        self, connector: Connector, credentials: Mapping[str, str]
+    ) -> SourceAdapter:
+        """Адаптер, чьи учётные данные источник только что принял: один
+        лёгкий запрос (check) с потолком CHECK_TIMEOUT. Не принял — код
+        в _CheckFailedError, без текста источника."""
+        config = {str(k): str(v) for k, v in connector.config.items()}
+        adapter: SourceAdapter | None = None
+        try:
+            adapter = self.registry.build(
+                connector.kind, config, credentials, self.http
+            )
+            async with asyncio.timeout(CHECK_TIMEOUT):
+                await adapter.check()
+        except AdapterAuthError as exc:
+            raise _CheckFailedError(exc.code, adapter, auth=True) from None
+        except (AdapterError, OutboundURLError) as exc:
+            code = getattr(exc, "code", "source_unavailable")
+            raise _CheckFailedError(code, adapter) from None
+        except TimeoutError:
+            raise _CheckFailedError("timeout", adapter) from None
+        return adapter
 
     # --- OAuth (режим per_user) ---------------------------------------------------
 
@@ -710,7 +740,10 @@ class ConnectorService:
     async def set_my_credentials(
         self, user: User, connector_id: UUID, credentials: Mapping[str, str]
     ) -> ConnectorUserGrant:
-        connector = await self.get(connector_id)
+        # С шифротекстом: виду с ключами приложения проверка нужна с ними.
+        connector = await self.connectors.get_with_credentials(connector_id)
+        if connector is None:
+            raise NotFoundError("Подключение не найдено")
         spec = self._spec(connector.kind)
         if connector.mode != ConnectorMode.PER_USER.value:
             raise ConnectorStateError("Это подключение настраивает администратор")
@@ -722,16 +755,38 @@ class ConnectorService:
             )
         clean = _validate_fields(spec.credential_fields, credentials, "credentials")
         _check_invariant(spec.credentials_check, clean)
-        token = self.secrets.encrypt(clean)
+        # Учётка сразу проверяется в источнике (тот же check, что у
+        # «Проверить»): неверный пароль — ошибка формы сейчас, а не
+        # остановка гранта после синхронизации. До любой записи в базу.
+        try:
+            adapter = await self._checked_adapter(
+                connector, {**self._app_credentials(connector, spec), **clean}
+            )
+        except _CheckFailedError as exc:
+            logger.info(
+                "connector_grant_check_failed",
+                connector_id=str(connector.id),
+                code=exc.code,
+            )
+            raise InvalidConnectorConfigError(
+                "auth_failed" if exc.auth else exc.code,
+                "Источник не принял учётные данные: " + exc.code,
+            ) from None
+        external_user_id = getattr(adapter, "external_user_id", None)
+        token = self.secrets.encrypt(refreshed_credentials(adapter) or clean)
         grant = await self.grants.get(connector.id, user.id)
         if grant is None:
             grant = await self.grants.add(
                 ConnectorUserGrant(
-                    connector_id=connector.id, user_id=user.id, credentials=token
+                    connector_id=connector.id,
+                    user_id=user.id,
+                    credentials=token,
+                    external_user_id=external_user_id,
                 )
             )
         else:
             grant.credentials = token
+            grant.external_user_id = external_user_id
             grant.status = GrantStatus.ACTIVE.value
             grant.error_code = None
         self._record(
@@ -743,6 +798,26 @@ class ConnectorService:
             )
         await self.session.commit()
         return grant
+
+    def _app_credentials(
+        self, connector: Connector, spec: KindSpec
+    ) -> Mapping[str, str]:
+        """Секреты приложения (их задаёт админ) — для вида, где учётные
+        данные сотрудника работают только вместе с ними. connector — из
+        get_with_credentials."""
+        if not spec.app_credential_fields:
+            return {}
+        token = connector.credentials
+        if token is None:
+            raise InvalidConnectorConfigError(
+                "app_credentials_missing", "Администратор не задал ключи приложения"
+            )
+        try:
+            return self.secrets.decrypt(token)
+        except SecretDecryptionError:
+            raise InvalidConnectorConfigError(
+                "credentials_unreadable", "Ключи приложения не читаются"
+            ) from None
 
     async def revoke_my_credentials(self, user: User, connector_id: UUID) -> None:
         """Отключить свой источник: грант удаляется, токен отзывается у

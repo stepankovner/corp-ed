@@ -197,14 +197,25 @@ async def test_own_app_password_is_validated_and_checked(
     assert response.status_code == 422
     assert response.json()["code"] == "login_invalid"
 
+    mine = await webdav_api.get(f"{URL}/mine", headers=employee)
+    [item] = mine.json()
+    assert item["oauth"] is False
+    assert [(f["name"], f["secret"]) for f in item["credential_fields"]] == [
+        ("login", False),
+        ("password", True),
+    ]
+
+    # Неверный пароль приложения — ошибка формы сразу, гранта нет.
     response = await webdav_api.put(
         f"{URL}/{connector_id}/mine",
         json={"credentials": {"login": IVAN_LOGIN, "password": "wrong"}},
         headers=employee,
     )
-    assert response.status_code == 204
+    assert response.status_code == 422
+    assert response.json()["code"] == "auth_failed"
+    assert "wrong" not in response.text
     response = await webdav_api.post(f"{URL}/{connector_id}/test", headers=employee)
-    assert response.json() == {"ok": False, "error_code": "auth_failed"}
+    assert response.json() == {"ok": False, "error_code": "credentials_missing"}
 
     response = await webdav_api.put(
         f"{URL}/{connector_id}/mine",

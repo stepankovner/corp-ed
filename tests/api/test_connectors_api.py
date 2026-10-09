@@ -11,6 +11,7 @@ from cryptography.fernet import Fernet
 from fastapi import Depends
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import capture_logs
 
 from corp_ed.api.v1.dependencies import (
     get_audit_repository,
@@ -634,6 +635,10 @@ async def test_employee_connects_and_disconnects_own_account(
             "grant_status": None,
             "grant_error_code": None,
             "oauth": False,
+            # Форма сотрудника: что вводить; значения не возвращаются.
+            "credential_fields": [
+                {"name": "token", "title": "Токен", "required": True, "secret": True}
+            ],
         }
     ]
 
@@ -688,6 +693,66 @@ async def test_employee_connects_and_disconnects_own_account(
         AuditAction.CONNECTOR_GRANT_SET.value,
         AuditAction.CONNECTOR_GRANT_REVOKED.value,
     ]
+
+
+async def test_employee_credentials_are_checked_before_saving(
+    connectors_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    source: FakeSource,
+    session: AsyncSession,
+) -> None:
+    """Неверный токен — ошибка формы сразу, а не остановка гранта после
+    синхронизации; источник недоступен — тоже не сохраняем."""
+    created = await _create(
+        connectors_api, admin_account, {**CREATE, "kind": FAKE_PER_USER_KIND}
+    )
+    connector_id = created.json()["id"]
+    employee = bearer(account)
+    source.rejected_tokens.add("wrong-token")
+
+    with capture_logs() as logs:
+        response = await connectors_api.put(
+            f"{URL}/{connector_id}/mine",
+            json={"credentials": {"token": "wrong-token"}},
+            headers=employee,
+        )
+    assert response.status_code == 422
+    assert response.json()["code"] == "auth_failed"
+    assert "wrong-token" not in response.text
+    # В журнал — код, без значения токена.
+    assert {"event": "connector_grant_check_failed", "code": "auth_failed"}.items() <= (
+        next(e for e in logs if e["event"] == "connector_grant_check_failed").items()
+    )
+    assert "wrong-token" not in str(logs)
+    assert source.check_calls == ["wrong-token"]
+
+    source.unavailable = True
+    response = await connectors_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "my-token"}},
+        headers=employee,
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "http_503"
+    assert "my-token" not in response.text
+
+    with tenant_scope(account.tenant_id):
+        assert (await session.scalars(select(ConnectorUserGrant))).all() == []
+    assert await _jobs(session) == []
+    mine = await connectors_api.get(f"{URL}/mine", headers=employee)
+    assert mine.json()[0]["grant_status"] is None
+
+    source.unavailable = False
+    response = await connectors_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "my-token"}},
+        headers=employee,
+    )
+    assert response.status_code == 204, response.text
+    mine = await connectors_api.get(f"{URL}/mine", headers=employee)
+    assert mine.json()[0]["grant_status"] == "active"
+    assert "my-token" not in mine.text
 
 
 async def test_employee_cannot_grant_into_organization_connector(

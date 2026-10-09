@@ -160,6 +160,9 @@ class MyConnectorResponse(BaseModel):
     grant_error_code: str | None
     # Как подключаться: редирект (oauth) или ввод полей (PUT .../mine).
     oauth: bool = False
+    # Поля формы сотрудника (без OAuth): что вводить. Значения не
+    # возвращаются никогда; у OAuth и у неизвестного вида — пусто.
+    credential_fields: list[FieldSpecResponse]
 
 
 class OAuthStartResponse(BaseModel):

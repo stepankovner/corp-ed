@@ -184,13 +184,23 @@ async def test_kaiten_form_and_employee_token(
     )
     assert refused.status_code == 409
 
-    for user, token in ((account, "wrong"), (admin_account, ANNA_TOKEN)):
-        saved = await kinds_api.put(
-            f"{URL}/{connector_id}/mine",
-            json={"credentials": {"token": token}},
-            headers=bearer(user),
-        )
-        assert saved.status_code == 204, saved.text
+    # Токен проверяется при сохранении: неверный — ошибка формы сразу.
+    refused = await kinds_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "wrong"}},
+        headers=bearer(account),
+    )
+    assert refused.status_code == 422
+    assert refused.json()["code"] == "auth_failed"
+    mine = await kinds_api.get(f"{URL}/mine", headers=bearer(account))
+    assert mine.json()[0]["grant_status"] is None
+    assert [f["name"] for f in mine.json()[0]["credential_fields"]] == ["token"]
+    saved = await kinds_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": ANNA_TOKEN}},
+        headers=bearer(admin_account),
+    )
+    assert saved.status_code == 204, saved.text
     check = await kinds_api.post(
         f"{URL}/{connector_id}/test", headers=bearer(admin_account)
     )
