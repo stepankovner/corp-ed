@@ -84,9 +84,26 @@ def server() -> FakeYandex:
 def test_spec_is_per_user_oauth_without_portal() -> None:
     assert SPEC.kind == KIND == "yandex360"
     assert SPEC.mode is ConnectorMode.PER_USER and SPEC.user_auth is UserAuth.OAUTH
-    assert [m.name for m in SPEC.modules] == ["disk", "shared_disks", "wiki"]
-    assert [f.name for f in SPEC.config_fields] == ["client_id", "org_id", "wiki_roots"]
-    assert [f.required for f in SPEC.config_fields] == [True, False, False]
+    assert [m.name for m in SPEC.modules] == [
+        "disk",
+        "shared_disks",
+        "wiki",
+        "tracker",
+    ]
+    assert [f.name for f in SPEC.config_fields] == [
+        "client_id",
+        "org_id",
+        "wiki_roots",
+        "tracker_queues",
+        "tracker_cloud_org_id",
+    ]
+    assert [f.required for f in SPEC.config_fields] == [
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
     assert [f.name for f in SPEC.app_credential_fields] == ["client_secret"]
     assert SPEC.url_field is None
     assert SPEC.extra["app_scopes"].split(",") == [

@@ -9,11 +9,20 @@ yandex.ru/dev/disk-api, yandex.ru/support/wiki/ru/api-ref): при
 API virtual-disks; Вики — api.wiki.yandex.net/v1 с X-Org-Id и ошибками
 {error_code, debug_message}. Живым Диском и Вики не проверено (RISKS
 №38, №43).
+
+Трекер (yandex.ru/support/tracker/ru/, 09.10.2026): api.tracker.yandex.net/v3
+с X-Org-ID (Яндекс 360) или X-Cloud-Org-ID (Yandex Identity Hub); очереди —
+GET queues с page/perPage и X-Total-Pages; задачи очереди — POST
+issues/_search {"queue": KEY} с относительной пагинацией (perPage и id,
+следующая страница — в заголовке Link); комментарии — GET
+issues/{id}/comments, тоже по Link; вложения — expand=attachments,
+скачивание по content на том же хосте; ошибки — {errorMessages, errors}.
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qs, quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlencode
 
 import httpx
 
@@ -25,6 +34,9 @@ API_HOST = "cloud-api.yandex.net"
 DOWNLOAD_HOST = "downloader.dst.yandex.ru"
 STORAGE_HOST = "s42.storage.yandex.net"
 WIKI_HOST = "api.wiki.yandex.net"
+TRACKER_HOST = "api.tracker.yandex.net"
+TRACKER_API = f"https://{TRACKER_HOST}/"
+CLOUD_ORG_ID = "bpf3crucp1v2abcdefgh"
 OAUTH_SERVER = f"https://{OAUTH_HOST}/"
 DISK_API = f"https://{API_HOST}/"
 WIKI_API = f"https://{WIKI_HOST}/"
@@ -75,6 +87,21 @@ class FakeYandex:
     """Токены, выданные с device_id: только их Яндекс ID умеет отозвать."""
     revoke_error: tuple[int, dict[str, Any]] | None = None
     """Ответ /revoke_token вместо обычного (статус, тело)."""
+    queues: list[dict[str, Any]] = field(default_factory=list)
+    issues: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """id задачи → задача (как в ответе API; вложения — в _attachments)."""
+    comments: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    attachment_files: dict[str, bytes] = field(default_factory=dict)
+    """id вложения → байты."""
+    tracker_hidden: set[str] = field(default_factory=set)
+    """Задачи, которых сотрудник не видит: поиск их не отдаёт."""
+    tracker_forbidden_queues: set[str] = field(default_factory=set)
+    tracker_per_page: int = 2
+    """Сколько отдавать на страницу, сколько бы ни попросили: пагинация."""
+    tracker_rate_limit_hits: int = 0
+    tracker_cloud: bool = False
+    """Трекер привязан к организации Identity Hub: нужен X-Cloud-Org-ID."""
+    tracker_headers: list[dict[str, str]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.access_tokens.setdefault(ACCESS_TOKEN, LOGIN)
@@ -183,6 +210,8 @@ class FakeYandex:
             return self._download(request, host)
         if host == WIKI_HOST:
             return self._wiki(request)
+        if host == TRACKER_HOST:
+            return self._tracker(request)
         if host != API_HOST:
             return httpx.Response(404, text="unknown host")
         return self._api(request)
@@ -510,6 +539,241 @@ class FakeYandex:
             if page["slug"] == slug:
                 return str(page["title"])
         return slug
+
+    # --- Трекер ---------------------------------------------------------------
+
+    def add_queue(self, key: str, name: str) -> str:
+        self.queues.append({"id": str(len(self.queues) + 1), "key": key, "name": name})
+        return key
+
+    def add_issue(
+        self,
+        issue_id: str,
+        key: str,
+        summary: str,
+        description: str = "",
+        *,
+        status: str = "Открыт",
+        version: int = 1,
+        updated: str = "2026-09-01T10:00:00.000+0000",
+        attachments: tuple[tuple[str, str, bytes], ...] = (),
+        comments: tuple[tuple[str, str], ...] = (),
+    ) -> str:
+        queue = key.split("-", 1)[0]
+        listed = []
+        for att_id, name, data in attachments:
+            self.attachment_files[att_id] = data
+            listed.append(
+                {
+                    "self": f"https://{TRACKER_HOST}/v3/attachments/{att_id}",
+                    "id": att_id,
+                    "name": name,
+                    "content": f"https://{TRACKER_HOST}/v3/issues/{key}"
+                    f"/attachments/{att_id}/{quote(name)}",
+                    "mimetype": "application/octet-stream",
+                    "size": len(data),
+                    "createdAt": updated,
+                }
+            )
+        self.issues[issue_id] = {
+            "self": f"https://{TRACKER_HOST}/v3/issues/{key}",
+            "id": issue_id,
+            "key": key,
+            "version": version,
+            "summary": summary,
+            "description": description,
+            "updatedAt": updated,
+            "createdAt": "2026-08-01T09:00:00.000+0000",
+            "status": {"key": "open", "display": status},
+            "queue": {"key": queue, "display": self._queue_name(queue)},
+            "createdBy": {"id": "1", "display": "Иван Петров"},
+            "assignee": {"id": "2", "display": "Мария Иванова"},
+            "commentWithoutExternalMessageCount": len(comments),
+            "commentWithExternalMessageCount": 0,
+            "_attachments": listed,
+        }
+        self.comments[issue_id] = []
+        for author, text in comments:
+            self.add_comment(issue_id, author, text)
+        return issue_id
+
+    def add_comment(self, issue_id: str, author: str, text: str) -> None:
+        comments = self.comments.setdefault(issue_id, [])
+        number = len(comments) + 1
+        comments.append(
+            {
+                "id": number,
+                "longId": f"c{issue_id}-{number}",
+                "text": text,
+                "createdBy": {"display": author},
+                "createdAt": "2026-09-02T12:00:00.000+0000",
+                "updatedAt": "2026-09-02T12:00:00.000+0000",
+                "type": "standard",
+                "transport": "internal",
+            }
+        )
+        issue = self.issues.get(issue_id)
+        if issue is not None:
+            issue["commentWithoutExternalMessageCount"] = len(comments)
+
+    def _queue_name(self, key: str) -> str:
+        for queue in self.queues:
+            if queue["key"] == key:
+                return str(queue["name"])
+        return key
+
+    def _tracker_error(self, status: int, message: str) -> httpx.Response:
+        return httpx.Response(
+            status,
+            json={"errorMessages": [message], "errors": {}, "statusCode": status},
+        )
+
+    def _tracker(self, request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        query = {k: v[0] for k, v in parse_qs(request.url.query.decode()).items()}
+        self.calls.append((f"tracker{path}", query))
+        self.tracker_headers.append(dict(request.headers))
+        if self._token_of(request) is None:
+            return self._tracker_error(401, "Не авторизован")
+        org = request.headers.get("x-org-id")
+        cloud = request.headers.get("x-cloud-org-id")
+        if (self.tracker_cloud and cloud != CLOUD_ORG_ID) or (
+            not self.tracker_cloud and org != ORG_ID
+        ):
+            return self._tracker_error(403, "Организация не найдена")
+        if self.tracker_rate_limit_hits > 0:
+            self.tracker_rate_limit_hits -= 1
+            return httpx.Response(429, headers={"retry-after": "2"})
+        per_page = min(int(query.get("perPage") or 50), self.tracker_per_page)
+        if path in ("/v3/queues", "/v3/queues/"):
+            page = int(query.get("page") or 1)
+            chunk = self.queues[(page - 1) * per_page : page * per_page]
+            total = max(1, -(-len(self.queues) // per_page))
+            headers = {"x-total-pages": str(total)}
+            return httpx.Response(200, json=chunk, headers=headers)
+        if path == "/v3/issues/_search" and request.method == "POST":
+            return self._search(request, query, per_page)
+        parts = path.removeprefix("/v3/issues/").split("/")
+        if path.startswith("/v3/issues/") and parts:
+            issue = self._find_issue(unquote(parts[0]))
+            if issue is None or issue["id"] in self.tracker_hidden:
+                return self._tracker_error(404, "Задача не найдена")
+            if len(parts) == 1:
+                return httpx.Response(200, json=self._issue_view(issue, False))
+            if parts[1:] == ["comments"]:
+                return self._comments(issue, path, query, per_page)
+            if len(parts) >= 3 and parts[1] == "attachments":
+                data = self.attachment_files.get(parts[2])
+                if data is None:
+                    return self._tracker_error(404, "Файл не найден")
+                return httpx.Response(
+                    200, content=data, headers={"content-type": "application/pdf"}
+                )
+        return self._tracker_error(404, "Нет такого ресурса")
+
+    def _search(
+        self, request: httpx.Request, query: dict[str, str], per_page: int
+    ) -> httpx.Response:
+        body = json.loads(request.content or b"{}")
+        queue = body.get("queue")
+        if not isinstance(queue, str):
+            return self._tracker_error(400, "Нужна очередь")
+        if queue in self.tracker_forbidden_queues:
+            return self._tracker_error(403, "Нет доступа к очереди")
+        if queue not in {q["key"] for q in self.queues}:
+            return self._tracker_error(404, "Очередь не найдена")
+        matching = sorted(
+            (
+                issue
+                for issue in self.issues.values()
+                if issue["queue"]["key"] == queue
+                and issue["id"] not in self.tracker_hidden
+            ),
+            key=lambda issue: int(issue["key"].split("-")[1]),
+        )
+        after = query.get("id")
+        if after:
+            ids = [issue["id"] for issue in matching]
+            matching = matching[ids.index(after) + 1 :] if after in ids else []
+        chunk = matching[:per_page]
+        expand = query.get("expand", "")
+        items = [self._issue_view(issue, "attachments" in expand) for issue in chunk]
+        headers = {}
+        if len(matching) > per_page:
+            link = f"https://{TRACKER_HOST}/v3/issues/_search?" + urlencode(
+                {"perPage": per_page, "id": chunk[-1]["id"]}
+            )
+            headers["link"] = f'<{link}>; rel="next"'
+        return httpx.Response(200, json=items, headers=headers)
+
+    def _comments(
+        self,
+        issue: dict[str, Any],
+        path: str,
+        query: dict[str, str],
+        per_page: int,
+    ) -> httpx.Response:
+        comments = self.comments.get(issue["id"], [])
+        after = int(query.get("id") or 0)
+        rest = [c for c in comments if c["id"] > after]
+        chunk = rest[:per_page]
+        headers = {}
+        if len(rest) > per_page:
+            first = f"https://{TRACKER_HOST}{path}?perPage={per_page}"
+            link = f"https://{TRACKER_HOST}{path}?" + urlencode(
+                {"perPage": per_page, "id": chunk[-1]["id"]}
+            )
+            headers["link"] = f'<{first}>; rel="first", <{link}>; rel="next"'
+        return httpx.Response(200, json=chunk, headers=headers)
+
+    def _find_issue(self, ref: str) -> dict[str, Any] | None:
+        if ref in self.issues:
+            return self.issues[ref]
+        for issue in self.issues.values():
+            if issue["key"] == ref:
+                return issue
+        return None
+
+    @staticmethod
+    def _issue_view(issue: dict[str, Any], attachments: bool) -> dict[str, Any]:
+        view = {k: v for k, v in issue.items() if k != "_attachments"}
+        if attachments and issue["_attachments"]:
+            view["attachments"] = issue["_attachments"]
+        return view
+
+
+def sample_tracker(server: FakeYandex | None = None) -> FakeYandex:
+    """Три очереди, задачи с комментариями и вложениями; одна задача
+    скрыта от сотрудника, одна очередь закрыта."""
+    server = server or FakeYandex()
+    server.add_queue("SUP", "Поддержка")
+    server.add_queue("HR", "Кадры")
+    server.add_queue("SEC", "Безопасность")
+    server.add_issue(
+        "id-1",
+        "SUP-1",
+        "Клиент Альфа: сроки доставки",
+        "Клиент спрашивает про **сроки**.\n\n"
+        "{% note info %}\n\nВажно.\n\n{% endnote %}",
+        status="В работе",
+        attachments=(
+            ("a1", "Договор.pdf", b"%PDF-1.4 contract"),
+            ("a2", "Скриншот.png", b"\x89PNG"),
+            ("a3", "Огромный.docx", b"x" * 2048),
+        ),
+        comments=(
+            ("Иван Петров", "Решили: доставка за 3 дня."),
+            ("Мария Иванова", "Клиент согласен."),
+            ("Иван Петров", "Закрываю."),
+        ),
+    )
+    server.add_issue("id-2", "SUP-2", "Вопрос по счёту", "Счёт № 15.")
+    server.add_issue("id-3", "SUP-3", "Скрытая задача", "secret")
+    server.tracker_hidden.add("id-3")
+    server.add_issue("id-4", "HR-1", "Отпуск в мае", "Заявление подано.")
+    server.add_issue("id-5", "SEC-1", "Закрытая очередь", "secret")
+    server.tracker_forbidden_queues.add("SEC")
+    return server
 
 
 def sample_yandex() -> FakeYandex:

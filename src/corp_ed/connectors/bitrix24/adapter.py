@@ -6,6 +6,16 @@
 client_secret — в учётные данные подключения; каждый сотрудник
 авторизует приложение сам. Вебхук (credentials["webhook"]) принимает
 только cli connector-check: в форме API его нет.
+
+Коробка — тот же вид: REST тот же, токены коробочного приложения выдаёт
+и продлевает тот же oauth.bitrix24.tech (b24-rest-docs, settings/
+cloud-and-on-premise/network-access). Адрес портала — любой публичный
+https (домен компании, порт), проверка SSRF та же; скачивание — только с
+хоста портала, client_secret — только на сервер авторизации. Условия на
+стороне коробки: портал доступен из интернета по HTTPS (входящие вызовы
+REST от приложения), у портала есть исходящий https к oauth.bitrix24.tech.
+Коробка со «своим провайдером авторизации» (сервер Битрикс24 исключён из
+схемы) не поддержана: где она выдаёт токены, документация не описывает.
 """
 
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -44,7 +54,7 @@ from corp_ed.domain.types import ConnectorMode
 KIND = "bitrix24"
 SPEC = KindSpec(
     kind=KIND,
-    title="Битрикс24",
+    title="Битрикс24 (облако и коробка)",
     mode=ConnectorMode.PER_USER,
     user_auth=UserAuth.OAUTH,
     modules=(
@@ -60,7 +70,11 @@ SPEC = KindSpec(
         ),
     ),
     config_fields=(
-        FieldSpec("portal", "Адрес портала (https://…bitrix24.ru/)"),
+        FieldSpec(
+            "portal",
+            "Адрес портала: облако — https://….bitrix24.ru/, коробка — "
+            "https://portal.company.ru/ (должен открываться из интернета по HTTPS)",
+        ),
         FieldSpec("client_id", "Код приложения (client_id)"),
     ),
     app_credential_fields=(

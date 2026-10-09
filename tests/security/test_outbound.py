@@ -661,6 +661,31 @@ async def test_api_response_content_length_refused_early() -> None:
         await client.get("https://portal.example.com/rest/x", max_bytes=10)
 
 
+async def test_head_keeps_resource_length_and_method_across_redirects() -> None:
+    """HEAD: Content-Length — размер файла, а не тела; не лимит. После
+    редиректа HEAD остаётся HEAD, а не превращается в GET всего файла."""
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/old.pdf":
+            return httpx.Response(301, headers={"location": "/new.pdf"})
+        return httpx.Response(
+            200, headers={"content-length": "999999", "etag": '"e"'}, content=b""
+        )
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    response = await client.request(
+        "HEAD", "https://portal.example.com/old.pdf", max_bytes=10
+    )
+    assert response.status_code == 200
+    assert response.headers["content-length"] == "999999"
+    assert seen == [("HEAD", "/old.pdf"), ("HEAD", "/new.pdf")]
+
+
 async def test_api_response_under_the_ceiling_reads_as_usual() -> None:
     """Сжатый JSON (Accept-Encoding по умолчанию) читается как раньше:
     .json(), .text, заголовки и код ответа на месте."""
