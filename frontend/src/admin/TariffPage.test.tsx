@@ -20,6 +20,7 @@ function companySettings(
     mfa_policy: "any",
     allow_remember_device: true,
     email_domains: [],
+    chat_retention_months: 12,
     tariff: "base",
     seats: 30,
     members: 12,

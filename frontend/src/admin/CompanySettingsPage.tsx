@@ -13,12 +13,13 @@ import {
 import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { useAuth } from "../auth/context";
+import { plural } from "../lib/format";
 import { companyInitials } from "../lib/initials";
 import { useDocumentTitle } from "../lib/title";
 import { Section } from "../settings/common";
 import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
-import { TextField } from "../ui/Field";
+import { SelectField, TextField } from "../ui/Field";
 import fieldStyles from "../ui/Field.module.css";
 import { IconButton } from "../ui/IconButton";
 import { Notice } from "../ui/Notice";
@@ -66,8 +67,9 @@ const LOOKS_LIKE_DOMAIN = /^(?:[^\s.@/]+\.)+[\p{L}\d-]{2,}$/u;
 
 /**
  * Настройки компании (ТЗ §7): название и логотип, ответ без документов,
- * правила входа, домены почты для приглашений. До этапа 7 всё это меняла
- * команда через CLI; каждое изменение сервер пишет в журнал действий.
+ * правила входа, срок хранения диалогов, домены почты для приглашений. До
+ * этапа 7 всё это меняла команда через CLI; каждое изменение сервер пишет
+ * в журнал действий.
  */
 export function CompanySettingsPage() {
   useDocumentTitle("Настройки компании");
@@ -92,6 +94,7 @@ export function CompanySettingsPage() {
           <CompanySection settings={settings.data} />
           <NotFoundSection settings={settings.data} />
           <SecuritySection settings={settings.data} />
+          <RetentionSection settings={settings.data} />
           {/* Ключ — сохранённый список: после сохранения правка начинается с него. */}
           <DomainsSection key={settings.data.email_domains.join("\n")} settings={settings.data} />
         </div>
@@ -372,6 +375,76 @@ function SecuritySection({ settings }: { settings: Settings }) {
           );
           queryClient.setQueryData(COMPANY_KEY, data);
           toast.show("Теперь всем сотрудникам нужно приложение или ключ доступа");
+        }}
+      />
+    </Section>
+  );
+}
+
+type RetentionMonths = NonNullable<Update["chat_retention_months"]>;
+
+/** Как на бэкенде (CHAT_RETENTION_MONTHS). */
+const RETENTION_MONTHS: RetentionMonths[] = [1, 3, 6, 12, 24, 36];
+
+/** «3 месяца» — и «дольше 3 месяцев» (родительный падеж). */
+function months(n: number, genitive = false): string {
+  return genitive
+    ? `${n} ${plural(n, "месяца", "месяцев", "месяцев")}`
+    : `${n} ${plural(n, "месяц", "месяца", "месяцев")}`;
+}
+
+function RetentionSection({ settings }: { settings: Settings }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [shorter, setShorter] = useState<RetentionMonths | null>(null);
+  const save = useSave((body) => `Диалоги хранятся ${months(body.chat_retention_months ?? 0)}`);
+  const value =
+    (save.isPending ? save.variables.chat_retention_months : null) ??
+    shorter ??
+    settings.chat_retention_months;
+
+  function choose(next: RetentionMonths) {
+    save.reset();
+    // Короче срок — этой ночью часть диалогов удалится насовсем: сначала спросим.
+    if (next < settings.chat_retention_months) setShorter(next);
+    else save.mutate({ chat_retention_months: next });
+  }
+
+  return (
+    <Section
+      title="Хранение диалогов"
+      description="Сколько хранятся диалоги сотрудников с ассистентом. Сами диалоги администратор не видит."
+    >
+      <SelectField
+        label="Хранить диалоги"
+        value={String(value)}
+        onChange={(e) => choose(Number(e.target.value) as RetentionMonths)}
+        hint="Диалоги без активности дольше этого срока удаляются целиком, вместе с вложениями и общими ссылками, — в том числе закреплённые. Активность — последний вопрос или «Ответить заново»."
+      >
+        {RETENTION_MONTHS.map((n) => (
+          <option key={n} value={n}>
+            {months(n)}
+          </option>
+        ))}
+      </SelectField>
+      {save.isError ? <Notice kind="error">{errorMessage(save.error)}</Notice> : null}
+      <ConfirmDialog
+        open={shorter !== null}
+        onOpenChange={(open) => !open && setShorter(null)}
+        title="Сократить срок хранения диалогов?"
+        description={
+          shorter
+            ? `В ближайшую ночь удалятся диалоги, в которых не было вопросов дольше ${months(shorter, true)}. Вернуть их будет нельзя.`
+            : undefined
+        }
+        confirmLabel="Сократить"
+        onConfirm={async () => {
+          if (shorter === null) return;
+          const data = await unwrap(
+            api.PATCH("/api/v1/company", { body: { chat_retention_months: shorter } }),
+          );
+          queryClient.setQueryData(COMPANY_KEY, data);
+          toast.show(`Диалоги хранятся ${months(shorter)}`);
         }}
       />
     </Section>

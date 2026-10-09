@@ -20,6 +20,7 @@ function companySettings(overrides: Partial<Settings> = {}): Settings {
     mfa_policy: "any",
     allow_remember_device: true,
     email_domains: ["meridian-stroy.ru"],
+    chat_retention_months: 12,
     tariff: "base",
     seats: 30,
     members: 12,
@@ -158,6 +159,57 @@ describe("настройки компании", () => {
       expect(field).toHaveAccessibleDescription("Не похоже на домен почты: acme-.ru"),
     );
     expect(sent).toBe(1);
+  });
+
+  it("срок хранения диалогов: длиннее — сразу, короче — после подтверждения", async () => {
+    const user = userEvent.setup();
+    shell();
+    let settings = companySettings();
+    const bodies: Partial<Settings>[] = [];
+    server.use(
+      http.get("/api/v1/company", () => HttpResponse.json(settings)),
+      http.patch("/api/v1/company", async ({ request }) => {
+        const body = (await request.json()) as Partial<Settings>;
+        bodies.push(body);
+        settings = { ...settings, ...body };
+        return HttpResponse.json(settings);
+      }),
+    );
+    renderApp("/admin/settings");
+
+    const section = await screen.findByRole("region", { name: "Хранение диалогов" });
+    const select = within(section).getByLabelText("Хранить диалоги");
+    expect(select).toHaveValue("12");
+    expect(select).toHaveAccessibleDescription(
+      /удаляются целиком, вместе с вложениями и общими ссылками/,
+    );
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["1 месяц", "3 месяца", "6 месяцев", "12 месяцев", "24 месяца", "36 месяцев"]);
+
+    await user.selectOptions(select, "24");
+    expect(await screen.findByText("Диалоги хранятся 24 месяца")).toBeInTheDocument();
+    expect(bodies).toEqual([{ chat_retention_months: 24 }]);
+
+    // Короче — часть диалогов удалится насовсем: сначала спрашиваем.
+    await user.selectOptions(select, "3");
+    const ask = screen.getByRole("dialog", { name: "Сократить срок хранения диалогов?" });
+    expect(ask).toHaveAccessibleDescription(/не было вопросов дольше 3 месяцев/);
+    await user.click(within(ask).getByRole("button", { name: "Отмена" }));
+    expect(select).toHaveValue("24");
+    expect(bodies).toHaveLength(1);
+
+    await user.selectOptions(select, "1");
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Сократить срок хранения диалогов?" })).getByRole(
+        "button",
+        { name: "Сократить" },
+      ),
+    );
+    await waitFor(() => expect(select).toHaveValue("1"));
+    expect(bodies).toEqual([{ chat_retention_months: 24 }, { chat_retention_months: 1 }]);
   });
 
   it("логотип: загрузка, отказ сервера, проверка размера и удаление", async () => {
