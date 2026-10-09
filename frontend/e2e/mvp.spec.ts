@@ -700,7 +700,9 @@ test.describe.serial("путь компании", () => {
     await page.getByLabel("Телефон").fill("+7 999 123-45-67");
     await page.getByLabel("Удобная дата").fill(nextWorkday());
     await page.getByLabel("Удобное время (по Москве)").selectOption({ index: 1 });
-    await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
+    await page
+      .getByRole("checkbox", { name: /Даю согласие на обработку персональных данных/ })
+      .check();
     await page.getByRole("button", { name: "Отправить заявку" }).click();
     await expect(page.getByText("Заявка отправлена")).toBeVisible();
   });
