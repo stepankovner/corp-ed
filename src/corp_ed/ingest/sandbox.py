@@ -157,16 +157,18 @@ async def _communicate(
 _network_warning_logged = False
 
 
-def _check_network(result: dict[str, Any], mode: str) -> None:
+def _check_network(result: dict[str, Any], mode: str, stderr: bytes) -> None:
     """Фильтр сети не поставлен: в production ребёнок уже отказался
     разбирать — это ошибка конфигурации, а не плохой файл; в разработке —
-    одно предупреждение на процесс API."""
+    одно предупреждение на процесс API. Причину (архитектура, errno ядра)
+    ребёнок пишет в stderr."""
     global _network_warning_logged
+    reason = stderr.decode("utf-8", "replace").strip()
     if result.get("code") == "sandbox_unavailable":
-        logger.error("sandbox_network_filter_unavailable", format=mode)
+        logger.error("sandbox_network_filter_unavailable", format=mode, reason=reason)
     elif result.get("network") == "open" and not _network_warning_logged:
         _network_warning_logged = True
-        logger.warning("sandbox_network_not_blocked", format=mode)
+        logger.warning("sandbox_network_not_blocked", format=mode, reason=reason)
 
 
 async def _run_worker(
@@ -223,7 +225,7 @@ async def _run_worker(
         raise ExtractionError("corrupted") from None
     if not isinstance(result, dict):
         raise ExtractionError("corrupted")
-    _check_network(result, mode)
+    _check_network(result, mode, stderr)
     return result
 
 

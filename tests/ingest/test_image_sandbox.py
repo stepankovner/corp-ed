@@ -112,11 +112,14 @@ async def test_giant_dimensions_are_refused_before_decoding() -> None:
 async def test_largest_allowed_photo_fits_into_child_limits() -> None:
     """39 Мп — под потолком 40 Мп: распаковка в RGB, поворот и уменьшение
     укладываются в потолок памяти дочернего процесса."""
-    raw = _encode(Image.new("RGB", (7200, 5400), (90, 140, 30)), "JPEG")
-    for kind in ImageKind:
-        result = await process_image_isolated(kind, raw)
-        with Image.open(io.BytesIO(result)) as picture:
-            assert picture.size == (256, 256)
+    photo = _encode(Image.new("RGB", (7200, 5400), (90, 140, 30)), "JPEG")
+    # Самый дорогой путь: прозрачность — копии RGBA, белый фон и маска.
+    transparent = _encode(Image.new("RGBA", (7200, 5400), (90, 140, 30, 128)), "PNG")
+    for raw in (photo, transparent):
+        for kind in ImageKind:
+            result = await process_image_isolated(kind, raw)
+            with Image.open(io.BytesIO(result)) as picture:
+                assert picture.size == (256, 256)
 
 
 # --- сбои дочернего процесса ---------------------------------------------------

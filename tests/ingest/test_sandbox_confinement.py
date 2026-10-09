@@ -251,11 +251,14 @@ async def test_production_child_refuses_without_filter(
         await extract_isolated(SourceFormat.TXT, "текст".encode())
     assert info.value.code == "sandbox_unavailable"
     assert "sandbox_unavailable" in ERROR_MESSAGES
-    assert [
-        entry["log_level"]
+    [entry] = [
+        entry
         for entry in logs
         if entry["event"] == "sandbox_network_filter_unavailable"
-    ] == ["error"]
+    ]
+    assert entry["log_level"] == "error"
+    # Причина — в журнале: без неё не понять, что чинить в окружении.
+    assert "test: no seccomp" in entry["reason"]
 
 
 async def test_development_child_warns_once_and_parses(
@@ -272,3 +275,4 @@ async def test_development_child_warns_once_and_parses(
     ]
     assert len(warnings) == 1
     assert warnings[0]["log_level"] == "warning"
+    assert "test: no seccomp" in warnings[0]["reason"]
