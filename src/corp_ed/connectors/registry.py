@@ -223,6 +223,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     """
     from corp_ed.connectors.bitrix24 import register as register_bitrix24
     from corp_ed.connectors.confluence import register as register_confluence
+    from corp_ed.connectors.kaiten import register as register_kaiten
     from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry(
@@ -233,6 +234,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     register_bitrix24(registry, settings)
     register_confluence(registry, settings)
     register_yandex(registry, settings)
+    register_kaiten(registry, settings)
     if unknown := registry.unknown_hidden():
         # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
         # все ручки подключений: реестр собирается при первом запросе.
