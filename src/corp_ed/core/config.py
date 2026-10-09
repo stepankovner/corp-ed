@@ -819,6 +819,12 @@ class ConnectorSettings(BaseSettings):
     yandex_oauth_server: str = "https://oauth.yandex.ru/"
     yandex_disk_api: str = "https://cloud-api.yandex.net/"
     yandex_wiki_api: str = "https://api.wiki.yandex.net/"
+    # Google: выдача токенов сервисному аккаунту, Drive API v3 и Directory
+    # API — тоже фиксированные адреса (token_uri из JSON-ключа клиента не
+    # используется: ключ — ввод извне).
+    google_token_url: str = "https://oauth2.googleapis.com/token"  # noqa: S105
+    google_drive_api: str = "https://www.googleapis.com/drive/v3/"
+    google_directory_api: str = "https://admin.googleapis.com/admin/directory/v1/"
 
     model_config = SettingsConfigDict(
         env_prefix="CONNECTOR_",
