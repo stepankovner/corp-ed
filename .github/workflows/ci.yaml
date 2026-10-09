@@ -91,9 +91,10 @@ jobs:
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 15
 
+    # Образы служб — через зеркало Docker Hub (см. задание image).
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: mirror.gcr.io/pgvector/pgvector:pg16
         env:
           POSTGRES_USER: corp_ed
           POSTGRES_PASSWORD: postgres
@@ -110,7 +111,7 @@ jobs:
       # Лимиты частоты и квота эмбеддингов: тесты Redis-реализаций
       # пропускаются без TEST_REDIS_URL, а пропуск в CI — дыра.
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379
         options: >-
@@ -215,7 +216,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: mirror.gcr.io/pgvector/pgvector:pg16
         env:
           POSTGRES_USER: corp_ed
           POSTGRES_PASSWORD: postgres
@@ -228,7 +229,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: mirror.gcr.io/library/redis:7-alpine
         ports:
           - 6379
         options: >-
@@ -239,7 +240,7 @@ jobs:
       # Перехватчик писем: коды подтверждения и ссылки проверка читает из
       # его API, наружу ничего не уходит.
       mailpit:
-        image: axllent/mailpit:v1.31.3
+        image: mirror.gcr.io/axllent/mailpit:v1.31.3
         ports:
           - 1025
           - 8025
@@ -400,7 +401,7 @@ jobs:
 
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: mirror.gcr.io/pgvector/pgvector:pg16
         env:
           POSTGRES_USER: corp_ed
           POSTGRES_PASSWORD: postgres
@@ -494,6 +495,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Docker Hub режет скачивание без входа с общих адресов машин GitHub
+      # (09.10: «Docker pull failed» на всех заданиях) — образы Docker Hub
+      # берутся через зеркало Google, как на своём runner и стенде
+      # (CI-RUNNER.md, STAGE.md §4.4). Образы закреплены по хешу —
+      # зеркало отдаёт те же. Свой runner настроен setup.sh, его не трогаем.
+      - name: Docker Hub through a mirror
+        if: runner.environment == 'github-hosted'
+        run: |
+          conf=/etc/docker/daemon.json
+          current=$(sudo cat "$conf" 2>/dev/null || echo '{}')
+          echo "$current" | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' \
+            | sudo tee "$conf" >/dev/null
+          sudo systemctl restart docker
+          docker info --format '{{.RegistryConfig.Mirrors}}'
       - name: Build image
         run: docker build -t "kronto-api:$TAG" .
 
