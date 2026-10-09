@@ -460,9 +460,15 @@ class ConnectorSyncService:
             document, max_bytes=self.settings.max_document_bytes
         )
         markdown, meta = await self._to_markdown(document, content)
+        # Страница сайта из карты: заголовок известен только из её HTML.
+        title = (
+            content.title
+            if isinstance(content, FetchedPage) and content.title
+            else document.title
+        )
         if material is None:
             material = Material(
-                title=document.title[:200] or document.external_id[:200],
+                title=title[:200] or document.external_id[:200],
                 content=markdown,
                 connector_id=run.connector_id,
                 external_id=document.external_id,
@@ -480,7 +486,7 @@ class ConnectorSyncService:
                 material.external_version = document.version[:128]
                 material.synced_at = self.now()
                 return material
-            material.title = document.title[:200] or material.title
+            material.title = title[:200] or material.title
             material.content = markdown
             material.source_url = document.url[:2048]
             material.external_version = document.version[:128]
