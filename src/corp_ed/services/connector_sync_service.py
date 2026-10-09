@@ -85,7 +85,6 @@ from corp_ed.repositories.connector_repository import (
 )
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.notification_service import (
     Notice,
@@ -634,12 +633,9 @@ class ConnectorSyncService:
             ),
         )
         await session.commit()
-        tenant = await TenantRepository(session).get_by_id(connector.tenant_id)
         self.notifier.notify(
             connector_stopped_message(
-                company_code=tenant.company_code
-                if tenant
-                else str(connector.tenant_id),
+                tenant_id=connector.tenant_id,
                 kind=connector.kind,
                 code=code,
             )

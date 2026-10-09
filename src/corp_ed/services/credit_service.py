@@ -255,10 +255,9 @@ class CreditService:
             AuditAction.CREDITS_EXHAUSTED, usage, since=await self.episode_start(usage)
         ):
             # Команде (П-5): компания остановилась — повод позвонить.
-            tenant = await self.tenant_repo.get_by_id(tenant_id)
             self.notifier.notify(
                 pool_exhausted_message(
-                    company_code=tenant.company_code if tenant else str(tenant_id),
+                    tenant_id=tenant_id,
                     used=usage.used,
                     pool=usage.pool,
                     until=usage.period_end,

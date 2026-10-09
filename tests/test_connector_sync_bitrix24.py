@@ -308,8 +308,8 @@ async def test_rejected_app_secret_stops_connector_and_keeps_grants(
     assert not outcome.retryable
     # П-5: команда узнаёт об остановке — без названия подключения клиента.
     assert sent == [
-        "Компания test: подключение bitrix24 остановлено, ошибка invalid_client. "
-        "Нужны новые учётные данные от админа компании."
+        f"Компания {str(tenant_ctx.id)[:8]}: подключение bitrix24 остановлено, "
+        "ошибка invalid_client. Нужны новые учётные данные от админа компании."
     ]
     with tenant_scope(tenant_ctx.id):
         reloaded = await reload(session, connector)

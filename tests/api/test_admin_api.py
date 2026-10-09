@@ -278,6 +278,8 @@ async def test_tariff_request_goes_to_team(
     assert response.status_code == 202
     assert len(sent) == 1
     assert "Базовый → Расширенный" in sent[0]
+    assert sent[0].startswith(f"Компания {str(admin.tenant_id)[:8]} просит")
+    assert "test" not in sent[0].split("Комментарий")[0]
     assert "40" in sent[0]
     assert "Растём" in sent[0]
     assert (

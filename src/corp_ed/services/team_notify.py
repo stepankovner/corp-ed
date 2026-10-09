@@ -3,7 +3,9 @@
 Бот в Telegram: новая заявка на созвон, у компании кончились кредиты,
 заказ пакета кредитов, у компании остановилось подключение. **Без
 персональных данных**: ни имён, ни телефонов, ни почты, ни названий
-подключений, которые пишет клиент, — только код компании, вид системы,
+подключений, которые пишет клиент, ни кода компании (он повторяет
+название, а у клиента-ИП это фамилия) — только короткий id компании
+(domain/company_ref.py; тот же показывает наша панель), вид системы,
 числа и коды ошибок.
 Подробности команда смотрит в CLI (`leads list`) и в журнале. Так
 сообщения не становятся передачей персональных данных в иностранный
@@ -17,11 +19,13 @@
 import asyncio
 from datetime import date, datetime
 from typing import Protocol
+from uuid import UUID
 
 import httpx
 import structlog
 
 from corp_ed.core.config import TeamNotifySettings
+from corp_ed.domain.company_ref import company_ref
 
 logger = structlog.get_logger()
 
@@ -121,20 +125,20 @@ def lead_message(
 
 
 def pool_exhausted_message(
-    *, company_code: str, used: int, pool: int, until: datetime
+    *, tenant_id: UUID, used: int, pool: int, until: datetime
 ) -> str:
     return (
-        f"Компания {company_code} исчерпала пул: {used} из {pool} кредитов, "
-        f"купленных нет. Вопросы остановлены до {until:%d.%m}; пакет "
+        f"Компания {company_ref(tenant_id)} исчерпала пул: {used} из {pool} "
+        f"кредитов, купленных нет. Вопросы остановлены до {until:%d.%m}; пакет "
         "кредитов — заказом администратора, места — в нашей панели."
     )
 
 
 def credit_order_message(
-    *, company_code: str, number: int, credits: int, amount_kopecks: int
+    *, tenant_id: UUID, number: int, credits: int, amount_kopecks: int
 ) -> str:
     return (
-        f"Компания {company_code}: заказ {company_code}-{number} — "
+        f"Компания {company_ref(tenant_id)}: заказ № {number} — "
         f"{_thousands(credits)} кредитов на {_thousands(amount_kopecks // 100)} ₽, "
         "ждёт оплаты по счёту. Отметить оплату — в нашей панели, «Кредиты»."
     )
@@ -144,10 +148,35 @@ def _thousands(value: int) -> str:
     return f"{value:,}".replace(",", " ")
 
 
-def connector_stopped_message(*, company_code: str, kind: str, code: str) -> str:
+def connector_stopped_message(*, tenant_id: UUID, kind: str, code: str) -> str:
     return (
-        f"Компания {company_code}: подключение {kind} остановлено, "
+        f"Компания {company_ref(tenant_id)}: подключение {kind} остановлено, "
         f"ошибка {code}. Нужны новые учётные данные от админа компании."
+    )
+
+
+def tariff_request_message(
+    *,
+    tenant_id: UUID,
+    current: str,
+    wanted: str,
+    seats: tuple[int, int] | None,
+    comment: str | None,
+) -> str:
+    places = f", мест: {seats[0]} → {seats[1]}" if seats else ""
+    note = f"\nКомментарий: {comment}" if comment else ""
+    return (
+        f"Компания {company_ref(tenant_id)} просит сменить тариф: "
+        f"{current} → {wanted}{places}. "
+        f"Ответить администратору и поменять — в нашей панели.{note}"
+    )
+
+
+def support_message(*, request_id: UUID, topic: str, tenant_id: UUID | None) -> str:
+    company = company_ref(tenant_id) if tenant_id else "— (без компании)"
+    return (
+        f"Обращение в поддержку №{str(request_id)[:8]}: {topic}, "
+        f"компания {company}. Текст и почта — в нашей панели, «Обращения»."
     )
 
 

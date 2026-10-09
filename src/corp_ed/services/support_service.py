@@ -18,7 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.domain.models import Account, SupportRequest, Tenant
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
-from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
+from corp_ed.services.team_notify import (
+    NULL_NOTIFIER,
+    TeamNotifier,
+    support_message,
+)
 
 logger = structlog.get_logger()
 
@@ -73,15 +77,10 @@ class SupportService:
             details={"account_id": str(account.id), "topic": topic},
         )
         await self.session.commit()
-        company = None
-        if tenant_id is not None:
-            tenant = await self.session.get(Tenant, tenant_id)
-            company = tenant.company_code if tenant else None
-        number = str(request.id)[:8]
         self.notifier.notify(
-            f"Обращение в поддержку №{number}: {TOPIC_TITLES[topic]}, "
-            f"компания {company or '— (без компании)'}. "
-            "Текст и почта — в нашей панели, «Обращения»."
+            support_message(
+                request_id=request.id, topic=TOPIC_TITLES[topic], tenant_id=tenant_id
+            )
         )
         logger.info("support_requested", request_id=str(request.id), topic=topic)
         return request

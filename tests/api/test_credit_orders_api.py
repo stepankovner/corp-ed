@@ -110,10 +110,13 @@ async def test_admin_orders_a_pack_and_the_team_is_told(
     assert [item["number"] for item in listed] == [2, 1]
     [event, _] = await _events(session, "credits.order_created")
     assert event.details["credits"] in (2_000, 500)
-    # Команде — без персональных данных: код компании, номер, числа.
+    # Команде — без персональных данных: короткий id компании (не код —
+    # у ИП он повторяет фамилию), номер заказа, числа.
     assert len(notifier) == 2
-    assert "test-1" in notifier[0]
+    ref = str(admin.tenant_id)[:8]
+    assert notifier[0].startswith(f"Компания {ref}: заказ № 1 — ")
     assert "2 000 кредитов" in notifier[0]
+    assert "test" not in notifier[0]
     assert "admin@test.com" not in notifier[0]
 
 
