@@ -6,7 +6,9 @@
 - код на почту — по умолчанию, у кого нет ничего надёжнее;
 - приложение-аутентификатор (TOTP) или ключ доступа (WebAuthn); если
   включено одно из них, код на почту для входа больше не принимается —
-  иначе взлом почты обходил бы защиту;
+  иначе взлом почты обходил бы защиту. Ключ доступа обязан проверить
+  владельца (PIN, отпечаток, лицо — флаг UV): одно касание ключа, который
+  кто-то взял со стола, — не второй фактор;
 - резервный код — на случай потерянного телефона.
 
 «Запомнить это устройство» — 30 дней без второго фактора на этом
@@ -265,7 +267,7 @@ class MfaService:
                 )
                 for key in keys
             ],
-            user_verification=UserVerificationRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
         )
         challenge.webauthn_challenge = options.challenge
         await self.session.commit()
@@ -429,6 +431,7 @@ class MfaService:
                 expected_origin=rp.origins,
                 credential_public_key=key.public_key,
                 credential_current_sign_count=key.sign_count,
+                require_user_verification=True,
             )
         except (InvalidAuthenticationResponse, ValueError, KeyError, TypeError):
             return False
@@ -591,7 +594,7 @@ class MfaService:
             ],
             authenticator_selection=AuthenticatorSelectionCriteria(
                 resident_key=ResidentKeyRequirement.PREFERRED,
-                user_verification=UserVerificationRequirement.PREFERRED,
+                user_verification=UserVerificationRequirement.REQUIRED,
             ),
         )
         raw = new_refresh_token()
@@ -624,6 +627,7 @@ class MfaService:
                 expected_challenge=challenge.webauthn_challenge,
                 expected_rp_id=rp.id,
                 expected_origin=rp.origins,
+                require_user_verification=True,
             )
         except (InvalidRegistrationResponse, ValueError, KeyError, TypeError) as exc:
             raise InvalidSecondFactorError() from exc

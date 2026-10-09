@@ -5,15 +5,20 @@
 DNS rebinding: запрос уходит на проверенный IP, а не на имя.
 """
 
+import asyncio
 import gzip
 import ipaddress
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
+from corp_ed.api.v1.dependencies import get_outbound_client, get_outbound_http_client
 from corp_ed.core import outbound
+from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import (
     OutboundClient,
     OutboundTooLargeError,
@@ -350,6 +355,76 @@ async def test_download_stops_reading_past_the_limit() -> None:
     small = await client.download("https://portal.example.com/f", max_bytes=1 << 20)
     assert small.status_code == 200
     assert len(small.content) == 100 * 1024
+
+
+async def test_download_has_a_deadline_for_the_whole_file() -> None:
+    """Портал отдаёт файл по капле: каждый кусок укладывается в таймаут
+    чтения, но весь файл — нет. Скачивание обрывается по общему сроку."""
+    served: list[int] = []
+
+    async def body() -> AsyncIterator[bytes]:
+        for index in range(1000):
+            served.append(index)
+            await asyncio.sleep(0.01)
+            yield b"x"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=_Stream(body()))
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+        download_deadline=0.2,
+    )
+    # Адаптеры уже переводят httpx.TimeoutException в свой код «таймаут».
+    with pytest.raises(httpx.TimeoutException):
+        await client.download("https://portal.example.com/f", max_bytes=1 << 20)
+    assert len(served) < 1000
+
+
+async def test_download_deadline_is_a_setting() -> None:
+    assert outbound.DOWNLOAD_DEADLINE == 300.0
+    settings = ConnectorSettings(environment="development")  # type: ignore[call-arg]
+    assert settings.download_timeout_seconds == 300
+    with pytest.raises(ValidationError):
+        ConnectorSettings(environment="development", download_timeout_seconds=0)  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("via_proxy", [False, True])
+async def test_outbound_http_client_reads_proxy_from_environment_only_by_flag(
+    via_proxy: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """HTTPS_PROXY в окружении не подхватывается молча: только с
+    CONNECTOR_OUTBOUND_VIA_PROXY=true, когда прокси и задуман."""
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+    client = outbound.outbound_http_client(via_proxy=via_proxy)
+    try:
+        assert client.trust_env is via_proxy
+        mounts = client._mounts  # прокси из окружения httpx кладёт сюда
+        assert bool(mounts) is via_proxy
+    finally:
+        await client.aclose()
+
+
+async def test_api_connectors_use_the_outbound_client_with_its_deadline() -> None:
+    """Ручки коннекторов ходят наружу через свой клиент, а не через общий
+    клиент моделей, и с общим сроком скачивания из настроек."""
+    models = httpx.AsyncClient()
+    outside = outbound.outbound_http_client(via_proxy=False)
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(http_client=models, outbound_http_client=outside)
+        )
+    )
+    try:
+        client = get_outbound_http_client(request)  # type: ignore[arg-type]
+        assert client is outside
+        built = get_outbound_client(client)
+        assert built._client is outside
+        assert built._download_deadline == 300
+    finally:
+        await models.aclose()
+        await outside.aclose()
 
 
 async def test_download_trusts_content_length_only_to_refuse_early() -> None:

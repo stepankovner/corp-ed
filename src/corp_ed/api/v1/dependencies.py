@@ -391,6 +391,13 @@ def get_http_client(request: Request) -> httpx.AsyncClient:
     return client
 
 
+def get_outbound_http_client(request: Request) -> httpx.AsyncClient:
+    """Клиент для запросов наружу (системы клиентов): прокси из окружения
+    — только с CONNECTOR_OUTBOUND_VIA_PROXY (core/outbound.py)."""
+    client: httpx.AsyncClient = request.app.state.outbound_http_client
+    return client
+
+
 def get_llm_semaphore(request: Request) -> asyncio.Semaphore | None:
     semaphore: asyncio.Semaphore | None = getattr(
         request.app.state, "llm_semaphore", None
@@ -789,9 +796,14 @@ def get_account_service(
 
 
 def get_outbound_client(
-    client: Annotated[httpx.AsyncClient, Depends(get_http_client)],
+    client: Annotated[httpx.AsyncClient, Depends(get_outbound_http_client)],
 ) -> OutboundClient:
-    return OutboundClient(client, via_proxy=get_connector_settings().outbound_via_proxy)
+    settings = get_connector_settings()
+    return OutboundClient(
+        client,
+        via_proxy=settings.outbound_via_proxy,
+        download_deadline=settings.download_timeout_seconds,
+    )
 
 
 def get_connector_service(

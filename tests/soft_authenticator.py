@@ -17,9 +17,18 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, encode_cbor
 
 
 class SoftAuthenticator:
-    def __init__(self, rp_id: str = "test", origin: str = "https://test") -> None:
+    def __init__(
+        self,
+        rp_id: str = "test",
+        origin: str = "https://test",
+        *,
+        user_verified: bool = True,
+    ) -> None:
         self.rp_id = rp_id
         self.origin = origin
+        # False — ключ без проверки владельца (без PIN и биометрии): флаг
+        # UV в authenticatorData не ставится.
+        self.user_verified = user_verified
         self.key = ec.generate_private_key(ec.SECP256R1())
         self.credential_id = secrets.token_bytes(32)
         self.sign_count = 0
@@ -45,7 +54,7 @@ class SoftAuthenticator:
         client_data = self._client_data("webauthn.create", options["challenge"])
         auth_data = (
             hashlib.sha256(self.rp_id.encode()).digest()
-            + bytes([0x45])  # UP | UV | AT
+            + bytes([0x45 if self.user_verified else 0x41])  # UP | UV | AT
             + struct.pack(">I", self.sign_count)
             + bytes(16)  # AAGUID
             + struct.pack(">H", len(self.credential_id))
@@ -70,7 +79,7 @@ class SoftAuthenticator:
         client_data = self._client_data("webauthn.get", options["challenge"])
         auth_data = (
             hashlib.sha256(self.rp_id.encode()).digest()
-            + bytes([0x05])  # UP | UV
+            + bytes([0x05 if self.user_verified else 0x01])  # UP | UV
             + struct.pack(">I", self.sign_count)
         )
         signature = self.key.sign(

@@ -154,6 +154,19 @@ class GrantRepository:
         )
         return list(result)
 
+    async def list_with_credentials(self, connector_id: UUID) -> list[str]:
+        """Шифротексты всех грантов подключения, в любом состоянии: у
+        отвергнутого гранта (expired) токен у провайдера может быть ещё
+        жив (отзыв при удалении). Колоночный select — фильтр по тенанту
+        явный."""
+        result = await self.session.scalars(
+            select(ConnectorUserGrant.credentials).where(
+                ConnectorUserGrant.tenant_id == require_tenant(),
+                ConnectorUserGrant.connector_id == connector_id,
+            )
+        )
+        return [str(value) for value in result if value is not None]
+
     async def active_counts(self) -> dict[UUID, int]:
         """Сколько сотрудников подключилось к каждому коннектору per_user
         («5 из 12», ТЗ §5). Только работающие члены компании."""

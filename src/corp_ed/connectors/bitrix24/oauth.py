@@ -10,9 +10,17 @@ authorization_code&client_id&client_secret&code → пара токенов.
 
 client_secret уходит только на сервер авторизации, никогда на портал:
 портал может быть коробкой у клиента.
+
+Отзыва токена у сервера авторизации нет (apidocs.bitrix24.ru,
+settings/oauth, 09.10.2026: только oauth/authorize и oauth/token).
+Удаление приложения с портала снимает его права на API (событие
+ONAPPUNINSTALL), но это действие администратора портала, не наше.
+Токены сотрудника истекают сами: access — через час, refresh — через
+180 дней без использования.
 """
 
 import time
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlencode
 
@@ -72,6 +80,11 @@ class Bitrix24OAuth:
         return await self._token(
             {"grant_type": "refresh_token", "refresh_token": refresh_token}
         )
+
+    async def revoke(self, credentials: Mapping[str, str]) -> bool:
+        """Отзыва в OAuth Битрикс24 нет (см. описание модуля): ничего не
+        отправляем — токен перестанет работать по сроку."""
+        return False
 
     async def _token(self, grant: dict[str, str]) -> TokenSet:
         params = {

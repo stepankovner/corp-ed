@@ -53,7 +53,7 @@ from corp_ed.core.exceptions import NotFoundError
 from corp_ed.core.logging import configure_logging
 from corp_ed.core.mail import build_sender
 from corp_ed.core.metrics import WORKER_HEARTBEAT, WORKER_JOBS, WORKER_QUEUE
-from corp_ed.core.outbound import OutboundClient
+from corp_ed.core.outbound import OutboundClient, outbound_http_client
 from corp_ed.core.readiness import WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.tenant_context import tenant_scope
@@ -435,16 +435,28 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
     (install_signals or _install_signals)(stop)
 
     connector_settings = get_connector_settings()
-    async with httpx.AsyncClient() as client:
+    # Эмбеддинги — свой клиент, как и раньше; наружу (системы клиентов,
+    # почта, уведомления) — другой: прокси из окружения он берёт только с
+    # CONNECTOR_OUTBOUND_VIA_PROXY (core/outbound.py).
+    async with (
+        httpx.AsyncClient() as client,
+        outbound_http_client(
+            via_proxy=connector_settings.outbound_via_proxy
+        ) as outside,
+    ):
         gateway = build_embedding_gateway(
             client,
             llm,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
-        notifier = build_team_notifier(client, get_team_notify_settings())
+        notifier = build_team_notifier(outside, get_team_notify_settings())
         sync_service = ConnectorSyncService(
             get_session_maker(),
-            OutboundClient(client, via_proxy=connector_settings.outbound_via_proxy),
+            OutboundClient(
+                outside,
+                via_proxy=connector_settings.outbound_via_proxy,
+                download_deadline=connector_settings.download_timeout_seconds,
+            ),
             default_registry(connector_settings),
             SecretBox(connector_settings.keys),
             connector_settings,
@@ -453,7 +465,7 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
         ingest_worker = IngestWorker(get_session_maker(), gateway, rag)
         sync_worker = SyncWorker(get_session_maker(), sync_service)
         mail_worker = MailWorker(
-            get_session_maker(), build_sender(get_mail_settings(), client)
+            get_session_maker(), build_sender(get_mail_settings(), outside)
         )
         try:
             await asyncio.gather(

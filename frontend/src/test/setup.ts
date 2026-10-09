@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll } from "vitest";
 
 import { setSession } from "../api/session";
+import { clearPendingInvite } from "../auth/pendingInvite";
 import { server } from "./server";
 
 // jsdom не умеет прокрутку.
@@ -24,6 +25,8 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   cleanup();
   setSession(null);
+  // Приглашение живёт в памяти модуля — между тестами его не переносим.
+  clearPendingInvite();
   server.resetHandlers();
   localStorage.clear();
   sessionStorage.clear();

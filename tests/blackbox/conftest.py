@@ -327,6 +327,9 @@ async def kronto(
     app.state.http_client = httpx.AsyncClient(
         transport=httpx.MockTransport(_no_network)
     )
+    app.state.outbound_http_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_no_network)
+    )
     harness = Kronto(maker, model, embeddings, clock)
     try:
         yield harness
@@ -334,13 +337,20 @@ async def kronto(
         await harness.close()
         await app.state.chat_runner.shutdown()
         await app.state.http_client.aclose()
+        await app.state.outbound_http_client.aclose()
         app.dependency_overrides.clear()
         for name in _LIFESPAN_STATE:
             with contextlib.suppress(AttributeError):
                 delattr(app.state, name)
 
 
-_LIFESPAN_STATE = ("dialogue_store", "chat_runner", "chat_stop_signals", "http_client")
+_LIFESPAN_STATE = (
+    "dialogue_store",
+    "chat_runner",
+    "chat_stop_signals",
+    "http_client",
+    "outbound_http_client",
+)
 
 
 def _no_network(request: httpx.Request) -> httpx.Response:

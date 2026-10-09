@@ -769,6 +769,9 @@ class ConnectorSettings(BaseSettings):
     max_run_minutes: int = Field(default=20, gt=0, le=180)
     # Больше — не скачивается: тот же порядок, что у ручной загрузки.
     max_document_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    # Срок на скачивание одного файла целиком (core/outbound.py): таймаут
+    # запроса — на каждое чтение, и медленная отдача его не исчерпает.
+    download_timeout_seconds: int = Field(default=300, gt=0, le=3600)
     sync_run_retention_days: int = Field(default=90, gt=0, le=365)
     # Процесс за egress-прокси (HTTPS_PROXY): запросы к системам клиентов
     # уходят по имени хоста, а не на закреплённый IP — прокси отвергает

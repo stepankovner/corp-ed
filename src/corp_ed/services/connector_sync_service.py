@@ -50,6 +50,7 @@ from corp_ed.connectors.base import (
 )
 from corp_ed.connectors.common import counting_skips
 from corp_ed.connectors.html import html_to_markdown
+from corp_ed.connectors.markdown import strip_raw_html
 from corp_ed.connectors.registry import AdapterRegistry, UnknownKindError
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient, OutboundURLError
@@ -686,10 +687,12 @@ class ConnectorSyncService:
 
 def markdown_as_is(markdown: str) -> str:
     """Markdown источника — те же границы, что у разбора файла: не пусто
-    и не больше MAX_EXTRACTED_CHARS."""
+    и не больше MAX_EXTRACTED_CHARS. Сырой HTML вырезается (теги, блоки,
+    комментарии), код и разметка Markdown остаются как есть."""
     text = markdown.strip()
     if len(text) > MAX_EXTRACTED_CHARS:
         raise ExtractionError("document_too_large")
+    text = strip_raw_html(text).strip()
     if not re.search(r"\w", text):
         raise ExtractionError("no_text")
     return text

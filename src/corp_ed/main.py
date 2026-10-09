@@ -100,6 +100,7 @@ from corp_ed.core.middleware import (
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
 )
+from corp_ed.core.outbound import outbound_http_client
 from corp_ed.core.rate_limit import (
     InMemoryRateLimiter,
     RateLimitedError,
@@ -185,9 +186,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         RedisStopSignals(redis) if redis is not None else InMemoryStopSignals()
     )
 
+    # Модели (LLM, эмбеддинги, реранкер) — свой клиент, как и раньше.
+    # Наружу — системы клиентов и уведомления — другой: прокси из
+    # окружения он берёт только с CONNECTOR_OUTBOUND_VIA_PROXY.
     app.state.http_client = httpx.AsyncClient()
+    app.state.outbound_http_client = outbound_http_client(
+        via_proxy=get_connector_settings().outbound_via_proxy
+    )
     app.state.team_notifier = build_team_notifier(
-        app.state.http_client, get_team_notify_settings()
+        app.state.outbound_http_client, get_team_notify_settings()
     )
     try:
         yield
@@ -196,6 +203,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.chat_runner.shutdown()
         await drain_team_notifier(app.state.team_notifier)
         await app.state.http_client.aclose()
+        await app.state.outbound_http_client.aclose()
         if redis is not None:
             await redis.aclose()
 
