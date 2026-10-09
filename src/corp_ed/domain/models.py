@@ -1175,9 +1175,11 @@ class CreditOrder(TenantMixin, Base):
     (CreditGrant с source=purchase). Номер — по порядку внутри компании:
     его называют в счёте и в разговоре.
 
-    payment_method — точка расширения: сейчас только счёт; оплата картой
-    — следующий этап, она отметит заказ оплаченным сама. invoice_id —
-    будущий счёт (PDF): таблица и внешний ключ появятся вместе с ним.
+    payment_method: invoice — счёт юрлицу, card — ссылка на оплату картой
+    или СБП с чеком. С подключённым банком (PAYMENTS_PROVIDER) заказ
+    получает счёт или ссылку (invoice_id → invoices.id, без внешнего
+    ключа: у счёта своя ссылка на заказ) и отмечается оплаченным сам,
+    по вебхуку банка; без банка — как раньше, отметкой команды.
     """
 
     __tablename__ = "credit_orders"
@@ -1308,6 +1310,314 @@ class CreditTopupRequest(TenantMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class CompanyRequisites(TenantMixin, Base):
+    """Реквизиты компании для счёта и акта (решение владельца 09.10).
+
+    Вводит администратор в настройках компании; ИНН и КПП проверяются
+    (domain/billing.py). В счёт попадает копия реквизитов на момент
+    выставления (Invoice.payer_*): правка реквизитов не меняет уже
+    выставленные документы. documents_email — куда слать акты и чеки;
+    пусто — на почту администраторов.
+    """
+
+    __tablename__ = "company_requisites"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_company_requisites_tenant"),
+        CheckConstraint(
+            "payer_type IN ('company', 'ip')", name="ck_company_requisites_type"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    legal_name: Mapped[str] = mapped_column(String(300))
+    inn: Mapped[str] = mapped_column(String(12))
+    kpp: Mapped[str | None] = mapped_column(String(9))
+    payer_type: Mapped[str] = mapped_column(String(8))
+    address: Mapped[str] = mapped_column(String(500))
+    documents_email: Mapped[str | None] = mapped_column(String(254))
+    updated_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Subscription(TenantMixin, Base):
+    """Подписка компании: что и как она оплачивает (решение владельца 09.10).
+
+    Тариф и места — копия на текущий оплаченный период (у компании их
+    меняет команда: tenants.tariff и tenants.seats). next_seats —
+    сокращение мест со следующего периода. period и payment_method —
+    выбор администратора; меняется со следующего счёта.
+
+    status:
+    - awaiting_payment — первый счёт или счёт на продление не оплачен,
+      льготный срок не прошёл;
+    - active — текущий период оплачен;
+    - overdue — оплаченный период кончился больше grace_days назад
+      (команде — уведомление; блокирует компанию только команда);
+    - cancelled — администратор отказался (карта отвязана).
+    """
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_subscriptions_tenant"),
+        CheckConstraint(
+            "status IN ('awaiting_payment', 'active', 'overdue', 'cancelled')",
+            name="ck_subscriptions_status",
+        ),
+        CheckConstraint(
+            "period IN ('month', 'quarter', 'year')", name="ck_subscriptions_period"
+        ),
+        CheckConstraint(
+            "payment_method IN ('invoice', 'card')",
+            name="ck_subscriptions_payment_method",
+        ),
+        CheckConstraint("seats > 0", name="ck_subscriptions_seats_positive"),
+        CheckConstraint(
+            "next_seats IS NULL OR next_seats > 0",
+            name="ck_subscriptions_next_seats_positive",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tariff: Mapped[str] = mapped_column(String(16))
+    seats: Mapped[int]
+    next_seats: Mapped[int | None]
+    period: Mapped[str] = mapped_column(String(8))
+    payment_method: Mapped[str] = mapped_column(String(8))
+    status: Mapped[str] = mapped_column(
+        String(20), default="awaiting_payment", server_default="awaiting_payment"
+    )
+    # Оплаченный период [current_start, current_end) по времени биллинга.
+    current_start: Mapped[date | None]
+    current_end: Mapped[date | None]
+    # Подписка по карте в банке (operationId) и сумма её списаний.
+    card_ref: Mapped[str | None] = mapped_column(String(64))
+    card_amount_kopecks: Mapped[int | None] = mapped_column(BigInteger)
+    # Конец периода, о просрочке которого команде уже сообщили.
+    overdue_notified_for: Mapped[date | None]
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class Invoice(TenantMixin, Base):
+    """Счёт или платёжная ссылка (решение владельца 09.10).
+
+    kind: subscription — период подписки, seats — доплата за места в
+    середине периода, credits — пакет кредитов. payment_method: invoice —
+    счёт юрлицу (банк сопоставит платёж по номеру в назначении, ИНН и
+    сумме), card — ссылка на оплату картой или СБП с чеком (payment_url).
+
+    number — сквозной по всем компаниям (InvoiceRef): вебхук банка
+    приходит без компании и находит счёт по номеру. Реквизиты
+    плательщика — копия на момент выставления. lines — позиции:
+    [{"name", "quantity", "unit", "price_kopecks", "amount_kopecks"}].
+    """
+
+    __tablename__ = "invoices"
+    __table_args__ = (
+        UniqueConstraint("number", name="uq_invoices_number"),
+        CheckConstraint(
+            "kind IN ('subscription', 'seats', 'credits')", name="ck_invoices_kind"
+        ),
+        CheckConstraint(
+            "status IN ('awaiting_payment', 'paid', 'cancelled')",
+            name="ck_invoices_status",
+        ),
+        CheckConstraint(
+            "payment_method IN ('invoice', 'card')",
+            name="ck_invoices_payment_method",
+        ),
+        CheckConstraint("amount_kopecks > 0", name="ck_invoices_amount_positive"),
+        # Один счёт на период подписки: планировщик в двух воркерах не
+        # выставит второй.
+        Index(
+            "uq_invoices_subscription_period",
+            "subscription_id",
+            "period_start",
+            unique=True,
+            postgresql_where=text("kind = 'subscription' AND status <> 'cancelled'"),
+        ),
+        Index("ix_invoices_tenant_created", "tenant_id", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    number: Mapped[int]
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(
+        String(20), default="awaiting_payment", server_default="awaiting_payment"
+    )
+    payment_method: Mapped[str] = mapped_column(String(8))
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger)
+    title: Mapped[str] = mapped_column(String(300))
+    lines: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]"
+    )
+    purpose: Mapped[str] = mapped_column(String(210))
+    subscription_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="SET NULL"), index=True
+    )
+    credit_order_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("credit_orders.id", ondelete="SET NULL"), index=True
+    )
+    tariff: Mapped[str | None] = mapped_column(String(16))
+    seats: Mapped[int | None]
+    period: Mapped[str | None] = mapped_column(String(8))
+    # Период, который оплачивает счёт; у первого счёта подписки — пусто
+    # до оплаты: период начинается с дня оплаты.
+    period_start: Mapped[date | None]
+    period_end: Mapped[date | None]
+    due_date: Mapped[date | None]
+    payer_name: Mapped[str | None] = mapped_column(String(300))
+    payer_inn: Mapped[str | None] = mapped_column(String(12))
+    payer_kpp: Mapped[str | None] = mapped_column(String(9))
+    payer_address: Mapped[str | None] = mapped_column(String(500))
+    # В банке: documentId счёта или operationId ссылки/подписки.
+    provider: Mapped[str | None] = mapped_column(String(16))
+    provider_ref: Mapped[str | None] = mapped_column(String(64))
+    payment_url: Mapped[str | None] = mapped_column(String(2083))
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Act(TenantMixin, Base):
+    """Акт за месяц на оплаченные услуги (решение владельца 09.10).
+
+    Раз в месяц — за прошедший: позиции оплаченных в нём счетов. PDF —
+    от банка (Create Closing Document), если подключена Точка и есть
+    реквизиты, иначе — своим шаблоном (services/billing_pdf.py).
+    Администраторам — уведомление и письмо со ссылкой на страницу тарифа.
+    """
+
+    __tablename__ = "acts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "month", name="uq_acts_month"),
+        UniqueConstraint("tenant_id", "number", name="uq_acts_number"),
+        CheckConstraint("amount_kopecks > 0", name="ck_acts_amount_positive"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    number: Mapped[int]
+    month: Mapped[date]
+    """Первое число месяца, за который акт."""
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger)
+    lines: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, default=list, server_default="[]"
+    )
+    invoice_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, server_default="{}"
+    )
+    payer_name: Mapped[str | None] = mapped_column(String(300))
+    payer_inn: Mapped[str | None] = mapped_column(String(12))
+    payer_kpp: Mapped[str | None] = mapped_column(String(9))
+    payer_address: Mapped[str | None] = mapped_column(String(500))
+    provider: Mapped[str | None] = mapped_column(String(16))
+    provider_ref: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class InvoiceRef(Base):
+    """Сквозной номер счёта → компания (решение владельца 09.10).
+
+    Не под RLS, как очереди: вебхук банка приходит без компании, а по
+    номеру из назначения платежа (или по id ссылки в банке) надо найти,
+    чей это счёт. Здесь только идентификаторы — суммы, реквизиты и
+    позиции живут в invoices под RLS.
+    """
+
+    __tablename__ = "invoice_refs"
+
+    invoice_id: Mapped[UUID] = mapped_column(primary_key=True)
+    number: Mapped[int] = mapped_column(unique=True)
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    provider_ref: Mapped[str | None] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PaymentEvent(Base):
+    """Входящий платёж из банка: вебхук или выписка (решение владельца 09.10).
+
+    Не под RLS: событие приходит без компании, разбирает его команда в
+    нашей панели (как support_requests). delivery_key — хеш тела вебхука:
+    банк повторяет доставку до 30 раз, повтор не создаёт второй строки.
+    charge_key — сам платёж (paymentId перевода, operationId и номер
+    операции по ссылке): один платёж не зачтётся дважды, даже если пришёл
+    двумя разными вебхуками.
+
+    status: received — принят, ещё не разобран; pending — банк пока не
+    подтвердил оплату счёта, планировщик спросит ещё раз; matched —
+    счёт оплачен автоматически; mismatch — номер нашёлся, но не сошлись
+    сумма, ИНН или счёт уже оплачен; unmatched — счёт не нашёлся;
+    ignored — не наш платёж (не по счёту kronto); resolved — разобран
+    командой вручную.
+    """
+
+    __tablename__ = "payment_events"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('received', 'pending', 'matched', 'mismatch', "
+            "'unmatched', 'ignored', 'resolved')",
+            name="ck_payment_events_status",
+        ),
+        CheckConstraint(
+            "kind IN ('incoming', 'acquiring')", name="ck_payment_events_kind"
+        ),
+        Index("ix_payment_events_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    provider: Mapped[str] = mapped_column(String(16))
+    kind: Mapped[str] = mapped_column(String(16))
+    delivery_key: Mapped[str] = mapped_column(String(64), unique=True)
+    charge_key: Mapped[str | None] = mapped_column(String(160), unique=True)
+    payment_id: Mapped[str | None] = mapped_column(String(64))
+    """paymentId перевода или operationId ссылки/подписки."""
+    amount_kopecks: Mapped[int | None] = mapped_column(BigInteger)
+    payer_inn: Mapped[str | None] = mapped_column(String(12))
+    payer_name: Mapped[str | None] = mapped_column(String(300))
+    purpose: Mapped[str | None] = mapped_column(String(500))
+    payment_link_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(
+        String(16), default="received", server_default="received"
+    )
+    problem: Mapped[str | None] = mapped_column(String(32))
+    tenant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tenants.id", ondelete="SET NULL"), index=True
+    )
+    invoice_id: Mapped[UUID | None] = mapped_column(Uuid)
+    attempts: Mapped[int] = mapped_column(default=0, server_default="0")
+    note: Mapped[str | None] = mapped_column(String(500))
+    resolved_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class GlossaryTerm(TenantMixin, Base):
