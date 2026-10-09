@@ -118,6 +118,53 @@ def test_unknown_architecture_is_reported(monkeypatch: pytest.MonkeyPatch) -> No
         no_network.deny_network()
 
 
+def _verdict(program: list[tuple[int, int, int, int]], arch: int, nr: int) -> int:
+    """Мини-интерпретатор BPF на тех инструкциях, что строит no_network."""
+    pc, acc = 0, 0
+    while True:
+        code, jt, jf, k = program[pc]
+        if code == 0x20:
+            acc = {0: nr, 4: arch}[k]
+            pc += 1
+        elif code in (0x15, 0x35):
+            hit = acc == k if code == 0x15 else acc >= k
+            pc += 1 + (jt if hit else jf)
+        else:
+            assert code == 0x06
+            return k
+
+
+@pytest.mark.parametrize(
+    ("machine", "arch", "sockets", "harmless_nr"),
+    [
+        # socket, socketpair; безобидный — openat (257 и 56).
+        ("x86_64", 0xC000003E, (41, 53), 257),
+        ("aarch64", 0xC00000B7, (198, 199), 56),
+    ],
+)
+def test_filter_program_logic(
+    machine: str, arch: int, sockets: tuple[int, int], harmless_nr: int
+) -> None:
+    """Логика программы — и для aarch64, которого на этой машине нет."""
+    from corp_ed.ingest import no_network
+
+    own_arch, denied = no_network._ARCHES[machine]
+    assert own_arch == arch
+    program = no_network._program(own_arch, denied)
+    allow, eperm = 0x7FFF0000, 0x00050001
+    assert _verdict(program, arch, harmless_nr) == allow
+    for nr in sockets:
+        assert _verdict(program, arch, nr) == eperm
+    # Остальные сетевые вызовы (accept, bind) не трогаем: сокета нет.
+    assert _verdict(program, arch, sockets[0] + 2) == allow
+    for io_uring in (425, 426, 427):
+        assert _verdict(program, arch, io_uring) == eperm
+    # x32 на x86_64 и чужая ABI (i386, arm32) — отказ целиком.
+    assert _verdict(program, arch, 0x40000000 | harmless_nr) == eperm
+    assert _verdict(program, 0x40000003, harmless_nr) == eperm
+    assert _verdict(program, 0x40000028, harmless_nr) == eperm
+
+
 # --- разбор под фильтром ------------------------------------------------------
 
 
