@@ -45,6 +45,7 @@ def _response(settings: CompanySettings) -> CompanySettingsResponse:
         mfa_policy="strong" if tenant.mfa_policy == "strong" else "any",
         allow_remember_device=tenant.allow_remember_device,
         email_domains=list(tenant.email_domains or []),
+        chat_retention_months=tenant.chat_retention_months,
         tariff=Tariff(tenant.tariff),
         seats=tenant.seats,
         members=settings.members,
@@ -61,7 +62,8 @@ async def update_settings(
     data: CompanySettingsRequest, service: Service, admin: Admin
 ) -> CompanySettingsResponse:
     """Название, режим «ответа нет», второй фактор, «запомнить устройство»,
-    домены почты. Каждое изменение — в журнал действий."""
+    домены почты, срок хранения диалогов. Каждое изменение — в журнал
+    действий."""
     fields = data.model_dump(exclude_unset=True)
 
     def value(name: str) -> object:
@@ -74,6 +76,7 @@ async def update_settings(
         mfa_policy=value("mfa_policy"),  # type: ignore[arg-type]
         allow_remember_device=value("allow_remember_device"),  # type: ignore[arg-type]
         email_domains=value("email_domains"),  # type: ignore[arg-type]
+        chat_retention_months=value("chat_retention_months"),  # type: ignore[arg-type]
     )
     return _response(settings)
 

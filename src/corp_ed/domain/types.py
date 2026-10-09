@@ -86,6 +86,15 @@ DEFAULT_NOT_FOUND_MODE = NotFoundMode.GENERAL
 BH-29; отменяет отказ по умолчанию от 28.09). Одно место для модели, CLI
 и сервисов."""
 
+CHAT_RETENTION_MONTHS = (1, 3, 6, 12, 24, 36)
+"""Сколько месяцев компания хранит диалоги чата — варианты в настройках
+компании (решение владельца 09.10). База допускает 1–36 (CHECK
+ck_tenants_chat_retention_months); варианты — здесь и в выпадающем
+списке на странице «Настройки компании»."""
+
+DEFAULT_CHAT_RETENTION_MONTHS = 12
+"""Срок хранения диалогов у новой компании и у тех, что были до настройки."""
+
 
 @dataclass(frozen=True)
 class AnswerDiagnostics:

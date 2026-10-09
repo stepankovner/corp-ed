@@ -110,6 +110,45 @@ async def test_employee_cannot_open_company_settings(
     assert (await api.get("/api/v1/analytics", headers=headers)).status_code == 403
 
 
+async def test_admin_sets_dialog_retention_from_the_list_only(
+    api: httpx.AsyncClient,
+    admin: User,
+    employee: User,
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+) -> None:
+    headers = bearer(admin)
+    before = (await api.get("/api/v1/company", headers=headers)).json()
+    assert before["chat_retention_months"] == 12
+
+    response = await api.patch(
+        "/api/v1/company", json={"chat_retention_months": 6}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["chat_retention_months"] == 6
+    with tenant_scope(tenant_ctx.id):
+        event = (
+            await session.scalars(
+                select(AuditEvent).where(AuditEvent.action == "tenant.settings_updated")
+            )
+        ).one()
+    assert event.actor_user_id == admin.id
+    assert event.details == {"chat_retention_months": {"old": 12, "new": 6}}
+
+    # Только из списка: 1, 3, 6, 12, 24, 36.
+    for value in (0, 2, 5, 37, -1, "шесть", True, 6.5):
+        bad = await api.patch(
+            "/api/v1/company", json={"chat_retention_months": value}, headers=headers
+        )
+        assert bad.status_code == 422, value
+    forbidden = await api.patch(
+        "/api/v1/company", json={"chat_retention_months": 1}, headers=bearer(employee)
+    )
+    assert forbidden.status_code == 403
+    await session.refresh(tenant_ctx)
+    assert tenant_ctx.chat_retention_months == 6
+
+
 async def test_strong_policy_closes_company_to_employee_without_app(
     api: httpx.AsyncClient, admin: User, employee: User
 ) -> None:

@@ -32,7 +32,7 @@ from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.core.database import Base
 from corp_ed.domain.mixins import TenantMixin
 from corp_ed.domain.tariffs import DEFAULT_TARIFF
-from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE
+from corp_ed.domain.types import DEFAULT_CHAT_RETENTION_MONTHS, DEFAULT_NOT_FOUND_MODE
 
 
 class UserRole(enum.Enum):
@@ -105,6 +105,10 @@ class Tenant(Base):
         CheckConstraint(
             "mfa_policy IN ('any', 'strong')", name="ck_tenants_mfa_policy"
         ),
+        CheckConstraint(
+            "chat_retention_months BETWEEN 1 AND 36",
+            name="ck_tenants_chat_retention_months",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -151,6 +155,13 @@ class Tenant(Base):
     # или приостановить. Сам по себе доступ не закрывает — напоминание в
     # нашей панели. NULL — не пилот.
     pilot_until: Mapped[date | None]
+    # Сколько месяцев хранить диалоги чата без активности (решение
+    # владельца 09.10): старше — удаляет purge. Варианты —
+    # CHAT_RETENTION_MONTHS; меняет администратор компании.
+    chat_retention_months: Mapped[int] = mapped_column(
+        default=DEFAULT_CHAT_RETENTION_MONTHS,
+        server_default=str(DEFAULT_CHAT_RETENTION_MONTHS),
+    )
 
 
 class StaffMember(Base):

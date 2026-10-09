@@ -670,6 +670,25 @@
             ],
             "title": "Allow Remember Device"
           },
+          "chat_retention_months": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  3,
+                  6,
+                  12,
+                  24,
+                  36
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat Retention Months"
+          },
           "email_domains": {
             "anyOf": [
               {
@@ -729,11 +748,15 @@
         "type": "object"
       },
       "CompanySettingsResponse": {
-        "description": "Настройки компании.\n\nnot_found_mode: general — общий ответ с пометкой, strict — честный\nотказ. mfa_policy: any — код на почту, strong — всем приложение или\nключ доступа (администраторам — всегда). email_domains пусто — по\nприглашению вступает почта любого домена.",
+        "description": "Настройки компании.\n\nnot_found_mode: general — общий ответ с пометкой, strict — честный\nотказ. mfa_policy: any — код на почту, strong — всем приложение или\nключ доступа (администраторам — всегда). email_domains пусто — по\nприглашению вступает почта любого домена. chat_retention_months —\nсколько месяцев хранятся диалоги без активности; старше удаляются\nцеликом, с вложениями и общими ссылками.",
         "properties": {
           "allow_remember_device": {
             "title": "Allow Remember Device",
             "type": "boolean"
+          },
+          "chat_retention_months": {
+            "title": "Chat Retention Months",
+            "type": "integer"
           },
           "company_code": {
             "title": "Company Code",
@@ -798,6 +821,7 @@
           "mfa_policy",
           "allow_remember_device",
           "email_domains",
+          "chat_retention_months",
           "tariff",
           "seats",
           "members"
@@ -8648,7 +8672,7 @@
         ]
       },
       "patch": {
-        "description": "Название, режим «ответа нет», второй фактор, «запомнить устройство»,\nдомены почты. Каждое изменение — в журнал действий.",
+        "description": "Название, режим «ответа нет», второй фактор, «запомнить устройство»,\nдомены почты, срок хранения диалогов. Каждое изменение — в журнал\nдействий.",
         "operationId": "update_settings_api_v1_company_patch",
         "requestBody": {
           "content": {

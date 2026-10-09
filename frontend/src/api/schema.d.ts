@@ -854,7 +854,8 @@ export interface paths {
         /**
          * Update Settings
          * @description Название, режим «ответа нет», второй фактор, «запомнить устройство»,
-         *     домены почты. Каждое изменение — в журнал действий.
+         *     домены почты, срок хранения диалогов. Каждое изменение — в журнал
+         *     действий.
          */
         patch: operations["update_settings_api_v1_company_patch"];
         trace?: never;
@@ -2800,6 +2801,8 @@ export interface components {
         CompanySettingsRequest: {
             /** Allow Remember Device */
             allow_remember_device?: boolean | null;
+            /** Chat Retention Months */
+            chat_retention_months?: (1 | 3 | 6 | 12 | 24 | 36) | null;
             /** Email Domains */
             email_domains?: string[] | null;
             /** Mfa Policy */
@@ -2815,11 +2818,15 @@ export interface components {
          *     not_found_mode: general — общий ответ с пометкой, strict — честный
          *     отказ. mfa_policy: any — код на почту, strong — всем приложение или
          *     ключ доступа (администраторам — всегда). email_domains пусто — по
-         *     приглашению вступает почта любого домена.
+         *     приглашению вступает почта любого домена. chat_retention_months —
+         *     сколько месяцев хранятся диалоги без активности; старше удаляются
+         *     целиком, с вложениями и общими ссылками.
          */
         CompanySettingsResponse: {
             /** Allow Remember Device */
             allow_remember_device: boolean;
+            /** Chat Retention Months */
+            chat_retention_months: number;
             /** Company Code */
             company_code: string;
             /** Email Domains */
