@@ -7,10 +7,17 @@
 - «PDF-бомба» или бесконечный цикл в парсере занимали бы воркер API;
 - разбор PDF — секунды CPU; в event loop он остановил бы все запросы.
 
-Дочерний процесс получает пустое окружение (кроме PATH и локали),
-урезает себе память, CPU и запись файлов (extract_worker.py) и убивается
-по таймауту. Наружу — только Markdown или код ошибки; ответ больше
-MAX_OUTPUT_BYTES не дочитывается — процесс убивается.
+Дочерний процесс получает пустое окружение (кроме PATH и локали) и
+только stdin, stdout и stderr из дескрипторов API, закрывает себе сеть
+(seccomp, no_network.py), урезает память, CPU и запись файлов
+(extract_worker.py) и убивается по таймауту. Наружу — только Markdown или
+код ошибки; ответ больше MAX_OUTPUT_BYTES не дочитывается — процесс
+убивается.
+
+Если фильтр сети не ставится, в production (ENVIRONMENT=production)
+дочерний процесс отказывается разбирать файл — код `sandbox_unavailable`
+и ошибка в журнале; в разработке разбирает, а в журнал один раз пишется
+предупреждение.
 """
 
 import asyncio
@@ -20,9 +27,11 @@ import os
 import signal
 import sys
 from contextlib import suppress
+from typing import Any
 
 import structlog
 
+from corp_ed.core.config import get_settings
 from corp_ed.ingest.extract import (
     ERROR_MESSAGES,
     MAX_EXTRACTED_CHARS,
@@ -66,7 +75,13 @@ def _clean_env() -> dict[str, str]:
     return {"PATH": os.environ.get("PATH", ""), "LANG": "C.UTF-8"}
 
 
-def _worker_command(fmt: SourceFormat, cpu_seconds: int) -> list[str]:
+def _network_policy() -> str:
+    """Без фильтра сети в production — отказ, в разработке — работа
+    с предупреждением (extract_worker.STRICT / LENIENT)."""
+    return "strict" if get_settings().is_production else "lenient"
+
+
+def _worker_command(mode: str, cpu_seconds: int) -> list[str]:
     return [
         sys.executable,
         # -I: без PYTHONPATH, пользовательского site и текущего каталога
@@ -74,8 +89,9 @@ def _worker_command(fmt: SourceFormat, cpu_seconds: int) -> list[str]:
         "-I",
         "-m",
         "corp_ed.ingest.extract_worker",
-        fmt.value,
+        mode,
         str(cpu_seconds),
+        _network_policy(),
     ]
 
 
@@ -130,19 +146,35 @@ async def _communicate(
     return output.result(), errors.result()
 
 
-async def extract_isolated(
-    fmt: SourceFormat,
-    data: bytes,
-    *,
-    timeout: float = TIMEOUT_SECONDS,
-    cpu_seconds: int | None = None,
-) -> str:
+_network_warning_logged = False
+
+
+def _check_network(result: dict[str, Any], mode: str) -> None:
+    """Фильтр сети не поставлен: в production ребёнок уже отказался
+    разбирать — это ошибка конфигурации, а не плохой файл; в разработке —
+    одно предупреждение на процесс API."""
+    global _network_warning_logged
+    if result.get("code") == "sandbox_unavailable":
+        logger.error("sandbox_network_filter_unavailable", format=mode)
+    elif result.get("network") == "open" and not _network_warning_logged:
+        _network_warning_logged = True
+        logger.warning("sandbox_network_not_blocked", format=mode)
+
+
+async def _run_worker(
+    mode: str, data: bytes, *, timeout: float, cpu_seconds: int | None
+) -> dict[str, Any]:
+    """Дочерний процесс → его JSON-ответ. Таймаут, падение, слишком
+    длинный или не-JSON ответ — ExtractionError."""
     process = await asyncio.create_subprocess_exec(
-        *_worker_command(fmt, cpu_seconds or cpu_budget(timeout)),
+        *_worker_command(mode, cpu_seconds or cpu_budget(timeout)),
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=_clean_env(),
+        # Сокеты базы, Redis и клиентов API ребёнку не достаются (это и
+        # так поведение по умолчанию — здесь оно закреплено явно).
+        close_fds=True,
     )
     try:
         async with asyncio.timeout(timeout):
@@ -150,7 +182,7 @@ async def extract_isolated(
     except TimeoutError:
         process.kill()
         await process.wait()
-        logger.warning("extraction_timeout", format=fmt.value, size=len(data))
+        logger.warning("extraction_timeout", format=mode, size=len(data))
         raise ExtractionError("timeout") from None
 
     if stdout is None:
@@ -158,7 +190,7 @@ async def extract_isolated(
         # убит, ответ не читается.
         logger.warning(
             "extraction_output_too_large",
-            format=fmt.value,
+            format=mode,
             size=len(data),
             limit=MAX_OUTPUT_BYTES,
         )
@@ -169,7 +201,7 @@ async def extract_isolated(
         code = _crash_code(process.returncode or 0)
         logger.warning(
             "extraction_crashed",
-            format=fmt.value,
+            format=mode,
             size=len(data),
             returncode=process.returncode,
             code=code,
@@ -181,7 +213,22 @@ async def extract_isolated(
         result = json.loads(stdout)
     except ValueError:
         raise ExtractionError("corrupted") from None
+    if not isinstance(result, dict):
+        raise ExtractionError("corrupted")
+    _check_network(result, mode)
+    return result
 
+
+async def extract_isolated(
+    fmt: SourceFormat,
+    data: bytes,
+    *,
+    timeout: float = TIMEOUT_SECONDS,
+    cpu_seconds: int | None = None,
+) -> str:
+    result = await _run_worker(
+        fmt.value, data, timeout=timeout, cpu_seconds=cpu_seconds
+    )
     if result.get("ok") is True and isinstance(result.get("markdown"), str):
         markdown: str = result["markdown"]
         return markdown
