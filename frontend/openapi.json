@@ -5029,6 +5029,11 @@
             "minLength": 1,
             "title": "Password",
             "type": "string"
+          },
+          "terms": {
+            "const": true,
+            "title": "Terms",
+            "type": "boolean"
           }
         },
         "required": [
@@ -5036,6 +5041,7 @@
           "last_name",
           "email",
           "password",
+          "terms",
           "consent"
         ],
         "title": "RegisterRequest",
@@ -5360,6 +5366,10 @@
             "title": "Questions",
             "type": "integer"
           },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
           "tenant_id": {
             "format": "uuid",
             "title": "Tenant Id",
@@ -5372,6 +5382,7 @@
         },
         "required": [
           "tenant_id",
+          "ref",
           "name",
           "company_code",
           "questions",
@@ -5563,6 +5574,41 @@
         "title": "StaffApproveRequest",
         "type": "object"
       },
+      "StaffCompanyDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "company_code": {
+            "maxLength": 200,
+            "title": "Company Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "company_code"
+        ],
+        "title": "StaffCompanyDeleteRequest",
+        "type": "object"
+      },
+      "StaffCompanyDeletedResponse": {
+        "properties": {
+          "company": {
+            "$ref": "#/components/schemas/StaffCompanyResponse"
+          },
+          "deleted": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Deleted",
+            "type": "object"
+          }
+        },
+        "required": [
+          "company",
+          "deleted"
+        ],
+        "title": "StaffCompanyDeletedResponse",
+        "type": "object"
+      },
       "StaffCompanyResponse": {
         "properties": {
           "admins": {
@@ -5583,6 +5629,18 @@
           "credits_used": {
             "title": "Credits Used",
             "type": "integer"
+          },
+          "data_deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Deleted At"
           },
           "documents": {
             "title": "Documents",
@@ -5645,6 +5703,10 @@
             "title": "Questions Month",
             "type": "integer"
           },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
           "seats": {
             "title": "Seats",
             "type": "integer"
@@ -5655,9 +5717,11 @@
         },
         "required": [
           "id",
+          "ref",
           "name",
           "company_code",
           "is_active",
+          "data_deleted_at",
           "tariff",
           "seats",
           "pilot_until",
@@ -5810,6 +5874,10 @@
             "title": "Company Name",
             "type": "string"
           },
+          "company_ref": {
+            "title": "Company Ref",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -5880,7 +5948,8 @@
           "cancelled_at",
           "tenant_id",
           "company_name",
-          "company_code"
+          "company_code",
+          "company_ref"
         ],
         "title": "StaffCreditOrderResponse",
         "type": "object"
@@ -13233,6 +13302,65 @@
           }
         ],
         "summary": "Grant Credits",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/companies/{tenant_id}/delete-data": {
+      "post": {
+        "description": "Удалить данные компании после расторжения (оферта п. 13.3): только\nприостановленной и только с её кодом в подтверждение. Остаются\nобезличенные заказы и начисления кредитов (бухгалтерия) и журнал\nдействий до своего срока; в журнал — событие с учёткой команды.",
+        "operationId": "delete_company_data_api_v1_staff_companies__tenant_id__delete_data_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCompanyDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCompanyDeletedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Company Data",
         "tags": [
           "staff"
         ]

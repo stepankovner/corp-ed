@@ -18,7 +18,7 @@
 | `redis` | `redis:7-alpine` | лимиты частоты, квота эмбеддингов, история диалогов (12 часов), одноразовость OAuth `state`, пульс воркера; без диска, без пароля не стартует |
 | `web` | `kronto-web` (`frontend/Dockerfile`) | статика фронтенда: nginx без root, порт 8080, CSP; API не проксирует |
 | `reranker` | `text-embeddings-inference:cpu-1.9.4` (по хешу) | только с `COMPOSE_PROFILES=reranker`: модель реранкера (BH-32), без root, только чтение, ≤ 3 ядер, 2 ГБ |
-| cron на хосте | `kronto-api` | раз в сутки `cli purge` и `cli gaps --all` |
+| cron на хосте | `kronto-api` | раз в сутки `cli purge` (в том числе данные ушедших сотрудников через 30 дней и диалоги по сроку компании) и `cli gaps --all` |
 
 Один образ на всё: API, воркер, миграции, CLI. Код и окружение внутри
 принадлежат root и доступны только на чтение; процессы работают под
@@ -89,6 +89,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Чат | `CHAT_SHARE_TTL_DAYS` | 30 по умолчанию (1–365): срок общей ссылки на диалог с создания или продления (решение 09.10). Срок хранения диалогов — настройка компании в интерфейсе, не переменная |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION`, `LEADS_NOTIFY_EMAIL` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется; `LEADS_NOTIFY_EMAIL` — ящик команды для письма о каждой заявке с контактами (пусто — писем нет); форма лендинга krontoai.ru шлёт заявки в этот API — её origin нужен в `CORS_ALLOWED_ORIGINS` |
+| Регистрация и согласия | `REGISTRATION_POLICY_VERSION`, `REGISTRATION_TERMS_VERSION`, `REGISTRATION_POLICY_URL` | версии согласия на ПДн и пользовательского соглашения пишутся в учётку отдельно (09.10; ч. 1 ст. 9 152-ФЗ); по умолчанию — версии текстов на сайте (`frontend/src/site/legal/documents.ts`, их сверяет тест); заданные явно в `.env` старые значения перекрывают умолчания — сменить вместе с текстами. Для созвона — `LEADS_POLICY_URL=/consent-call` |
 | OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — `/sources`, фронт переводит на «Настройки → Мои подключения» |
 
 `.env` лежит рядом с `compose.yaml`, права `600`, в репозиторий не

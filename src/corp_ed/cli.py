@@ -18,6 +18,8 @@
         [--connector-limit 50 | --default-connector-limit]
     python -m corp_ed.cli suspend-tenant --code acme
     python -m corp_ed.cli resume-tenant --code acme
+    python -m corp_ed.cli delete-tenant --code acme [--confirm acme]
+                                       # удалить данные приостановленной компании
     python -m corp_ed.cli reindex (--code acme | --all) [--dry-run]
     python -m corp_ed.cli purge        # удалить данные старше срока хранения
     python -m corp_ed.cli leads list [--status new]     # заявки на созвон
@@ -98,6 +100,7 @@ from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
+from corp_ed.services.connector_service import TokenRevocation, revoke_all
 from corp_ed.services.demo_service import DemoService
 from corp_ed.services.digest_service import DigestService
 from corp_ed.services.gap_report_service import GapReportService
@@ -106,6 +109,7 @@ from corp_ed.services.mail_check import check_mail
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
 from corp_ed.services.seats import seats_check
+from corp_ed.services.tenant_deletion_service import TenantDeletionService
 from corp_ed.services.tenant_service import TenantService
 
 
@@ -201,6 +205,15 @@ def _parser() -> argparse.ArgumentParser:
     for name in ("suspend-tenant", "resume-tenant"):
         command = commands.add_parser(name)
         command.add_argument("--code", required=True)
+
+    delete_tenant = commands.add_parser(
+        "delete-tenant",
+        help="удалить данные приостановленной компании после расторжения",
+    )
+    delete_tenant.add_argument("--code", required=True)
+    delete_tenant.add_argument(
+        "--confirm", help="код компании ещё раз; без него CLI спросит его"
+    )
 
     reindex = commands.add_parser(
         "reindex", help="поставить все материалы в очередь на переиндексацию"
@@ -383,7 +396,8 @@ async def _run(args: argparse.Namespace) -> int:
             f"auth_challenges: {purged.auth_challenges}, "
             f"email_tokens: {purged.email_tokens}, "
             f"trusted_devices: {purged.trusted_devices}, "
-            f"conversations: {purged.conversations}"
+            f"conversations: {purged.conversations}, "
+            f"left_members: {purged.left_members}"
         )
         return 0
 
@@ -434,6 +448,9 @@ async def _run(args: argparse.Namespace) -> int:
         ).rotate()
         print(f"connectors: {rotated.connectors}, grants: {rotated.grants}")
         return 0
+
+    if args.command == "delete-tenant":
+        return await _delete_tenant(args.code, args.confirm)
 
     if args.command == "reindex":
         reports = await ReindexService(get_session_maker()).reindex(
@@ -555,6 +572,50 @@ async def _run(args: argparse.Namespace) -> int:
         )
         print(f"{tenant.company_code}: is_active={tenant.is_active}")
         return 0
+
+
+async def _delete_tenant(code: str, confirm: str | None) -> int:
+    """Удалить данные компании (оферта п. 13.3) — как кнопка в нашей
+    панели: только приостановленной и с кодом в подтверждение. Выводит,
+    сколько строк удалено, — для записи об уничтожении."""
+    session_maker = get_session_maker()
+    async with session_maker() as session:
+        tenant = await TenantRepository(session).get_by_company_code(code)
+        if tenant is None:
+            print(f"Ошибка: компании с кодом {code} нет", file=sys.stderr)
+            return 1
+        tenant_id, name = tenant.id, tenant.name
+    if confirm is None:
+        print(
+            f"Будут удалены документы, подключения, диалоги, журналы и "
+            f"сотрудники компании «{name}». Останутся обезличенные заказы "
+            "и начисления кредитов."
+        )
+        confirm = input("Введите код компании для подтверждения: ")
+    settings = get_connector_settings()
+    registry = default_registry(settings)
+    async with outbound_http_client(via_proxy=settings.outbound_via_proxy) as client:
+        http = OutboundClient(
+            client,
+            via_proxy=settings.outbound_via_proxy,
+            download_deadline=settings.download_timeout_seconds,
+        )
+
+        async def revoke(revocations: Sequence[TokenRevocation]) -> None:
+            await revoke_all(revocations, registry, http)
+
+        report = await TenantDeletionService(
+            session_maker,
+            registry=registry,
+            secrets=SecretBox(settings.keys),
+            revoke=revoke,
+            protected_codes=(get_demo_settings().company_code,),
+        ).delete(tenant_id, confirm)
+    print(f"данные компании удалены, теперь она — {report.ref}")
+    for table, count in report.deleted.items():
+        if count:
+            print(f"  {table}: {count}")
+    return 0
 
 
 async def _leads(args: argparse.Namespace) -> int:

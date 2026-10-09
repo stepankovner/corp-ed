@@ -328,8 +328,13 @@ async def test_blocked_member_cannot_rejoin_by_invite(
 async def test_left_member_returns_with_invite_role(
     api: httpx.AsyncClient, admin_account: User, session: AsyncSession
 ) -> None:
+    # Ушёл давно: purge уже стёр его данные в компании.
     former = make_user(
-        email="former@test.com", role=UserRole.ADMIN, status=MemberStatus.LEFT
+        email="former@test.com",
+        role=UserRole.ADMIN,
+        status=MemberStatus.LEFT,
+        left_at=datetime.now(UTC) - timedelta(days=60),
+        data_purged_at=datetime.now(UTC) - timedelta(days=30),
     )
     session.add(former)
     await session.commit()
@@ -343,6 +348,8 @@ async def test_left_member_returns_with_invite_role(
     assert former.status is MemberStatus.ACTIVE
     assert former.role is UserRole.EMPLOYEE
     assert former.left_at is None
+    # Вернулся — следующий уход снова отсчитает 30 дней до очистки.
+    assert former.data_purged_at is None
 
 
 async def test_join_needs_a_free_seat(

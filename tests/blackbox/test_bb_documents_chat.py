@@ -243,6 +243,7 @@ async def join_employee(
             "password": EMPLOYEE_PASSWORD,
             "first_name": first_name,
             "last_name": last_name,
+            "terms": True,
             "consent": True,
         },
     )

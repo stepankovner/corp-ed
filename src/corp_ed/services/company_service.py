@@ -30,7 +30,11 @@ from corp_ed.domain.types import NotFoundMode
 from corp_ed.ingest.images import ImageKind
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.services.avatar_service import MAX_AVATAR_BYTES, reencode_image
-from corp_ed.services.team_notify import NULL_NOTIFIER, TeamNotifier
+from corp_ed.services.team_notify import (
+    NULL_NOTIFIER,
+    TeamNotifier,
+    tariff_request_message,
+)
 
 logger = structlog.get_logger()
 
@@ -276,12 +280,14 @@ class CompanyService:
             },
         )
         await self.session.commit()
-        places = f", мест: {tenant.seats} → {seats}" if seats else ""
-        note = f"\nКомментарий: {comment}" if comment else ""
         self.notifier.notify(
-            f"Компания {tenant.company_code} просит сменить тариф: "
-            f"{current.title} → {wanted.title}{places}. "
-            f"Ответить администратору и поменять — cli set-tariff.{note}"
+            tariff_request_message(
+                tenant_id=tenant.id,
+                current=current.title,
+                wanted=wanted.title,
+                seats=(tenant.seats, seats) if seats else None,
+                comment=comment,
+            )
         )
         logger.info(
             "tariff_change_requested", tenant_id=str(tenant.id), tariff=tariff.value

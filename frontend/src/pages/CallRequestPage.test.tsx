@@ -10,7 +10,7 @@ import { server } from "../test/server";
 function form(overrides: Partial<Schemas["LeadFormResponse"]> = {}): Schemas["LeadFormResponse"] {
   return {
     enabled: true,
-    policy_url: "https://kronto.example/privacy",
+    policy_url: "/consent-call",
     policy_version: "2026-09-28",
     slots: ["10:00–12:00", "12:00–14:00", "14:00–16:00", "16:00–18:00"],
     first_date: "2026-09-29",
@@ -48,20 +48,19 @@ describe("тарифы и запись на созвон", () => {
   });
 
   it.each([
-    ["/privacy", "/privacy"],
-    ["https://krontoai.ru/privacy", "https://krontoai.ru/privacy"],
+    ["/consent-call", "/consent-call"],
+    ["https://krontoai.ru/consent-call", "https://krontoai.ru/consent-call"],
     ["javascript:alert(1)", "#"],
     ["data:text/html,x", "#"],
-  ])("ссылка на политику %s — только свой путь или http(s)", async (policyUrl, href) => {
+  ])("ссылка на текст согласия %s — только свой путь или http(s)", async (policyUrl, href) => {
     server.use(
       http.get("/api/v1/leads/form", () => HttpResponse.json(form({ policy_url: policyUrl }))),
     );
     renderApp("/pricing/request", { signedIn: false });
 
-    expect(await screen.findByRole("link", { name: "политике обработки данных" })).toHaveAttribute(
-      "href",
-      href,
-    );
+    expect(
+      await screen.findByRole("link", { name: "согласие на обработку персональных данных" }),
+    ).toHaveAttribute("href", href);
   });
 
   it("пока политика не задана, форма закрыта", async () => {
@@ -94,13 +93,17 @@ describe("тарифы и запись на созвон", () => {
     await user.type(screen.getByLabelText("Телефон"), "+7 999 123-45-67");
     await user.type(screen.getByLabelText("Удобная дата"), "2026-10-01");
     await user.selectOptions(screen.getByLabelText("Удобное время (по Москве)"), "14:00–16:00");
-    expect(screen.getByRole("link", { name: "политике обработки данных" })).toHaveAttribute(
-      "href",
-      "https://kronto.example/privacy",
-    );
+    // Ссылка — на отдельный текст согласия на созвон, а не на политику.
+    expect(
+      screen.getByRole("link", { name: "согласие на обработку персональных данных" }),
+    ).toHaveAttribute("href", "/consent-call");
     const submit = screen.getByRole("button", { name: "Отправить заявку" });
     expect(submit).toBeDisabled();
-    await user.click(screen.getByRole("checkbox", { name: /Согласен на обработку/ }));
+    const consent = screen.getByRole("checkbox", {
+      name: "Даю согласие на обработку персональных данных для записи на созвон",
+    });
+    expect(consent).not.toBeChecked();
+    await user.click(consent);
     await user.click(submit);
 
     expect(await screen.findByText("Заявка отправлена")).toBeInTheDocument();

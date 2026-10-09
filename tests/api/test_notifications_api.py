@@ -328,10 +328,13 @@ async def test_support_request_reaches_team_without_personal_data(
     created = response.json()
     assert (created["topic"], created["status"]) == ("login", "new")
 
-    # В Telegram команды — номер, тема и код компании; ни текста, ни почты.
+    # В Telegram команды — номер, тема и короткий id компании; ни текста,
+    # ни почты, ни кода компании (он повторяет название).
     [message] = notifier
     assert created["id"][:8] in message
-    assert "вход" in message and "test" in message
+    assert "вход" in message
+    assert f"компания {str(employee.tenant_id)[:8]}" in message
+    assert "test" not in message
     assert "anna@test.com" not in message and "employee@test.com" not in message
     assert "код из письма" not in message
 

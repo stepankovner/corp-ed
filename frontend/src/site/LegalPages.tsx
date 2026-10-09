@@ -1,199 +1,117 @@
-import type { ReactNode } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { Link } from "react-router";
+import remarkGfm from "remark-gfm";
 
-import { CONTACTS, SITE, useSiteTitle, type SiteMeta } from "./meta";
+import { editionDate, fillPlaceholders, LEGAL, type LegalDocument } from "./legal/documents";
+import { SITE, SITE_URL, useSiteTitle, type SiteMeta } from "./meta";
 import { DraftNote, SectionHead, SiteLayout } from "./SiteLayout";
 import site from "./Site.module.css";
 
 /**
- * Юридические страницы (ТЗ §11) — черновые заготовки с пометкой
- * «заменить»: структура и то, что известно об устройстве сервиса.
- * Окончательный текст готовит ИП или юрист; до него на боевом домене
- * регистрация только по приглашению (REGISTRATION_ENABLED=false).
- * Сменился текст — новая REGISTRATION_POLICY_VERSION: согласие в учётке
- * пишется с версией.
+ * Юридические страницы (ТЗ §11): проекты документов, которые проверяет
+ * юрист, — с пометкой об этом. Тексты — в legal/*.md, реквизиты и версии —
+ * в legal/documents.ts. Пока юрист не проверил тексты, на боевом домене
+ * регистрация только по приглашению (REGISTRATION_ENABLED=false), а запись
+ * на созвон выключена (LEADS_ENABLED=false).
  */
-const EDITION = "Редакция-черновик от 4 октября 2026 г.";
-
-function LegalPage({
-  meta,
-  eyebrow,
-  title,
-  children,
-}: {
-  meta: SiteMeta;
-  eyebrow: string;
-  title: string;
-  children: ReactNode;
-}) {
+function LegalPage({ meta, title, doc }: { meta: SiteMeta; title: string; doc: LegalDocument }) {
   useSiteTitle(meta);
   return (
     <SiteLayout>
       <article className={site.narrow}>
-        <SectionHead level={1} eyebrow={eyebrow} title={title} />
+        <SectionHead level={1} eyebrow="документы" title={title} />
         <div className={site.prose}>
-          <DraftNote>
-            Это заготовка: окончательный текст подготовит юрист до открытия регистрации для всех.
+          <DraftNote label="Проект — проверяется юристом.">
+            Текст может измениться; реквизиты появятся после регистрации ИП.
           </DraftNote>
-          <p className={site.updated}>{EDITION}</p>
-          {children}
+          <p className={site.updated}>
+            Редакция от {editionDate(doc.edition)}
+            {doc.version ? <span> · версия {doc.version}</span> : null}
+          </p>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={COMPONENTS}
+            disallowedElements={["img"]}
+            unwrapDisallowed
+          >
+            {fillPlaceholders(doc)}
+          </ReactMarkdown>
         </div>
       </article>
     </SiteLayout>
   );
 }
 
-const OPERATOR =
-  "Индивидуальный предприниматель [ФИО — заменить], ИНН [заменить], ОГРНИП [заменить]";
+const COMPONENTS: Components = {
+  // Свои страницы — ссылкой внутри сайта; чужие — в новой вкладке.
+  a: ({ href, children }) => {
+    const path = href?.startsWith(SITE_URL) ? href.slice(SITE_URL.length) || "/" : href;
+    if (path?.startsWith("/")) return <Link to={path}>{children}</Link>;
+    if (href?.startsWith("mailto:")) return <a href={href}>{children}</a>;
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
+  // Широкая таблица прокручивается сама, а не страница.
+  table: ({ children }) => (
+    <div className={site.tableWrap}>
+      <table>{children}</table>
+    </div>
+  ),
+};
 
 export function PrivacyPage() {
   return (
     <LegalPage
       meta={SITE.privacy}
-      eyebrow="документы"
       title="Политика обработки персональных данных"
-    >
-      <h2>1. Кто обрабатывает данные</h2>
-      <p>
-        Оператор — {OPERATOR} (далее — «мы»). Сервис kronto доступен на сайте krontoai.ru. По
-        вопросам о персональных данных пишите на{" "}
-        <a href={`mailto:${CONTACTS.email}`}>{CONTACTS.email}</a>.
-      </p>
-
-      <h2>2. Какие данные мы обрабатываем</h2>
-      <ul>
-        <li>Учётная запись: имя, фамилия, адрес почты, хеш пароля, данные второго фактора.</li>
-        <li>
-          Профиль, если человек заполнил его сам: отчество, телефон, имя в Telegram, должность,
-          отдел, фотография.
-        </li>
-        <li>
-          Вопросы к ассистенту и диалоги; в журнале вопросов почта, телефоны, ФИО и номера
-          документов заменяются маской.
-        </li>
-        <li>Технические данные входа: IP-адрес, браузер и устройство, время входа.</li>
-        <li>
-          Заявка на созвон: название компании, имя, телефон, почта, комментарий — только с
-          отдельного согласия.
-        </li>
-      </ul>
-
-      <h2>3. Зачем</h2>
-      <ul>
-        <li>Регистрация, вход и защита учётной записи.</li>
-        <li>Ответы на вопросы по документам компании, в которой состоит человек.</li>
-        <li>Обратная связь: поддержка, письма о безопасности и о работе сервиса.</li>
-        <li>Учёт лимитов тарифа компании.</li>
-      </ul>
-
-      <h2>4. Основания</h2>
-      <p>
-        Согласие на обработку персональных данных и договор с компанией-клиентом. [Перечень
-        оснований по 152-ФЗ — заменить.]
-      </p>
-
-      <h2>5. Где и сколько хранятся</h2>
-      <ul>
-        <li>На серверах в России.</li>
-        <li>Журнал вопросов — 90 дней, журнал действий — 365 дней.</li>
-        <li>Заявки на созвон — 180 дней.</li>
-        <li>Учётная запись — пока человек не удалит её в настройках.</li>
-      </ul>
-
-      <h2>6. Кому передаются</h2>
-      <p>
-        Языковой модели — фрагменты документов и вопрос, без хранения у провайдера; провайдер модели
-        — российская облачная платформа. Почтовому сервису — адрес и текст письма. [Список
-        обработчиков и поручений — заменить.]
-      </p>
-
-      <h2>7. Права человека</h2>
-      <p>
-        Узнать, какие данные обрабатываются, исправить их, отозвать согласие и удалить учётную
-        запись — в настройках kronto или письмом на{" "}
-        <a href={`mailto:${CONTACTS.email}`}>{CONTACTS.email}</a>. Ответ — в срок, установленный
-        законом.
-      </p>
-
-      <h2>8. Защита</h2>
-      <p>
-        Меры защиты описаны на странице <Link to="/security">«Безопасность и данные»</Link>.
-      </p>
-    </LegalPage>
+      doc={LEGAL.privacy}
+    />
   );
 }
 
 export function TermsPage() {
-  return (
-    <LegalPage meta={SITE.terms} eyebrow="документы" title="Пользовательское соглашение">
-      <h2>1. Стороны и предмет</h2>
-      <p>
-        Соглашение между {OPERATOR} и человеком, который пользуется сервисом kronto. kronto —
-        ассистент, который отвечает на вопросы по документам компании, к которой человек подключён.
-      </p>
-
-      <h2>2. Учётная запись</h2>
-      <ul>
-        <li>Регистрация — по действующей почте; пароль и второй фактор человек хранит сам.</li>
-        <li>Доступ к документам компании даёт её администратор: приглашением или одобрением.</li>
-        <li>Учётную запись можно удалить в настройках в любой момент.</li>
-      </ul>
-
-      <h2>3. Ответы ассистента</h2>
-      <p>
-        Ответ строится по документам компании и показывает источник. Ответ может быть неточным:
-        решения, важные для работы, проверяйте по документу-источнику. Ответ «не из документов
-        компании» помечается отдельно.
-      </p>
-
-      <h2>4. Чего делать нельзя</h2>
-      <ul>
-        <li>Загружать документы, на которые у вас нет прав.</li>
-        <li>Пытаться получить доступ к чужим данным, обходить лимиты и защиту сервиса.</li>
-        <li>Передавать свою учётную запись другим людям.</li>
-      </ul>
-
-      <h2>5. Оплата</h2>
-      <p>
-        Сервис оплачивает компания по тарифу за рабочее место — по договору с ней. [Условия оплаты и
-        возврата — заменить.]
-      </p>
-
-      <h2>6. Ответственность и изменения</h2>
-      <p>
-        [Ограничение ответственности, порядок изменения соглашения и разрешения споров — заменить.]
-        Вопросы — на <a href={`mailto:${CONTACTS.email}`}>{CONTACTS.email}</a>.
-      </p>
-    </LegalPage>
-  );
+  return <LegalPage meta={SITE.terms} title="Пользовательское соглашение" doc={LEGAL.terms} />;
 }
 
 export function ConsentPage() {
   return (
     <LegalPage
       meta={SITE.consent}
-      eyebrow="документы"
       title="Согласие на обработку персональных данных"
-    >
-      <p>
-        Регистрируясь в kronto, я даю согласие {OPERATOR} на обработку моих персональных данных:
-        имени, фамилии, адреса почты, данных профиля, которые я укажу сам, вопросов к ассистенту и
-        технических данных входа.
-      </p>
-      <p>
-        Цели: регистрация и вход, работа ассистента по документам компании, в которой я состою,
-        поддержка и письма о безопасности учётной записи.
-      </p>
-      <p>
-        Действия: сбор, запись, систематизация, хранение, уточнение, использование, передача
-        обработчикам по поручению оператора, обезличивание, удаление — с использованием средств
-        автоматизации, на серверах в России.
-      </p>
-      <p>
-        Согласие действует до удаления учётной записи или до его отзыва письмом на{" "}
-        <a href={`mailto:${CONTACTS.email}`}>{CONTACTS.email}</a>. Подробно — в{" "}
-        <Link to="/privacy">политике обработки персональных данных</Link>.
-      </p>
-    </LegalPage>
+      doc={LEGAL.consent}
+    />
   );
+}
+
+export function CallConsentPage() {
+  return (
+    <LegalPage
+      meta={SITE.consentCall}
+      title="Согласие на обработку персональных данных для записи на созвон"
+      doc={LEGAL.consentCall}
+    />
+  );
+}
+
+export function OfferPage() {
+  return (
+    <LegalPage
+      meta={SITE.offer}
+      title="Публичная оферта о предоставлении доступа к сервису kronto"
+      doc={LEGAL.offer}
+    />
+  );
+}
+
+export function RefundPage() {
+  return (
+    <LegalPage meta={SITE.refund} title="Политика возврата денежных средств" doc={LEGAL.refund} />
+  );
+}
+
+export function CookiesPage() {
+  return <LegalPage meta={SITE.cookies} title="Cookies и данные в браузере" doc={LEGAL.cookies} />;
 }
