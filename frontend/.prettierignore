@@ -5,3 +5,5 @@ openapi.json
 src/api/schema.d.ts
 playwright-report
 test-results
+# Проекты юридических текстов — как их проверяет юрист, без переформатирования
+src/site/legal/*.md

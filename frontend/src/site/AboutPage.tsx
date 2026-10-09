@@ -1,13 +1,15 @@
 import { Link } from "react-router";
 
 import { buttonClass } from "../ui/buttonClass";
+import { REQUISITES } from "./legal/documents";
 import { CONTACTS, SITE, useSiteTitle } from "./meta";
 import { DraftNote, SectionHead, SiteLayout } from "./SiteLayout";
 import site from "./Site.module.css";
 
 /**
- * «О компании» (ТЗ §1): команда, контакты, реквизиты ИП. Команду и
- * реквизиты присылает владелец — до этого на их месте пометки «заменить».
+ * «О компании» (ТЗ §1): команда, контакты, реквизиты ИП. Команду
+ * присылает владелец; реквизиты — те же, что в юридических документах
+ * (legal/documents.ts), пока плейсхолдеры в квадратных скобках.
  */
 export function AboutPage() {
   useSiteTitle(SITE.about);
@@ -50,13 +52,15 @@ export function AboutPage() {
           <DraftNote>Реквизиты появятся после регистрации ИП — их пришлёт владелец.</DraftNote>
           <dl>
             <dt>Исполнитель</dt>
-            <dd>Индивидуальный предприниматель — заменить</dd>
+            <dd>Индивидуальный предприниматель {REQUISITES.fullName}</dd>
             <dt>ИНН</dt>
-            <dd>заменить</dd>
+            <dd>{REQUISITES.inn}</dd>
             <dt>ОГРНИП</dt>
-            <dd>заменить</dd>
+            <dd>{REQUISITES.ogrnip}</dd>
             <dt>Адрес для писем</dt>
-            <dd>заменить</dd>
+            <dd>{REQUISITES.address}</dd>
+            <dt>Телефон</dt>
+            <dd>{REQUISITES.phone}</dd>
           </dl>
 
           <div className={site.actions}>

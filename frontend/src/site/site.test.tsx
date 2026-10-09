@@ -232,14 +232,89 @@ describe("страницы сайта", () => {
   });
 
   it.each([
-    ["/privacy", "Политика обработки персональных данных"],
-    ["/terms", "Пользовательское соглашение"],
-    ["/consent", "Согласие на обработку персональных данных"],
-  ])("%s — черновик с пометкой «заменить»", async (path, title) => {
+    ["/privacy", "Политика обработки персональных данных", "1. Общие положения"],
+    ["/terms", "Пользовательское соглашение", "1. Стороны и предмет"],
+    ["/consent", "Согласие на обработку персональных данных", null],
+    ["/consent-call", "Согласие на обработку персональных данных для записи на созвон", null],
+    [
+      "/offer",
+      "Публичная оферта о предоставлении доступа к сервису kronto",
+      "13. Срок, расторжение и удаление данных",
+    ],
+    ["/refund", "Политика возврата денежных средств", null],
+    ["/cookies", "Cookies и данные в браузере", null],
+  ])("%s — проект с пометкой «проверяется юристом»", async (path, title, section) => {
     renderApp(path, { signedIn: false });
     expect(await screen.findByRole("heading", { level: 1, name: title })).toBeVisible();
-    expect(screen.getByRole("note")).toHaveTextContent("Черновик — заменить.");
+    expect(screen.getByRole("note")).toHaveTextContent("Проект — проверяется юристом.");
+    expect(screen.getByText("Редакция от 9 октября 2026 г.")).toBeInTheDocument();
+    if (section) expect(screen.getByRole("heading", { level: 2, name: section })).toBeVisible();
     expect(document.title).toBe(`${title} — kronto`);
+    const main = screen.getByRole("main");
+    // Служебные пометки для юриста на сайт не попадают.
+    expect(main).not.toHaveTextContent(/⚠|NOTES|реализовать до публикации|проверить юристу/);
+    // Ссылки на свои страницы — внутри сайта, без перезагрузки.
+    for (const link of within(main).queryAllByRole("link")) {
+      expect(link.getAttribute("href")).not.toMatch(/^https:\/\/krontoai\.ru/);
+    }
+  });
+
+  it("«Безопасность и данные» — о провайдере модели и сроках только то, что проверяемо", async () => {
+    renderApp("/security", { signedIn: false });
+    const main = await screen.findByRole("main");
+    expect(main).toHaveTextContent(
+      "Запросы к ней идут с отключённым сохранением данных запросов на стороне провайдера (x-data-logging-enabled: false)",
+    );
+    expect(main).toHaveTextContent("не используются для улучшения его сервисов");
+    expect(main).not.toHaveTextContent(
+      /запретом на сохранение|не хранятся у провайдера|без хранения/,
+    );
+    // Журнал вопросов — с маскированием, а не «без персональных данных».
+    expect(main).not.toHaveTextContent("без персональных данных");
+    expect(main).toHaveTextContent("маскирование может что-то пропустить");
+    // Диалоги: срок компании и 30 дней после ухода.
+    expect(main).toHaveTextContent("по умолчанию 12 месяцев без активности");
+    expect(main).toHaveTextContent("после ухода из компании — удаляются через 30 дней");
+  });
+
+  it("главная: о модели — с отключённым сохранением запросов у провайдера", async () => {
+    demoInfo();
+    renderApp("/", { signedIn: false });
+    const answer = await screen.findByText(/Языковые модели — Yandex AI Studio/);
+    expect(answer).toHaveTextContent("с отключённым сохранением данных запросов у провайдера");
+  });
+
+  it("реквизиты в документах — из одного места, пока плейсхолдеры", async () => {
+    renderApp("/offer", { signedIn: false });
+    const requisites = await screen.findByRole("heading", { level: 2, name: /Реквизиты/ });
+    const block = requisites.nextElementSibling;
+    expect(block).toHaveTextContent("Индивидуальный предприниматель [ФИО]");
+    expect(block).toHaveTextContent("ИНН [ИНН] · ОГРНИП [ОГРНИП]");
+    expect(block).toHaveTextContent("Адрес для корреспонденции: [адрес]");
+    expect(block).toHaveTextContent("Телефон: [телефон]");
+    // Дата редакции подставлена; решения владельца ([30], [__ %]) видны как есть.
+    expect(screen.getByRole("main")).toHaveTextContent("На 9 октября 2026 г.:");
+    expect(screen.getByRole("main")).not.toHaveTextContent("[дата редакции]");
+  });
+
+  it("согласие на созвон ведёт к политике; в подвале — все документы", async () => {
+    renderApp("/consent-call", { signedIn: false });
+    const main = await screen.findByRole("main");
+    expect(
+      within(main).getAllByRole("link", { name: "https://krontoai.ru/privacy" })[0],
+    ).toHaveAttribute("href", "/privacy");
+    const footer = screen.getByRole("contentinfo");
+    for (const [name, href] of [
+      ["Публичная оферта", "/offer"],
+      ["Политика обработки персональных данных", "/privacy"],
+      ["Пользовательское соглашение", "/terms"],
+      ["Согласие на обработку данных", "/consent"],
+      ["Согласие для записи на созвон", "/consent-call"],
+      ["Политика возврата", "/refund"],
+      ["Cookies", "/cookies"],
+    ]) {
+      expect(within(footer).getByRole("link", { name })).toHaveAttribute("href", href);
+    }
   });
 
   it("«О компании» — контакты и реквизиты-заготовки", async () => {

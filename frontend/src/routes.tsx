@@ -24,7 +24,15 @@ import { RegisterPage } from "./pages/RegisterPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { AboutPage } from "./site/AboutPage";
-import { ConsentPage, PrivacyPage, TermsPage } from "./site/LegalPages";
+import {
+  CallConsentPage,
+  ConsentPage,
+  CookiesPage,
+  OfferPage,
+  PrivacyPage,
+  RefundPage,
+  TermsPage,
+} from "./site/LegalPages";
 import { SandboxPage } from "./site/SandboxPage";
 import { SecurityPage } from "./site/SecurityPage";
 import { SiteHelpPage } from "./site/SiteHelpPage";
@@ -137,6 +145,10 @@ export const routes: RouteObject[] = [
   { path: "/privacy", element: <PrivacyPage /> },
   { path: "/terms", element: <TermsPage /> },
   { path: "/consent", element: <ConsentPage /> },
+  { path: "/consent-call", element: <CallConsentPage /> },
+  { path: "/offer", element: <OfferPage /> },
+  { path: "/refund", element: <RefundPage /> },
+  { path: "/cookies", element: <CookiesPage /> },
   { path: "/pricing", element: <PricingPage /> },
   { path: "/pricing/request", element: lazyPage(<CallRequestPage />) },
   {
