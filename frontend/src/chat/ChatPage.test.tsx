@@ -701,12 +701,16 @@ describe("диалог коллеги по ссылке", () => {
     expect(screen.queryByLabelText("Ваш вопрос")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ответ помог" })).not.toBeInTheDocument();
 
-    await userEvent
-      .setup()
-      .click(
+    // Блок ответа после загрузки один раз перерисовывается, и кнопка,
+    // найденная до этого, уже не в документе — клик по ней теряется.
+    // Ищем её заново, пока панель не откроется.
+    const user = userEvent.setup();
+    await waitFor(async () => {
+      await user.click(
         screen.getByRole("button", { name: "Источник 1: Документ, к которому у вас нет доступа" }),
       );
-    expect(await screen.findByText(/Документ удалён или вам недоступен/)).toBeInTheDocument();
+      expect(screen.getByText(/Документ удалён или вам недоступен/)).toBeInTheDocument();
+    });
   });
 
   it("старая ссылка /shared/<токен> становится /shared#<токен> и открывается", async () => {

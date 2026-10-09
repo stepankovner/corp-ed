@@ -12,7 +12,21 @@ import { server } from "./server";
 // запросами иногда не успевает — тест падает не по делу. Ждём дольше;
 // на зелёном прогоне это ничего не стоит: ожидание кончается, как только
 // элемент появился.
-configure({ asyncUtilTimeout: 5000 });
+// Ошибка «не нашёл» — с видимым текстом страницы и открытыми диалогами,
+// а не с деревом разметки: дерево обрезается на иконках и в журнале CI
+// не видно, что было на экране.
+configure({
+  asyncUtilTimeout: 5000,
+  getElementError(message, container) {
+    const text = container.textContent.replace(/\s+/g, " ").trim();
+    const dialogs = container.querySelectorAll("[role=dialog]").length;
+    const error = new Error(
+      `${message}\n\nТекст страницы: ${text.slice(0, 4000)}\nДиалогов: ${dialogs}`,
+    );
+    error.name = "TestingLibraryElementError";
+    return error;
+  },
+});
 
 // jsdom не умеет прокрутку.
 Element.prototype.scrollIntoView = function scrollIntoView() {};
