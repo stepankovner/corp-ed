@@ -219,3 +219,21 @@ async def internal_error_handler(request: Request, exc: Exception) -> JSONRespon
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "Внутренняя ошибка сервера"},
     )
+
+
+async def invalid_billing_input_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    body: dict[str, str] = _body(exc)
+    field = getattr(exc, "field", None)
+    if isinstance(field, str):
+        body["field"] = field
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content=body)
+
+
+async def payment_unavailable_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content=_body(exc),
+        headers={"Retry-After": "60"},
+    )

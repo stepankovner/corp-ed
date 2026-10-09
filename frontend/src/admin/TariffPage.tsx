@@ -5,6 +5,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { averageQuestionNote, credits, formatKopecks } from "../lib/credits";
 import { formatCalendarDate, formatDate, formatNumber, plural } from "../lib/format";
+import { BILLING_KEY, type Method } from "../lib/billing";
 import { formatPrice, tariffByCode, TARIFFS, type TariffCode } from "../lib/tariffs";
 import { useDocumentTitle } from "../lib/title";
 import { Section } from "../settings/common";
@@ -18,6 +19,7 @@ import pageStyles from "../ui/Page.module.css";
 import { PageSpinner } from "../ui/Spinner";
 import { Table } from "../ui/Table";
 import adminStyles from "./Admin.module.css";
+import { DocumentsSection, IssuedNotice, SubscriptionSection } from "./BillingSections";
 import styles from "./Company.module.css";
 import { ChoiceCards, type Choice } from "./CompanySettingsPage";
 
@@ -36,8 +38,13 @@ const BUY_OR_ADD = "Купите пакет кредитов или добавь
 /**
  * Тариф и кредиты (ТЗ §7, решение владельца 09.10). Тариф и места меняет
  * команда kronto по заявке. Кредиты: месячный пул и купленные пакеты;
- * пакет администратор заказывает здесь, оплата — по счёту, кредиты
- * зачисляет команда. Цены пакетов — с бэкенда (GET /credits/packs).
+ * пакет администратор заказывает здесь. Цены пакетов — с бэкенда (GET
+ * /credits/packs).
+ *
+ * Оплата (GET /billing): пока банк не подключён (enabled=false), пакет
+ * оплачивается по счёту от команды, и она же зачисляет кредиты. С банком —
+ * подписка счётом или картой, счета и акты для скачивания, пакет — счётом
+ * или ссылкой с чеком.
  */
 export function TariffPage() {
   useDocumentTitle("Тариф");
@@ -47,7 +54,12 @@ export function TariffPage() {
     queryFn: () => unwrap(api.GET("/api/v1/company")),
   });
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => unwrap(api.GET("/api/v1/usage")) });
+  const billing = useQuery({
+    queryKey: BILLING_KEY,
+    queryFn: () => unwrap(api.GET("/api/v1/billing")),
+  });
   const [requesting, setRequesting] = useState(false);
+  const enabled = billing.data?.enabled === true;
 
   return (
     <Page>
@@ -61,15 +73,18 @@ export function TariffPage() {
           ) : (
             <PlanSection settings={company.data} onChange={() => setRequesting(true)} />
           )}
+          {billing.data && enabled ? <SubscriptionSection billing={billing.data} /> : null}
           {usage.isError ? (
             <Notice kind="error">{errorMessage(usage.error)}</Notice>
           ) : (
             <UsageSection usage={usage.data} />
           )}
-          <PacksSection />
+          <PacksSection enabled={enabled} />
+          {billing.data && enabled ? <DocumentsSection billing={billing.data} /> : null}
           <p className={`muted ${styles.small}`}>
-            Тариф и места меняет команда kronto по вашей заявке. Пакеты кредитов пока оплачиваются
-            по счёту, оплата картой появится позже.
+            {enabled
+              ? "Тариф и места меняет команда kronto по вашей заявке. Подписка и пакеты оплачиваются счётом для юрлица или ИП либо картой и через СБП с чеком; акт за месяц — на этой странице и на почте для документов."
+              : "Тариф и места меняет команда kronto по вашей заявке. Пакеты кредитов пока оплачиваются по счёту, оплата картой появится позже."}
           </p>
         </div>
       )}
@@ -193,10 +208,11 @@ function UsageSection({ usage }: { usage: Usage }) {
 }
 
 /**
- * Пакеты кредитов: цены и срок жизни — с бэкенда. «Купить» создаёт заказ,
- * он ждёт оплаты по счёту; кредиты зачисляет команда kronto.
+ * Пакеты кредитов: цены и срок жизни — с бэкенда. «Купить» создаёт заказ.
+ * Без банка он ждёт оплаты по счёту от команды; с банком — сразу счёт или
+ * ссылка на оплату картой, кредиты зачисляются после оплаты сами.
  */
-function PacksSection() {
+function PacksSection({ enabled }: { enabled: boolean }) {
   const packs = useQuery({
     queryKey: ["credits", "packs"],
     queryFn: () => unwrap(api.GET("/api/v1/credits/packs")),
@@ -212,7 +228,11 @@ function PacksSection() {
       title="Пакеты кредитов"
       description={
         months
-          ? `Расходуются после месячного пула и действуют ${months} ${plural(months, "месяц", "месяца", "месяцев")} с зачисления; первыми списываются те, что раньше сгорают. Оплата — по счёту: команда kronto пришлёт его и зачислит кредиты после оплаты.`
+          ? `Расходуются после месячного пула и действуют ${months} ${plural(months, "месяц", "месяца", "месяцев")} с зачисления; первыми списываются те, что раньше сгорают. ${
+              enabled
+                ? "Оплата — счётом для юрлица или ИП либо картой и через СБП с чеком; кредиты зачисляются сразу после оплаты."
+                : "Оплата — по счёту: команда kronto пришлёт его и зачислит кредиты после оплаты."
+            }`
           : undefined
       }
     >
@@ -247,7 +267,9 @@ function PacksSection() {
       ) : (
         <OrdersTable orders={orders.data} />
       )}
-      {buying ? <BuyDialog pack={buying} onClose={() => setBuying(null)} /> : null}
+      {buying ? (
+        <BuyDialog pack={buying} enabled={enabled} onClose={() => setBuying(null)} />
+      ) : null}
     </Section>
   );
 }
@@ -291,12 +313,46 @@ function OrdersTable({ orders }: { orders: Order[] }) {
   );
 }
 
+const PACK_METHODS: Choice<Method>[] = [
+  {
+    value: "invoice",
+    title: "Счёт для юрлица или ИП",
+    text: "Оплата с расчётного счёта; нужны реквизиты компании.",
+  },
+  {
+    value: "card",
+    title: "Картой или СБП",
+    text: "Сразу по ссылке, чек придёт на почту.",
+  },
+];
+
 /** Подтверждение заказа. Окно монтируется на время покупки. */
-function BuyDialog({ pack, onClose }: { pack: Pack; onClose: () => void }) {
+function BuyDialog({
+  pack,
+  enabled,
+  onClose,
+}: {
+  pack: Pack;
+  enabled: boolean;
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
+  const [method, setMethod] = useState<Method>("invoice");
   const order = useMutation({
-    mutationFn: () => unwrap(api.POST("/api/v1/credits/orders", { body: { pack: pack.code } })),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ORDERS_KEY }),
+    mutationFn: () =>
+      unwrap(
+        api.POST("/api/v1/credits/orders", {
+          // Без банка — прежнее тело: способа оплаты нет, счёт пришлёт команда
+          // (на сервере по умолчанию invoice).
+          body: (enabled
+            ? { pack: pack.code, payment_method: method }
+            : { pack: pack.code }) as Schemas["CreditOrderRequest"],
+        }),
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
+      void queryClient.invalidateQueries({ queryKey: BILLING_KEY });
+    },
   });
   const done = order.data;
   const months = plural(pack.valid_months, "месяц", "месяца", "месяцев");
@@ -325,7 +381,9 @@ function BuyDialog({ pack, onClose }: { pack: Pack; onClose: () => void }) {
         )
       }
     >
-      {done ? (
+      {done && done.invoice_id ? (
+        <PaidByBank order={done} />
+      ) : done ? (
         <Notice kind="ok" title={`Заказ № ${done.number} ждёт оплаты`}>
           Команда kronto пришлёт счёт на {formatKopecks(done.amount_kopecks)}. Кредиты появятся
           после оплаты — администраторам придёт уведомление.
@@ -333,13 +391,61 @@ function BuyDialog({ pack, onClose }: { pack: Pack; onClose: () => void }) {
       ) : (
         <>
           {order.isError ? <Notice kind="error">{errorMessage(order.error)}</Notice> : null}
-          <p>
-            Создадим заказ, команда kronto пришлёт счёт. Кредиты расходуются после месячного пула и
-            действуют {pack.valid_months} {months} с зачисления.
-          </p>
+          {enabled ? (
+            <>
+              <ChoiceCards
+                label="Способ оплаты"
+                value={method}
+                options={PACK_METHODS}
+                onChange={setMethod}
+              />
+              <p>
+                Кредиты зачислятся сразу после оплаты, расходуются после месячного пула и действуют{" "}
+                {pack.valid_months} {months} с зачисления.
+              </p>
+            </>
+          ) : (
+            <p>
+              Создадим заказ, команда kronto пришлёт счёт. Кредиты расходуются после месячного пула
+              и действуют {pack.valid_months} {months} с зачисления.
+            </p>
+          )}
         </>
       )}
     </Modal>
+  );
+}
+
+/** Заказ со счётом или ссылкой банка: что делать дальше. */
+function PaidByBank({ order }: { order: Order }) {
+  if (order.payment_url) {
+    return (
+      <IssuedNotice
+        invoice={{
+          id: order.invoice_id ?? order.id,
+          number: `№ ${order.number}`,
+          kind: "credits",
+          status: "awaiting_payment",
+          payment_method: "card",
+          amount_kopecks: order.amount_kopecks,
+          title: "",
+          purpose: "",
+          period_start: null,
+          period_end: null,
+          due_date: null,
+          payment_url: order.payment_url,
+          has_pdf: false,
+          created_at: order.created_at,
+          paid_at: null,
+        }}
+      />
+    );
+  }
+  return (
+    <Notice kind="ok" title={`Заказ № ${order.number}: счёт выставлен`}>
+      Счёт на {formatKopecks(order.amount_kopecks)} — в списке «Счета и акты» на этой странице.
+      Кредиты зачислятся, как только придёт оплата.
+    </Notice>
   );
 }
 

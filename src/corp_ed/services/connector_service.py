@@ -191,7 +191,7 @@ class ConnectorService:
         # память в разработке). None — только в CLI и старых тестах.
         self.limiter = limiter
 
-    # --- каталог и чтение -----------------------------------------------------
+    # --- каталог и чтение -------------------------------------------------------------
 
     def kinds(self) -> list[KindSpec]:
         return self.registry.kinds()
@@ -219,7 +219,7 @@ class ConnectorService:
         connector = await self.get(connector_id)
         return await self.runs.list_for_connector(connector.id, limit=RUNS_LIMIT)
 
-    # --- настройка (ADMIN) ----------------------------------------------------
+    # --- настройка (ADMIN) ------------------------------------------------------------
 
     async def allowance(self) -> Allowance:
         """Тариф компании, подключённые системы и технический потолок."""
@@ -725,7 +725,7 @@ class ConnectorService:
         await self.session.commit()
         return queued
 
-    # --- сотрудник: «подключить мои источники» --------------------------------
+    # --- сотрудник: «подключить мои источники» ----------------------------------------
 
     async def my_connectors(
         self, user: User
@@ -832,7 +832,7 @@ class ConnectorService:
         await self.session.commit()
         await self._revoke(revocation)
 
-    # --- вспомогательное ------------------------------------------------------
+    # --- вспомогательное --------------------------------------------------------------
 
     def _spec(self, kind: str) -> KindSpec:
         try:

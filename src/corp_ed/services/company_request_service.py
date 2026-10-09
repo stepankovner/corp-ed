@@ -122,7 +122,7 @@ class CompanyRequestService:
             raise ConflictError("Заявка уже рассмотрена")
         return request
 
-    # --- команда Kronto (cli) -------------------------------------------------
+    # --- команда Kronto (cli) ---------------------------------------------------------
 
     async def list(self, status: str | None = "new") -> list[CompanyRequest]:
         return await self.requests.list_by_status(status)

@@ -8,11 +8,10 @@
 отменить. Ручное начисление (бонус, компенсация) — тоже из панели, с
 комментарием в журнале.
 
-Точки расширения следующего этапа:
-- счёт (PDF) — InvoiceIssuer.issue при создании заказа, его id ложится в
-  credit_orders.invoice_id;
-- онлайн-оплата картой — payment_method='card', подтверждение платежа
-  вызывает тот же StaffCreditService.mark_paid (без учётки команды).
+С подключённым банком (PAYMENTS_PROVIDER, services/billing_service.py)
+заказ сразу получает счёт юрлицу или ссылку на оплату картой с чеком
+(InvoiceIssuer.issue, id — в credit_orders.invoice_id), а оплату
+отмечает вебхук банка тем же settle_order, что и кнопка команды.
 """
 
 from collections.abc import Callable
@@ -28,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from corp_ed.core.exceptions import CodedConflictError, NotFoundError
 from corp_ed.core.tenant_context import require_tenant, tenant_scope
 from corp_ed.domain.credit_packs import pack_by_code, pack_expiry
-from corp_ed.domain.models import CreditGrant, CreditOrder, Tenant, User
+from corp_ed.domain.models import CreditGrant, CreditOrder, Invoice, Tenant, User
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.credit_repository import CreditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -60,16 +59,20 @@ def _utcnow() -> datetime:
 
 
 class InvoiceIssuer(Protocol):
-    """Счёт на оплату заказа (PDF) — следующий этап. Вернёт id счёта для
-    credit_orders.invoice_id; None — счёта нет."""
+    """Счёт или ссылка на оплату заказа через банк. None — банка нет,
+    счёт выставляет команда вручную."""
 
-    async def issue(self, session: AsyncSession, order: CreditOrder) -> UUID | None: ...
+    async def issue(
+        self, session: AsyncSession, order: CreditOrder, admin: User
+    ) -> Invoice | None: ...
 
 
 class NoInvoices:
-    """Счёт пока выставляет команда вручную."""
+    """Банк не подключён (PAYMENTS_PROVIDER=none): счёт выставляет команда."""
 
-    async def issue(self, session: AsyncSession, order: CreditOrder) -> UUID | None:
+    async def issue(
+        self, session: AsyncSession, order: CreditOrder, admin: User
+    ) -> Invoice | None:
         return None
 
 
@@ -96,10 +99,18 @@ class CreditOrderService:
     async def orders(self) -> list[CreditOrder]:
         return await self.ledger.orders(ORDERS_LIMIT)
 
-    async def create(self, admin: User, pack_code: str) -> CreditOrder:
+    async def create(
+        self, admin: User, pack_code: str, payment_method: str = "invoice"
+    ) -> tuple[CreditOrder, Invoice | None]:
+        """Заказ и, если банк подключён, его счёт или ссылка на оплату."""
         pack = pack_by_code(pack_code)
         if pack is None:
             raise CodedConflictError("Такого пакета кредитов нет", "unknown_pack")
+        if payment_method == "card" and isinstance(self.invoices, NoInvoices):
+            raise CodedConflictError(
+                "Оплата картой пока недоступна — закажите пакет по счёту",
+                "payments_disabled",
+            )
         tenant_id = require_tenant()
         # Строка компании — на время выдачи номера: два заказа не получат
         # один номер.
@@ -120,13 +131,13 @@ class CreditOrderService:
             pack=pack.code,
             credits=pack.credits,
             amount_kopecks=pack.price_kopecks,
-            payment_method="invoice",
+            payment_method=payment_method,
             created_by=admin.id,
         )
         self.session.add(order)
         await self.session.flush()
-        # Здесь подключится счёт (PDF) следующего этапа.
-        order.invoice_id = await self.invoices.issue(self.session, order)
+        invoice = await self.invoices.issue(self.session, order, admin)
+        order.invoice_id = invoice.id if invoice is not None else None
         self.audit.record(
             AuditAction.CREDITS_ORDER_CREATED,
             tenant_id=tenant_id,
@@ -142,15 +153,17 @@ class CreditOrderService:
             number=order.number,
             pack=pack.code,
         )
-        self.notifier.notify(
-            credit_order_message(
-                tenant_id=tenant_id,
-                number=order.number,
-                credits=order.credits,
-                amount_kopecks=order.amount_kopecks,
+        # Счёт выставил банк — оплата зачтётся сама, команде писать незачем.
+        if invoice is None:
+            self.notifier.notify(
+                credit_order_message(
+                    tenant_id=tenant_id,
+                    number=order.number,
+                    credits=order.credits,
+                    amount_kopecks=order.amount_kopecks,
+                )
             )
-        )
-        return order
+        return order, invoice
 
 
 @dataclass(frozen=True)
@@ -207,32 +220,17 @@ class StaffCreditService:
             async with self.session_maker() as session:
                 order = await self._open_order(session, order_id)
                 now = self.now()
-                order.status = PAID
-                order.paid_at = now
-                grant = CreditGrant(
-                    credits=order.credits,
-                    remaining=order.credits,
-                    source="purchase",
-                    order_id=order.id,
-                    expires_at=pack_expiry(now),
+                await settle_order(session, tenant.id, order, now)
+                # Счёт или ссылка банка на этот заказ — тоже оплачены: деньги
+                # пришли мимо них (команда увидела сама).
+                invoice = (
+                    await session.get(Invoice, order.invoice_id, with_for_update=True)
+                    if order.invoice_id is not None
+                    else None
                 )
-                session.add(grant)
-                AuditRepository(session).record(
-                    AuditAction.CREDITS_ORDER_PAID,
-                    tenant_id=tenant.id,
-                    target_type="credit_order",
-                    target_id=order.id,
-                    details={
-                        **_order_details(order),
-                        "expires_at": grant.expires_at.isoformat(),
-                    },
-                )
-                await NotificationService(session).notify_admins(
-                    tenant.id,
-                    credits_added_notice(
-                        order.credits, grant.expires_at, order_number=order.number
-                    ),
-                )
+                if invoice is not None and invoice.status == AWAITING:
+                    invoice.status = PAID
+                    invoice.paid_at = now
                 await session.commit()
         logger.info("credit_order_paid", tenant_id=str(tenant.id), number=order.number)
         return StaffOrder(order=order, tenant=tenant)
@@ -310,6 +308,40 @@ class StaffCreditService:
         if tenant is None:
             raise NotFoundError("Компания не найдена")
         return tenant
+
+
+async def settle_order(
+    session: AsyncSession, tenant_id: UUID, order: CreditOrder, now: datetime
+) -> CreditGrant:
+    """Заказ оплачен: кредиты на 12 месяцев, событие в журнале,
+    администраторам — «Кредиты зачислены». Один путь для кнопки команды и
+    для вебхука банка. Вызывать в контексте компании со строкой заказа,
+    заблокированной FOR UPDATE; коммит — у вызывающего (уникальный
+    credit_grants.order_id — второй рубеж от двойного зачисления)."""
+    order.status = PAID
+    order.paid_at = now
+    grant = CreditGrant(
+        credits=order.credits,
+        remaining=order.credits,
+        source="purchase",
+        order_id=order.id,
+        expires_at=pack_expiry(now),
+    )
+    session.add(grant)
+    AuditRepository(session).record(
+        AuditAction.CREDITS_ORDER_PAID,
+        tenant_id=tenant_id,
+        target_type="credit_order",
+        target_id=order.id,
+        details={**_order_details(order), "expires_at": grant.expires_at.isoformat()},
+    )
+    await NotificationService(session).notify_admins(
+        tenant_id,
+        credits_added_notice(
+            order.credits, grant.expires_at, order_number=order.number
+        ),
+    )
+    return grant
 
 
 def _order_details(order: CreditOrder) -> dict[str, object]:

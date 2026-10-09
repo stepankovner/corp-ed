@@ -93,6 +93,7 @@ export function CompanySettingsPage() {
       ) : (
         <div className={styles.stack}>
           <CompanySection settings={settings.data} />
+          <RequisitesSection />
           <NotFoundSection settings={settings.data} />
           <SecuritySection settings={settings.data} />
           <RetentionSection settings={settings.data} />
@@ -364,6 +365,164 @@ function DailyLimitSection({ limit }: { limit: number | null }) {
         </div>
       </form>
     </Section>
+  );
+}
+
+type Requisites = Schemas["RequisitesResponse"];
+type RequisitesForm = {
+  legal_name: string;
+  inn: string;
+  kpp: string;
+  address: string;
+  documents_email: string;
+};
+
+const REQUISITES_KEY = ["company", "requisites"] as const;
+
+/** Как на бэкенде (domain/billing.py): у организации 10 цифр и КПП, у ИП — 12 и без КПП. */
+const INN_SHAPE = /^(\d{10}|\d{12})$/;
+const KPP_SHAPE = /^\d{4}[\dA-Z]{2}\d{3}$/;
+
+function requisitesForm(item: Requisites | null): RequisitesForm {
+  return {
+    legal_name: item?.legal_name ?? "",
+    inn: item?.inn ?? "",
+    kpp: item?.kpp ?? "",
+    address: item?.address ?? "",
+    documents_email: item?.documents_email ?? "",
+  };
+}
+
+/**
+ * Реквизиты для счетов и актов (решение владельца 09.10). Контрольные
+ * цифры ИНН проверяет сервер (422 с полем); здесь — только вид, чтобы
+ * ошибка была видна сразу.
+ */
+function RequisitesSection() {
+  const requisites = useQuery({
+    queryKey: REQUISITES_KEY,
+    queryFn: () => unwrap(api.GET("/api/v1/company/requisites")),
+  });
+  return (
+    <Section
+      title="Реквизиты для счетов"
+      description="Попадают в счета и акты. Изменения не трогают уже выставленные документы."
+    >
+      {requisites.isPending ? (
+        <PageSpinner />
+      ) : requisites.isError ? (
+        <Notice kind="error">{errorMessage(requisites.error)}</Notice>
+      ) : (
+        <RequisitesFields
+          key={requisites.data?.updated_at ?? "new"}
+          saved={requisites.data ?? null}
+        />
+      )}
+    </Section>
+  );
+}
+
+function RequisitesFields({ saved }: { saved: Requisites | null }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [form, setForm] = useState<RequisitesForm>(() => requisitesForm(saved));
+  const [problems, setProblems] = useState<Partial<Record<keyof RequisitesForm, string>>>({});
+  const save = useMutation({
+    mutationFn: (body: Schemas["RequisitesRequest"]) =>
+      unwrap(api.PUT("/api/v1/company/requisites", { body })),
+    onSuccess: (data) => {
+      queryClient.setQueryData(REQUISITES_KEY, data);
+      void queryClient.invalidateQueries({ queryKey: ["billing"] });
+      toast.show("Реквизиты сохранены");
+    },
+    onError: (error) => {
+      const field = error instanceof ApiError ? error.field : null;
+      if (field && field in form) {
+        setProblems({ [field]: errorMessage(error) });
+      }
+    },
+  });
+  const soleTrader = form.inn.trim().length === 12;
+
+  function set(name: keyof RequisitesForm, value: string) {
+    setForm((current) => ({ ...current, [name]: value }));
+    setProblems((current) => ({ ...current, [name]: undefined }));
+  }
+
+  function submit(event: SubmitEvent) {
+    event.preventDefault();
+    const inn = form.inn.trim();
+    const kpp = form.kpp.trim().toUpperCase();
+    const next: Partial<Record<keyof RequisitesForm, string>> = {};
+    if (clean(form.legal_name).length < 2) next.legal_name = "Как в выписке из ЕГРЮЛ или ЕГРИП.";
+    if (!INN_SHAPE.test(inn)) next.inn = "ИНН — 10 цифр у организации или 12 у ИП.";
+    if (!soleTrader && !KPP_SHAPE.test(kpp)) next.kpp = "КПП — 9 знаков, например 773601001.";
+    if (clean(form.address).length < 5) next.address = "Юридический адрес полностью.";
+    setProblems(next);
+    if (Object.keys(next).length > 0) return;
+    const email = form.documents_email.trim();
+    save.mutate({
+      legal_name: clean(form.legal_name),
+      inn,
+      kpp: soleTrader ? null : kpp,
+      address: clean(form.address),
+      documents_email: email || null,
+    });
+  }
+
+  const fieldError = save.isError && !(save.error instanceof ApiError && save.error.field);
+  return (
+    <form className={styles.form} onSubmit={submit} noValidate>
+      {fieldError ? <Notice kind="error">{errorMessage(save.error)}</Notice> : null}
+      <TextField
+        label="Название организации или ИП"
+        value={form.legal_name}
+        maxLength={300}
+        onChange={(e) => set("legal_name", e.target.value)}
+        placeholder="ООО «Ромашка» или ИП Иванов Иван Иванович"
+        error={problems.legal_name ?? null}
+      />
+      <TextField
+        label="ИНН"
+        inputMode="numeric"
+        maxLength={12}
+        value={form.inn}
+        onChange={(e) => set("inn", e.target.value)}
+        error={problems.inn ?? null}
+      />
+      {soleTrader ? null : (
+        <TextField
+          label="КПП"
+          maxLength={9}
+          value={form.kpp}
+          onChange={(e) => set("kpp", e.target.value)}
+          hint="У ИП КПП нет — поле пропадёт, когда в ИНН 12 цифр."
+          error={problems.kpp ?? null}
+        />
+      )}
+      <TextField
+        label="Юридический адрес"
+        maxLength={500}
+        value={form.address}
+        onChange={(e) => set("address", e.target.value)}
+        error={problems.address ?? null}
+      />
+      <TextField
+        label="Почта для документов"
+        optional
+        type="email"
+        maxLength={254}
+        value={form.documents_email}
+        onChange={(e) => set("documents_email", e.target.value)}
+        hint="Сюда придут акты и чеки. Пусто — на почту администраторов."
+        error={problems.documents_email ?? null}
+      />
+      <div className={styles.actions}>
+        <Button type="submit" size="sm" busy={save.isPending}>
+          Сохранить реквизиты
+        </Button>
+      </div>
+    </form>
   );
 }
 

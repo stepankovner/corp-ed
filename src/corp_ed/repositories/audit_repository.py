@@ -92,6 +92,18 @@ class AuditAction(StrEnum):
     # Начисление командой без заказа: бонус, компенсация.
     CREDITS_GRANTED = "credits.granted"
     CREDITS_TOPUP_REQUESTED = "credits.topup_requested"
+    # Оплата (решения владельца 09.10): реквизиты, подписка, счета, акты.
+    BILLING_REQUISITES_UPDATED = "billing.requisites_updated"
+    BILLING_SUBSCRIPTION_CHOSEN = "billing.subscription_chosen"
+    BILLING_INVOICE_ISSUED = "billing.invoice_issued"
+    BILLING_INVOICE_PAID = "billing.invoice_paid"
+    BILLING_INVOICE_CANCELLED = "billing.invoice_cancelled"
+    BILLING_SEATS_DEFERRED = "billing.seats_deferred"
+    BILLING_SEATS_APPLIED = "billing.seats_applied"
+    BILLING_OVERDUE = "billing.overdue"
+    BILLING_ACT_ISSUED = "billing.act_issued"
+    # Реквизитов нет, а счёт на продление пора выставить: напомнили.
+    BILLING_REQUISITES_MISSING = "billing.requisites_missing"
     CONNECTOR_CREATED = "connector.created"
     CONNECTOR_UPDATED = "connector.updated"
     CONNECTOR_DELETED = "connector.deleted"

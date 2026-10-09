@@ -5,7 +5,9 @@
 - SyncWorker — задачи connector_sync_jobs (синхронизация коннекторов) и
   планировщик, который раз в минуту ставит в очередь подключения с
   истёкшим интервалом;
-- MailWorker — письма из outbox_emails (services/mail_worker.py).
+- MailWorker — письма из outbox_emails (services/mail_worker.py);
+- billing_loop — оплата через банк (services/billing_scheduler.py), только
+  с PAYMENTS_PROVIDER: счета на продление, сверка, просрочка, акты.
 
 Каждая задача выполняется в контексте своего тенанта, временные сбои
 повторяются с растущей паузой. Останавливается по SIGTERM/SIGINT после
@@ -46,7 +48,10 @@ from corp_ed.core.config import (
     get_connector_settings,
     get_http_settings,
     get_mail_settings,
+    get_payment_settings,
+    get_seller_settings,
     get_team_notify_settings,
+    get_tochka_settings,
 )
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import NotFoundError
@@ -75,10 +80,14 @@ from corp_ed.repositories.ingest_job_repository import (
 )
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.services.billing_scheduler import BillingScheduler
+from corp_ed.services.billing_service import Billing
 from corp_ed.services.connector_sync_service import ConnectorSyncService
 from corp_ed.services.digest_service import DigestService
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.mail_worker import MailWorker
+from corp_ed.services.payment_service import PaymentService
+from corp_ed.services.payments.tochka import TochkaProvider, tochka_http_client
 from corp_ed.services.team_notify import build_team_notifier
 from corp_ed.services.team_notify import drain as drain_team_notifier
 
@@ -352,6 +361,26 @@ async def digest_loop(
             await asyncio.wait_for(stop.wait(), timeout=every)
 
 
+BILLING_EVERY = 900.0
+"""Как часто планировщик оплаты проверяет счета, сроки и акты."""
+
+
+async def billing_loop(
+    stop: asyncio.Event,
+    scheduler: BillingScheduler,
+    every: float = BILLING_EVERY,
+) -> None:
+    """Оплата через банк: счета на продление, сверка с банком, просрочка,
+    акты. Сбой одного прохода не останавливает цикл."""
+    while not stop.is_set():
+        try:
+            await scheduler.run_due()
+        except Exception:
+            logger.exception("billing_loop_error")
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=every)
+
+
 async def heartbeat(
     stop: asyncio.Event,
     path: Path = HEARTBEAT_PATH,
@@ -467,8 +496,34 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
         mail_worker = MailWorker(
             get_session_maker(), build_sender(get_mail_settings(), outside)
         )
+        loops = []
+        tochka_client: httpx.AsyncClient | None = None
+        if get_payment_settings().provider == "tochka":
+            tochka = get_tochka_settings()
+            tochka_client = tochka_http_client(
+                tochka, via_proxy=connector_settings.outbound_via_proxy
+            )
+            billing = Billing(
+                settings=get_payment_settings(),
+                provider=TochkaProvider(tochka_client, tochka),
+                seller=get_seller_settings(),
+                zone=get_billing_settings().zone,
+                site_url=get_mail_settings().site_url,
+                notifier=notifier,
+            )
+            loops.append(
+                billing_loop(
+                    stop,
+                    BillingScheduler(
+                        get_session_maker(),
+                        billing,
+                        PaymentService(get_session_maker(), billing),
+                    ),
+                )
+            )
         try:
             await asyncio.gather(
+                *loops,
                 ingest_worker.run_forever(stop),
                 sync_worker.run_forever(stop),
                 mail_worker.run_forever(stop),
@@ -483,6 +538,8 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             )
         finally:
             await drain_team_notifier(notifier)
+            if tochka_client is not None:
+                await tochka_client.aclose()
             if redis is not None:
                 await redis.aclose()
 

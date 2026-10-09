@@ -370,6 +370,165 @@ def get_billing_settings() -> BillingSettings:
     return BillingSettings()
 
 
+class PaymentSettings(BaseSettings):
+    """Приём оплаты (решения владельца 09.10): подписка компании и пакеты
+    кредитов — счётом юрлицу или картой со ссылкой и чеком.
+
+    provider=none (по умолчанию) — оплату отмечает команда в нашей панели,
+    как раньше: счетов, ссылок и вебхуков нет. tochka — API Точки
+    (services/payments/tochka.py, настройки TOCHKA_*), включает владелец,
+    когда подключит договор эквайринга, кассу и ключ API (docs/DEPLOY.md).
+
+    Скидки за квартал и год — ЕДИНСТВЕННОЕ место этих чисел: суммы
+    считает domain/billing.py, страница тарифа берёт их из GET /billing.
+    """
+
+    provider: Literal["none", "tochka"] = "none"
+    discount_quarter_percent: float = Field(default=5, ge=0, lt=100)
+    discount_year_percent: float = Field(default=10, ge=0, lt=100)
+    # Счёт на следующий период — за столько дней до конца текущего.
+    invoice_days_ahead: int = Field(default=5, ge=1, le=30)
+    # Срок оплаты счёта, который не продлевает период (первый счёт,
+    # доплата за места, пакет кредитов): дни с выставления. Банку срок
+    # не передаётся — поздняя оплата тоже сопоставится.
+    invoice_due_days: int = Field(default=5, ge=1, le=60)
+    # Льготный срок после конца оплаченного периода: потом подписка
+    # «просрочена» и команде уходит уведомление. Компанию никто не
+    # блокирует автоматически — решает команда.
+    grace_days: int = Field(default=7, ge=0, le=60)
+    # Шрифт с кириллицей для своих PDF (services/billing_pdf.py); в образе —
+    # пакет fonts-dejavu-core.
+    pdf_font: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+    model_config = SettingsConfigDict(
+        env_prefix="PAYMENTS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def enabled(self) -> bool:
+        return self.provider != "none"
+
+
+@lru_cache
+def get_payment_settings() -> PaymentSettings:
+    return PaymentSettings()
+
+
+class SellerSettings(BaseSettings):
+    """Реквизиты продавца для своих PDF (счёт и акт, когда банк их не
+    отдаёт). Репозиторий публичный: реквизиты — только в окружении
+    сервера (BILLING_SELLER_*), в коде их нет."""
+
+    name: str = Field(default="", max_length=300)
+    """Полностью: «ИП Фамилия Имя Отчество»."""
+    inn: str = Field(default="", max_length=12)
+    ogrn: str = Field(default="", max_length=15)
+    address: str = Field(default="", max_length=500)
+    bank_name: str = Field(default="", max_length=300)
+    bik: str = Field(default="", max_length=9)
+    account: str = Field(default="", max_length=20)
+    corr_account: str = Field(default="", max_length=20)
+    email: str = Field(default="", max_length=254)
+    phone: str = Field(default="", max_length=32)
+
+    model_config = SettingsConfigDict(
+        env_prefix="BILLING_SELLER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @property
+    def complete(self) -> bool:
+        return bool(self.name and self.inn and self.account and self.bik)
+
+
+@lru_cache
+def get_seller_settings() -> SellerSettings:
+    return SellerSettings()
+
+
+TOCHKA_WEBHOOK_KEY = (
+    '{"kty":"RSA","e":"AQAB","n":"rwm77av7GIttq-JF1itEgLCGEZW_zz16RlUQVYlLbJty'
+    "RSu61fCec_rroP6PxjXU2uLzUOaGaLgAPeUZAJrGuVp9nryKgbZceHckdHDYgJd9TsdJ1MYUsXa"
+    "Ob9joN9vmsCscBx1lwSlFQyNQsHUsrjuDk-opf6RCuazRQ9gkoDCX70HV8WBMFoVm-YWQKJHZEa"
+    "IQxg_DU4gMFyKRkDGKsYKA0POL-UgWA1qkg6nHY5BOMKaqxbc5ky87muWB5nNk4mfmsckyFv9j1"
+    "gBiXLKekA_y4UwG2o1pbOLpJS3bP_c95rm4M9ZBmGXqfOQhbjz8z-s9C11i-jmOQ2ByohS-ST3E"
+    "5sqBzIsxxrxyQDTw--bZNhzpbciyYW4GfkkqyeYoOPd_84jPTBDKQXssvj8ZOj2XboS77tvEO1n"
+    "1WlwUzh8HPCJod5_fEgSXuozpJtOggXBv0C2ps7yXlDZf-7Jar0UYc_NJEHJF-xShlqd6Q3sVL0"
+    '2PhSCM-ibn9DN9BKmD"}'
+)
+"""Публичный ключ Точки для подписи вебхуков (RS256, JWK) — с
+https://enter.tochka.com/doc/openapi/static/keys/public (проверено
+09.10.2026: им подписаны примеры вебхуков в документации). Ключ
+публичный, поэтому есть значение по умолчанию; сменит банк ключ — новый
+задаётся TOCHKA_WEBHOOK_PUBLIC_KEY без выкатки."""
+
+
+class TochkaSettings(BaseSettings):
+    """API Точки (PAYMENTS_PROVIDER=tochka): JWT-ключ из интернет-банка
+    («Интеграции и API»), код клиента, счёт, торговая точка.
+
+    Сервер API (enter.tochka.com) подписан корневым сертификатом НУЦ
+    Минцифры — его нет в стандартных хранилищах. Он лежит в образе
+    (Dockerfile, отпечаток проверяется при сборке) и подключается только к
+    клиенту Точки (services/payments/tochka.py), не ко всем исходящим.
+    """
+
+    api_url: str = "https://enter.tochka.com/uapi/"
+    jwt: SecretStr | None = None
+    client_id: str = Field(default="", max_length=128)
+    """client_id ключа: на него вешается вебхук. Меняется при перевыпуске
+    ключа — вебхук тогда создаётся заново (cli payments webhook)."""
+    customer_code: str = Field(default="", max_length=9)
+    account_id: str = Field(default="", max_length=64)
+    """Расчётный счёт в формате API: «40802…/044525104»."""
+    merchant_id: str = Field(default="", max_length=15)
+    webhook_public_key: str = TOCHKA_WEBHOOK_KEY
+    ca_file: str = "/app/certs/russian_trusted_root_ca.pem"
+    timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    tax_system_code: Literal["usn_income", "usn_income_outcome", "osn", "patent"] = (
+        "usn_income"
+    )
+
+    model_config = SettingsConfigDict(
+        env_prefix="TOCHKA_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    @field_validator("api_url")
+    @classmethod
+    def validate_api_url(cls, value: str) -> str:
+        if not value.startswith("https://"):
+            raise ValueError("TOCHKA_API_URL must be https://")
+        return value.rstrip("/") + "/"
+
+    @field_validator("webhook_public_key")
+    @classmethod
+    def default_webhook_key(cls, value: str) -> str:
+        # Пустая переменная в .env — «не задано», а не «ключа нет».
+        return value.strip() or TOCHKA_WEBHOOK_KEY
+
+    def missing(self) -> list[str]:
+        """Каких переменных не хватает для работы с Точкой."""
+        names = {
+            "TOCHKA_JWT": self.jwt is not None and self.jwt.get_secret_value(),
+            "TOCHKA_CUSTOMER_CODE": self.customer_code,
+            "TOCHKA_ACCOUNT_ID": self.account_id,
+        }
+        return [name for name, value in names.items() if not value]
+
+
+@lru_cache
+def get_tochka_settings() -> TochkaSettings:
+    return TochkaSettings()
+
+
 class LeadSettings(BaseSettings):
     """Заявки на созвон со страницы тарифов (досье 3.3 и 10.1, решение 28.09).
 

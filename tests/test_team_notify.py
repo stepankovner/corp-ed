@@ -17,11 +17,14 @@ from corp_ed.domain.models import Tenant, User
 from corp_ed.services.team_notify import (
     NULL_NOTIFIER,
     TelegramNotifier,
+    billing_overdue_message,
     build_team_notifier,
     connector_stopped_message,
     credit_order_message,
     lead_message,
+    payment_review_message,
     pool_exhausted_message,
+    seats_topup_failed_message,
 )
 from tests.conftest import make_credit_service
 from tests.team_notify_helpers import RecordingNotifier
@@ -119,6 +122,21 @@ def test_messages_carry_no_personal_data() -> None:
     ) == (
         "Компания 1a2b3c4d: подключение yandex360 остановлено, ошибка "
         "invalid_grant. Нужны новые учётные данные от админа компании."
+    )
+    assert payment_review_message(
+        amount_kopecks=549_000, problem="amount_mismatch", tenant_id=tenant_id
+    ) == (
+        "Платёж на 5 490 ₽ (компания 1a2b3c4d) не зачтён автоматически: "
+        "amount_mismatch. Разобрать — в нашей панели, «Оплата»."
+    )
+    assert "компания" not in payment_review_message(
+        amount_kopecks=None, problem="unmatched", tenant_id=None
+    )
+    assert billing_overdue_message(
+        tenant_id=tenant_id, paid_until=date(2026, 10, 31)
+    ).startswith("Компания 1a2b3c4d: подписка просрочена — оплачено до 31.10.2026")
+    assert seats_topup_failed_message(tenant_id=tenant_id).startswith(
+        "Компания 1a2b3c4d: места добавлены"
     )
 
 

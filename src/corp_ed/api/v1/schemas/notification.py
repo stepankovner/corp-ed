@@ -19,6 +19,10 @@ NotificationKindName = Literal[
     "department_confirmed",
     "department_rejected",
     "weekly_digest",
+    "billing_invoice",
+    "billing_paid",
+    "billing_overdue",
+    "billing_act",
 ]
 """credits_added — администраторам: команда зачислила купленные кредиты или
 начислила бонус; credits_topup_requested — сотрудник упёрся в лимит и
