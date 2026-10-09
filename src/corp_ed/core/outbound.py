@@ -248,11 +248,16 @@ async def _read_limited(response: httpx.Response, max_bytes: int) -> bytes:
 _TRANSFER_HEADERS = ("content-encoding", "content-length", "transfer-encoding")
 
 
-def _buffered(response: httpx.Response, body: bytes) -> httpx.Response:
+def _buffered(
+    response: httpx.Response, body: bytes, *, keep_length: bool = False
+) -> httpx.Response:
     """Прочитанный ответ — обычный httpx.Response: .json(), .text, коды
-    и заголовки как у ответа без потокового чтения."""
+    и заголовки как у ответа без потокового чтения. keep_length — ответ
+    на HEAD: его Content-Length — размер ресурса, а не прочитанного тела."""
     headers = httpx.Headers(response.headers)
     for name in _TRANSFER_HEADERS:
+        if keep_length and name == "content-length":
+            continue
         if name in headers:
             del headers[name]
     return httpx.Response(
@@ -335,6 +340,7 @@ class OutboundClient:
         POST как GET (без тела) значит получить ошибку метода вместо
         понятного «портал переехал»."""
         limit = MAX_RESPONSE_BYTES if max_bytes is None else max_bytes
+        head = method.upper() == "HEAD"
         current = url
         request_headers = dict(headers or {})
         origin: str | None = None
@@ -368,16 +374,18 @@ class OutboundClient:
                     # После редиректа тело и метод не повторяются: адаптеры
                     # ходят GET/POST к API, где редиректы — признак смены
                     # домена портала, а не часть протокола.
-                    if response.status_code in (301, 302, 303):
+                    if response.status_code in (301, 302, 303) and not head:
                         method = "GET"
                         kwargs.pop("content", None)
                         kwargs.pop("json", None)
                         kwargs.pop("data", None)
                     continue
-                body = await _read_limited(response, limit)
+                # У HEAD тела нет, а Content-Length описывает ресурс (размер
+                # файла до скачивания): не лимит и не повод отказать.
+                body = b"" if head else await _read_limited(response, limit)
             finally:
                 await response.aclose()
-            return _buffered(response, body)
+            return _buffered(response, body, keep_length=head)
         raise OutboundURLError("too_many_redirects")
 
     async def download(
