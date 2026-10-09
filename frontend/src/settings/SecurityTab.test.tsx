@@ -392,6 +392,10 @@ describe("безопасность: ключи доступа", () => {
     expect(within(section).getByText("Ключей пока нет.")).toBeInTheDocument();
     await user.click(within(section).getByRole("button", { name: "Добавить ключ" }));
     const dialog = await screen.findByRole("dialog", { name: "Новый ключ доступа" });
+    // Сервер принимает только ключ с проверкой владельца — предупреждаем заранее.
+    expect(
+      within(dialog).getByText(/Ключ должен спросить PIN, отпечаток или лицо/),
+    ).toBeInTheDocument();
     await user.type(within(dialog).getByLabelText(/Название/), "  Рабочий   ноутбук ");
     const create = within(dialog).getByRole("button", { name: "Создать ключ" });
     // Привязать новый фактор — только с паролем, как и удалить.

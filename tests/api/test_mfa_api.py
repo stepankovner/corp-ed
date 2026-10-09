@@ -513,6 +513,104 @@ async def test_passkey_for_another_site_is_rejected(
     assert response.status_code == 400
 
 
+async def test_passkey_options_require_user_verification(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    headers = bearer(account)
+    device = SoftAuthenticator()
+    setup = (
+        await api.post(
+            "/api/v1/account/passkeys/options",
+            json={"password": PASSWORD},
+            headers=headers,
+        )
+    ).json()
+    selection = setup["options"]["authenticatorSelection"]
+    assert selection["userVerification"] == "required"
+    await api.post(
+        "/api/v1/account/passkeys",
+        json={
+            "setup_token": setup["setup_token"],
+            "credential": device.register(setup["options"]),
+        },
+        headers=headers,
+    )
+    step = (await login_step(api, account.email or "", remember=False)).json()["mfa"]
+    options = (
+        await api.post(
+            "/api/v1/auth/mfa/passkey-options", json={"token": step["token"]}
+        )
+    ).json()["options"]
+    assert options["userVerification"] == "required"
+
+
+async def test_passkey_without_user_verification_is_not_registered(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    # Ключ подтвердил только присутствие (касание), но не спросил PIN,
+    # отпечаток или лицо: такой ключ не принимается.
+    headers = bearer(account)
+    device = SoftAuthenticator(user_verified=False)
+    setup = (
+        await api.post(
+            "/api/v1/account/passkeys/options",
+            json={"password": PASSWORD},
+            headers=headers,
+        )
+    ).json()
+    response = await api.post(
+        "/api/v1/account/passkeys",
+        json={
+            "setup_token": setup["setup_token"],
+            "credential": device.register(setup["options"]),
+        },
+        headers=headers,
+    )
+    assert response.status_code == 400
+    overview = await api.get("/api/v1/account/security", headers=headers)
+    assert overview.json()["passkeys"] == []
+
+
+async def test_passkey_login_without_user_verification_is_rejected(
+    api: httpx.AsyncClient, account: User
+) -> None:
+    headers = bearer(account)
+    device = SoftAuthenticator()
+    setup = (
+        await api.post(
+            "/api/v1/account/passkeys/options",
+            json={"password": PASSWORD},
+            headers=headers,
+        )
+    ).json()
+    created = await api.post(
+        "/api/v1/account/passkeys",
+        json={
+            "setup_token": setup["setup_token"],
+            "credential": device.register(setup["options"]),
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    step = (await login_step(api, account.email or "", remember=False)).json()["mfa"]
+    options = (
+        await api.post(
+            "/api/v1/auth/mfa/passkey-options", json={"token": step["token"]}
+        )
+    ).json()["options"]
+    # Тот же ключ, но на входе владелец не подтверждён.
+    device.user_verified = False
+    response = await api.post(
+        "/api/v1/auth/mfa/verify",
+        json={
+            "token": step["token"],
+            "method": "passkey",
+            "credential": device.sign(options),
+        },
+    )
+    assert response.status_code == 400
+
+
 # --- сеансы -------------------------------------------------------------------
 
 
