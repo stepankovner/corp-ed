@@ -404,10 +404,10 @@ API и воркеру нужен выход к `api.telegram.org` (уведом�
 При `PAYMENTS_PROVIDER=tochka` API и воркеру нужен выход к
 `enter.tochka.com:443` (API банка; сертификат сервера — от НУЦ Минцифры,
 его корень доверен только клиенту Точки, `core/outbound.py` его не
-видит). Сборке образа нужен доступ к `gu-st.ru` (корневой сертификат
-Минцифры, `deploy/fetch_root_ca.py` сверяет SHA-256); без него —
-`--build-arg RUSSIAN_ROOT_CA_URL=<зеркало>` с тем же отпечатком
-`RUSSIAN_ROOT_CA_SHA256`. Шрифт для своих PDF — `fonts-dejavu-core` в
+видит). Сам корневой сертификат лежит в репозитории
+(`deploy/certs/`), при сборке `deploy/fetch_root_ca.py` сверяет его
+SHA-256 (`RUSSIAN_ROOT_CA_SHA256`); сменит Минцифры сертификат — новый
+файл и отпечаток. Шрифт для своих PDF — `fonts-dejavu-core` в
 образе.
 API наружу ходит только в Yandex Cloud
 и, для проверки учётных данных (`POST /connectors/{id}/test`) и

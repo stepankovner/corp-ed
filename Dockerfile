@@ -24,15 +24,18 @@ COPY src/ ./src/
 RUN uv sync --frozen --no-dev
 
 # Корневой сертификат НУЦ Минцифры — для API Точки (оплата): сервер банка
-# подписан им, а в стандартных хранилищах его нет. Скачивается с Госуслуг
-# и проверяется по SHA-256 отпечатку (DER): другой сертификат — сборка
-# падает. Кладётся отдельным файлом и подключается только к клиенту Точки
-# (TOCHKA_CA_FILE), не в системное хранилище. Отпечаток проверен
-# 09.10.2026; сменит Минцифры сертификат — новые URL и отпечаток build-arg.
-ARG RUSSIAN_ROOT_CA_URL=https://gu-st.ru/content/lending/russian_trusted_root_ca_pem.crt
+# подписан им, а в стандартных хранилищах его нет. Файл — из репозитория
+# (deploy/certs/, скачан с Госуслуг 09.10.2026): госсайт с машин сборки за
+# рубежом соединения обрывает. Проверяется по SHA-256 отпечатку (DER):
+# другой сертификат — сборка падает. Кладётся отдельным файлом и
+# подключается только к клиенту Точки (TOCHKA_CA_FILE), не в системное
+# хранилище. Сменит Минцифры сертификат — новый файл и отпечаток (или
+# build-arg RUSSIAN_ROOT_CA_SOURCE=https://… с новым отпечатком).
+ARG RUSSIAN_ROOT_CA_SOURCE=/tmp/russian_trusted_root_ca.pem
 ARG RUSSIAN_ROOT_CA_SHA256=d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31
 COPY deploy/fetch_root_ca.py /tmp/fetch_root_ca.py
-RUN python /tmp/fetch_root_ca.py "$RUSSIAN_ROOT_CA_URL" "$RUSSIAN_ROOT_CA_SHA256" \
+COPY deploy/certs/russian_trusted_root_ca.pem /tmp/russian_trusted_root_ca.pem
+RUN python /tmp/fetch_root_ca.py "$RUSSIAN_ROOT_CA_SOURCE" "$RUSSIAN_ROOT_CA_SHA256" \
     /app/certs/russian_trusted_root_ca.pem
 
 # ===== Стадия 2: runtime — финальный образ =====

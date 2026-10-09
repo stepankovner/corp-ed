@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 *.pem
+# Публичный корневой сертификат Минцифры для клиента Точки (не ключ).
+!deploy/certs/russian_trusted_root_ca.pem
 *.key
 
 # ===== Python =====

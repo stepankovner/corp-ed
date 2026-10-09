@@ -1,13 +1,16 @@
 """Корневой сертификат НУЦ Минцифры для клиента Точки — при сборке образа.
 
 API Точки (enter.tochka.com) подписан «Russian Trusted Root CA», которого
-нет в стандартных хранилищах. Сертификат скачивается с официального
-адреса (Госуслуги) и проверяется по SHA-256 отпечатку DER: не тот
-сертификат — сборка падает. В образе он лежит отдельным файлом и
+нет в стандартных хранилищах. Сертификат лежит в репозитории
+(deploy/certs/, скачан с Госуслуг и сверен по двум адресам 09.10): сборка
+не зависит от доступности госсайта — с машин GitHub за рубежом он
+соединения обрывает. Источник — этот файл или https-адрес (build-arg),
+в обоих случаях проверяется SHA-256 отпечаток DER: не тот сертификат —
+сборка падает. В образе он лежит отдельным файлом и
 подключается только к клиенту Точки (TOCHKA_CA_FILE), а не в системное
 хранилище: остальные исходящие запросы ему не доверяют.
 
-Запуск: python fetch_root_ca.py <url> <sha256> <путь>
+Запуск: python fetch_root_ca.py <файл или https-адрес> <sha256> <путь>
 """
 
 import hashlib
@@ -17,11 +20,17 @@ import urllib.request
 from pathlib import Path
 
 
-def main(url: str, expected: str, target: str) -> None:
-    if not url.startswith("https://"):
+def _read(source: str) -> str:
+    if "://" not in source:
+        return Path(source).read_text(encoding="ascii")
+    if not source.startswith("https://"):
         raise SystemExit("root CA URL must be https://")
-    with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 — https выше
-        pem = response.read(64 * 1024).decode("ascii")
+    with urllib.request.urlopen(source, timeout=30) as response:  # noqa: S310 — https выше
+        return str(response.read(64 * 1024).decode("ascii"))
+
+
+def main(source: str, expected: str, target: str) -> None:
+    pem = _read(source)
     der = ssl.PEM_cert_to_DER_cert(pem)
     actual = hashlib.sha256(der).hexdigest()
     expected = expected.replace(":", "").lower()
