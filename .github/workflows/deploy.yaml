@@ -72,6 +72,17 @@ jobs:
           echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
           printf '%s' "$GH_TOKEN" | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
+      # Образы Docker Hub — через зеркало Google: с общих адресов машин
+      # GitHub Docker Hub режет скачивание без входа (как в ci.yaml).
+      - name: Docker Hub through a mirror
+        if: runner.environment == 'github-hosted'
+        run: |
+          conf=/etc/docker/daemon.json
+          current=$(sudo cat "$conf" 2>/dev/null || echo '{}')
+          echo "$current" | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' \
+            | sudo tee "$conf" >/dev/null
+          sudo systemctl restart docker
+          docker info --format '{{.RegistryConfig.Mirrors}}'
       - name: Build and push
         env:
           SHA: ${{ steps.sha.outputs.sha }}

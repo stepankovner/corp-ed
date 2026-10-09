@@ -139,6 +139,17 @@ jobs:
       TAG: scan-${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Образы Docker Hub — через зеркало Google: с общих адресов машин
+      # GitHub Docker Hub режет скачивание без входа (как в ci.yaml).
+      - name: Docker Hub through a mirror
+        if: runner.environment == 'github-hosted'
+        run: |
+          conf=/etc/docker/daemon.json
+          current=$(sudo cat "$conf" 2>/dev/null || echo '{}')
+          echo "$current" | jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' \
+            | sudo tee "$conf" >/dev/null
+          sudo systemctl restart docker
+          docker info --format '{{.RegistryConfig.Mirrors}}'
       - name: Build image
         run: docker build -t "kronto-api:$TAG" .
       # Сканер — официальный образ с ghcr (без лимитов Docker Hub); tag
