@@ -27,7 +27,7 @@ describe("тарифы и запись на созвон", () => {
     expect(await screen.findByRole("heading", { name: "Тарифы" })).toBeInTheDocument();
     const base = screen.getByRole("region", { name: "Базовый" });
     expect(within(base).getByText("990 ₽")).toBeInTheDocument();
-    expect(within(base).getByText(/До 20 обращений в день на место/)).toBeInTheDocument();
+    expect(within(base).getByText(/420 кредитов на место в месяц/)).toBeInTheDocument();
     expect(
       within(base).getByText(/до 5 рабочих систем на выбор из списка поддерживаемых/),
     ).toBeInTheDocument();

@@ -141,7 +141,7 @@ class DemoService:
                     logger.warning("demo_pool_exhausted")
                     raise DemoUnavailableError(
                         "demo_busy",
-                        "Песочница на этот месяц исчерпала вопросы. Покажем kronto "
+                        "Песочница на этот месяц исчерпала кредиты. Покажем kronto "
                         "на ваших документах — запишитесь на созвон.",
                     ) from None
                 except LLMError as exc:

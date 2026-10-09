@@ -26,8 +26,8 @@ const FLAGS: { flag: Flag; label: string; hint: string }[] = [
   },
   {
     flag: "email_credits",
-    label: "Лимит вопросов",
-    hint: "Когда израсходовано 80 % и когда лимит исчерпан.",
+    label: "Кредиты",
+    hint: "Израсходовано 80 % месячного пула, кредиты закончились или зачислены, сотрудники просят пополнить.",
   },
   {
     flag: "email_join_requests",

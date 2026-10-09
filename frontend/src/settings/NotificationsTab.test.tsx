@@ -57,7 +57,7 @@ describe("настройки: уведомления", () => {
     expect(connectors).toHaveAccessibleDescription(
       "Источник перестал отдавать документы — нужно ввести доступ заново.",
     );
-    expect(within(emails).getByRole("switch", { name: "Лимит вопросов" })).toBeChecked();
+    expect(within(emails).getByRole("switch", { name: "Кредиты" })).toBeChecked();
     expect(within(emails).getByRole("switch", { name: "Заявки" })).toBeChecked();
     const digest = within(emails).getByRole("switch", { name: "Недельная сводка" });
     expect(digest).not.toBeChecked();
@@ -87,7 +87,7 @@ describe("настройки: уведомления", () => {
     const { puts } = signedInAs(adminMe());
     renderApp("/settings/notifications");
 
-    const credits = await screen.findByRole("switch", { name: "Лимит вопросов" });
+    const credits = await screen.findByRole("switch", { name: "Кредиты" });
     await user.click(credits);
     await user.click(screen.getByRole("switch", { name: "Заявки" }));
     await user.click(credits);
@@ -109,7 +109,7 @@ describe("настройки: уведомления", () => {
     signedInAs(adminMe(), { failPut: true });
     renderApp("/settings/notifications");
 
-    const credits = await screen.findByRole("switch", { name: "Лимит вопросов" });
+    const credits = await screen.findByRole("switch", { name: "Кредиты" });
     await user.click(credits);
     expect(await screen.findByText("Сервер недоступен")).toBeInTheDocument();
     expect(credits).toBeChecked();
