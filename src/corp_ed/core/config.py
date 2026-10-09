@@ -819,6 +819,7 @@ class ConnectorSettings(BaseSettings):
     yandex_oauth_server: str = "https://oauth.yandex.ru/"
     yandex_disk_api: str = "https://cloud-api.yandex.net/"
     yandex_wiki_api: str = "https://api.wiki.yandex.net/"
+    yandex_tracker_api: str = "https://api.tracker.yandex.net/"
 
     model_config = SettingsConfigDict(
         env_prefix="CONNECTOR_",
@@ -842,6 +843,7 @@ class ConnectorSettings(BaseSettings):
             "yandex_oauth_server",
             "yandex_disk_api",
             "yandex_wiki_api",
+            "yandex_tracker_api",
         ):
             value = getattr(self, name)
             # Браузер сотрудника и секрет приложения ходят по этим адресам:

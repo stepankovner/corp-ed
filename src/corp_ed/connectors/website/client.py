@@ -6,7 +6,7 @@
   Crawl-delay — его (не больше MAX_CRAWL_DELAY, иначе один запуск не
   обошёл бы и десятка страниц); fast — без пауз (тесты, connector-check);
 - 429 и 503 — ожидание по Retry-After (секунды или дата, не дольше
-  MAX_RETRY_AFTER) или нарастающая пауза; 502/504 — нарастающая пауза;
+  common.MAX_RETRY_AFTER) или нарастающая пауза; 502/504 — нарастающая пауза;
   попытки кончились — AdapterError, retryable: задачу повторит воркер;
 - сеть и таймауты — коды timeout / network_error, тела ответов не
   попадают ни в коды, ни в журнал.
@@ -15,19 +15,17 @@
 import asyncio
 import time
 from collections.abc import Awaitable, Callable, Iterator
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 
 import httpx
 
 from corp_ed.connectors.base import AdapterError
+from corp_ed.connectors.common import retry_after
 from corp_ed.core.outbound import Downloaded, OutboundClient, OutboundTooLargeError
 
 USER_AGENT = "Mozilla/5.0 (compatible; kronto-bot/1.0; +https://krontoai.ru/)"
 ROBOTS_AGENT = "kronto-bot"
 MIN_INTERVAL = 1.0
 MAX_CRAWL_DELAY = 10.0
-MAX_RETRY_AFTER = 60.0
 RETRY_BACKOFF = (2.0, 5.0, 10.0)
 REQUEST_TIMEOUT = 30.0
 DOWNLOAD_TIMEOUT = 120.0
@@ -145,23 +143,3 @@ class SiteClient:
                 await self._sleep(wait)
                 now = self._clock()
             self._next_slot = max(now, self._next_slot) + self._interval
-
-
-def retry_after(value: str | None, *, now: datetime | None = None) -> float | None:
-    """Retry-After: секунды или HTTP-дата → секунды ожидания (с потолком)."""
-    if not value:
-        return None
-    value = value.strip()
-    if value.isdigit():
-        seconds = float(value)
-    else:
-        try:
-            moment = parsedate_to_datetime(value)
-        except (TypeError, ValueError):
-            return None
-        if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=UTC)
-        seconds = (moment - (now or datetime.now(UTC))).total_seconds()
-    if seconds <= 0:
-        return None
-    return min(seconds, MAX_RETRY_AFTER)

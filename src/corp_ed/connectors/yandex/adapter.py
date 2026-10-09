@@ -11,11 +11,21 @@ client_secret — в учётные данные подключения; каж�
 
 Модули: disk — личный Диск сотрудника; shared_disks — общие диски
 организации, к которым у сотрудника есть доступ; wiki — страницы Вики
-из заданных разделов. Для shared_disks и wiki нужен идентификатор
-организации (admin.yandex.ru → «Профиль организации»): API его
-сотруднику не отдаёт.
+из заданных разделов; tracker — задачи Трекера из очередей, доступных
+сотруднику (не проверен живьём: скрыт до CONNECTOR_PREVIEW_MODULES). Для
+shared_disks, wiki и tracker нужен идентификатор организации
+(admin.yandex.ru → «Профиль организации»): API его сотруднику не отдаёт;
+Трекер, привязанный к организации Yandex Cloud (Identity Hub), — её
+идентификатор в отдельном поле.
+
+Трекеру нужно право tracker:read. Оно необязательное: добавить его в
+приложение — значит сменить права, а Яндекс ID при этом отзывает все
+токены приложения, и каждому сотруднику придётся подключиться заново
+(грант остановится с auth_failed, сотрудник увидит «подключите снова»).
+Без права Трекер отвечает 401/403 — модуль у такого сотрудника пуст.
 """
 
+import re
 from collections.abc import AsyncIterator, Mapping, Sequence
 
 from corp_ed.connectors.base import (
@@ -40,9 +50,11 @@ from corp_ed.connectors.registry import (
     UserAuth,
 )
 from corp_ed.connectors.yandex import disk as disk_module
+from corp_ed.connectors.yandex import tracker as tracker_module
 from corp_ed.connectors.yandex import wiki as wiki_module
 from corp_ed.connectors.yandex.disk import YandexDiskClient
 from corp_ed.connectors.yandex.oauth import YandexAuth, YandexOAuth
+from corp_ed.connectors.yandex.tracker import YandexTrackerClient
 from corp_ed.connectors.yandex.wiki import YandexWikiClient
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient
@@ -52,10 +64,20 @@ KIND = "yandex360"
 _ORG_MODULES = frozenset({disk_module.MODULE_SHARED_DISKS, wiki_module.MODULE_WIKI})
 
 
+_QUEUE_KEY = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+_CLOUD_ORG_ID = re.compile(r"^[a-z0-9]{1,64}$")
+
+
 def _check_config(config: Mapping[str, str]) -> str | None:
     org_id = config.get("org_id", "")
     if org_id and not org_id.isdigit():
         return "org_id_invalid"
+    queues = tracker_module.parse_queues(config.get("tracker_queues", ""))
+    if any(not _QUEUE_KEY.match(key) for key in queues):
+        return "tracker_queues_invalid"
+    cloud_org_id = config.get("tracker_cloud_org_id", "").strip()
+    if cloud_org_id and not _CLOUD_ORG_ID.match(cloud_org_id):
+        return "tracker_cloud_org_id_invalid"
     return None
 
 
@@ -71,6 +93,12 @@ SPEC = KindSpec(
             "Общие диски организации (нужен ID организации)",
         ),
         ModuleSpec(wiki_module.MODULE_WIKI, "Яндекс Вики (нужен ID организации)"),
+        ModuleSpec(
+            tracker_module.MODULE_TRACKER,
+            "Яндекс Трекер: задачи, комментарии и вложения (нужен ID организации "
+            "и право tracker:read)",
+            preview=True,
+        ),
     ),
     config_fields=(
         FieldSpec("client_id", "ClientID приложения Яндекс ID"),
@@ -84,6 +112,17 @@ SPEC = KindSpec(
             "Разделы Вики: slug или адреса через запятую (пусто — главная)",
             required=False,
         ),
+        FieldSpec(
+            "tracker_queues",
+            "Очереди Трекера: ключи через запятую (пусто — все, что видит сотрудник)",
+            required=False,
+        ),
+        FieldSpec(
+            "tracker_cloud_org_id",
+            "ID организации Yandex Cloud, если Трекер подключён к ней, а не к "
+            "Яндекс 360",
+            required=False,
+        ),
     ),
     app_credential_fields=(
         FieldSpec("client_secret", "Client secret приложения Яндекс ID", secret=True),
@@ -93,6 +132,10 @@ SPEC = KindSpec(
     config_check=_check_config,
     extra={
         "app_scopes": "cloud_api:disk.read,cloud_api:disk.info,wiki:read",
+        "app_scopes_optional": (
+            "tracker:read — для модуля tracker; добавление права отзывает "
+            "токены, сотрудники подключаются заново"
+        ),
         "app_type": "Для авторизации пользователей, платформа «Веб-сервисы»",
         "oauth_callback_path": OAUTH_CALLBACK_PATH,
     },
@@ -108,9 +151,13 @@ class YandexAdapter:
         max_bytes: int,
         org_id: str = "",
         wiki_roots: Sequence[str] = (),
+        tracker: YandexTrackerClient | None = None,
+        tracker_queues: Sequence[str] = (),
     ) -> None:
         self._disk = disk
         self._wiki = wiki
+        self._tracker = tracker
+        self._tracker_queues = tuple(tracker_queues)
         self._max_bytes = max_bytes
         self._org_id = org_id
         self._wiki_roots = tuple(wiki_roots)
@@ -155,6 +202,17 @@ class YandexAdapter:
             )
             async for document in wiki.walk():
                 yield document
+        if tracker_module.MODULE_TRACKER in selected:
+            if self._tracker is None:
+                raise AdapterConfigError("org_id_missing")
+            async for document in self._tracker_module(self._max_bytes).walk():
+                yield document
+
+    def _tracker_module(self, max_bytes: int) -> tracker_module.YandexTrackerModule:
+        assert self._tracker is not None  # noqa: S101 — проверено вызывающим
+        return tracker_module.YandexTrackerModule(
+            self._tracker, queues=self._tracker_queues, max_bytes=max_bytes
+        )
 
     async def fetch(
         self, document: RemoteDocument, *, max_bytes: int
@@ -167,6 +225,15 @@ class YandexAdapter:
                 self._wiki, roots=self._wiki_roots, max_bytes=max_bytes
             )
             return await wiki.fetch(document, max_bytes=max_bytes)
+        if (
+            document.external_id.startswith(
+                (tracker_module.PREFIX, tracker_module.FILE_PREFIX)
+            )
+            and self._tracker is not None
+        ):
+            return await self._tracker_module(max_bytes).fetch(
+                document, max_bytes=max_bytes
+            )
         raise AdapterError("unknown_document")
 
 
@@ -222,12 +289,27 @@ def build_adapter(
         if org_id
         else None
     )
+    cloud_org_id = config.get("tracker_cloud_org_id", "").strip()
+    tracker = (
+        YandexTrackerClient(
+            http,
+            api=settings.yandex_tracker_api,
+            auth=auth,
+            org_id=org_id,
+            cloud_org_id=cloud_org_id,
+            recorder=recorder,
+        )
+        if org_id or cloud_org_id
+        else None
+    )
     return YandexAdapter(
         disk,
         wiki,
         max_bytes=settings.max_document_bytes,
         org_id=org_id,
         wiki_roots=wiki_module.parse_roots(config.get("wiki_roots", "")),
+        tracker=tracker,
+        tracker_queues=tracker_module.parse_queues(config.get("tracker_queues", "")),
     )
 
 

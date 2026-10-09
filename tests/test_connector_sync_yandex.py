@@ -29,8 +29,11 @@ from tests.connectors.fake_yandex import (
     DISK_API,
     LOGIN,
     OAUTH_SERVER,
+    ORG_ID,
     REFRESH_TOKEN,
+    TRACKER_API,
     FakeYandex,
+    sample_tracker,
     sample_yandex,
 )
 from tests.fake_connector import plain_extractor
@@ -54,6 +57,7 @@ def make_settings(**overrides: Any) -> ConnectorSettings:
         secrets_keys=KEY,
         yandex_oauth_server=OAUTH_SERVER,
         yandex_disk_api=DISK_API,
+        yandex_tracker_api=TRACKER_API,
         **overrides,
     )  # type: ignore[arg-type]
 
@@ -75,13 +79,19 @@ def service(
     )
 
 
-async def make_connector(session: AsyncSession, secrets: SecretBox) -> Connector:
+async def make_connector(
+    session: AsyncSession,
+    secrets: SecretBox,
+    *,
+    modules: list[str] | None = None,
+    config: dict[str, str] | None = None,
+) -> Connector:
     connector = Connector(
         kind="yandex360",
         name="Яндекс 360",
         mode=ConnectorMode.PER_USER.value,
-        modules=["disk"],
-        config={"client_id": CLIENT_ID},
+        modules=modules or ["disk"],
+        config={"client_id": CLIENT_ID, **(config or {})},
         credentials=secrets.encrypt({"client_secret": CLIENT_SECRET}),
         credentials_set_at=datetime.now(UTC),
     )
@@ -179,3 +189,46 @@ async def test_refreshed_yandex_tokens_are_saved(
     # Яндекс выдаёт новый refresh при продлении; старый больше не действует.
     assert credentials["refresh_token"] != REFRESH_TOKEN
     assert credentials["refresh_token"] in server.refresh_tokens
+
+
+async def test_tracker_issues_are_visible_to_the_employee_only(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    employee: User,
+    secrets: SecretBox,
+    server: FakeYandex,
+    service: ConnectorSyncService,
+) -> None:
+    sample_tracker(server)
+    # «Огромный.docx» здесь не огромный (лимит синхронизации — 25 МиБ) и не
+    # docx: в этом тесте он не нужен.
+    issue = server.issues["id-1"]
+    issue["_attachments"] = [a for a in issue["_attachments"] if a["id"] != "a3"]
+    connector = await make_connector(
+        session, secrets, modules=["tracker"], config={"org_id": ORG_ID}
+    )
+    await make_grant(session, secrets, connector, employee)
+
+    outcome = await run(service, connector)
+
+    assert outcome.status is SyncRunStatus.SUCCEEDED, outcome.error_code
+    with tenant_scope(tenant_ctx.id):
+        materials = await materials_of(session, connector)
+        assert set(materials) == {
+            "ytracker:id-1",
+            "ytracker:id-2",
+            "ytracker:id-4",
+            "ytracker-file:id-1:a1",
+        }
+        issue = materials["ytracker:id-1"]
+        assert issue.title == "SUP-1: Клиент Альфа: сроки доставки"
+        assert issue.source_url == "https://tracker.yandex.ru/SUP-1"
+        assert "Решили: доставка за 3 дня." in issue.content
+        assert issue.visibility == MaterialVisibility.RESTRICTED.value
+        assert await access_of(session, issue) == {employee.id}
+
+    # Задачу удалили (или сотрудник потерял к ней доступ) — материал уходит.
+    server.tracker_hidden.add("id-2")
+    await run(service, connector)
+    with tenant_scope(tenant_ctx.id):
+        assert "ytracker:id-2" not in await materials_of(session, connector)
