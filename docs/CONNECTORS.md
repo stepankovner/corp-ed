@@ -37,14 +37,14 @@
 | Яндекс 360: Диск, общие диски, Вики | per_user, OAuth | частично | — |
 | Яндекс 360: Трекер | per_user, OAuth | нет | модуль `tracker` |
 | Google Диск (Google Workspace) | organization | нет | `gdrive` |
-| Nextcloud (пароль приложения / OAuth2) | per_user | нет | `nextcloud`, `nextcloud_oauth` |
-| ownCloud | per_user | нет | `owncloud` |
-| Seafile | per_user | нет | `seafile` |
+| Nextcloud (пароль приложения / OAuth2) | per_user | да (09.10, 34.0.4 в Docker; пароль приложения и OAuth2) | — |
+| ownCloud | per_user | да (09.10, 10.16.6 в Docker) | — |
+| Seafile | per_user | да (09.10, 13.0 CE в Docker, SeafDAV) | — |
 | Диск VK WorkSpace | per_user | нет | `vk_workspace_disk` |
 | Облако Mail.ru | per_user | нет | `mailru_cloud` |
-| Сетевое хранилище по WebDAV (NAS) | per_user | нет | `webdav` |
+| Сетевое хранилище по WebDAV (NAS) | per_user | да (09.10, Apache mod_dav в Docker; Synology/QNAP — нет) | — |
 | Kaiten | per_user, токен | нет | `kaiten` |
-| Outline | organization | нет | `outline` |
+| Outline | organization | да (09.10, 1.10.1 своя установка в Docker; облако — нет) | — |
 | Yonote | organization | нет | `yonote` |
 | Публичный сайт или справочный центр | organization, без ключей | да (09.10, обход) | `website` |
 
@@ -130,6 +130,16 @@ Outline — и участникам самого документа). Владе
 Большому сайту нужна карта с lastmod; обновление — раз в сутки.
 
 ## Живая проверка (после неё вид открывается)
+
+Системы, которые ставятся у себя, проверены на стендах в Docker
+(`tests/live/{webdav,nextcloud,owncloud,seafile,outline}/README.md`):
+стенд по HTTPS на 127.0.0.1 с выдуманной компанией, тесты пропускаются
+без переменных окружения. Что учтено по итогам: Apache mod_dav (и NAS на
+нём) отвечает 401 на закрытую папку — она пропускается, а не гасит
+подключение; Outline 1.10 отдаёт группы коллекции в `groupMemberships`;
+слишком большое или глубокое дерево папок останавливает запуск с кодом
+`tree_too_large` / `tree_too_deep` и подсказкой сузить «Папки». SeafDAV
+в Seafile по умолчанию выключен — его включает администратор Seafile.
 
 Общая команда — `python -m corp_ed.cli connector-check --kind <вид>
 --config … --credential … [--module …] --fetch 2 --record DIR`; записанные
