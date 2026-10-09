@@ -26,3 +26,11 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+
+  # Образы в compose.yaml (база, Redis, реранкер) закреплены по digest:
+  # без этого блока они бы не обновлялись вовсе.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
