@@ -35,7 +35,7 @@ from corp_ed.domain.types import NotFoundMode
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.main import app
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX, NOT_FOUND_ANSWER
-from corp_ed.services.chat_service import HIDDEN_ANSWER
+from corp_ed.services.chat_service import CLOSED_SOURCE_TITLE, HIDDEN_ANSWER
 from corp_ed.services.retention_service import RetentionService
 from tests.api.conftest import bearer
 from tests.api.test_faq_api import BusyLLM, FailingLLM
@@ -790,12 +790,35 @@ async def test_shared_sources_follow_viewer_access(
 
     shared = await _open(api, colleague, token)
     source = shared.json()["messages"][1]["sources"][0]
-    assert source["title"] == "Зарплаты отдела"
-    assert source["content"] is None
+    # Ни текста, ни того, что выдаёт документ: название, раздел, адрес, id.
+    assert source == {
+        "kind": "document",
+        "title": CLOSED_SOURCE_TITLE,
+        "heading_path": [],
+        "position": 0,
+        "content": None,
+        "source_url": None,
+        "material_id": None,
+        "attachment_id": None,
+    }
+    assert "Зарплаты отдела" not in shared.text
+    assert str(material.id) not in shared.text
+
+    # Автор видит свой диалог как раньше.
     own = (await api.get(f"{BASE}/{conversation_id}", headers=bearer(employee))).json()[
         "messages"
     ][1]["sources"][0]
+    assert own["title"] == "Зарплаты отдела"
+    assert own["material_id"] == str(material.id)
     assert own["content"]
+
+    # Коллега с доступом к документу видит его по ссылке как автор.
+    session.add(MaterialAccess(material_id=material.id, user_id=colleague.id))
+    await session.commit()
+    source = (await _open(api, colleague, token)).json()["messages"][1]["sources"][0]
+    assert source["title"] == "Зарплаты отдела"
+    assert source["material_id"] == str(material.id)
+    assert source["content"]
 
 
 async def test_share_link_expires_after_ttl_and_owner_can_renew(

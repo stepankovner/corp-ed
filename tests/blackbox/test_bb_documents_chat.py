@@ -2338,6 +2338,20 @@ async def test_shared_conversation_hides_restricted_sources_from_other_departmen
                 # схема: content=null — документ недоступен смотрящему.
                 assert source["content"] is None, source
             assert "7931" not in (source["content"] or "")
+    # Решение владельца 09.10: закрытый документ по ссылке и не назван — ни
+    # названия, ни раздела, ни адреса, ни id.
+    closed = [
+        source
+        for message in r.json()["messages"]
+        for source in message["sources"]
+        if source["content"] is None
+    ]
+    assert closed, r.text
+    for source in closed:
+        assert source["title"] == "Документ, к которому у вас нет доступа", source
+        assert source["material_id"] is None and source["source_url"] is None
+        assert source["heading_path"] == [], source
+    assert_no_leak(r.text, SECRET_TITLE, setup.secret_id)
     # Разбор 06.10: и сам ответ, пересказывающий закрытый документ, скрыт —
     # иначе скрытый фрагмент источника ничего не защищал.
     answers = [m for m in r.json()["messages"] if m["role"] == "assistant"]

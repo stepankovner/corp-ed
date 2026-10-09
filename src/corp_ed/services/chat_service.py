@@ -85,7 +85,8 @@ UNSET = _Unset()
 @dataclass(frozen=True)
 class SourceView:
     """Источник ответа для показа. content=None — документ удалён или
-    недоступен смотрящему: видно только название."""
+    недоступен смотрящему: в своём диалоге видно только название, по общей
+    ссылке — и его нет (CLOSED_SOURCE_TITLE)."""
 
     kind: str
     title: str
@@ -542,7 +543,7 @@ class ChatService:
             if m.status != "generating"
         ]
         messages = [
-            _hide_closed_answer(view)
+            _hide_closed_sources(_hide_closed_answer(view))
             for view in await self._message_views(path, tree, viewer=viewer)
         ]
         return SharedView(
@@ -698,6 +699,7 @@ class ChatService:
 
 
 HIDDEN_ANSWER = "Ответ опирается на документы, к которым у вас нет доступа."
+CLOSED_SOURCE_TITLE = "Документ, к которому у вас нет доступа"
 
 
 def _material_ids(message: ChatMessage) -> set[UUID]:
@@ -722,6 +724,32 @@ def _hide_closed_answer(view: MessageView) -> MessageView:
     ):
         return view
     return _hide_answer(view)
+
+
+def _hide_closed_sources(view: MessageView) -> MessageView:
+    """Общая ссылка: документ без доступа смотрящему не называем — ни
+    названия, ни раздела, ни адреса, ни id (решение владельца 09.10).
+    Автор в своём диалоге видит название и удалённого документа."""
+    if not any(source.content is None for source in view.sources):
+        return view
+    return replace(
+        view,
+        sources=[
+            source
+            if source.content is not None
+            else SourceView(
+                kind=source.kind,
+                title=CLOSED_SOURCE_TITLE,
+                heading_path=[],
+                position=0,
+                content=None,
+                source_url=None,
+                material_id=None,
+                attachment_id=None,
+            )
+            for source in view.sources
+        ],
+    )
 
 
 def share_active(conversation: Conversation) -> bool:

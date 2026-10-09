@@ -1482,6 +1482,8 @@ async def test_shared_dialog_hides_closed_folder_from_unconfirmed(
 
     if response.status_code == 200:
         assert world.secret_a.code not in response.text, response.text
+        # Закрытый документ по ссылке не назван (решение владельца 09.10).
+        assert world.secret_a.material_id not in response.text, response.text
         for message in response.json()["messages"]:
             for source in message["sources"]:
                 if source.get("material_id") == world.secret_a.material_id:
