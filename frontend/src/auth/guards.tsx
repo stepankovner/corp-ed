@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Navigate, Outlet, useLocation, useMatches, useSearchParams } from "react-router";
 
+import { savePendingShare } from "../chat/pendingShare";
 import { PageSpinner } from "../ui/Spinner";
 import { isAdmin, needsStrongFactor, useAuth, useMe } from "./context";
+import { readHash } from "./hashSecret";
 import { safeNext } from "./next";
 
 /**
@@ -22,16 +24,30 @@ function guestPage(matches: ReturnType<typeof useMatches>): ReactNode {
   return null;
 }
 
+/** Токен общей ссылки из адреса: /shared#<токен> или старый вид /shared/<токен>. */
+function sharedToken(pathname: string, hash: string): string | null {
+  if (pathname === "/shared") return readHash(hash, null);
+  const legacy = /^\/shared\/([A-Za-z0-9_-]+)$/.exec(pathname);
+  return legacy?.[1] ?? null;
+}
+
 /** Вход обязателен; временный пароль пускает только на его смену. */
 export function RequireAuth() {
   const { state } = useAuth();
   const location = useLocation();
   const matches = useMatches();
+  // Общая ссылка на диалог (/shared#<токен>): переход на вход или смену
+  // пароля фрагмент теряет, а в next ему не место (адрес видят журналы).
+  // Токен ждёт в хранилище вкладки — /shared возьмёт его оттуда.
+  const shareToken = sharedToken(location.pathname, location.hash);
+  useEffect(() => {
+    if (shareToken) savePendingShare(shareToken);
+  }, [shareToken]);
   if (state.status === "loading") return <PageSpinner />;
   if (state.status === "anonymous") {
     const page = guestPage(matches);
     if (page) return page;
-    const next = location.pathname + location.search;
+    const next = shareToken ? "/shared" : location.pathname + location.search;
     return (
       <Navigate to={`/login${next === "/" ? "" : `?next=${encodeURIComponent(next)}`}`} replace />
     );

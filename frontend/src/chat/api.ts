@@ -6,6 +6,8 @@ export type Conversation = Schemas["ConversationResponse"];
 export type Summary = Schemas["ConversationSummary"];
 export type Source = Schemas["MessageSourceResponse"];
 export type Attachment = Schemas["AttachmentResponse"];
+export type Share = NonNullable<Conversation["share"]>;
+export type SharedLink = Schemas["SharedLinkResponse"];
 export type Origin = Schemas["AnswerOrigin"];
 export type FeedbackReason = NonNullable<Message["feedback_reason"]>;
 
@@ -90,6 +92,26 @@ export function pathUpTo(messages: Message[], parentId: string | null): Message[
   return index < 0 ? messages : messages.slice(0, index + 1);
 }
 
+/**
+ * Ссылка для коллег: токен — во фрагменте (после «#»), он не уходит на
+ * сервер и в журналы; страница /shared забирает его и убирает из адреса.
+ */
 export function shareUrl(token: string): string {
-  return `${window.location.origin}/shared/${token}`;
+  return `${window.location.origin}/shared#${token}`;
+}
+
+export function renewShare(conversationId: string) {
+  return unwrap(
+    api.POST("/api/v1/conversations/{conversation_id}/share/renew", {
+      params: { path: { conversation_id: conversationId } },
+    }),
+  );
+}
+
+export function revokeShare(conversationId: string) {
+  return unwrap(
+    api.DELETE("/api/v1/conversations/{conversation_id}/share", {
+      params: { path: { conversation_id: conversationId } },
+    }),
+  );
 }

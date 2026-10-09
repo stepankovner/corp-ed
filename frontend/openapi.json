@@ -5016,8 +5016,17 @@
         "type": "object"
       },
       "ShareResponse": {
-        "description": "Ссылка на /shared/{token} в приложении; открывают коллеги по компании.",
+        "description": "Ссылка /shared#<token> в приложении; открывают коллеги по компании.\nТокен — во фрагменте адреса: на сервер и в журналы он не уходит.\nexpired — срок вышел: по ссылке не открыть, пока владелец не продлит.",
         "properties": {
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
           "shared_at": {
             "format": "date-time",
             "title": "Shared At",
@@ -5030,7 +5039,9 @@
         },
         "required": [
           "token",
-          "shared_at"
+          "shared_at",
+          "expires_at",
+          "expired"
         ],
         "title": "ShareResponse",
         "type": "object"
@@ -5065,6 +5076,76 @@
           "messages"
         ],
         "title": "SharedConversationResponse",
+        "type": "object"
+      },
+      "SharedLinkListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SharedLinkResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SharedLinkListResponse",
+        "type": "object"
+      },
+      "SharedLinkResponse": {
+        "description": "Ссылка в «Моих общих ссылках»: без токена — его копируют из диалога.",
+        "properties": {
+          "expired": {
+            "title": "Expired",
+            "type": "boolean"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "shared_at": {
+            "format": "date-time",
+            "title": "Shared At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "shared_at",
+          "expires_at",
+          "expired"
+        ],
+        "title": "SharedLinkResponse",
+        "type": "object"
+      },
+      "SharedOpenRequest": {
+        "additionalProperties": false,
+        "description": "Токен общей ссылки — в теле, не в адресе: путь запроса пишут журналы\nпрокси и сервера.",
+        "properties": {
+          "token": {
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "SharedOpenRequest",
         "type": "object"
       },
       "SpendCompanyResponse": {
@@ -9670,23 +9751,20 @@
         ]
       }
     },
-    "/api/v1/conversations/shared/{token}": {
-      "get": {
-        "description": "Диалог, которым поделился коллега по компании (только чтение).",
-        "operationId": "shared_conversation_api_v1_conversations_shared__token__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "maxLength": 64,
-              "pattern": "^[A-Za-z0-9_-]+$",
-              "title": "Token",
-              "type": "string"
+    "/api/v1/conversations/shared/open": {
+      "post": {
+        "description": "Диалог, которым поделился коллега по компании (только чтение).\n\nТокен — в теле: путь запроса пишут журналы прокси и сервера. Ссылка\nотозвана, истекла или неизвестна — одинаковый 404.",
+        "operationId": "shared_conversation_api_v1_conversations_shared_open_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SharedOpenRequest"
+              }
             }
-          }
-        ],
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -9715,6 +9793,33 @@
           }
         ],
         "summary": "Shared Conversation",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/shares": {
+      "get": {
+        "description": "«Мои общие ссылки»: свои диалоги со ссылкой, и с истёкшей тоже —\nпродлить (POST …/share/renew) или отключить (DELETE …/share).",
+        "operationId": "list_shares_api_v1_conversations_shares_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedLinkListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Shares",
         "tags": [
           "chat"
         ]
@@ -10200,7 +10305,7 @@
         ]
       },
       "post": {
-        "description": "Ссылка для коллег по компании на то, что видно сейчас. Повторно —\nобновить снимок, ссылка та же.",
+        "description": "Ссылка для коллег по компании на то, что видно сейчас, на\nCHAT_SHARE_TTL_DAYS дней. Повторно — обновить снимок и срок, ссылка та\nже.",
         "operationId": "share_api_v1_conversations__conversation_id__share_post",
         "parameters": [
           {
@@ -10242,6 +10347,55 @@
           }
         ],
         "summary": "Share",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/api/v1/conversations/{conversation_id}/share/renew": {
+      "post": {
+        "description": "Продлить ссылку, и истёкшую: срок — от сегодня, токен и снимок\nпрежние. Ссылки нет — 409.",
+        "operationId": "renew_share_api_v1_conversations__conversation_id__share_renew_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Renew Share",
         "tags": [
           "chat"
         ]

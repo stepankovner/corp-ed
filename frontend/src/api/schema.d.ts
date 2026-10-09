@@ -1189,7 +1189,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/conversations/shared/{token}": {
+    "/api/v1/conversations/shared/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Shared Conversation
+         * @description Диалог, которым поделился коллега по компании (только чтение).
+         *
+         *     Токен — в теле: путь запроса пишут журналы прокси и сервера. Ссылка
+         *     отозвана, истекла или неизвестна — одинаковый 404.
+         */
+        post: operations["shared_conversation_api_v1_conversations_shared_open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/shares": {
         parameters: {
             query?: never;
             header?: never;
@@ -1197,10 +1220,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Shared Conversation
-         * @description Диалог, которым поделился коллега по компании (только чтение).
+         * List Shares
+         * @description «Мои общие ссылки»: свои диалоги со ссылкой, и с истёкшей тоже —
+         *     продлить (POST …/share/renew) или отключить (DELETE …/share).
          */
-        get: operations["shared_conversation_api_v1_conversations_shared__token__get"];
+        get: operations["list_shares_api_v1_conversations_shares_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1347,8 +1371,9 @@ export interface paths {
         put?: never;
         /**
          * Share
-         * @description Ссылка для коллег по компании на то, что видно сейчас. Повторно —
-         *     обновить снимок, ссылка та же.
+         * @description Ссылка для коллег по компании на то, что видно сейчас, на
+         *     CHAT_SHARE_TTL_DAYS дней. Повторно — обновить снимок и срок, ссылка та
+         *     же.
          */
         post: operations["share_api_v1_conversations__conversation_id__share_post"];
         /**
@@ -1356,6 +1381,27 @@ export interface paths {
          * @description Закрыть ссылку: она перестанет открываться.
          */
         delete: operations["unshare_api_v1_conversations__conversation_id__share_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/share/renew": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew Share
+         * @description Продлить ссылку, и истёкшую: срок — от сегодня, токен и снимок
+         *     прежние. Ссылки нет — 409.
+         */
+        post: operations["renew_share_api_v1_conversations__conversation_id__share_renew_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -4495,9 +4541,18 @@ export interface components {
         };
         /**
          * ShareResponse
-         * @description Ссылка на /shared/{token} в приложении; открывают коллеги по компании.
+         * @description Ссылка /shared#<token> в приложении; открывают коллеги по компании.
+         *     Токен — во фрагменте адреса: на сервер и в журналы он не уходит.
+         *     expired — срок вышел: по ссылке не открыть, пока владелец не продлит.
          */
         ShareResponse: {
+            /** Expired */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
             /**
              * Shared At
              * Format: date-time
@@ -4519,6 +4574,45 @@ export interface components {
             shared_at: string;
             /** Title */
             title: string;
+        };
+        /** SharedLinkListResponse */
+        SharedLinkListResponse: {
+            /** Items */
+            items: components["schemas"]["SharedLinkResponse"][];
+        };
+        /**
+         * SharedLinkResponse
+         * @description Ссылка в «Моих общих ссылках»: без токена — его копируют из диалога.
+         */
+        SharedLinkResponse: {
+            /** Expired */
+            expired: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Shared At
+             * Format: date-time
+             */
+            shared_at: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * SharedOpenRequest
+         * @description Токен общей ссылки — в теле, не в адресе: путь запроса пишут журналы
+         *     прокси и сервера.
+         */
+        SharedOpenRequest: {
+            /** Token */
+            token: string;
         };
         /** SpendCompanyResponse */
         SpendCompanyResponse: {
@@ -7178,16 +7272,18 @@ export interface operations {
             };
         };
     };
-    shared_conversation_api_v1_conversations_shared__token__get: {
+    shared_conversation_api_v1_conversations_shared_open_post: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                token: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedOpenRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -7205,6 +7301,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_shares_api_v1_conversations_shares_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedLinkListResponse"];
                 };
             };
         };
@@ -7520,6 +7636,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    renew_share_api_v1_conversations__conversation_id__share_renew_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
