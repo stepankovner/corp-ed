@@ -459,6 +459,35 @@ async def test_download_follows_checked_redirects() -> None:
     assert hosts == ["portal.example.com", "cdn.example.com"]
 
 
+async def test_download_can_stay_on_the_same_host() -> None:
+    """same_host: файл с WebDAV-сервера не уходит по редиректу на другой
+    хост вовсе — ни с учётными данными, ни без них."""
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.headers["host"])
+        if request.url.path == "/old":
+            return httpx.Response(302, headers={"location": "/new"})
+        if request.url.path == "/new":
+            return httpx.Response(200, content=b"data")
+        return httpx.Response(302, headers={"location": "https://cdn.example.com/f"})
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    downloaded = await client.download(
+        "https://dav.example.com/old", max_bytes=100, same_host=True
+    )
+    assert downloaded.content == b"data"
+    with pytest.raises(OutboundURLError) as exc:
+        await client.download(
+            "https://dav.example.com/away", max_bytes=100, same_host=True
+        )
+    assert exc.value.code == "redirect_foreign"
+    assert hosts == ["dav.example.com"] * 3
+
+
 class _Stream(httpx.AsyncByteStream):
     def __init__(self, chunks: AsyncIterator[bytes]) -> None:
         self._chunks = chunks
@@ -630,6 +659,31 @@ async def test_api_response_content_length_refused_early() -> None:
     )
     with pytest.raises(OutboundTooLargeError):
         await client.get("https://portal.example.com/rest/x", max_bytes=10)
+
+
+async def test_head_keeps_resource_length_and_method_across_redirects() -> None:
+    """HEAD: Content-Length — размер файла, а не тела; не лимит. После
+    редиректа HEAD остаётся HEAD, а не превращается в GET всего файла."""
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path == "/old.pdf":
+            return httpx.Response(301, headers={"location": "/new.pdf"})
+        return httpx.Response(
+            200, headers={"content-length": "999999", "etag": '"e"'}, content=b""
+        )
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    response = await client.request(
+        "HEAD", "https://portal.example.com/old.pdf", max_bytes=10
+    )
+    assert response.status_code == 200
+    assert response.headers["content-length"] == "999999"
+    assert seen == [("HEAD", "/old.pdf"), ("HEAD", "/new.pdf")]
 
 
 async def test_api_response_under_the_ceiling_reads_as_usual() -> None:

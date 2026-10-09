@@ -185,7 +185,9 @@ function ConnectBanner() {
   });
   const item = mine.data?.find(
     (connector) =>
-      connector.oauth && connector.grant_status !== "active" && !hidden.includes(connector.id),
+      (connector.oauth || connector.credential_fields.length > 0) &&
+      connector.grant_status !== "active" &&
+      !hidden.includes(connector.id),
   );
   if (!item) return null;
 

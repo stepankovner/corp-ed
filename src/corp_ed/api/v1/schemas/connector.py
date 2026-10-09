@@ -9,7 +9,6 @@ from corp_ed.domain.tariffs import Tariff
 from corp_ed.domain.types import ConnectorMode, ConnectorStatus, GrantStatus
 
 MAX_NAME_LENGTH = 100
-MAX_FIELD_VALUE_LENGTH = 2048
 MAX_FIELDS = 32
 MIN_SYNC_INTERVAL = 15
 MAX_SYNC_INTERVAL = 1440
@@ -161,6 +160,9 @@ class MyConnectorResponse(BaseModel):
     grant_error_code: str | None
     # Как подключаться: редирект (oauth) или ввод полей (PUT .../mine).
     oauth: bool = False
+    # Поля формы сотрудника (без OAuth): что вводить. Значения не
+    # возвращаются никогда; у OAuth и у неизвестного вида — пусто.
+    credential_fields: list[FieldSpecResponse]
 
 
 class OAuthStartResponse(BaseModel):

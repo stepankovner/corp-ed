@@ -245,6 +245,7 @@ describe("мои источники", () => {
             oauth: true,
             grant_status: "active",
             grant_error_code: null,
+            credential_fields: [],
           },
         ]),
       ),

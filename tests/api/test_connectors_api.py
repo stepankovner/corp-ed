@@ -11,13 +11,16 @@ from cryptography.fernet import Fernet
 from fastapi import Depends
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import capture_logs
 
 from corp_ed.api.v1.dependencies import (
     get_audit_repository,
     get_connector_service,
     get_session,
 )
+from corp_ed.connectors.registry import FieldSpec, KindSpec
 from corp_ed.core.config import ConnectorSettings
+from corp_ed.core.exceptions import InvalidConnectorConfigError
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.tenant_context import tenant_scope
@@ -42,11 +45,17 @@ from corp_ed.repositories.connector_sync_job_repository import (
     ConnectorSyncJobRepository,
 )
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.services.connector_service import ConnectorService, _provider_code
+from corp_ed.services.connector_service import (
+    ConnectorService,
+    _provider_code,
+    _validate_fields,
+)
 from tests.api.conftest import bearer
 from tests.fake_connector import (
     FAKE_KIND,
     FAKE_PER_USER_KIND,
+    PUBLIC_KIND,
+    PUBLIC_SPEC,
     FakeSource,
     make_registry,
     public_resolver,
@@ -84,6 +93,12 @@ def hidden_kinds() -> frozenset[str]:
 
 
 @pytest.fixture
+def extra_kinds() -> tuple[KindSpec, ...]:
+    """Виды сверх двух поддельных; тест подменяет параметризацией."""
+    return ()
+
+
+@pytest.fixture
 async def connectors_api(
     api: httpx.AsyncClient,
     session: AsyncSession,
@@ -91,8 +106,9 @@ async def connectors_api(
     secrets: SecretBox,
     settings: ConnectorSettings,
     hidden_kinds: frozenset[str],
+    extra_kinds: tuple[KindSpec, ...],
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    registry = make_registry(source, hidden_kinds)
+    registry = make_registry(source, hidden_kinds, extra_kinds)
 
     def build(session: AsyncSession, audit: AuditRepository) -> ConnectorService:
         return ConnectorService(
@@ -619,6 +635,10 @@ async def test_employee_connects_and_disconnects_own_account(
             "grant_status": None,
             "grant_error_code": None,
             "oauth": False,
+            # Форма сотрудника: что вводить; значения не возвращаются.
+            "credential_fields": [
+                {"name": "token", "title": "Токен", "required": True, "secret": True}
+            ],
         }
     ]
 
@@ -673,6 +693,66 @@ async def test_employee_connects_and_disconnects_own_account(
         AuditAction.CONNECTOR_GRANT_SET.value,
         AuditAction.CONNECTOR_GRANT_REVOKED.value,
     ]
+
+
+async def test_employee_credentials_are_checked_before_saving(
+    connectors_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    source: FakeSource,
+    session: AsyncSession,
+) -> None:
+    """Неверный токен — ошибка формы сразу, а не остановка гранта после
+    синхронизации; источник недоступен — тоже не сохраняем."""
+    created = await _create(
+        connectors_api, admin_account, {**CREATE, "kind": FAKE_PER_USER_KIND}
+    )
+    connector_id = created.json()["id"]
+    employee = bearer(account)
+    source.rejected_tokens.add("wrong-token")
+
+    with capture_logs() as logs:
+        response = await connectors_api.put(
+            f"{URL}/{connector_id}/mine",
+            json={"credentials": {"token": "wrong-token"}},
+            headers=employee,
+        )
+    assert response.status_code == 422
+    assert response.json()["code"] == "auth_failed"
+    assert "wrong-token" not in response.text
+    # В журнал — код, без значения токена.
+    assert {"event": "connector_grant_check_failed", "code": "auth_failed"}.items() <= (
+        next(e for e in logs if e["event"] == "connector_grant_check_failed").items()
+    )
+    assert "wrong-token" not in str(logs)
+    assert source.check_calls == ["wrong-token"]
+
+    source.unavailable = True
+    response = await connectors_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "my-token"}},
+        headers=employee,
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "http_503"
+    assert "my-token" not in response.text
+
+    with tenant_scope(account.tenant_id):
+        assert (await session.scalars(select(ConnectorUserGrant))).all() == []
+    assert await _jobs(session) == []
+    mine = await connectors_api.get(f"{URL}/mine", headers=employee)
+    assert mine.json()[0]["grant_status"] is None
+
+    source.unavailable = False
+    response = await connectors_api.put(
+        f"{URL}/{connector_id}/mine",
+        json={"credentials": {"token": "my-token"}},
+        headers=employee,
+    )
+    assert response.status_code == 204, response.text
+    mine = await connectors_api.get(f"{URL}/mine", headers=employee)
+    assert mine.json()[0]["grant_status"] == "active"
+    assert "my-token" not in mine.text
 
 
 async def test_employee_cannot_grant_into_organization_connector(
@@ -745,3 +825,51 @@ def test_provider_error_code_keeps_only_safe_characters() -> None:
     assert _provider_code("Отказ") == "provider______"
     assert len(_provider_code("x" * 500)) == 64
     assert _provider_code(None) == "code_missing"
+
+
+def test_field_length_limit_is_per_field() -> None:
+    """Значение поля — не длиннее 2 КиБ, если вид не разрешил больше
+    (JSON-ключ сервисного аккаунта Google — около 2,4 КиБ)."""
+    short = FieldSpec("token", "Токен", secret=True)
+    long = FieldSpec("key", "Ключ", secret=True, max_length=8192)
+    value = "x" * 3000
+
+    with pytest.raises(InvalidConnectorConfigError) as caught:
+        _validate_fields((short,), {"token": value}, "credentials")
+    assert caught.value.code == "field_invalid"
+    assert _validate_fields((long,), {"key": value}, "credentials") == {"key": value}
+    with pytest.raises(InvalidConnectorConfigError):
+        _validate_fields((long,), {"key": "x" * 8193}, "credentials")
+
+
+@pytest.mark.parametrize("extra_kinds", [(PUBLIC_SPEC,)])
+async def test_kind_without_keys_is_ready_on_create(
+    connectors_api: httpx.AsyncClient, admin_account: User, session: AsyncSession
+) -> None:
+    """Режим organization без полей учётных данных (публичный сайт): ключей
+    нет и не будет — подключение готово сразу, синхронизация в очереди."""
+    created = await _create(
+        connectors_api,
+        admin_account,
+        {
+            "kind": PUBLIC_KIND,
+            "name": "Сайт",
+            "modules": ["pages"],
+            "config": {"base_url": "https://www.example.com/help/"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["credentials_set_at"] is not None
+    with tenant_scope(admin_account.tenant_id):
+        jobs = await _jobs(session)
+    assert [str(job.connector_id) for job in jobs] == [body["id"]]
+
+    tested = await connectors_api.post(
+        f"{URL}/{body['id']}/test", headers=bearer(admin_account)
+    )
+    assert tested.json() == {"ok": True, "error_code": None}
+
+    # Обычный вид режима organization по-прежнему ждёт ключей.
+    plain = (await _create(connectors_api, admin_account)).json()
+    assert plain["credentials_set_at"] is None
