@@ -481,6 +481,11 @@ async def get_conversation(s: Session, conversation_id: str) -> dict[str, Any]:
     return r.json()
 
 
+async def open_shared(s: Session, token: str) -> httpx.Response:
+    """Открыть общую ссылку: токен — в теле запроса, не в адресе (схема)."""
+    return await s.post(f"{API}/conversations/shared/open", json={"token": token})
+
+
 async def list_conversations(s: Session, **params: Any) -> list[dict[str, Any]]:
     r = await s.get(f"{API}/conversations", params=params)
     assert r.status_code == 200, r.text
@@ -2209,7 +2214,7 @@ async def test_shared_link_shows_snapshot_of_that_conversation_to_colleague(
     )
     assert summary["shared"] is True
 
-    r = await colleague.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(colleague, token)
     assert r.status_code == 200, r.text
     view = r.json()
     assert view["title"] == conversation["title"]
@@ -2229,16 +2234,16 @@ async def test_shared_link_shows_snapshot_of_that_conversation_to_colleague(
         conversation_id=shared.conversation_id,
         parent_id=shared.answer_id,
     )
-    r = await colleague.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(colleague, token)
     assert len(r.json()["messages"]) == 2  # снимок не меняется сам
     assert "печать" not in r.text
 
     r = await owner.post(f"{API}/conversations/{shared.conversation_id}/share")
     assert r.status_code == 200 and r.json()["token"] == token  # схема: «ссылка та же»
-    r = await colleague.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(colleague, token)
     assert len(r.json()["messages"]) == 4
 
-    r = await colleague.get(f"{API}/conversations/shared/{'A' * 43}")
+    r = await open_shared(colleague, "A" * 43)
     assert r.status_code == 404, r.text
 
 
@@ -2257,17 +2262,17 @@ async def test_shared_link_stops_working_after_revoke_and_delete(
 
     r = await owner.post(f"{base}/share")
     token = r.json()["token"]
-    r = await colleague.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(colleague, token)
     assert r.status_code == 200
 
     r = await colleague.delete(f"{base}/share")
     assert r.status_code in DENIED, r.text
-    r = await colleague.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(colleague, token)
     assert r.status_code == 200
 
     r = await owner.delete(f"{base}/share")
     assert r.status_code == 204, r.text
-    r = await colleague.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(colleague, token)
     assert r.status_code in (403, 404, 410), r.text  # допущение: код не задан
     assert "справку" not in r.text
     conversation = await get_conversation(owner, reply.conversation_id)
@@ -2276,13 +2281,13 @@ async def test_shared_link_stops_working_after_revoke_and_delete(
     r = await owner.post(f"{base}/share")
     assert r.status_code == 200, r.text
     token2 = r.json()["token"]
-    r = await colleague.get(f"{API}/conversations/shared/{token2}")
+    r = await open_shared(colleague, token2)
     assert r.status_code == 200
 
     r = await owner.delete(base)
     assert r.status_code == 204, r.text
     for t in {token, token2}:
-        r = await colleague.get(f"{API}/conversations/shared/{t}")
+        r = await open_shared(colleague, t)
         assert r.status_code in (403, 404, 410), r.text
         assert "справку" not in r.text
 
@@ -2297,15 +2302,15 @@ async def test_shared_link_is_for_same_company_only(kronto: Kronto) -> None:
     r = await owner.post(f"{API}/conversations/{reply.conversation_id}/share")
     token = r.json()["token"]
 
-    r = await admin_a.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(admin_a, token)
     assert r.status_code == 200, r.text  # коллега по компании (админ) — открывает
 
-    r = await admin_b.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(admin_b, token)
     assert r.status_code in DENIED, r.text
     assert_no_leak(r.text, "справку", "Иванова")
 
     guest = kronto.browser()
-    r = await guest.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(guest, token)
     assert r.status_code in (401, 403, 404), r.text
     assert_no_leak(r.text, "справку", "Иванова")
 
@@ -2325,7 +2330,7 @@ async def test_shared_conversation_hides_restricted_sources_from_other_departmen
     assert r.status_code == 200, r.text
     token = r.json()["token"]
 
-    r = await outsider.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(outsider, token)
     assert r.status_code == 200, r.text
     for message in r.json()["messages"]:
         for source in message["sources"]:
@@ -2338,7 +2343,7 @@ async def test_shared_conversation_hides_restricted_sources_from_other_departmen
     answers = [m for m in r.json()["messages"] if m["role"] == "assistant"]
     assert answers and all("7931" not in m["content"] for m in answers), answers
 
-    r = await setup.admin.get(f"{API}/conversations/shared/{token}")
+    r = await open_shared(setup.admin, token)
     assert r.status_code == 200, r.text
     admin_sources = [s for m in r.json()["messages"] for s in m["sources"]]
     assert any(

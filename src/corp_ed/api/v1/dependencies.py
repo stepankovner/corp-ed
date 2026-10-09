@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
@@ -23,6 +24,7 @@ from corp_ed.core.config import (
     get_connector_settings,
     get_demo_settings,
     get_lead_settings,
+    get_settings,
 )
 from corp_ed.core.database import get_session, get_session_maker
 from corp_ed.core.dialogue_store import DialogueStore
@@ -649,7 +651,12 @@ def get_chat_service(
     credits: Annotated[CreditService, Depends(get_credit_service)],
     settings: Annotated[RagSettings, Depends(get_rag_settings)],
 ) -> ChatService:
-    return ChatService(session, credits, history_turns=settings.history_turns)
+    return ChatService(
+        session,
+        credits,
+        history_turns=settings.history_turns,
+        share_ttl=timedelta(days=get_settings().chat_share_ttl_days),
+    )
 
 
 def get_chat_generator(

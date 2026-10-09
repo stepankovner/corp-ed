@@ -10,16 +10,17 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.api.v1.dependencies import get_llm_gateway
-from corp_ed.core.config import EMBEDDING_DIM
+from corp_ed.core.config import EMBEDDING_DIM, get_settings
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import (
     ChatAttachment,
     ChatMessage,
     Chunk,
+    Conversation,
     Department,
     Folder,
     FolderDepartment,
@@ -576,6 +577,7 @@ async def test_nobody_else_sees_a_conversation_not_even_admin(
             ("PATCH", f"{BASE}/{conversation_id}", {"title": "x"}),
             ("DELETE", f"{BASE}/{conversation_id}", None),
             ("POST", f"{BASE}/{conversation_id}/share", None),
+            ("POST", f"{BASE}/{conversation_id}/share/renew", None),
             ("POST", f"{BASE}/{conversation_id}/messages/{answer_id}/stop", None),
             (
                 "PUT",
@@ -644,6 +646,32 @@ async def test_feedback_with_reason_and_comment_is_masked_in_log(
 # --- поделиться -----------------------------------------------------------------------
 
 
+async def _open(api: httpx.AsyncClient, viewer: User, token: str) -> httpx.Response:
+    """Открыть общую ссылку: токен — в теле, не в адресе запроса."""
+    return await api.post(
+        f"{BASE}/shared/open", json={"token": token}, headers=bearer(viewer)
+    )
+
+
+async def _share(api: httpx.AsyncClient, owner: User, question: str) -> dict[str, Any]:
+    events = await _ask(api, owner, question)
+    conversation_id = events[0]["conversation"]["id"]
+    response = await api.post(f"{BASE}/{conversation_id}/share", headers=bearer(owner))
+    assert response.status_code == 200, response.text
+    return {"conversation_id": conversation_id, **response.json()}
+
+
+async def _expire(session: AsyncSession, tenant: Tenant, conversation_id: str) -> None:
+    """Срок ссылки вышел минуту назад."""
+    with tenant_scope(tenant.id):
+        await session.execute(
+            update(Conversation)
+            .where(Conversation.id == UUID(conversation_id))
+            .values(share_expires_at=datetime.now(UTC) - timedelta(minutes=1))
+        )
+        await session.commit()
+
+
 async def test_share_is_a_snapshot_for_colleagues_only(
     api: httpx.AsyncClient,
     employee: User,
@@ -662,7 +690,7 @@ async def test_share_is_a_snapshot_for_colleagues_only(
     token = shared["token"]
     assert len(token) >= 24
 
-    view = await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
+    view = await _open(api, colleague, token)
     assert view.status_code == 200
     body = view.json()
     assert body["title"] == "Сколько дней отпуска?"
@@ -679,24 +707,10 @@ async def test_share_is_a_snapshot_for_colleagues_only(
         conversation_id=conversation_id,
         parent_id=final(events)["answer"]["id"],
     )
-    assert (
-        len(
-            (await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))).json()[
-                "messages"
-            ]
-        )
-        == 2
-    )
+    assert len((await _open(api, colleague, token)).json()["messages"]) == 2
     again = (await api.post(f"{BASE}/{conversation_id}/share", headers=owner)).json()
     assert again["token"] == token
-    assert (
-        len(
-            (await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))).json()[
-                "messages"
-            ]
-        )
-        == 4
-    )
+    assert len((await _open(api, colleague, token)).json()["messages"]) == 4
 
     # Другая компания ссылку не откроет.
     other = Tenant(id=uuid4(), company_code="other", name="Other")
@@ -706,16 +720,12 @@ async def test_share_is_a_snapshot_for_colleagues_only(
         stranger = make_user(email="stranger@other.com")
         session.add(stranger)
         await session.commit()
-    assert (
-        await api.get(f"{BASE}/shared/{token}", headers=bearer(stranger))
-    ).status_code == 404
+    assert (await _open(api, stranger, token)).status_code == 404
 
     assert (
         await api.delete(f"{BASE}/{conversation_id}/share", headers=owner)
     ).status_code == 204
-    assert (
-        await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
-    ).status_code == 404
+    assert (await _open(api, colleague, token)).status_code == 404
 
 
 async def test_viewing_a_shared_link_changes_nothing_in_the_owners_dialog(
@@ -746,7 +756,7 @@ async def test_viewing_a_shared_link_changes_nothing_in_the_owners_dialog(
         await session.commit()
         stuck_id = stuck.id
 
-    view = await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
+    view = await _open(api, colleague, token)
 
     assert view.status_code == 200
     with tenant_scope(tenant_ctx.id):
@@ -778,15 +788,151 @@ async def test_shared_sources_follow_viewer_access(
         await api.post(f"{BASE}/{conversation_id}/share", headers=bearer(employee))
     ).json()["token"]
 
-    source = (
-        await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
-    ).json()["messages"][1]["sources"][0]
+    shared = await _open(api, colleague, token)
+    source = shared.json()["messages"][1]["sources"][0]
     assert source["title"] == "Зарплаты отдела"
     assert source["content"] is None
     own = (await api.get(f"{BASE}/{conversation_id}", headers=bearer(employee))).json()[
         "messages"
     ][1]["sources"][0]
     assert own["content"]
+
+
+async def test_share_link_expires_after_ttl_and_owner_can_renew(
+    api: httpx.AsyncClient,
+    employee: User,
+    colleague: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    before = datetime.now(UTC)
+    shared = await _share(api, employee, "Сколько дней отпуска?")
+    conversation_id, token = shared["conversation_id"], shared["token"]
+    expires = datetime.fromisoformat(shared["expires_at"])
+    assert shared["expired"] is False
+    # По умолчанию — 30 дней (CHAT_SHARE_TTL_DAYS).
+    assert before + timedelta(days=30) <= expires
+    assert expires <= datetime.now(UTC) + timedelta(days=30)
+    owner = bearer(employee)
+    own = (await api.get(f"{BASE}/{conversation_id}", headers=owner)).json()
+    assert own["share"]["expires_at"] == shared["expires_at"]
+    assert own["share"]["expired"] is False
+
+    # Повторное «поделиться» — тот же токен, срок снова от сегодня.
+    await _expire(session, tenant_ctx, conversation_id)
+    again = (await api.post(f"{BASE}/{conversation_id}/share", headers=owner)).json()
+    assert again["token"] == token
+    assert again["expired"] is False
+    assert datetime.fromisoformat(again["expires_at"]) >= expires
+
+    # Истёкшая ссылка для смотрящего — как несуществующая.
+    await _expire(session, tenant_ctx, conversation_id)
+    expired = await _open(api, colleague, token)
+    unknown = await _open(api, colleague, "A" * 32)
+    assert expired.status_code == unknown.status_code == 404
+    assert expired.json() == unknown.json()
+
+    # Автор видит, что срок вышел, — в диалоге и в списке ссылок.
+    own = (await api.get(f"{BASE}/{conversation_id}", headers=owner)).json()
+    assert own["share"]["token"] == token
+    assert own["share"]["expired"] is True
+    links = (await api.get(f"{BASE}/shares", headers=owner)).json()["items"]
+    assert [(link["id"], link["expired"]) for link in links] == [
+        (conversation_id, True)
+    ]
+
+    # Продление: срок — от сегодня, токен прежний, ссылка снова открывается.
+    renewed = await api.post(f"{BASE}/{conversation_id}/share/renew", headers=owner)
+    assert renewed.status_code == 200, renewed.text
+    body = renewed.json()
+    assert body["token"] == token
+    assert body["expired"] is False
+    assert datetime.fromisoformat(body["expires_at"]) >= before + timedelta(days=30)
+    assert body["shared_at"] == own["share"]["shared_at"]  # снимок прежний
+    assert (await _open(api, colleague, token)).status_code == 200
+
+
+async def test_share_ttl_comes_from_settings(
+    api: httpx.AsyncClient, employee: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CHAT_SHARE_TTL_DAYS", "7")
+    get_settings.cache_clear()
+    try:
+        shared = await _share(api, employee, "Сколько дней отпуска?")
+    finally:
+        monkeypatch.delenv("CHAT_SHARE_TTL_DAYS")
+        get_settings.cache_clear()
+
+    lifetime = datetime.fromisoformat(shared["expires_at"]) - datetime.fromisoformat(
+        shared["shared_at"]
+    )
+    assert lifetime == timedelta(days=7)
+
+
+async def test_renew_needs_an_existing_link(
+    api: httpx.AsyncClient, employee: User, colleague: User
+) -> None:
+    events = await _ask(api, employee, "Сколько дней отпуска?")
+    conversation_id = events[0]["conversation"]["id"]
+    owner = bearer(employee)
+    path = f"{BASE}/{conversation_id}/share/renew"
+    assert (await api.post(path, headers=owner)).status_code == 409
+    await api.post(f"{BASE}/{conversation_id}/share", headers=owner)
+    await api.delete(f"{BASE}/{conversation_id}/share", headers=owner)
+    assert (await api.post(path, headers=owner)).status_code == 409
+    await api.post(f"{BASE}/{conversation_id}/share", headers=owner)
+    # Чужую ссылку не продлить: диалог для него не существует.
+    assert (await api.post(path, headers=bearer(colleague))).status_code == 404
+
+
+async def test_my_shared_links_lists_only_own_shared_conversations(
+    api: httpx.AsyncClient,
+    employee: User,
+    colleague: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    first = await _share(api, employee, "Сколько дней отпуска?")
+    second = await _share(api, employee, "Когда зарплата?")
+    await _ask(api, employee, "Где столовая?")  # не делился
+    await _share(api, colleague, "Где парковка?")
+    await _expire(session, tenant_ctx, first["conversation_id"])
+    owner = bearer(employee)
+
+    response = await api.get(f"{BASE}/shares", headers=owner)
+
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert [(i["id"], i["title"], i["expired"]) for i in items] == [
+        (second["conversation_id"], "Когда зарплата?", False),
+        (first["conversation_id"], "Сколько дней отпуска?", True),
+    ]
+    assert items[0]["shared_at"] == second["shared_at"]
+    assert items[0]["expires_at"] == second["expires_at"]
+    # Токенов в списке нет: ссылку копируют из самого диалога.
+    assert "token" not in items[0]
+    assert first["token"] not in response.text
+
+    # Отключить — прежней ручкой; ссылка уходит из списка.
+    first_id = first["conversation_id"]
+    await api.delete(f"{BASE}/{first_id}/share", headers=owner)
+    items = (await api.get(f"{BASE}/shares", headers=owner)).json()["items"]
+    assert [i["id"] for i in items] == [second["conversation_id"]]
+
+
+async def test_shared_link_token_goes_in_body_not_path(
+    api: httpx.AsyncClient, employee: User, colleague: User
+) -> None:
+    token = (await _share(api, employee, "Сколько дней отпуска?"))["token"]
+
+    old = await api.get(f"{BASE}/shared/{token}", headers=bearer(colleague))
+    assert old.status_code in (404, 405)
+    assert (await _open(api, colleague, token)).status_code == 200
+    for body in ({}, {"token": "../x"}, {"token": token, "extra": 1}):
+        response = await api.post(
+            f"{BASE}/shared/open", json=body, headers=bearer(colleague)
+        )
+        assert response.status_code == 422, body
 
 
 # --- вложения -------------------------------------------------------------------------

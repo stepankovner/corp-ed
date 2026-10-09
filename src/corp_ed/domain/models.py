@@ -1444,6 +1444,9 @@ class Conversation(TenantMixin, Base):
     share_token: Mapped[str | None] = mapped_column(String(64))
     shared_message_id: Mapped[UUID | None] = mapped_column(Uuid)
     shared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Ссылка открывается до этого момента (CHAT_SHARE_TTL_DAYS от «поделиться»
+    # или «продлить»); истёкшая для смотрящего — как несуществующая.
+    share_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
