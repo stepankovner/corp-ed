@@ -78,6 +78,9 @@ class FakeDav:
     codes: dict[str, str] = field(default_factory=dict)
     forbidden: set[tuple[str, str]] = field(default_factory=set)
     """(uid, путь папки) — 403 на PROPFIND."""
+    unauthorized: set[tuple[str, str]] = field(default_factory=set)
+    """(uid, путь папки) — 401 на PROPFIND при верном пароле: так Apache
+    mod_dav отвечает на папку с `Require user` другого пользователя."""
     extra_hrefs: dict[str, list[str]] = field(default_factory=dict)
     """путь папки → лишние href в её ответе (чужой хост, `..`, внук)."""
     rate_limit_hits: int = 0
@@ -181,6 +184,10 @@ class FakeDav:
             return httpx.Response(405)
         if (uid, relative) in self.forbidden:
             return httpx.Response(403)
+        if (uid, relative) in self.unauthorized:
+            return httpx.Response(
+                401, headers={"WWW-Authenticate": 'Basic realm="NAS"'}
+            )
         depth = request.headers.get("depth", "infinity")
         if depth not in ("0", "1"):
             return httpx.Response(403, text="infinite depth disabled")

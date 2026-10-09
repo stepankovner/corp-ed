@@ -1,0 +1,22 @@
+{
+  "method": "documents.group_memberships",
+  "params": {
+    "id": "8dae3772-fbdb-44fc-88bd-6435f5239819",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/documents.group_memberships?limit=100&offset=100",
+      "total": 0
+    },
+    "data": {
+      "groupMemberships": [],
+      "groups": []
+    },
+    "status": 200,
+    "ok": true
+  }
+}

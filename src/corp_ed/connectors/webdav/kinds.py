@@ -121,6 +121,7 @@ def _spec(
     server: str | None,
     login_title: str,
     credential_title: str,
+    preview: bool = True,
 ) -> KindSpec:
     config = (FieldSpec("server", server), _FOLDERS) if server else (_FOLDERS,)
     return KindSpec(
@@ -136,7 +137,7 @@ def _spec(
         url_field="server" if server else None,
         config_check=_check_config,
         credentials_check=_check_credentials,
-        preview=True,
+        preview=preview,
         base=True,
     )
 
@@ -150,6 +151,9 @@ NEXTCLOUD = _spec(
         "Пароль приложения (Настройки → Безопасность → «Создать новый пароль "
         "приложения»)"
     ),
+    # Проверен живьём 09.10.2026: Nextcloud 34.0.4
+    # (tests/live/test_nextcloud_live.py).
+    preview=False,
 )
 NEXTCLOUD_OAUTH = KindSpec(
     kind="nextcloud_oauth",
@@ -174,7 +178,9 @@ NEXTCLOUD_OAUTH = KindSpec(
         ),
         "oauth_callback_path": OAUTH_CALLBACK_PATH,
     },
-    preview=True,
+    # Проверен живьём 09.10.2026: Nextcloud 34.0.4, клиент из occ и вход
+    # в браузере (tests/live/test_nextcloud_oauth_live.py).
+    preview=False,
     base=True,
 )
 OWNCLOUD = _spec(
@@ -185,6 +191,9 @@ OWNCLOUD = _spec(
     credential_title=(
         "Пароль приложения (Настройки → Безопасность → «Новое приложение»)"
     ),
+    # Проверен живьём 09.10.2026: ownCloud 10.16.6
+    # (tests/live/test_owncloud_live.py).
+    preview=False,
 )
 SEAFILE = _spec(
     "seafile",
@@ -192,6 +201,9 @@ SEAFILE = _spec(
     server="Адрес WebDAV Seafile (https://seafile.example.ru/seafdav/)",
     login_title="Почта (логин Seafile)",
     credential_title="Пароль (при входе через SSO — пароль WebDAV из настроек профиля)",
+    # Проверен живьём 09.10.2026: Seafile 13.0.28 CE
+    # (tests/live/test_seafile_live.py).
+    preview=False,
 )
 VK_WORKSPACE = _spec(
     "vk_workspace_disk",
@@ -216,6 +228,9 @@ WEBDAV = _spec(
     server="Адрес WebDAV (https://nas.example.ru:5006/)",
     login_title="Логин",
     credential_title="Пароль",
+    # Проверен живьём 09.10.2026: Apache httpd 2.4.69 с mod_dav
+    # (tests/live/test_webdav_live.py).
+    preview=False,
 )
 
 SPECS = (NEXTCLOUD, NEXTCLOUD_OAUTH, OWNCLOUD, SEAFILE, VK_WORKSPACE, MAILRU, WEBDAV)

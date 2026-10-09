@@ -107,6 +107,16 @@ ERROR_CREDENTIALS_MISSING = "credentials_missing"
 ERROR_CREDENTIALS_UNREADABLE = "credentials_unreadable"
 ERROR_KIND_UNKNOWN = "kind_unknown"
 ERROR_SOURCE_UNAVAILABLE = "source_unavailable"
+ACTIONABLE_SOURCE_CODES = frozenset({"tree_too_large", "tree_too_deep"})
+"""Ошибки адаптера, которые администратор исправляет сам (сузить папки в
+настройках), — запуск падает с ними, а не с общим source_unavailable."""
+
+
+def _run_error_code(exc: Exception) -> str:
+    code = getattr(exc, "code", None)
+    return code if code in ACTIONABLE_SOURCE_CODES else ERROR_SOURCE_UNAVAILABLE
+
+
 ERROR_BUDGET = "budget_exhausted"
 ERROR_INTERNAL = "internal_error"
 SOURCE_FORMAT_HTML = "html"
@@ -283,7 +293,7 @@ class ConnectorSyncService:
             return
         except (AdapterError, OutboundURLError) as exc:
             raise _StopRunError(
-                ERROR_SOURCE_UNAVAILABLE,
+                _run_error_code(exc),
                 retryable=getattr(exc, "retryable", False),
             ) from exc
         finally:
@@ -352,7 +362,7 @@ class ConnectorSyncService:
                 return
             except (AdapterError, OutboundURLError) as exc:
                 raise _StopRunError(
-                    ERROR_SOURCE_UNAVAILABLE,
+                    _run_error_code(exc),
                     retryable=getattr(exc, "retryable", False),
                 ) from exc
             finally:
@@ -436,7 +446,7 @@ class ConnectorSyncService:
         except (AdapterError, OutboundURLError) as exc:
             await session.rollback()
             raise _StopRunError(
-                ERROR_SOURCE_UNAVAILABLE, retryable=getattr(exc, "retryable", False)
+                _run_error_code(exc), retryable=getattr(exc, "retryable", False)
             ) from exc
         return walked
 

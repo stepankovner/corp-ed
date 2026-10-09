@@ -1,0 +1,22 @@
+{
+  "method": "collections.group_memberships",
+  "params": {
+    "id": "f6ee6384-9bc9-4030-a311-5b31f6dd37dc",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/collections.group_memberships?limit=100&offset=100",
+      "total": 0
+    },
+    "data": {
+      "groupMemberships": [],
+      "groups": []
+    },
+    "status": 200,
+    "ok": true
+  }
+}

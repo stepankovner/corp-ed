@@ -1,0 +1,80 @@
+# Outline для живой проверки вида `outline`: официальный образ
+# outlinewiki/outline, Postgres, Redis, dex (OIDC — без внешнего входа
+# Outline не пускает) и TLS-прокси на 127.0.0.1. Только для тестов на своей
+# машине или в песочнице: ключи и пароли ниже выдуманные, только для стенда.
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls docker compose -f tests/live/outline/compose.yaml up -d
+#   дальше — вход пользователей, seed.py и тесты: README.md рядом.
+name: corp-ed-outline
+
+services:
+  db:
+    image: postgres:${POSTGRES_VERSION:-16.15-alpine}
+    environment:
+      POSTGRES_USER: outline
+      POSTGRES_PASSWORD: outline
+      POSTGRES_DB: outline
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "outline"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:${REDIS_VERSION:-7.4.11-alpine}
+
+  dex:
+    image: dexidp/dex:${DEX_VERSION:-v2.44.0}
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./dex.yaml:/etc/dex/config.yaml:ro
+    ports:
+      - "127.0.0.1:5556:5556"
+
+  outline:
+    image: outlinewiki/outline:${OUTLINE_VERSION:-1.10.1}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      dex:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      SECRET_KEY: 6b726f6e746f2d7374616e642d6f6e6c792d6e6f742d612d7365637265742121
+      UTILS_SECRET: 6b726f6e746f2d7374616e642d7574696c732d6e6f742d612d7365637265742e
+      DATABASE_URL: postgres://outline:outline@db:5432/outline
+      PGSSLMODE: disable
+      REDIS_URL: redis://redis:6379
+      URL: "https://127.0.0.1:${OUTLINE_PORT:-8447}"
+      PORT: "3000"
+      FORCE_HTTPS: "false"
+      FILE_STORAGE: local
+      FILE_STORAGE_LOCAL_ROOT_DIR: /var/lib/outline/data
+      # Браузер ходит в dex по 127.0.0.1, Outline — по имени сервиса.
+      OIDC_CLIENT_ID: outline
+      OIDC_CLIENT_SECRET: outline-stand-client-secret
+      OIDC_AUTH_URI: http://127.0.0.1:5556/dex/auth
+      OIDC_TOKEN_URI: http://dex:5556/dex/token
+      OIDC_USERINFO_URI: http://dex:5556/dex/userinfo
+      OIDC_USERNAME_CLAIM: preferred_username
+      OIDC_DISPLAY_NAME: dex
+      OIDC_SCOPES: openid profile email
+      RATE_LIMITER_ENABLED: "false"
+    volumes:
+      - outline:/var/lib/outline/data
+
+  tls:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [outline]
+    environment:
+      UPSTREAM: http://outline:3000
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${OUTLINE_PORT:-8447}:443"
+
+volumes:
+  outline:

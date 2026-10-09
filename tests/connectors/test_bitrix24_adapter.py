@@ -105,6 +105,12 @@ def test_default_registry_has_bitrix24(portal: FakePortal) -> None:
     assert [spec.kind for spec in registry.kinds()] == [
         "bitrix24",
         "confluence",
+        "nextcloud",
+        "nextcloud_oauth",
+        "outline",
+        "owncloud",
+        "seafile",
+        "webdav",
         "yandex360",
     ]
     config = {"portal": portal.portal, "client_id": CLIENT_ID}

@@ -1,0 +1,34 @@
+# dex — вход в Outline стенда (OIDC): Outline не пускает без внешнего
+# провайдера. Пользователи — статические, пароль у всех один и выдуманный
+# (Kronto-Test-1, ниже его bcrypt), секрет клиента — тоже только для стенда.
+issuer: http://127.0.0.1:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+oauth2:
+  skipApprovalScreen: true
+staticClients:
+  - id: outline
+    secret: outline-stand-client-secret
+    name: Outline
+    redirectURIs:
+      - https://127.0.0.1:8447/auth/oidc.callback
+enablePasswordDB: true
+staticPasswords:
+  - email: admin@example.com
+    username: admin
+    userID: "00000000-0000-0000-0000-000000000001"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: ivan@example.com
+    username: ivan
+    userID: "00000000-0000-0000-0000-000000000002"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: maria@example.com
+    username: maria
+    userID: "00000000-0000-0000-0000-000000000003"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: petr@example.com
+    username: petr
+    userID: "00000000-0000-0000-0000-000000000004"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"

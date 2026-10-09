@@ -1,0 +1,70 @@
+{
+  "method": "collections.memberships",
+  "params": {
+    "id": "f6ee6384-9bc9-4030-a311-5b31f6dd37dc",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/collections.memberships?limit=100&offset=100",
+      "total": 2
+    },
+    "data": {
+      "memberships": [
+        {
+          "id": "fcdae378-3f90-4bfc-b7aa-8670eaecaed4",
+          "userId": "d470e479-d080-4b0b-b4f5-4ef1438182cb",
+          "documentId": null,
+          "collectionId": "f6ee6384-9bc9-4030-a311-5b31f6dd37dc",
+          "permission": "read",
+          "createdById": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "sourceId": null,
+          "index": null
+        },
+        {
+          "id": "84150e08-4e39-4101-b74d-4defeefe19d1",
+          "userId": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "documentId": null,
+          "collectionId": "f6ee6384-9bc9-4030-a311-5b31f6dd37dc",
+          "permission": "admin",
+          "createdById": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "sourceId": null,
+          "index": null
+        }
+      ],
+      "users": [
+        {
+          "id": "d470e479-d080-4b0b-b4f5-4ef1438182cb",
+          "name": "ivan",
+          "avatarUrl": null,
+          "color": "#0300cc",
+          "role": "member",
+          "isSuspended": false,
+          "createdAt": "2026-10-09T20:42:01.342Z",
+          "updatedAt": "2026-10-09T20:43:13.332Z",
+          "deletedAt": null,
+          "lastActiveAt": "2026-10-09T20:43:13.332Z",
+          "timezone": null
+        },
+        {
+          "id": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "name": "admin",
+          "avatarUrl": null,
+          "color": "#e600e0",
+          "role": "admin",
+          "isSuspended": false,
+          "createdAt": "2026-10-09T20:40:54.112Z",
+          "updatedAt": "2026-10-09T20:41:49.393Z",
+          "deletedAt": null,
+          "lastActiveAt": "2026-10-09T20:41:49.393Z",
+          "timezone": "UTC"
+        }
+      ]
+    },
+    "status": 200,
+    "ok": true
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "method": "auth.info",
+  "params": {},
+  "response": {
+    "data": {
+      "user": {
+        "id": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+        "name": "admin",
+        "avatarUrl": null,
+        "color": "#e600e0",
+        "role": "admin",
+        "isSuspended": false,
+        "createdAt": "2026-10-09T20:40:54.112Z",
+        "updatedAt": "2026-10-09T20:41:49.393Z",
+        "deletedAt": null,
+        "lastActiveAt": "2026-10-09T20:41:49.393Z",
+        "timezone": "UTC",
+        "email": "admin@example.com",
+        "language": "en_US",
+        "preferences": null,
+        "notificationSettings": {}
+      },
+      "team": {
+        "id": "05b6fc74-abf6-47d0-9fa9-6ff978fefc00",
+        "name": "Outline",
+        "description": null,
+        "avatarUrl": null,
+        "sharing": true,
+        "memberCollectionCreate": true,
+        "memberTeamCreate": true,
+        "defaultCollectionId": null,
+        "documentEmbeds": true,
+        "guestSignin": false,
+        "passkeysEnabled": true,
+        "subdomain": "example",
+        "domain": null,
+        "url": "https://127.0.0.1:8447",
+        "defaultUserRole": "member",
+        "inviteRequired": false,
+        "allowedDomains": [],
+        "preferences": {
+          "membersCanInvite": true
+        },
+        "guidanceMCP": null
+      },
+      "groups": [],
+      "groupUsers": [],
+      "availableTeams": [
+        {
+          "id": "05b6fc74-abf6-47d0-9fa9-6ff978fefc00",
+          "name": "Outline",
+          "avatarUrl": null,
+          "url": "https://127.0.0.1:8447",
+          "isSignedIn": true
+        }
+      ]
+    },
+    "policies": [
+      {
+        "id": "05b6fc74-abf6-47d0-9fa9-6ff978fefc00",
+        "abilities": {
+          "createApiKey": true,
+          "listApiKeys": false,
+          "read": true,
+          "update": true,
+          "delete": false,
+          "createAttachment": true,
+          "createAuthenticationProvider": true,
+          "createCollection": true,
+          "importCollection": true,
+          "share": true,
+          "createDocument": true,
+          "createTemplate": true,
+          "createComment": true,
+          "createFileOperation": true,
+          "createExport": true,
+          "createImport": true,
+          "listImports": true,
+          "createIntegration": true,
+          "createOAuthClient": true,
+          "listOAuthClients": true,
+          "listOAuthAuthentications": true,
+          "createShare": true,
+          "listShares": true,
+          "listUsers": true,
+          "inviteUser": true,
+          "readTemplate": true,
+          "createTeam": false,
+          "audit": false,
+          "updateTemplate": true,
+          "createGroup": true,
+          "listGroups": true,
+          "createWebhookSubscription": true,
+          "listWebhookSubscription": true,
+          "createUserPasskey": true,
+          "createEmoji": true
+        }
+      },
+      {
+        "id": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+        "abilities": {
+          "listApiKeys": true,
+          "read": true,
+          "update": true,
+          "delete": true,
+          "readDetails": true,
+          "readEmail": true,
+          "activate": false,
+          "suspend": false,
+          "promote": false,
+          "demote": false,
+          "resendInvite": false
+        }
+      }
+    ],
+    "status": 200,
+    "ok": true
+  }
+}

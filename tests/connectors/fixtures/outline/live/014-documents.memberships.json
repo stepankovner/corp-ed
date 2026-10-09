@@ -1,0 +1,47 @@
+{
+  "method": "documents.memberships",
+  "params": {
+    "id": "8dae3772-fbdb-44fc-88bd-6435f5239819",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/documents.memberships?limit=100&offset=100",
+      "total": 1
+    },
+    "data": {
+      "memberships": [
+        {
+          "id": "e17cd1f3-33e4-4ca1-bed9-def71d052d60",
+          "userId": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+          "documentId": "8dae3772-fbdb-44fc-88bd-6435f5239819",
+          "collectionId": null,
+          "permission": "read",
+          "createdById": "78142a6d-e8ed-4a95-92f3-7f0d8a8f2ab1",
+          "sourceId": null,
+          "index": "P"
+        }
+      ],
+      "users": [
+        {
+          "id": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+          "name": "maria",
+          "avatarUrl": null,
+          "color": "#2930FF",
+          "role": "member",
+          "isSuspended": false,
+          "createdAt": "2026-10-09T20:42:04.517Z",
+          "updatedAt": "2026-10-09T20:42:05.190Z",
+          "deletedAt": null,
+          "lastActiveAt": "2026-10-09T20:42:04.545Z",
+          "timezone": null
+        }
+      ]
+    },
+    "status": 200,
+    "ok": true
+  }
+}

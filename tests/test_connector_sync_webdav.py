@@ -237,6 +237,8 @@ async def test_tree_too_large_fails_the_run_without_deleting(
     outcome = await run(service, connector)
 
     assert outcome.status is SyncRunStatus.FAILED
+    # Код — тот, что объясняет администратору, что делать (сузить папки).
+    assert outcome.error_code == "tree_too_large"
     assert not outcome.retryable
     assert outcome.stats.removed == 0
     with tenant_scope(tenant_ctx.id):

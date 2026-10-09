@@ -1,0 +1,52 @@
+# ownCloud Server 10 для живой проверки вида `owncloud`: официальный образ
+# owncloud/server, Postgres и TLS-прокси на 127.0.0.1. Только для тестов на
+# своей машине или в песочнице, данные и пароли выдуманные.
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls docker compose -f tests/live/owncloud/compose.yaml up -d
+#   дальше — seed.py и тесты: README.md рядом.
+name: corp-ed-owncloud
+
+services:
+  db:
+    image: postgres:${POSTGRES_VERSION:-16.15-alpine}
+    environment:
+      POSTGRES_USER: owncloud
+      POSTGRES_PASSWORD: owncloud
+      POSTGRES_DB: owncloud
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "owncloud"]
+      interval: 5s
+      retries: 20
+
+  owncloud:
+    image: owncloud/server:${OWNCLOUD_VERSION:-10.16.6}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      OWNCLOUD_DB_TYPE: pgsql
+      OWNCLOUD_DB_HOST: db
+      OWNCLOUD_DB_NAME: owncloud
+      OWNCLOUD_DB_USERNAME: owncloud
+      OWNCLOUD_DB_PASSWORD: owncloud
+      OWNCLOUD_ADMIN_USERNAME: admin
+      OWNCLOUD_ADMIN_PASSWORD: Kronto-Admin-1
+      OWNCLOUD_DOMAIN: "127.0.0.1:${OWNCLOUD_PORT:-8445}"
+      OWNCLOUD_TRUSTED_DOMAINS: "127.0.0.1:${OWNCLOUD_PORT:-8445}"
+      # За TLS-прокси: ссылки и редиректы — на https://127.0.0.1:порт.
+      OWNCLOUD_OVERWRITE_PROTOCOL: https
+      OWNCLOUD_OVERWRITE_HOST: "127.0.0.1:${OWNCLOUD_PORT:-8445}"
+      OWNCLOUD_OVERWRITE_CLI_URL: "https://127.0.0.1:${OWNCLOUD_PORT:-8445}"
+      OWNCLOUD_TRUSTED_PROXIES: "172.16.0.0/12,192.168.0.0/16,10.0.0.0/8"
+
+  tls:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [owncloud]
+    environment:
+      UPSTREAM: http://owncloud:8080
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${OWNCLOUD_PORT:-8445}:443"

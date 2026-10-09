@@ -89,10 +89,14 @@ class Dialect:
     title: str
     cloud: str
     document_memberships: bool
+    preview: bool
+    """Вид в каталоге — только после живой проверки."""
 
 
-OUTLINE = Dialect("outline", "Outline", "https://app.getoutline.com/", True)
-YONOTE = Dialect("yonote", "Yonote", "https://app.yonote.ru/", False)
+# Outline проверен живьём 09.10.2026 на 1.10.1 (tests/live/test_outline_live.py);
+# Yonote — нет.
+OUTLINE = Dialect("outline", "Outline", "https://app.getoutline.com/", True, False)
+YONOTE = Dialect("yonote", "Yonote", "https://app.yonote.ru/", False, True)
 
 
 def _spec(dialect: Dialect) -> KindSpec:
@@ -118,7 +122,7 @@ def _spec(dialect: Dialect) -> KindSpec:
         ),
         url_field="base_url",
         extra={"key_owner": "администратор, участник закрытых коллекций"},
-        preview=True,
+        preview=dialect.preview,
     )
 
 
@@ -262,7 +266,9 @@ class OutlineAdapter:
         groups = await self._group_ids(
             "collections.group_memberships",
             collection_id,
-            "collectionGroupMemberships",
+            # Outline 1.10 (стенд 09.10) — groupMemberships, прежние версии —
+            # collectionGroupMemberships.
+            ("groupMemberships", "collectionGroupMemberships"),
         )
         for group in groups:
             users |= await self._group_members(group)
@@ -293,7 +299,9 @@ class OutlineAdapter:
             self._skippable(exc, method)
         return found
 
-    async def _group_ids(self, method: str, target: str, key: str) -> set[str]:
+    async def _group_ids(
+        self, method: str, target: str, key: str | tuple[str, ...]
+    ) -> set[str]:
         found: set[str] = set()
         try:
             async for membership in self._client.pages(

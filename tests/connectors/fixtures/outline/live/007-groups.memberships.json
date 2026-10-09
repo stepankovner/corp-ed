@@ -1,0 +1,88 @@
+{
+  "method": "groups.memberships",
+  "params": {
+    "id": "dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+    "offset": 0,
+    "limit": 100
+  },
+  "response": {
+    "pagination": {
+      "limit": 100,
+      "offset": 0,
+      "nextPath": "/api/groups.memberships?limit=100&offset=100",
+      "total": 2
+    },
+    "data": {
+      "groupMemberships": [
+        {
+          "id": "dedbeca9-ec69-48f6-a6d0-5fbd922b8834-dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+          "userId": "dedbeca9-ec69-48f6-a6d0-5fbd922b8834",
+          "groupId": "dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+          "permission": "member",
+          "user": {
+            "id": "dedbeca9-ec69-48f6-a6d0-5fbd922b8834",
+            "name": "petr",
+            "avatarUrl": null,
+            "color": "#0300cc",
+            "role": "member",
+            "isSuspended": false,
+            "createdAt": "2026-10-09T20:42:07.581Z",
+            "updatedAt": "2026-10-09T20:42:08.116Z",
+            "deletedAt": null,
+            "lastActiveAt": "2026-10-09T20:42:07.592Z",
+            "timezone": null
+          }
+        },
+        {
+          "id": "e2c97dab-39d6-4a40-a0d7-072827594f1d-dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+          "userId": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+          "groupId": "dedc451b-5a8e-4c79-b4a6-ec615824baa3",
+          "permission": "member",
+          "user": {
+            "id": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+            "name": "maria",
+            "avatarUrl": null,
+            "color": "#2930FF",
+            "role": "member",
+            "isSuspended": false,
+            "createdAt": "2026-10-09T20:42:04.517Z",
+            "updatedAt": "2026-10-09T20:42:05.190Z",
+            "deletedAt": null,
+            "lastActiveAt": "2026-10-09T20:42:04.545Z",
+            "timezone": null
+          }
+        }
+      ],
+      "users": [
+        {
+          "id": "dedbeca9-ec69-48f6-a6d0-5fbd922b8834",
+          "name": "petr",
+          "avatarUrl": null,
+          "color": "#0300cc",
+          "role": "member",
+          "isSuspended": false,
+          "createdAt": "2026-10-09T20:42:07.581Z",
+          "updatedAt": "2026-10-09T20:42:08.116Z",
+          "deletedAt": null,
+          "lastActiveAt": "2026-10-09T20:42:07.592Z",
+          "timezone": null
+        },
+        {
+          "id": "e2c97dab-39d6-4a40-a0d7-072827594f1d",
+          "name": "maria",
+          "avatarUrl": null,
+          "color": "#2930FF",
+          "role": "member",
+          "isSuspended": false,
+          "createdAt": "2026-10-09T20:42:04.517Z",
+          "updatedAt": "2026-10-09T20:42:05.190Z",
+          "deletedAt": null,
+          "lastActiveAt": "2026-10-09T20:42:04.545Z",
+          "timezone": null
+        }
+      ]
+    },
+    "status": 200,
+    "ok": true
+  }
+}

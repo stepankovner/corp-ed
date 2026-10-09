@@ -205,6 +205,20 @@ class WebDavAdapter:
         url = self._url(root, folder, collection=True)
         try:
             entries = await self._client.propfind(url, depth="1")
+        except AdapterAuthError as exc:
+            if folder == () or exc.code != "auth_failed":
+                raise
+            # Apache mod_dav (и NAS на нём) отвечает на чужую папку 401, а
+            # не 403, хотя пароль верный (стенд 09.10). Корень пускает —
+            # закрытая папка; не пускает — пароль отозван посреди обхода.
+            await self._client.propfind(self._url(root, (), collection=True), depth="0")
+            logger.info(
+                "webdav_folder_skipped",
+                kind=self._kind,
+                code="unauthorized",
+                start=start,
+            )
+            return
         except AdapterError as exc:
             if (
                 isinstance(exc, AdapterAuthError | AdapterConfigError)
