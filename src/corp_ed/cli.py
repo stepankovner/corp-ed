@@ -383,7 +383,8 @@ async def _run(args: argparse.Namespace) -> int:
             f"auth_challenges: {purged.auth_challenges}, "
             f"email_tokens: {purged.email_tokens}, "
             f"trusted_devices: {purged.trusted_devices}, "
-            f"conversations: {purged.conversations}"
+            f"conversations: {purged.conversations}, "
+            f"left_members: {purged.left_members}"
         )
         return 0
 

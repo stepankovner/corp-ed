@@ -488,6 +488,10 @@ class User(TenantMixin, Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Через 30 дней после ухода purge удаляет данные человека в компании
+    # (диалоги, уведомления, подключения, должность и отдел) и ставит
+    # отметку; вернулся по приглашению — отметка снимается.
+    data_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Первые шаги (ТЗ §8): подсказки сотруднику показаны, чек-лист
     # администратора скрыт — в членстве, чтобы не всплывали на каждом
     # новом устройстве.

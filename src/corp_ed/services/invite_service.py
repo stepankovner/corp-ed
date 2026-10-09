@@ -271,6 +271,7 @@ class InviteService:
                 member.status = status
                 member.role = invite.role
                 member.left_at = None
+                member.data_purged_at = None
                 member.token_version += 1
             invite.uses += 1
             self.audit.record(

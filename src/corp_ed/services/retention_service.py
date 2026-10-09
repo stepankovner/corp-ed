@@ -1,14 +1,27 @@
 import calendar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import structlog
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.db_policies import AUDIT_RETENTION_DAYS
-from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import AuditEvent, AuthChallenge, TrustedDevice
+from corp_ed.core.tenant_context import require_tenant, tenant_scope
+from corp_ed.domain.models import (
+    AuditEvent,
+    AuthChallenge,
+    ChatAttachment,
+    ConnectorUserGrant,
+    Conversation,
+    MaterialAccess,
+    MemberStatus,
+    Notification,
+    NotificationSetting,
+    TrustedDevice,
+    User,
+)
 from corp_ed.repositories.chat_repository import (
     AttachmentRepository,
     ConversationRepository,
@@ -52,6 +65,15 @@ AUTH_RECORD_GRACE = timedelta(days=1)
 отсутствующую запись, поэтому истёкшие удаляются почти сразу; сутки — на
 расхождение часов и разбор жалобы «код не подошёл»."""
 
+LEFT_MEMBER_GRACE = timedelta(days=30)
+"""Сколько данные человека в компании живут после его ухода (ТЗ §2).
+
+Ушёл сам, убран администратором или удалил учётку — членство становится
+«ушёл» и остаётся строкой ради ссылок журнала вопросов и аудита, поэтому
+каскады внешних ключей не срабатывают. Тридцать дней — срок уничтожения
+по ч. 4–5 ст. 21 152-ФЗ; в эти дни человек может вернуться по новому
+приглашению и найти свои диалоги на месте."""
+
 
 def months_before(moment: datetime, months: int) -> datetime:
     """moment минус months календарных месяцев, время суток то же.
@@ -84,6 +106,7 @@ class PurgeReport:
     email_tokens: int = 0
     trusted_devices: int = 0
     conversations: int = 0
+    left_members: int = 0
 
 
 class RetentionService:
@@ -92,7 +115,8 @@ class RetentionService:
     Запускать по расписанию (cron / systemd timer раз в сутки). Журнал
     вопросов, запуски коннекторов, неотправленные вложения и диалоги чата
     — по компании в своём tenant_scope (RLS); у диалогов срок свой у
-    каждой компании (chat_retention_months). Журнал аудита —
+    каждой компании (chat_retention_months). Там же — данные ушедших из
+    компании старше LEFT_MEMBER_GRACE (purge_left_members). Журнал аудита —
     одним запросом, триггер в базе пропустит только записи старше срока.
     Записи входа (refresh-токены, шаги входа, ссылки из писем, доверенные
     устройства) принадлежат учётке, а не компании, и вне RLS — тоже одним
@@ -127,6 +151,8 @@ class RetentionService:
         runs_deleted = 0
         attachments_deleted = 0
         conversations_deleted = 0
+        members_purged = 0
+        members_cutoff = now - LEFT_MEMBER_GRACE
         for tenant in tenants:
             # Диалоги — без активности дольше срока своей компании,
             # целиком: с сообщениями, вложениями и общей ссылкой.
@@ -145,6 +171,9 @@ class RetentionService:
                     conversations_deleted += await ConversationRepository(
                         session
                     ).delete_inactive_before(chat_cutoff)
+                    members_purged += await purge_left_members(
+                        session, members_cutoff, now
+                    )
                     await session.commit()
 
         async with self.session_maker() as session:
@@ -187,6 +216,7 @@ class RetentionService:
             email_tokens=email_deleted,
             trusted_devices=devices_deleted,
             conversations=conversations_deleted,
+            left_members=members_purged,
         )
         return PurgeReport(
             qa_log=qa_deleted,
@@ -199,7 +229,74 @@ class RetentionService:
             email_tokens=email_deleted,
             trusted_devices=devices_deleted,
             conversations=conversations_deleted,
+            left_members=members_purged,
         )
+
+
+async def purge_left_members(
+    session: AsyncSession, cutoff: datetime, now: datetime
+) -> int:
+    """Данные ушедших из компании до cutoff (компания — из контекста).
+
+    Удаляются диалоги целиком (с сообщениями, вложениями и общей
+    ссылкой — как по сроку компании), черновики вложений, уведомления и
+    настройки писем, подключения к своим системам с их токенами и
+    доступы к документам; в членстве стираются должность, отдел и
+    служебные отметки. Остаются строка членства без личного — ради
+    ссылок журналов — и сами журналы: вопросы (после маски) и действия
+    живут по своим срокам. Учётка человека — не данные компании: её
+    удаляет он сам (AccountService.delete_account), и тогда сразу.
+
+    Возвращает, скольких людей обработали; отметка data_purged_at не
+    даёт обходить их снова каждую ночь. Ушедшие до 09.10 без left_at
+    считаются ушедшими в день вступления.
+    """
+    tenant_id = require_tenant()
+    ids: list[UUID] = list(
+        (
+            await session.scalars(
+                select(User.id).where(
+                    User.tenant_id == tenant_id,
+                    User.status == MemberStatus.LEFT,
+                    User.data_purged_at.is_(None),
+                    func.coalesce(User.left_at, User.created_at) < cutoff,
+                )
+            )
+        ).all()
+    )
+    if not ids:
+        return 0
+    # Явный tenant_id в каждом запросе — как во всех массовых удалениях:
+    # RLS второй рубеж, а не единственный.
+    for model in (
+        Conversation,
+        ChatAttachment,
+        Notification,
+        NotificationSetting,
+        ConnectorUserGrant,
+        MaterialAccess,
+    ):
+        await session.execute(
+            delete(model).where(
+                model.tenant_id == tenant_id,
+                model.user_id.in_(ids),
+            )
+        )
+    await session.execute(
+        update(User)
+        .where(User.tenant_id == tenant_id, User.id.in_(ids))
+        .values(
+            position=None,
+            department_id=None,
+            department_confirmed=False,
+            last_login_at=None,
+            tips_seen_at=None,
+            checklist_hidden_at=None,
+            data_purged_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return len(ids)
 
 
 async def _delete_expired(
