@@ -28,6 +28,7 @@ function company(overrides: Partial<Company> = {}): Company {
     admins: ["anna@meridian.ru"],
     credits_used: 3150,
     pool: 30 * CREDITS_PER_SEAT,
+    purchased_credits: 0,
     questions_month: 840,
     last_question_at: "2026-10-04T07:00:00Z",
     documents: 48,

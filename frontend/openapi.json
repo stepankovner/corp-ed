@@ -1430,6 +1430,131 @@
         "title": "CredentialsRequest",
         "type": "object"
       },
+      "CreditOrderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "pack": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Pack",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pack"
+        ],
+        "title": "CreditOrderRequest",
+        "type": "object"
+      },
+      "CreditOrderResponse": {
+        "description": "Заказ пакета кредитов. number — по порядку в компании: «Заказ № 3».\nОплата пока по счёту (payment_method=invoice).",
+        "properties": {
+          "amount_kopecks": {
+            "title": "Amount Kopecks",
+            "type": "integer"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "pack": {
+            "title": "Pack",
+            "type": "string"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "payment_method": {
+            "enum": [
+              "invoice",
+              "card"
+            ],
+            "title": "Payment Method",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "awaiting_payment",
+              "paid",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "pack",
+          "credits",
+          "amount_kopecks",
+          "status",
+          "payment_method",
+          "created_at",
+          "paid_at",
+          "cancelled_at"
+        ],
+        "title": "CreditOrderResponse",
+        "type": "object"
+      },
+      "CreditPackResponse": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "price_kopecks": {
+            "title": "Price Kopecks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "credits",
+          "price_kopecks"
+        ],
+        "title": "CreditPackResponse",
+        "type": "object"
+      },
       "CurrentCompany": {
         "properties": {
           "department": {
@@ -4187,6 +4312,8 @@
               "connector_stopped",
               "credits_warning",
               "credits_exhausted",
+              "credits_added",
+              "credits_topup_requested",
               "join_request",
               "department_request",
               "department_confirmed",
@@ -5367,6 +5494,10 @@
             "title": "Pool",
             "type": "integer"
           },
+          "purchased_credits": {
+            "title": "Purchased Credits",
+            "type": "integer"
+          },
           "questions_month": {
             "title": "Questions Month",
             "type": "integer"
@@ -5392,6 +5523,7 @@
           "admins",
           "credits_used",
           "pool",
+          "purchased_credits",
           "questions_month",
           "last_question_at",
           "documents",
@@ -5457,6 +5589,157 @@
           }
         },
         "title": "StaffCompanyUpdate",
+        "type": "object"
+      },
+      "StaffCreditGrantRequest": {
+        "additionalProperties": false,
+        "description": "Начисление командой без заказа: бонус, компенсация. Комментарий —\nв журнал действий компании.",
+        "properties": {
+          "comment": {
+            "maxLength": 500,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Comment",
+            "type": "string"
+          },
+          "credits": {
+            "maximum": 100000.0,
+            "minimum": 1.0,
+            "title": "Credits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "credits",
+          "comment"
+        ],
+        "title": "StaffCreditGrantRequest",
+        "type": "object"
+      },
+      "StaffCreditGrantResponse": {
+        "properties": {
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "credits",
+          "expires_at"
+        ],
+        "title": "StaffCreditGrantResponse",
+        "type": "object"
+      },
+      "StaffCreditOrderResponse": {
+        "properties": {
+          "amount_kopecks": {
+            "title": "Amount Kopecks",
+            "type": "integer"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "company_code": {
+            "title": "Company Code",
+            "type": "string"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "pack": {
+            "title": "Pack",
+            "type": "string"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "payment_method": {
+            "enum": [
+              "invoice",
+              "card"
+            ],
+            "title": "Payment Method",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "awaiting_payment",
+              "paid",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "pack",
+          "credits",
+          "amount_kopecks",
+          "status",
+          "payment_method",
+          "created_at",
+          "paid_at",
+          "cancelled_at",
+          "tenant_id",
+          "company_name",
+          "company_code"
+        ],
+        "title": "StaffCreditOrderResponse",
         "type": "object"
       },
       "StaffLeadResponse": {
@@ -6545,8 +6828,12 @@
         "type": "object"
       },
       "UsageResponse": {
-        "description": "Расход пула кредитов компании за текущий месяц.",
+        "description": "Кредиты компании: месячный пул и купленные пакеты.",
         "properties": {
+          "avg_credits_per_question": {
+            "title": "Avg Credits Per Question",
+            "type": "number"
+          },
           "credits_per_seat": {
             "title": "Credits Per Seat",
             "type": "integer"
@@ -6569,6 +6856,26 @@
             "title": "Pool",
             "type": "integer"
           },
+          "purchased": {
+            "title": "Purchased",
+            "type": "integer"
+          },
+          "purchased_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchased Expires At"
+          },
+          "purchased_expiring": {
+            "title": "Purchased Expiring",
+            "type": "integer"
+          },
           "remaining": {
             "title": "Remaining",
             "type": "integer"
@@ -6576,6 +6883,10 @@
           "seats": {
             "title": "Seats",
             "type": "integer"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "boolean"
           },
           "used": {
             "title": "Used",
@@ -6600,7 +6911,12 @@
           "remaining",
           "exhausted",
           "warn_at_percent",
-          "warning"
+          "warning",
+          "purchased",
+          "purchased_expires_at",
+          "purchased_expiring",
+          "stopped",
+          "avg_credits_per_question"
         ],
         "title": "UsageResponse",
         "type": "object"
@@ -10264,6 +10580,113 @@
         ]
       }
     },
+    "/api/v1/credits/orders": {
+      "get": {
+        "description": "Заказы своей компании, новые первыми.",
+        "operationId": "list_orders_api_v1_credits_orders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CreditOrderResponse"
+                  },
+                  "title": "Response List Orders Api V1 Credits Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Orders",
+        "tags": [
+          "credits"
+        ]
+      },
+      "post": {
+        "description": "Заказать пакет: заказ ждёт оплаты по счёту, команде kronto уходит\nуведомление. Кредиты зачисляются, когда команда отметит оплату.",
+        "operationId": "create_order_api_v1_credits_orders_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreditOrderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditOrderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Order",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/packs": {
+      "get": {
+        "description": "Пакеты и цены — из одного места бэкенда (domain/credit_packs.py):\nфронт их не хардкодит.",
+        "operationId": "list_packs_api_v1_credits_packs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CreditPackResponse"
+                  },
+                  "title": "Response List Packs Api V1 Credits Packs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Packs",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
     "/api/v1/demo": {
       "get": {
         "description": "Компания песочницы, её документы и готовые вопросы. 503 demo_off —\nпесочница выключена или ещё не заведена.",
@@ -12337,6 +12760,237 @@
         ]
       }
     },
+    "/api/v1/staff/companies/{tenant_id}/credit-orders/{order_id}/cancel": {
+      "post": {
+        "description": "Отменить неоплаченный заказ.",
+        "operationId": "cancel_credit_order_api_v1_staff_companies__tenant_id__credit_orders__order_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCreditOrderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Credit Order",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/companies/{tenant_id}/credit-orders/{order_id}/paid": {
+      "post": {
+        "description": "Оплата по счёту пришла: кредиты зачисляются на 12 месяцев,\nадминистраторам компании — «Кредиты зачислены».",
+        "operationId": "mark_credit_order_paid_api_v1_staff_companies__tenant_id__credit_orders__order_id__paid_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCreditOrderResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Mark Credit Order Paid",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/companies/{tenant_id}/credits": {
+      "post": {
+        "description": "Начислить кредиты без заказа (бонус, компенсация): на 12 месяцев,\nкомментарий — в журнал действий компании.",
+        "operationId": "grant_credits_api_v1_staff_companies__tenant_id__credits_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StaffCreditGrantRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffCreditGrantResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Grant Credits",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
+    "/api/v1/staff/credit-orders": {
+      "get": {
+        "description": "Заказы пакетов всех компаний: по умолчанию — ждут оплаты.",
+        "operationId": "list_credit_orders_api_v1_staff_credit_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "awaiting_payment",
+              "pattern": "^(awaiting_payment|all)$",
+              "title": "Status",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StaffCreditOrderResponse"
+                  },
+                  "title": "Response List Credit Orders Api V1 Staff Credit Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Credit Orders",
+        "tags": [
+          "staff"
+        ]
+      }
+    },
     "/api/v1/staff/leads": {
       "get": {
         "operationId": "list_leads_api_v1_staff_leads_get",
@@ -13245,7 +13899,7 @@
     },
     "/api/v1/usage": {
       "get": {
-        "description": "Пул кредитов своей компании: сколько потрачено и сколько осталось.\n\nТолько ADMIN: пул общий, решать, что делать при исчерпании (докупить\nместа, подождать месяц), — администратору компании. Компания — из\nтокена, параметра tenant_id нет.",
+        "description": "Кредиты своей компании: месячный пул (потрачено, осталось, до\nкакого числа) и купленные кредиты (остаток, ближайшее сгорание).\n\nТолько ADMIN: решать, что делать при исчерпании (купить пакет,\nдобавить места, подождать месяц), — администратору компании.\nКомпания — из токена, параметра tenant_id нет.",
         "operationId": "get_usage_api_v1_usage_get",
         "responses": {
           "200": {

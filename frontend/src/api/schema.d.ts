@@ -1362,6 +1362,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/credits/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Orders
+         * @description Заказы своей компании, новые первыми.
+         */
+        get: operations["list_orders_api_v1_credits_orders_get"];
+        put?: never;
+        /**
+         * Create Order
+         * @description Заказать пакет: заказ ждёт оплаты по счёту, команде kronto уходит
+         *     уведомление. Кредиты зачисляются, когда команда отметит оплату.
+         */
+        post: operations["create_order_api_v1_credits_orders_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Packs
+         * @description Пакеты и цены — из одного места бэкенда (domain/credit_packs.py):
+         *     фронт их не хардкодит.
+         */
+        get: operations["list_packs_api_v1_credits_packs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/demo": {
         parameters: {
             query?: never;
@@ -2090,6 +2136,88 @@ export interface paths {
         patch: operations["update_company_api_v1_staff_companies__tenant_id__patch"];
         trace?: never;
     };
+    "/api/v1/staff/companies/{tenant_id}/credit-orders/{order_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Credit Order
+         * @description Отменить неоплаченный заказ.
+         */
+        post: operations["cancel_credit_order_api_v1_staff_companies__tenant_id__credit_orders__order_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/companies/{tenant_id}/credit-orders/{order_id}/paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Credit Order Paid
+         * @description Оплата по счёту пришла: кредиты зачисляются на 12 месяцев,
+         *     администраторам компании — «Кредиты зачислены».
+         */
+        post: operations["mark_credit_order_paid_api_v1_staff_companies__tenant_id__credit_orders__order_id__paid_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/companies/{tenant_id}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant Credits
+         * @description Начислить кредиты без заказа (бонус, компенсация): на 12 месяцев,
+         *     комментарий — в журнал действий компании.
+         */
+        post: operations["grant_credits_api_v1_staff_companies__tenant_id__credits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/credit-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Credit Orders
+         * @description Заказы пакетов всех компаний: по умолчанию — ждут оплаты.
+         */
+        get: operations["list_credit_orders_api_v1_staff_credit_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/leads": {
         parameters: {
             query?: never;
@@ -2410,11 +2538,12 @@ export interface paths {
         };
         /**
          * Get Usage
-         * @description Пул кредитов своей компании: сколько потрачено и сколько осталось.
+         * @description Кредиты своей компании: месячный пул (потрачено, осталось, до
+         *     какого числа) и купленные кредиты (остаток, ближайшее сгорание).
          *
-         *     Только ADMIN: пул общий, решать, что делать при исчерпании (докупить
-         *     места, подождать месяц), — администратору компании. Компания — из
-         *     токена, параметра tenant_id нет.
+         *     Только ADMIN: решать, что делать при исчерпании (купить пакет,
+         *     добавить места, подождать месяц), — администратору компании.
+         *     Компания — из токена, параметра tenant_id нет.
          */
         get: operations["get_usage_api_v1_usage_get"];
         put?: never;
@@ -3092,6 +3221,59 @@ export interface components {
             credentials: {
                 [key: string]: string;
             };
+        };
+        /** CreditOrderRequest */
+        CreditOrderRequest: {
+            /** Pack */
+            pack: string;
+        };
+        /**
+         * CreditOrderResponse
+         * @description Заказ пакета кредитов. number — по порядку в компании: «Заказ № 3».
+         *     Оплата пока по счёту (payment_method=invoice).
+         */
+        CreditOrderResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number;
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Credits */
+            credits: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: number;
+            /** Pack */
+            pack: string;
+            /** Paid At */
+            paid_at: string | null;
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "paid" | "cancelled";
+        };
+        /** CreditPackResponse */
+        CreditPackResponse: {
+            /** Code */
+            code: string;
+            /** Credits */
+            credits: number;
+            /** Price Kopecks */
+            price_kopecks: number;
         };
         /** CurrentCompany */
         CurrentCompany: {
@@ -4202,7 +4384,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "join_request" | "department_request" | "department_confirmed" | "department_rejected" | "weekly_digest";
+            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "credits_added" | "credits_topup_requested" | "join_request" | "department_request" | "department_confirmed" | "department_rejected" | "weekly_digest";
             /** Link */
             link: string | null;
             /** Read */
@@ -4644,6 +4826,8 @@ export interface components {
             pilot_until: string | null;
             /** Pool */
             pool: number;
+            /** Purchased Credits */
+            purchased_credits: number;
             /** Questions Month */
             questions_month: number;
             /** Seats */
@@ -4667,6 +4851,76 @@ export interface components {
             /** Seats */
             seats?: number | null;
             tariff?: components["schemas"]["Tariff"] | null;
+        };
+        /**
+         * StaffCreditGrantRequest
+         * @description Начисление командой без заказа: бонус, компенсация. Комментарий —
+         *     в журнал действий компании.
+         */
+        StaffCreditGrantRequest: {
+            /** Comment */
+            comment: string;
+            /** Credits */
+            credits: number;
+        };
+        /** StaffCreditGrantResponse */
+        StaffCreditGrantResponse: {
+            /** Credits */
+            credits: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** StaffCreditOrderResponse */
+        StaffCreditOrderResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number;
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /** Company Code */
+            company_code: string;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Credits */
+            credits: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Number */
+            number: number;
+            /** Pack */
+            pack: string;
+            /** Paid At */
+            paid_at: string | null;
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "paid" | "cancelled";
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
         };
         /** StaffLeadResponse */
         StaffLeadResponse: {
@@ -5116,9 +5370,11 @@ export interface components {
         };
         /**
          * UsageResponse
-         * @description Расход пула кредитов компании за текущий месяц.
+         * @description Кредиты компании: месячный пул и купленные пакеты.
          */
         UsageResponse: {
+            /** Avg Credits Per Question */
+            avg_credits_per_question: number;
             /** Credits Per Seat */
             credits_per_seat: number;
             /** Exhausted */
@@ -5135,10 +5391,18 @@ export interface components {
             period_start: string;
             /** Pool */
             pool: number;
+            /** Purchased */
+            purchased: number;
+            /** Purchased Expires At */
+            purchased_expires_at: string | null;
+            /** Purchased Expiring */
+            purchased_expiring: number;
             /** Remaining */
             remaining: number;
             /** Seats */
             seats: number;
+            /** Stopped */
+            stopped: boolean;
             /** Used */
             used: number;
             /** Warn At Percent */
@@ -7542,6 +7806,79 @@ export interface operations {
             };
         };
     };
+    list_orders_api_v1_credits_orders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditOrderResponse"][];
+                };
+            };
+        };
+    };
+    create_order_api_v1_credits_orders_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreditOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_packs_api_v1_credits_packs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditPackResponse"][];
+                };
+            };
+        };
+    };
     demo_info_api_v1_demo_get: {
         parameters: {
             query?: never;
@@ -8930,6 +9267,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StaffCompanyResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_credit_order_api_v1_staff_companies__tenant_id__credit_orders__order_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCreditOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_credit_order_paid_api_v1_staff_companies__tenant_id__credit_orders__order_id__paid_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCreditOrderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_credits_api_v1_staff_companies__tenant_id__credits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffCreditGrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCreditGrantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_credit_orders_api_v1_staff_credit_orders_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCreditOrderResponse"][];
                 };
             };
             /** @description Validation Error */

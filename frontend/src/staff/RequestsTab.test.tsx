@@ -40,6 +40,7 @@ function createdCompany(name: string): Schemas["StaffCompanyResponse"] {
     admins: ["ivan@sever.ru"],
     credits_used: 0,
     pool: 4200,
+    purchased_credits: 0,
     questions_month: 0,
     last_question_at: null,
     documents: 0,

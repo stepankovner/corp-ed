@@ -39,6 +39,11 @@ function usage(overrides: Partial<Schemas["UsageResponse"]> = {}): Schemas["Usag
     exhausted: false,
     warn_at_percent: 80,
     warning: false,
+    purchased: 0,
+    purchased_expires_at: null,
+    purchased_expiring: 0,
+    stopped: false,
+    avg_credits_per_question: 1,
     ...overrides,
   };
 }

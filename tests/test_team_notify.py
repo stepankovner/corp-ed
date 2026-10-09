@@ -98,8 +98,9 @@ def test_messages_carry_no_personal_data() -> None:
     assert pool_exhausted_message(
         company_code="acme", used=12600, pool=12600, until=until
     ) == (
-        "Компания acme исчерпала пул: 12600 из 12600 кредитов. "
-        "Вопросы остановлены до 01.10; места — cli set-seats."
+        "Компания acme исчерпала пул: 12600 из 12600 кредитов, купленных нет. "
+        "Вопросы остановлены до 01.10; пакет кредитов — заказом администратора, "
+        "места — в нашей панели."
     )
 
 
@@ -122,4 +123,4 @@ async def test_exhausted_pool_notifies_team_once(
         await session.commit()
 
     assert len(sent) == 1
-    assert sent[0].startswith("Компания test исчерпала пул: 420 из 420 кредитов.")
+    assert sent[0].startswith("Компания test исчерпала пул: 420 из 420 кредитов,")

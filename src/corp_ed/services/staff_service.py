@@ -41,6 +41,7 @@ from corp_ed.domain.models import (
     UserRole,
 )
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
+from corp_ed.repositories.credit_repository import CreditRepository
 
 SEARCH_LIMIT = 20
 
@@ -56,6 +57,8 @@ class CompanyRow:
     credits_used: int
     """С начала расчётного месяца."""
     pool: int
+    purchased: int
+    """Купленные и начисленные кредиты, которые ещё не сгорели."""
     questions_month: int
     last_question_at: datetime | None
     documents: int
@@ -263,6 +266,7 @@ class StaffService:
                 connectors = await session.scalar(
                     select(func.count()).where(Connector.tenant_id == tenant.id)
                 )
+                purchased = await CreditRepository(session).balance(datetime.now(UTC))
         return CompanyRow(
             tenant=tenant,
             members=by_status.get(MemberStatus.ACTIVE, 0),
@@ -270,6 +274,7 @@ class StaffService:
             admins=list(admins),
             credits_used=int(usage[0]),
             pool=tenant.seats * self.credits_per_seat,
+            purchased=purchased.remaining,
             questions_month=int(usage[1]),
             last_question_at=last_question,
             documents=int(documents or 0),

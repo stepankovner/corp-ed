@@ -38,6 +38,8 @@ class StaffCompanyResponse(BaseModel):
     credits_used: int
     """С начала расчётного месяца."""
     pool: int
+    purchased_credits: int
+    """Купленные и начисленные кредиты, которые ещё не сгорели."""
     questions_month: int
     last_question_at: datetime | None
     documents: int

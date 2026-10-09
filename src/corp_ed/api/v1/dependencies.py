@@ -91,6 +91,10 @@ from corp_ed.services.chat_service import ChatService
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.company_service import CompanyService
 from corp_ed.services.connector_service import ConnectorService
+from corp_ed.services.credit_order_service import (
+    CreditOrderService,
+    StaffCreditService,
+)
 from corp_ed.services.credit_service import CreditService
 from corp_ed.services.demo_service import DemoService
 from corp_ed.services.department_service import DepartmentService
@@ -551,6 +555,14 @@ def get_credit_service(
     )
 
 
+def get_credit_order_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
+) -> CreditOrderService:
+    return CreditOrderService(session, audit, notifier=notifier)
+
+
 FaqBuilder = Callable[[AsyncSession], FaqService]
 """FaqService на заданной сессии: у фоновой задачи чата (ТЗ §6) своя
 сессия БД — сессия запроса закрывается раньше, чем дописан ответ."""
@@ -830,6 +842,15 @@ def get_staff_service(
         credits_per_seat=billing.credits_per_seat,
         rub_per_1k_tokens=billing.llm_rub_per_1k_tokens,
     )
+
+
+def get_staff_credit_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    session_maker: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+) -> StaffCreditService:
+    return StaffCreditService(session, session_maker)
 
 
 def get_tenant_service(

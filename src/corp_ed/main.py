@@ -24,6 +24,7 @@ from corp_ed.api.v1.endpoints import (
     chat,
     company,
     connectors,
+    credits,
     demo,
     departments,
     faq,
@@ -289,6 +290,7 @@ app.include_router(support.router, prefix="/api/v1")
 app.include_router(demo.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
+app.include_router(credits.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
 app.include_router(gaps.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
