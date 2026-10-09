@@ -19,7 +19,7 @@ AdapterError('rate_limited', retryable). 401 — токен обновляетс
 """
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping
 from typing import Any
 
 import httpx
@@ -213,7 +213,9 @@ class GoogleClient:
                 return data
             raise _error(response)
 
-    def _rate_delay(self, response: httpx.Response, backoff: Any) -> float | None:
+    def _rate_delay(
+        self, response: httpx.Response, backoff: Iterator[float]
+    ) -> float | None:
         """Пауза перед повтором, если это лимит квоты; None — не лимит.
         Паузы кончились — AdapterError('rate_limited')."""
         status = response.status_code

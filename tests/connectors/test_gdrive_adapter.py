@@ -406,6 +406,12 @@ async def test_user_drives_need_users_delegation(server: FakeGoogle) -> None:
         await listed(make_adapter(server), ("user_drives",))
 
 
+async def test_user_drives_need_a_directory_admin(server: FakeGoogle) -> None:
+    server.users[ADMIN]["admin"] = False
+    with pytest.raises(AdapterConfigError, match="admin_required"):
+        await listed(make_adapter(server), ("user_drives",))
+
+
 async def test_user_who_cannot_be_impersonated_is_skipped(server: FakeGoogle) -> None:
     server.token_rejects.add(ANNA)
     docs = await listed(make_adapter(server), ("user_drives",))

@@ -448,13 +448,20 @@ class GoogleDriveAdapter:
             },
             "users",
         )
-        emails = [
-            str(user.get("primaryEmail")).casefold()
-            async for user in users
-            if user.get("primaryEmail")
-            and not user.get("suspended")
-            and not user.get("archived")
-        ]
+        try:
+            emails = [
+                str(user.get("primaryEmail")).casefold()
+                async for user in users
+                if user.get("primaryEmail")
+                and not user.get("suspended")
+                and not user.get("archived")
+            ]
+        except AdapterError as exc:
+            if exc.code == "forbidden":
+                # Справочник сотрудников — только администратору с правом
+                # читать пользователей.
+                raise AdapterConfigError("admin_required") from exc
+            raise
         for email in emails:
             try:
                 async for document in self._owned_files(email):
