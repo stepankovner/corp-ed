@@ -98,6 +98,10 @@ TENANT_TABLES = (
     "folder_departments",
     "notifications",
     "notification_settings",
+    "credit_orders",
+    "credit_grants",
+    "credit_spends",
+    "credit_topup_requests",
 )
 """Таблицы под RLS. Каждая тенант-модель обязана быть здесь — это
 проверяет тест (tests/security/test_rls.py). Не входят: tenants (корень,
