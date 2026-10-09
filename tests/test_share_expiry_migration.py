@@ -27,6 +27,9 @@ MIGRATION = (
 )
 
 
+FORCE = text("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'conversations'")
+
+
 def _migration() -> ModuleType:
     spec = importlib.util.spec_from_file_location("share_link_expiry", MIGRATION)
     assert spec is not None and spec.loader is not None
@@ -59,6 +62,7 @@ async def test_existing_links_get_thirty_days_from_migration(
         async with admin.connect() as conn:
             transaction = await conn.begin()
             try:
+                force_before = await conn.scalar(FORCE)
                 await conn.execute(
                     text("ALTER TABLE conversations DROP COLUMN share_expires_at")
                 )
@@ -73,12 +77,7 @@ async def test_existing_links_get_thirty_days_from_migration(
                         )
                     ).all()
                 )
-                force = await conn.scalar(
-                    text(
-                        "SELECT relforcerowsecurity FROM pg_class "
-                        "WHERE relname = 'conversations'"
-                    )
-                )
+                force_after = await conn.scalar(FORCE)
                 await conn.run_sync(_run, "downgrade")
             finally:
                 await transaction.rollback()
@@ -87,5 +86,6 @@ async def test_existing_links_get_thirty_days_from_migration(
 
     # now() — время начала транзакции миграции: «момент миграции».
     assert rows == {shared.id: True, private.id: None}
-    # Политики RLS после миграции — как до неё.
-    assert force is True
+    # FORCE RLS после миграции — как до неё (включён для всех тенантных таблиц).
+    assert force_before is True
+    assert force_after is True
