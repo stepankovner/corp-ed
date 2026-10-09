@@ -71,6 +71,10 @@ class FakeYandex:
     """(хост, Authorization) каждого запроса к ссылке на файл."""
     wiki_headers: list[dict[str, str]] = field(default_factory=list)
     issued: int = 0
+    device_tokens: set[str] = field(default_factory=set)
+    """Токены, выданные с device_id: только их Яндекс ID умеет отозвать."""
+    revoke_error: tuple[int, dict[str, Any]] | None = None
+    """Ответ /revoke_token вместо обычного (статус, тело)."""
 
     def __post_init__(self) -> None:
         self.access_tokens.setdefault(ACCESS_TOKEN, LOGIN)
@@ -191,6 +195,8 @@ class FakeYandex:
         return token
 
     def _oauth(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/revoke_token" and request.method == "POST":
+            return self._revoke(request)
         if request.url.path != "/token" or request.method != "POST":
             return httpx.Response(404)
         form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
@@ -226,6 +232,8 @@ class FakeYandex:
         self.issued += 1
         access = f"y0-token-{login}-{self.issued}"
         self.access_tokens[access] = login
+        if form.get("device_id"):
+            self.device_tokens.add(access)
         payload: dict[str, Any] = {
             "access_token": access,
             "token_type": "bearer",
@@ -236,6 +244,38 @@ class FakeYandex:
             self.refresh_tokens[refresh] = login
             payload["refresh_token"] = refresh
         return httpx.Response(200, json=payload)
+
+    def _revoke(self, request: httpx.Request) -> httpx.Response:
+        """POST /revoke_token (yandex.ru/dev/id/doc/ru/tokens/token-invalidate):
+        отозвать можно только токен, выданный с device_id; уже
+        недействительный — тоже {"status": "ok"}."""
+        form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+        self.calls.append(("oauth/revoke_token", form))
+        if self.revoke_error is not None:
+            status, body = self.revoke_error
+            return httpx.Response(status, json=body)
+        if (
+            form.get("client_id") != CLIENT_ID
+            or form.get("client_secret") != CLIENT_SECRET
+        ):
+            return httpx.Response(
+                400,
+                json={"error": "invalid_client", "error_description": "…"},
+            )
+        token = form.get("access_token")
+        if not token:
+            return httpx.Response(400, json={"error": "invalid_request"})
+        if token in self.access_tokens and token not in self.device_tokens:
+            return httpx.Response(
+                400,
+                json={
+                    "error": "unsupported_token_type",
+                    "error_description": "Token without device_id",
+                },
+            )
+        self.access_tokens.pop(token, None)
+        self.device_tokens.discard(token)
+        return httpx.Response(200, json={"status": "ok"})
 
     def _api(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path

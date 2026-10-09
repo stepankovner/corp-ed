@@ -151,6 +151,14 @@ class OAuthFlow(Protocol):
         """
         ...
 
+    async def revoke(self, credentials: Mapping[str, str]) -> bool:
+        """Отозвать токены сотрудника у провайдера (удаление подключения
+        или гранта). True — отозваны; False — у провайдера нет отзыва или
+        этот токен отозвать нельзя. AdapterError — отказ или сбой: ядро
+        пишет код в журнал и удаляет грант всё равно.
+        """
+        ...
+
 
 def refreshed_credentials(adapter: object) -> Mapping[str, str] | None:
     """Новые учётные данные, если адаптер обновил токены по ходу работы.

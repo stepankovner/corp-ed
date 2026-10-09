@@ -12,11 +12,20 @@
 - «время жизни refresh-токена совпадает с временем жизни OAuth-токена»:
   после истечения продлевать уже нечем (invalid_grant). Поэтому токены
   продлеваются заранее, а не только после 401 (YandexAuth.ensure_fresh);
-- ошибки — JSON {error, error_description} со статусом 400.
+- ошибки — JSON {error, error_description} со статусом 400;
+- отзыв (yandex.ru/dev/id/doc/ru/tokens/token-invalidate, 09.10.2026):
+  POST {oauth}/revoke_token, access_token и client_id + client_secret в
+  теле (или Basic). Ответ {"status": "ok"} — отозван или уже был
+  недействителен. Отозвать можно ТОЛЬКО токен, выданный для устройства
+  (device_id в запросе кода), иначе — unsupported_token_type. Поэтому
+  код запрашивается с device_id: один на приложение, у пользователя не
+  больше 30 токенов на устройства, а новый выданный тому же устройству
+  вытесняет самый старый. Ошибки: invalid_client (400, при Basic — 401),
+  invalid_grant (токен не этого приложения), invalid_request.
 """
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from urllib.parse import urlencode
 
@@ -32,6 +41,12 @@ from corp_ed.connectors.common import TokenSet, json_object, safe_code
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
 
 TOKEN_TIMEOUT = 20.0
+# Устройство, для которого выдаётся токен: без него Яндекс ID не даёт
+# отозвать токен (revoke_token → unsupported_token_type). Одно значение на
+# приложение: client_id у каждого подключения свой. 6–50 печатных ASCII.
+DEVICE_ID = "kronto-connector"
+# Имя устройства, которое сотрудник видит в списке входов Яндекс ID.
+DEVICE_NAME = "kronto"
 # Продлить, если до истечения меньше месяца: синхронизация идёт раз в
 # час, но сотрудник может не открывать продукт неделями.
 REFRESH_AHEAD = 30 * 24 * 3600
@@ -73,14 +88,61 @@ class YandexOAuth:
             "client_id": self._client_id,
             "state": state,
             "force_confirm": "yes",
+            "device_id": DEVICE_ID,
+            "device_name": DEVICE_NAME,
         }
         if self._redirect_uri:
             params["redirect_uri"] = self._redirect_uri
         return f"{self._server}authorize?{urlencode(params)}"
 
     async def exchange(self, code: str) -> ExchangedCredentials:
-        tokens = await self._token({"grant_type": "authorization_code", "code": code})
+        tokens = await self._token(
+            {
+                "grant_type": "authorization_code",
+                "code": code,
+                "device_id": DEVICE_ID,
+                "device_name": DEVICE_NAME,
+            }
+        )
         return ExchangedCredentials(tokens.as_credentials(), None)
+
+    async def revoke(self, credentials: Mapping[str, str]) -> bool:
+        """Отозвать токен сотрудника. False — токен выдан без device_id
+        (гранты до 09.10.2026) или его нет: отзывать нечего."""
+        token = credentials.get("access_token")
+        if not token:
+            return False
+        try:
+            response = await self._http.post(
+                f"{self._server}revoke_token",
+                data={
+                    "access_token": token,
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                },
+                headers={"Accept": "application/json"},
+                timeout=TOKEN_TIMEOUT,
+                allow_redirects=False,
+            )
+        except OutboundTooLargeError as exc:
+            raise AdapterError("oauth_response_too_large") from exc
+        except httpx.TimeoutException as exc:
+            raise AdapterError("oauth_timeout", retryable=True) from exc
+        except httpx.HTTPError as exc:
+            raise AdapterError("oauth_network_error", retryable=True) from exc
+        data = json_object(response)
+        error = data.get("error") if data is not None else None
+        if response.status_code == 200 and data is not None and not error:
+            return True
+        if not error:
+            raise AdapterError(
+                f"oauth_http_{response.status_code}",
+                retryable=response.status_code >= 500,
+            )
+        code = str(error).lower()
+        if code == "unsupported_token_type":
+            return False
+        raise AdapterError(safe_code(code, prefix="oauth_revoke_"))
 
     async def refresh(self, refresh_token: str) -> TokenSet:
         return await self._token(

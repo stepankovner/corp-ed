@@ -303,6 +303,21 @@ async def test_unknown_oauth_error_is_scrubbed(portal: FakePortal) -> None:
     assert excinfo.value.code == "oauth_odd_error__b_"
 
 
+async def test_oauth_has_no_token_revocation(portal: FakePortal) -> None:
+    """У сервера авторизации Битрикс24 нет отзыва токена: ничего не
+    отправляется, ответ — «не отозван»."""
+    oauth = Bitrix24OAuth(
+        portal.client(),
+        portal=portal.portal,
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+    revoked = await oauth.revoke({"access_token": "a", "refresh_token": REFRESH_TOKEN})
+    assert revoked is False
+    assert portal.calls == []
+
+
 async def test_non_json_5xx_is_retryable(portal: FakePortal) -> None:
     portal.canned["profile"] = (502, "<html>bad gateway</html>")
     client = make_client(portal)
