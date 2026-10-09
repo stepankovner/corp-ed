@@ -172,7 +172,7 @@ class ConnectorLimitError(ConflictError):
 
 
 class TariffConnectorLimitError(ConflictError):
-    """Тариф компании не даёт больше подключений (domain/tariffs.py).
+    """Тариф компании не даёт больше разных систем (domain/tariffs.py).
 
     HTTP 409 с кодом tariff_connector_limit: админ видит, какой тариф
     снимает ограничение.
@@ -180,8 +180,9 @@ class TariffConnectorLimitError(ConflictError):
 
     def __init__(self, tariff_title: str, limit: int) -> None:
         super().__init__(
-            f"В тарифе «{tariff_title}» — до {limit} подключений. "
-            "Больше — в тарифе «Расширенный»"
+            f"В тарифе «{tariff_title}» — до {limit} рабочих систем. "
+            "Больше систем — в тарифе «Расширенный»; к уже подключённой "
+            "системе можно добавить ещё подключение"
         )
         self.code = "tariff_connector_limit"
 

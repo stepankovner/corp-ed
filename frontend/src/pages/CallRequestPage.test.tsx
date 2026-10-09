@@ -28,13 +28,15 @@ describe("тарифы и запись на созвон", () => {
     const base = screen.getByRole("region", { name: "Базовый" });
     expect(within(base).getByText("990 ₽")).toBeInTheDocument();
     expect(within(base).getByText(/До 20 обращений в день на место/)).toBeInTheDocument();
-    expect(within(base).getByText(/до 5 подключений/)).toBeInTheDocument();
+    expect(
+      within(base).getByText(/до 5 рабочих систем на выбор из списка поддерживаемых/),
+    ).toBeInTheDocument();
     expect(within(base).getByRole("link", { name: "Записаться на созвон" })).toHaveAttribute(
       "href",
       "/pricing/request?tariff=base",
     );
     const extended = screen.getByRole("region", { name: "Расширенный" });
-    expect(within(extended).getByText("1 290 ₽")).toBeInTheDocument();
+    expect(within(extended).getByText("1 490 ₽")).toBeInTheDocument();
     const enterprise = screen.getByRole("region", { name: "Корпоративный" });
     expect(within(enterprise).getByText("По запросу")).toBeInTheDocument();
     expect(within(enterprise).getByRole("link", { name: "Обсудить на созвоне" })).toHaveAttribute(

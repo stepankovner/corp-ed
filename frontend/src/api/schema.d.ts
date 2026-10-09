@@ -940,7 +940,8 @@ export interface paths {
          * @description Какие системы можно подключить и какие поля у формы.
          *
          *     available — входит ли система в тариф компании: небазовые — только
-         *     в «Корпоративном» (решение 30.09).
+         *     в «Корпоративном» (решение 30.09). limit_reached — новая система не
+         *     влезет в тариф: «Базовый» даёт до 5 разных систем (решение 09.10).
          */
         get: operations["list_kinds_api_v1_connectors_kinds_get"];
         put?: never;
@@ -1006,7 +1007,7 @@ export interface paths {
         };
         /**
          * Tariff Allowance
-         * @description Тариф компании: сколько подключений можно и сколько заведено.
+         * @description Тариф компании: сколько систем и подключений можно и сколько есть.
          */
         get: operations["tariff_allowance_api_v1_connectors_tariff_get"];
         put?: never;
@@ -2893,6 +2894,11 @@ export interface components {
             };
             /** Kind */
             kind: string;
+            /**
+             * Limit Reached
+             * @default false
+             */
+            limit_reached: boolean;
             mode: components["schemas"]["ConnectorMode"];
             /** Modules */
             modules: components["schemas"]["ModuleSpecResponse"][];
@@ -5046,15 +5052,19 @@ export interface components {
         Tariff: "base" | "extended" | "enterprise";
         /**
          * TariffAllowanceResponse
-         * @description Тариф компании и подключения (решение 30.09, domain/tariffs.py).
+         * @description Тариф компании и подключения (решения 30.09 и 09.10,
+         *     domain/tariffs.py): тариф ограничивает число разных систем, а число
+         *     подключений — только технический потолок.
          */
         TariffAllowanceResponse: {
             /** Connector Limit */
             connector_limit: number;
             /** Connectors */
             connectors: number;
-            /** Limited By Tariff */
-            limited_by_tariff: boolean;
+            /** Systems */
+            systems: number;
+            /** Systems Limit */
+            systems_limit: number | null;
             tariff: components["schemas"]["Tariff"];
             /** Title */
             title: string;

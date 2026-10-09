@@ -51,13 +51,15 @@ _EMAIL = TypeAdapter(EmailStr)
 class TariffChange:
     tenant: Tenant
     connectors: int
-    """Сколько подключений у компании сейчас — для предупреждения, если
-    их больше, чем даёт новый тариф."""
+    """Сколько подключений у компании сейчас."""
+    systems: int
+    """Сколько разных систем подключено — для предупреждения, если их
+    больше, чем даёт новый тариф."""
 
     @property
     def over_tariff(self) -> bool:
-        limit = plan_for(self.tenant.tariff).max_connectors
-        return limit is not None and self.connectors > limit
+        limit = plan_for(self.tenant.tariff).max_systems
+        return limit is not None and self.systems > limit
 
 
 class InvalidAdminEmailError(DomainError):
@@ -295,7 +297,9 @@ class TenantService:
             details={"from": previous, "to": _tariff_state(tenant)},
         )
         with tenant_scope(tenant.id):
-            connectors = await ConnectorRepository(self.session).count()
+            repository = ConnectorRepository(self.session)
+            connectors = await repository.count()
+            systems = len(await repository.kinds())
         await self.session.commit()
         logger.info(
             "tenant_tariff_changed",
@@ -303,7 +307,7 @@ class TenantService:
             tariff=tenant.tariff,
             connector_limit=tenant.connector_limit,
         )
-        return TariffChange(tenant=tenant, connectors=connectors)
+        return TariffChange(tenant=tenant, connectors=connectors, systems=systems)
 
     async def set_not_found_mode(self, company_code: str, mode: NotFoundMode) -> Tenant:
         """Переключить ответ «в документах ответа нет» для компании.

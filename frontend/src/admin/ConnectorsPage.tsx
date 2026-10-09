@@ -45,13 +45,16 @@ export function ConnectorsPage() {
     queryFn: () => unwrap(api.GET("/api/v1/connectors")),
   });
   const kinds = useKinds();
-  // Тариф (решение 30.09): сколько подключений можно и сколько заведено.
-  // Ключ под ["connectors"] — обновляется вместе со списком.
+  // Тариф (решения 30.09 и 09.10): сколько разных систем даёт тариф и
+  // технический потолок подключений. Ключ под ["connectors"] — обновляется
+  // вместе со списком.
   const tariff = useQuery({
     queryKey: ["connectors", "tariff"],
     queryFn: () => unwrap(api.GET("/api/v1/connectors/tariff")),
   });
   const full = tariff.data ? tariff.data.connectors >= tariff.data.connector_limit : false;
+  const systemsFull =
+    tariff.data?.systems_limit != null && tariff.data.systems >= tariff.data.systems_limit;
   const [creating, setCreating] = useState(false);
   const kindTitle = (kind: string) => kinds.data?.find((k) => k.kind === kind)?.title ?? kind;
   const perUser = connectors.data?.some((connector) => connector.mode === "per_user") ?? false;
@@ -66,13 +69,15 @@ export function ConnectorsPage() {
           </p>
           {tariff.data ? (
             <p>
-              Тариф «{tariff.data.title}»: подключений {tariff.data.connectors} из{" "}
-              {tariff.data.connector_limit}.
+              Тариф «{tariff.data.title}»
+              {tariff.data.systems_limit != null
+                ? `: рабочих систем ${tariff.data.systems} из ${tariff.data.systems_limit}, подключений к каждой — сколько нужно.`
+                : "."}
               {full
-                ? tariff.data.limited_by_tariff
-                  ? " Больше подключений — в тарифе «Расширенный», напишите нам."
-                  : " Это технический предел — напишите нам, если нужно больше."
-                : null}
+                ? " Подключений уже очень много — это технический предел, напишите нам, если нужно больше."
+                : systemsFull
+                  ? " Новые системы — в тарифе «Расширенный»; к подключённым можно добавлять подключения."
+                  : null}
             </p>
           ) : null}
         </div>
@@ -178,11 +183,15 @@ function CreateConnectorDialog({ kinds, onClose }: { kinds: Kind[]; onClose: () 
               type="button"
               className={styles.kind}
               onClick={() => setKind(item)}
-              disabled={!item.available}
+              disabled={!item.available || item.limit_reached}
             >
               <span style={{ fontWeight: 500 }}>{item.title}</span>
               <span className="muted" style={{ fontSize: "0.8125rem" }}>
-                {item.available ? MODE_LABEL[item.mode] : "В тарифе «Корпоративный»"}
+                {!item.available
+                  ? "В тарифе «Корпоративный»"
+                  : item.limit_reached
+                    ? "Новая система — в тарифе «Расширенный»"
+                    : MODE_LABEL[item.mode]}
               </span>
             </button>
           ))}

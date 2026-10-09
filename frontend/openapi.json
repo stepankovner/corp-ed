@@ -903,6 +903,11 @@
             "title": "Kind",
             "type": "string"
           },
+          "limit_reached": {
+            "default": false,
+            "title": "Limit Reached",
+            "type": "boolean"
+          },
           "mode": {
             "$ref": "#/components/schemas/ConnectorMode"
           },
@@ -6371,7 +6376,7 @@
         "type": "string"
       },
       "TariffAllowanceResponse": {
-        "description": "Тариф компании и подключения (решение 30.09, domain/tariffs.py).",
+        "description": "Тариф компании и подключения (решения 30.09 и 09.10,\ndomain/tariffs.py): тариф ограничивает число разных систем, а число\nподключений — только технический потолок.",
         "properties": {
           "connector_limit": {
             "title": "Connector Limit",
@@ -6381,9 +6386,20 @@
             "title": "Connectors",
             "type": "integer"
           },
-          "limited_by_tariff": {
-            "title": "Limited By Tariff",
-            "type": "boolean"
+          "systems": {
+            "title": "Systems",
+            "type": "integer"
+          },
+          "systems_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Systems Limit"
           },
           "tariff": {
             "$ref": "#/components/schemas/Tariff"
@@ -6398,7 +6414,8 @@
           "title",
           "connectors",
           "connector_limit",
-          "limited_by_tariff"
+          "systems",
+          "systems_limit"
         ],
         "title": "TariffAllowanceResponse",
         "type": "object"
@@ -8880,7 +8897,7 @@
     },
     "/api/v1/connectors/kinds": {
       "get": {
-        "description": "Какие системы можно подключить и какие поля у формы.\n\navailable — входит ли система в тариф компании: небазовые — только\nв «Корпоративном» (решение 30.09).",
+        "description": "Какие системы можно подключить и какие поля у формы.\n\navailable — входит ли система в тариф компании: небазовые — только\nв «Корпоративном» (решение 30.09). limit_reached — новая система не\nвлезет в тариф: «Базовый» даёт до 5 разных систем (решение 09.10).",
         "operationId": "list_kinds_api_v1_connectors_kinds_get",
         "responses": {
           "200": {
@@ -9021,7 +9038,7 @@
     },
     "/api/v1/connectors/tariff": {
       "get": {
-        "description": "Тариф компании: сколько подключений можно и сколько заведено.",
+        "description": "Тариф компании: сколько систем и подключений можно и сколько есть.",
         "operationId": "tariff_allowance_api_v1_connectors_tariff_get",
         "responses": {
           "200": {

@@ -138,7 +138,7 @@ describe("тариф", () => {
 
     const plan = await screen.findByRole("region", { name: "Тариф «Расширенный»" });
     expect(router.state.location.pathname).toBe("/admin/tariff");
-    expect(within(plan).getByText("1 290 ₽")).toBeInTheDocument();
+    expect(within(plan).getByText("1 490 ₽")).toBeInTheDocument();
     expect(within(plan).getByText(/Свободных мест нет/)).toBeInTheDocument();
     const limit = screen.getByRole("region", { name: "Лимит вопросов" });
     expect(within(limit).getByText("Лимит исчерпан")).toBeInTheDocument();

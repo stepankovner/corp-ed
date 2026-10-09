@@ -64,7 +64,11 @@ def _fields(specs: tuple[FieldSpec, ...]) -> list[FieldSpecResponse]:
 
 
 def _kind(
-    spec: KindSpec, callback_url: str | None, *, available: bool = True
+    spec: KindSpec,
+    callback_url: str | None,
+    *,
+    available: bool = True,
+    limit_reached: bool = False,
 ) -> ConnectorKindResponse:
     return ConnectorKindResponse(
         kind=spec.kind,
@@ -79,6 +83,7 @@ def _kind(
         extra=dict(spec.extra),
         base=spec.base,
         available=available,
+        limit_reached=limit_reached,
     )
 
 
@@ -99,12 +104,19 @@ async def list_kinds(
     """Какие системы можно подключить и какие поля у формы.
 
     available — входит ли система в тариф компании: небазовые — только
-    в «Корпоративном» (решение 30.09).
+    в «Корпоративном» (решение 30.09). limit_reached — новая система не
+    влезет в тариф: «Базовый» даёт до 5 разных систем (решение 09.10).
     """
     callback_url = service.settings.oauth_callback_url
-    _, plan, _, _ = await service.allowance()
+    allowance = await service.allowance()
+    plan = allowance.plan
     return [
-        _kind(spec, callback_url, available=spec.base or plan.non_base_connectors)
+        _kind(
+            spec,
+            callback_url,
+            available=spec.base or plan.non_base_connectors,
+            limit_reached=allowance.limit_reached(spec.kind),
+        )
         for spec in service.kinds()
     ]
 
@@ -113,15 +125,16 @@ async def list_kinds(
 async def tariff_allowance(
     service: Service, current_user: AdminUser
 ) -> TariffAllowanceResponse:
-    """Тариф компании: сколько подключений можно и сколько заведено."""
-    _, plan, limit, used = await service.allowance()
+    """Тариф компании: сколько систем и подключений можно и сколько есть."""
+    allowance = await service.allowance()
+    plan = allowance.plan
     return TariffAllowanceResponse(
         tariff=plan.tariff,
         title=plan.title,
-        connectors=used,
-        connector_limit=limit,
-        limited_by_tariff=plan.max_connectors is not None
-        and plan.max_connectors <= limit,
+        connectors=allowance.connectors,
+        connector_limit=allowance.connector_limit,
+        systems=len(allowance.systems),
+        systems_limit=plan.max_systems,
     )
 
 
