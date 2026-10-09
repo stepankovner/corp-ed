@@ -34,6 +34,12 @@ from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.services.connector_service import ConnectorService
 from tests.api.conftest import bearer
 from tests.connectors.fake_kaiten import ANNA_TOKEN, FakeKaiten, sample_kaiten
+from tests.connectors.fake_outline import (
+    API_KEY,
+    MEMBER_KEY,
+    FakeOutline,
+    sample_outline,
+)
 from tests.fake_connector import public_resolver
 
 URL = "/api/v1/connectors"
@@ -47,6 +53,11 @@ def kaiten() -> FakeKaiten:
 
 
 @pytest.fixture
+def outline() -> FakeOutline:
+    return sample_outline()
+
+
+@pytest.fixture
 def preview_kinds() -> str:
     return PREVIEW
 
@@ -56,6 +67,7 @@ async def kinds_api(
     api: httpx.AsyncClient,
     session: AsyncSession,
     kaiten: FakeKaiten,
+    outline: FakeOutline,
     preview_kinds: str,
 ) -> AsyncGenerator[httpx.AsyncClient]:
     settings = ConnectorSettings(  # type: ignore[arg-type]
@@ -65,6 +77,8 @@ async def kinds_api(
     secrets = SecretBox([KEY])
 
     def route(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("host") == outline.host:
+            return outline.handle(request)
         return kaiten.handle(request)
 
     def dependency(
@@ -182,3 +196,70 @@ async def test_kaiten_form_and_employee_token(
     )
     assert check.json() == {"ok": True, "error_code": None}
     assert ANNA_TOKEN not in check.text
+
+
+async def test_outline_and_yonote_forms_and_admin_key(
+    kinds_api: httpx.AsyncClient, admin_account: User, outline: FakeOutline
+) -> None:
+    kinds = await _kinds(kinds_api, admin_account)
+    for kind in ("outline", "yonote"):
+        spec = kinds[kind]
+        assert spec["mode"] == "organization"
+        assert spec["config_fields"] == [
+            {
+                "name": "base_url",
+                "title": spec["config_fields"][0]["title"],  # type: ignore[index]
+                "required": False,
+                "secret": False,
+            }
+        ]
+    # Облако по умолчанию: адрес не обязателен.
+    cloud = await kinds_api.post(
+        URL,
+        json={
+            "kind": "yonote",
+            "name": "Yonote",
+            "modules": ["documents"],
+            "config": {},
+        },
+        headers=bearer(admin_account),
+    )
+    assert cloud.status_code == 201, cloud.text
+    private = await kinds_api.post(
+        URL,
+        json={
+            "kind": "outline",
+            "name": "Outline",
+            "modules": ["documents"],
+            "config": {"base_url": "https://10.0.0.5/"},
+        },
+        headers=bearer(admin_account),
+    )
+    assert private.status_code == 422
+    created = await kinds_api.post(
+        URL,
+        json={
+            "kind": "outline",
+            "name": "Outline",
+            "modules": ["documents"],
+            "config": {"base_url": outline.base},
+        },
+        headers=bearer(admin_account),
+    )
+    assert created.status_code == 201, created.text
+    connector_id = created.json()["id"]
+    headers = bearer(admin_account)
+
+    for key, expected in (
+        (MEMBER_KEY, {"ok": False, "error_code": "admin_required"}),
+        (API_KEY, {"ok": True, "error_code": None}),
+    ):
+        saved = await kinds_api.put(
+            f"{URL}/{connector_id}/credentials",
+            json={"credentials": {"token": key}},
+            headers=headers,
+        )
+        assert saved.status_code == 200, saved.text
+        assert key not in saved.text
+        check = await kinds_api.post(f"{URL}/{connector_id}/test", headers=headers)
+        assert check.json() == expected
