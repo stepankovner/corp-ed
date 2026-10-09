@@ -7,7 +7,8 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from pathlib import PurePath
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
@@ -134,6 +135,30 @@ def to_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+MAX_RETRY_AFTER = 60.0
+
+
+def retry_after(value: str | None, *, now: datetime | None = None) -> float | None:
+    """Retry-After (секунды или HTTP-дата) → секунды ожидания, не больше
+    MAX_RETRY_AFTER: источник не займёт слот воркера на час."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.isdigit():
+        seconds = float(value)
+    else:
+        try:
+            moment = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        seconds = (moment - (now or datetime.now(UTC))).total_seconds()
+    if seconds <= 0:
+        return None
+    return min(seconds, MAX_RETRY_AFTER)
 
 
 def parse_datetime(value: Any) -> datetime | None:

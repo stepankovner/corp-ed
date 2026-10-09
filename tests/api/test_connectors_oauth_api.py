@@ -218,6 +218,7 @@ async def test_employee_cannot_paste_tokens_into_oauth_kind(
             "grant_status": None,
             "grant_error_code": None,
             "oauth": True,
+            "credential_fields": [],
         }
     ]
 
