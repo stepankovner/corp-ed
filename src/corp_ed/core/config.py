@@ -396,6 +396,9 @@ class PaymentSettings(BaseSettings):
     # «просрочена» и команде уходит уведомление. Компанию никто не
     # блокирует автоматически — решает команда.
     grace_days: int = Field(default=7, ge=0, le=60)
+    # Шрифт с кириллицей для своих PDF (services/billing_pdf.py); в образе —
+    # пакет fonts-dejavu-core.
+    pdf_font: str = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
     model_config = SettingsConfigDict(
         env_prefix="PAYMENTS_",
