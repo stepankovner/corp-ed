@@ -111,7 +111,9 @@ class FetchedPage:
 @dataclass(frozen=True)
 class FetchedMarkdown:
     """Документ, который источник отдаёт уже в Markdown (База знаний 2.0
-    Битрикс24, Яндекс Вики): в конвейер идёт как есть, без очистки HTML."""
+    Битрикс24, Яндекс Вики): в конвейер идёт без перевода из HTML, но
+    сырой HTML внутри Markdown вырезается (connectors/markdown.py,
+    markdown_as_is) — код и разметка Markdown остаются."""
 
     markdown: str
 
