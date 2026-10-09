@@ -68,7 +68,7 @@ export function UsersPage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ["users"], queryFn: () => unwrap(api.GET("/api/v1/users")) });
-  // Места — из того же ответа, что лимит вопросов: место занимают только
+  // Места — из того же ответа, что кредиты: место занимают только
   // работающие, заблокированные и ждущие одобрения — нет (решение 28.09).
   const usage = useQuery({ queryKey: ["usage"], queryFn: () => unwrap(api.GET("/api/v1/usage")) });
   // Названия отделов для подписи под именем (в списке — только id).

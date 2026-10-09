@@ -40,6 +40,9 @@ class CompanySettingsResponse(BaseModel):
     seats: int
     members: int
     """Работающие люди — сколько мест занято."""
+    daily_credits_per_member: int | None
+    """Личный дневной лимит кредитов на человека (включая администратора);
+    null — без лимита."""
 
 
 class CompanySettingsRequest(RequestModel):
@@ -59,6 +62,9 @@ class CompanySettingsRequest(RequestModel):
         if isinstance(value, bool):
             raise ValueError("Срок хранения — число месяцев")
         return value
+
+    daily_credits_per_member: int | None = Field(default=None, ge=1, le=10_000)
+    """Прислан null — лимит снимается; не прислан — не меняется."""
 
 
 class LogoResponse(BaseModel):

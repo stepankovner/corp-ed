@@ -307,7 +307,7 @@ class FaqService:
         стоить ни эмбеддинга, ни вызова модели (досье 10.2).
         """
         sink = sink or _SILENT
-        usage = await self.credits.ensure_available()
+        usage = await self.credits.ensure_available(user)
         tenant = await self.tenant_repo.get_by_id(user.tenant_id)
         mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
         await sink.stage("searching")

@@ -537,9 +537,9 @@ async def _run(args: argparse.Namespace) -> int:
             )
             if change.over_tariff:
                 print(
-                    f"Внимание: подключений {change.connectors}, а тариф даёт "
-                    f"{plan.max_connectors}. Заведённые продолжат работать, "
-                    "новые добавить нельзя."
+                    f"Внимание: подключено систем {change.systems}, а тариф даёт "
+                    f"{plan.max_systems}. Заведённые продолжат работать, "
+                    "новые системы добавить нельзя."
                 )
             return 0
 

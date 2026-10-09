@@ -186,3 +186,7 @@
   font-size: var(--fs-h3);
   font-weight: 500;
 }
+/* Подпись под полоской расхода. */
+.after {
+  margin-top: 8px;
+}

@@ -35,18 +35,19 @@ class QaLogRepository:
         result = await self.session.scalars(select(QaLog).where(QaLog.id == entry_id))
         return result.first()
 
-    async def credits_since(self, since: datetime) -> int:
-        """Кредиты текущей компании с начала периода.
+    async def credits_since(self, since: datetime, user_id: UUID | None = None) -> int:
+        """Кредиты текущей компании (или одного человека в ней) с начала
+        периода.
 
         Журнал ответов и есть книга расхода: отдельный счётчик разошёлся
         бы с ним при первом сбое между двумя записями.
         """
-        result = await self.session.scalar(
-            select(func.coalesce(func.sum(QaLog.credits), 0)).where(
-                QaLog.tenant_id == require_tenant(), QaLog.created_at >= since
-            )
+        statement = select(func.coalesce(func.sum(QaLog.credits), 0)).where(
+            QaLog.tenant_id == require_tenant(), QaLog.created_at >= since
         )
-        return int(result or 0)
+        if user_id is not None:
+            statement = statement.where(QaLog.user_id == user_id)
+        return int(await self.session.scalar(statement) or 0)
 
     async def delete_older_than(self, cutoff: datetime) -> int:
         """Удалить записи старше срока хранения в текущем тенанте.

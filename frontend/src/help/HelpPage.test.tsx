@@ -119,6 +119,25 @@ describe("статьи", () => {
     ).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("статья о кредитах: средняя стоимость вопроса — из настроек сервера", async () => {
+    signedIn(adminMe());
+    server.use(
+      http.get("/api/v1/usage", () =>
+        HttpResponse.json({ warning: false, avg_credits_per_question: 1.5 }),
+      ),
+    );
+    renderApp("/help#admin-tariff");
+
+    const tariff = await screen.findByRole("button", { name: "Кредиты и тариф" });
+    expect(tariff).toHaveAttribute("aria-expanded", "true");
+    expect(
+      await screen.findByText(
+        /В среднем один вопрос — около 1,5 кредита; длинные вопросы и ответы списывают больше\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Попросить администратора пополнить/)).toBeInTheDocument();
+  });
+
   it("ссылка на другую статью открывает её и сбрасывает мешающий поиск", async () => {
     signedIn(adminMe());
     renderApp("/help");
@@ -130,7 +149,7 @@ describe("статьи", () => {
     );
     await user.click(screen.getByRole("link", { name: "«Тарифе»" }));
 
-    const tariff = await screen.findByRole("button", { name: "Лимит вопросов и тариф" });
+    const tariff = await screen.findByRole("button", { name: "Кредиты и тариф" });
     expect(tariff).toHaveAttribute("aria-expanded", "true");
     expect(search).toHaveValue("");
   });

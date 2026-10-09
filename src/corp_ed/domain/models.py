@@ -109,6 +109,10 @@ class Tenant(Base):
             "chat_retention_months BETWEEN 1 AND 36",
             name="ck_tenants_chat_retention_months",
         ),
+        CheckConstraint(
+            "daily_credits_per_member IS NULL OR daily_credits_per_member > 0",
+            name="ck_tenants_daily_credits_positive",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -162,6 +166,10 @@ class Tenant(Base):
         default=DEFAULT_CHAT_RETENTION_MONTHS,
         server_default=str(DEFAULT_CHAT_RETENTION_MONTHS),
     )
+    # Личный дневной лимит (решение владельца 09.10): сколько кредитов в
+    # день может потратить один человек, включая администратора. NULL —
+    # без лимита (по умолчанию). Меняет администратор компании.
+    daily_credits_per_member: Mapped[int | None]
 
 
 class StaffMember(Base):
@@ -340,8 +348,8 @@ class Folder(TenantMixin, Base):
 
 class Notification(TenantMixin, Base):
     """Колокольчик (ТЗ §8): событие компании для одного человека —
-    остановлено подключение, лимит вопросов, заявка на вступление,
-    недельная сводка. Письмо о том же — по настройкам получателя."""
+    остановлено подключение, кредиты, заявка на вступление, недельная
+    сводка. Письмо о том же — по настройкам получателя."""
 
     __tablename__ = "notifications"
     __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
@@ -1154,6 +1162,149 @@ class QaLog(TenantMixin, Base):
     # вовремя). rerank_ms — сколько ждали реранкер, и при сбое тоже.
     rerank_model: Mapped[str | None] = mapped_column(String(128))
     rerank_ms: Mapped[int | None] = mapped_column()
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CreditOrder(TenantMixin, Base):
+    """Заказ пакета кредитов (решение владельца 09.10).
+
+    Администратор выбирает пакет — заказ ждёт оплаты; команда kronto
+    отмечает в нашей панели «Оплачен», и кредиты зачисляются
+    (CreditGrant с source=purchase). Номер — по порядку внутри компании:
+    его называют в счёте и в разговоре.
+
+    payment_method — точка расширения: сейчас только счёт; оплата картой
+    — следующий этап, она отметит заказ оплаченным сама. invoice_id —
+    будущий счёт (PDF): таблица и внешний ключ появятся вместе с ним.
+    """
+
+    __tablename__ = "credit_orders"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "number", name="uq_credit_orders_number"),
+        CheckConstraint(
+            "status IN ('awaiting_payment', 'paid', 'cancelled')",
+            name="ck_credit_orders_status",
+        ),
+        CheckConstraint(
+            "payment_method IN ('invoice', 'card')",
+            name="ck_credit_orders_payment_method",
+        ),
+        CheckConstraint("credits > 0", name="ck_credit_orders_credits_positive"),
+        CheckConstraint("amount_kopecks > 0", name="ck_credit_orders_amount_positive"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    number: Mapped[int]
+    pack: Mapped[str] = mapped_column(String(32))
+    credits: Mapped[int]
+    amount_kopecks: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(
+        String(20), default="awaiting_payment", server_default="awaiting_payment"
+    )
+    payment_method: Mapped[str] = mapped_column(
+        String(16), default="invoice", server_default="invoice"
+    )
+    invoice_id: Mapped[UUID | None] = mapped_column(Uuid)
+    created_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CreditGrant(TenantMixin, Base):
+    """Кредиты сверх месячного пула: купленный пакет или начисление
+    командой (бонус, компенсация). Живут до expires_at.
+
+    remaining — остаток; списывает CreditService.note_spend после пула,
+    первыми — гранты, которые раньше сгорают. Может уйти в небольшой
+    минус: стоимость ответа заранее неизвестна, а параллельные ответы на
+    границе не ждут друг друга (как и месячный пул). Минус не переносится
+    на следующий грант. Сгоревшие гранты не удаляются — их просто не
+    считают.
+    """
+
+    __tablename__ = "credit_grants"
+    __table_args__ = (
+        CheckConstraint("credits > 0", name="ck_credit_grants_credits_positive"),
+        CheckConstraint(
+            "source IN ('purchase', 'manual')", name="ck_credit_grants_source"
+        ),
+        CheckConstraint(
+            "(source = 'purchase') = (order_id IS NOT NULL)",
+            name="ck_credit_grants_order",
+        ),
+        Index("ix_credit_grants_tenant_expires", "tenant_id", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    credits: Mapped[int]
+    remaining: Mapped[int]
+    source: Mapped[str] = mapped_column(String(16))
+    # Один заказ — один грант: повторное «Оплачен» не зачислит дважды.
+    order_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("credit_orders.id", ondelete="RESTRICT"), unique=True
+    )
+    comment: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CreditSpend(TenantMixin, Base):
+    """Списание с грантов: сколько кредитов месяца period_start ушло сверх
+    пула и с какого гранта.
+
+    Отдельно от qa_log: журнал ответов хранится 90 дней, а купленные
+    кредиты — год. grant_id пуст, если списывать было не с чего (пул
+    ушёл в минус на границе, грантов нет): такой перерасход не ложится
+    на пакет, купленный позже в том же месяце.
+    """
+
+    __tablename__ = "credit_spends"
+    __table_args__ = (
+        CheckConstraint("credits > 0", name="ck_credit_spends_credits_positive"),
+        Index("ix_credit_spends_tenant_period", "tenant_id", "period_start"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    grant_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("credit_grants.id", ondelete="CASCADE"), index=True
+    )
+    credits: Mapped[int]
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CreditTopupRequest(TenantMixin, Base):
+    """«Попросить администратора пополнить» (решение владельца 09.10).
+
+    Одна строка на эпизод исчерпания: эпизод начинается с начала месяца
+    или с последнего зачисления кредитов, что позже. Уникальность
+    (tenant_id, episode_start) — защита от гонки двух нажатий: второе не
+    вставит строку и не пришлёт администраторам второе уведомление.
+    """
+
+    __tablename__ = "credit_topup_requests"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "episode_start", name="uq_credit_topup_requests_episode"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    episode_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    requested_by: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

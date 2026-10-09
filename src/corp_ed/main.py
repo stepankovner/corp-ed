@@ -24,6 +24,7 @@ from corp_ed.api.v1.endpoints import (
     chat,
     company,
     connectors,
+    credits,
     demo,
     departments,
     faq,
@@ -55,6 +56,7 @@ from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     connector_limit_handler,
     credits_exhausted_handler,
+    daily_limit_handler,
     demo_unavailable_handler,
     domain_fallback_handler,
     duplicate_material_handler,
@@ -76,6 +78,7 @@ from corp_ed.core.exceptions import (
     ConnectorLimitError,
     ConnectorNotInTariffError,
     CreditsExhaustedError,
+    DailyLimitExhaustedError,
     DemoUnavailableError,
     DomainError,
     DuplicateMaterialError,
@@ -297,6 +300,7 @@ app.include_router(support.router, prefix="/api/v1")
 app.include_router(demo.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
+app.include_router(credits.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
 app.include_router(gaps.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
@@ -353,6 +357,7 @@ app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)
 app.add_exception_handler(UnacceptableFileError, unacceptable_file_handler)
 app.add_exception_handler(DuplicateMaterialError, duplicate_material_handler)
 app.add_exception_handler(CreditsExhaustedError, credits_exhausted_handler)
+app.add_exception_handler(DailyLimitExhaustedError, daily_limit_handler)
 app.add_exception_handler(DemoUnavailableError, demo_unavailable_handler)
 app.add_exception_handler(ConnectorLimitError, connector_limit_handler)
 app.add_exception_handler(TariffConnectorLimitError, connector_limit_handler)

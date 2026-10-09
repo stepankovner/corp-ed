@@ -96,6 +96,9 @@ const LeadsTab = lazy(() => import("./staff/LeadsTab").then((m) => ({ default: m
 const SupportTab = lazy(() =>
   import("./staff/SupportTab").then((m) => ({ default: m.SupportTab })),
 );
+const CreditsTab = lazy(() =>
+  import("./staff/CreditsTab").then((m) => ({ default: m.CreditsTab })),
+);
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
   import("./settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
@@ -166,6 +169,7 @@ export const routes: RouteObject[] = [
                   { index: true, element: <Navigate to="/staff/requests" replace /> },
                   { path: "requests", element: lazyPage(<RequestsTab />) },
                   { path: "companies", element: lazyPage(<CompaniesTab />) },
+                  { path: "credits", element: lazyPage(<CreditsTab />) },
                   { path: "spend", element: lazyPage(<SpendTab />) },
                   { path: "people", element: lazyPage(<PeopleTab />) },
                   { path: "leads", element: lazyPage(<LeadsTab />) },

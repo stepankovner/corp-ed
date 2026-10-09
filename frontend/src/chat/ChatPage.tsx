@@ -19,6 +19,7 @@ import { fetchConversation, pathUpTo, type Conversation, type Message } from "./
 import { AnswerActions, AnswerBody, UserMessage, Versions, type OpenSource } from "./AnswerView";
 import styles from "./Chat.module.css";
 import { Composer, type Draft } from "./Composer";
+import { CreditsStopped } from "./CreditsStopped";
 import { conversationKey, SUGGESTIONS_KEY } from "./keys";
 import { ShareDialog } from "./ShareDialog";
 import { SourcePanel } from "./SourcePanel";
@@ -34,12 +35,28 @@ export function ChatPage() {
   );
 }
 
-/** Ошибка до начала ответа — над полем вопроса; текст остаётся в поле. */
-function sendError(err: unknown): string {
-  if (err instanceof ApiError && err.status === 402) {
-    return "Лимит вопросов компании на этот месяц исчерпан. Новые вопросы станут доступны в следующем месяце.";
-  }
-  return errorMessage(err);
+/**
+ * Ошибка до начала ответа — над полем вопроса; текст остаётся в поле.
+ * Кончились кредиты компании (402) — не текст, а блок с действием
+ * (CreditsStopped); дневной лимит (429) — текст сервера.
+ */
+type SendProblem = { credits: true } | { credits: false; text: string };
+
+function sendError(err: unknown): SendProblem {
+  if (err instanceof ApiError && err.status === 402) return { credits: true };
+  return { credits: false, text: errorMessage(err) };
+}
+
+function ProblemNotice({ problem, admin }: { problem: SendProblem; admin: boolean }) {
+  return (
+    <div className={styles.composerNotice}>
+      {problem.credits ? (
+        <CreditsStopped admin={admin} />
+      ) : (
+        <Notice kind="error">{problem.text}</Notice>
+      )}
+    </div>
+  );
 }
 
 function isAbort(err: unknown): boolean {
@@ -51,7 +68,7 @@ function NewConversation() {
   const company = useCompany();
   const navigate = useNavigate();
   const { live, send } = useChat();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SendProblem | null>(null);
   useDocumentTitle("Вопросы");
   const pending = live[NEW_KEY];
 
@@ -113,11 +130,7 @@ function NewConversation() {
           )}
         </div>
       </div>
-      {error ? (
-        <div className={styles.composerNotice}>
-          <Notice kind="error">{error}</Notice>
-        </div>
-      ) : null}
+      {error ? <ProblemNotice problem={error} admin={isAdmin(me)} /> : null}
       <Composer busy={Boolean(pending)} onSend={ask} />
     </section>
   );
@@ -241,7 +254,7 @@ function ConversationScreen({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const { live: allLive, send, stop } = useChat();
   const live = allLive[id];
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SendProblem | null>(null);
   const [opened, setOpened] = useState<OpenSource | null>(null);
   const [sharing, setSharing] = useState(false);
   const trigger = useRef<HTMLElement | null>(null);
@@ -408,11 +421,7 @@ function ConversationScreen({ id }: { id: string }) {
       <p className="visually-hidden" aria-live="polite">
         {announce}
       </p>
-      {error ? (
-        <div className={styles.composerNotice}>
-          <Notice kind="error">{error}</Notice>
-        </div>
-      ) : null}
+      {error ? <ProblemNotice problem={error} admin={isAdmin(me)} /> : null}
       <Composer
         busy={busy}
         stopping={live?.stopping}

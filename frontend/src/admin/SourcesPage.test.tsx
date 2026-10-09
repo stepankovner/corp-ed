@@ -139,11 +139,12 @@ function mockConnectors(list: Connector[]) {
     http.get("/api/v1/connectors/kinds", () => HttpResponse.json([])),
     http.get("/api/v1/connectors/tariff", () =>
       HttpResponse.json({
-        tariff: "extended",
-        title: "Расширенный",
+        tariff: "base",
+        title: "Базовый",
         connectors: list.length,
-        connector_limit: 5,
-        limited_by_tariff: true,
+        connector_limit: 20,
+        systems: new Set(list.map((c) => c.kind)).size,
+        systems_limit: 5,
       }),
     ),
   );
@@ -472,7 +473,9 @@ describe("источники", () => {
       "href",
       "/settings/connections",
     );
-    expect(screen.getByText(/Тариф «Расширенный»: подключений 2 из 5/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Тариф «Базовый»: рабочих систем 2 из 5, подключений к каждой/),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Добавить подключение" })).toBeInTheDocument();
   });
 });

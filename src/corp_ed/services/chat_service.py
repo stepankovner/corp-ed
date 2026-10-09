@@ -312,7 +312,7 @@ class ChatService:
             raise ConflictError(
                 f"К вопросу — не больше {MAX_ATTACHMENTS_PER_QUESTION} файлов"
             )
-        await self.credits.ensure_available()
+        await self.credits.ensure_available(member)
 
         if conversation_id is None:
             if parent_id is not None:
@@ -384,7 +384,7 @@ class ChatService:
         self, member: User, conversation_id: UUID, question_id: UUID
     ) -> TurnStart:
         """«Ответить заново»: новый ответ на тот же вопрос, прежний — ветка."""
-        await self.credits.ensure_available()
+        await self.credits.ensure_available(member)
         conversation = await self._own(member, conversation_id, for_update=True)
         tree = await self._tree(conversation)
         self._check_can_write(tree)

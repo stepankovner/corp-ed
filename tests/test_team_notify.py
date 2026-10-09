@@ -22,6 +22,7 @@ from corp_ed.services.team_notify import (
 )
 from tests.conftest import make_credit_service
 from tests.team_notify_helpers import RecordingNotifier
+from tests.test_credits import spend
 
 TOKEN = "123456:secret-bot-token"  # noqa: S105 — поддельный токен теста
 
@@ -97,8 +98,9 @@ def test_messages_carry_no_personal_data() -> None:
     assert pool_exhausted_message(
         company_code="acme", used=12600, pool=12600, until=until
     ) == (
-        "Компания acme исчерпала пул: 12600 из 12600 кредитов. "
-        "Вопросы остановлены до 01.10; места — cli set-seats."
+        "Компания acme исчерпала пул: 12600 из 12600 кредитов, купленных нет. "
+        "Вопросы остановлены до 01.10; пакет кредитов — заказом администратора, "
+        "места — в нашей панели."
     )
 
 
@@ -111,10 +113,14 @@ async def test_exhausted_pool_notifies_team_once(
     service = make_credit_service(session)
     service.notifier = RecordingNotifier(sent)
 
-    usage = await service.usage()
-    await service.note_spend(usage, 420)
-    await session.commit()
-    await service.note_spend(await service.usage(), 1)
+    # Как в FaqService: ответ в журнале (flush), потом отметка. Второй —
+    # параллельный ответ на границе, который уже не остановить.
+    for credits in (420, 1):
+        usage = await service.usage()
+        spend(session, employee, credits)
+        await session.flush()
+        await service.note_spend(usage, credits)
+        await session.commit()
 
     assert len(sent) == 1
-    assert sent[0].startswith("Компания test исчерпала пул: 420 из 420 кредитов.")
+    assert sent[0].startswith("Компания test исчерпала пул: 420 из 420 кредитов,")

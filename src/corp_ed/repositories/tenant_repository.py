@@ -31,6 +31,17 @@ class TenantRepository:
     async def get_by_id(self, tenant_id: UUID) -> Tenant | None:
         return await self.session.get(Tenant, tenant_id)
 
+    async def lock(self, tenant_id: UUID) -> Tenant:
+        """Строка компании под SELECT … FOR UPDATE до конца транзакции —
+        и свежая: объект из сессии перечитывается."""
+        result = await self.session.scalars(
+            select(Tenant)
+            .where(Tenant.id == tenant_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return result.one()
+
     async def create(self, tenant: Tenant) -> Tenant:
         self.session.add(tenant)
         await self.session.flush()

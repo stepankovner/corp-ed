@@ -116,6 +116,16 @@ FOLDER_EDIT_PER_TENANT = RatePolicy(
 TARIFF_REQUEST_PER_TENANT = RatePolicy(
     "tariff-request", limit=5, window=86400, fail_open=False
 )
+# Заказ пакета кредитов приходит команде в Telegram: больше десятка в
+# сутки — уже не человек (неоплаченных и так не больше пяти).
+CREDIT_ORDER_PER_TENANT = RatePolicy(
+    "credit-order", limit=10, window=86400, fail_open=False
+)
+# «Попросить пополнить»: уведомление и так одно на эпизод, лимит — от
+# скрипта, который долбит ручку.
+TOPUP_REQUEST_PER_USER = RatePolicy(
+    "topup-request", limit=20, window=3600, fail_open=True
+)
 # Наша панель (ТЗ §9): правки команды — сотни в час уже не люди, а
 # украденная сессия; письма о новом пароле — не рассылка.
 STAFF_EDIT_PER_ACCOUNT = RatePolicy(

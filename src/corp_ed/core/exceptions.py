@@ -146,17 +146,31 @@ class DuplicateMaterialError(ConflictError):
 
 
 class CreditsExhaustedError(DomainError):
-    """Пул кредитов компании на месяц исчерпан. HTTP 402.
+    """Кредиты компании кончились: месячный пул израсходован, купленных
+    нет. HTTP 402.
 
-    Жёсткая остановка — решение команды (досье 10.2): без оплаты сверх
-    лимита и без мягкой деградации.
+    Жёсткая остановка — решение команды (досье 10.2); продолжить можно,
+    купив пакет кредитов или добавив места (решение владельца 09.10).
     """
 
     def __init__(self) -> None:
         super().__init__(
-            "Лимит обращений компании на этот месяц исчерпан. "
-            "Обратитесь к администратору вашей компании"
+            "Кредиты компании на этот месяц закончились. "
+            "Попросите администратора пополнить их"
         )
+
+
+class DailyLimitExhaustedError(DomainError):
+    """Личный дневной лимит кредитов исчерпан (настройка компании, решение
+    владельца 09.10). HTTP 429 с кодом daily_limit_exhausted и Retry-After
+    до полуночи по BILLING_TIMEZONE — не путать с исчерпанием компании."""
+
+    def __init__(self, retry_after: int) -> None:
+        super().__init__(
+            "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. "
+            "Лимит задаёт администратор компании"
+        )
+        self.retry_after = max(1, retry_after)
 
 
 class ConnectorLimitError(ConflictError):
@@ -172,7 +186,7 @@ class ConnectorLimitError(ConflictError):
 
 
 class TariffConnectorLimitError(ConflictError):
-    """Тариф компании не даёт больше подключений (domain/tariffs.py).
+    """Тариф компании не даёт больше разных систем (domain/tariffs.py).
 
     HTTP 409 с кодом tariff_connector_limit: админ видит, какой тариф
     снимает ограничение.
@@ -180,8 +194,9 @@ class TariffConnectorLimitError(ConflictError):
 
     def __init__(self, tariff_title: str, limit: int) -> None:
         super().__init__(
-            f"В тарифе «{tariff_title}» — до {limit} подключений. "
-            "Больше — в тарифе «Расширенный»"
+            f"В тарифе «{tariff_title}» — до {limit} рабочих систем. "
+            "Больше систем — в тарифе «Расширенный»; к уже подключённой "
+            "системе можно добавить ещё подключение"
         )
         self.code = "tariff_connector_limit"
 

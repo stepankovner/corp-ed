@@ -262,12 +262,13 @@ async def test_warning_at_80_percent_is_recorded_once(
     spend(session, employee, 335)
     await session.commit()
 
-    usage = await service.ensure_available()
-    await service.note_spend(usage, 1)
-    await session.commit()
-    usage = await service.ensure_available()
-    await service.note_spend(usage, 1)
-    await session.commit()
+    # Как в FaqService: ответ в журнале (flush), потом отметка.
+    for _ in range(2):
+        usage = await service.ensure_available()
+        spend(session, employee, 1)
+        await session.flush()
+        await service.note_spend(usage, 1)
+        await session.commit()
 
     [event] = await _events(session, "credits.warning")
     assert event.tenant_id == tenant_ctx.id
@@ -298,6 +299,8 @@ async def test_jump_over_both_thresholds_records_both(
     await session.commit()
 
     usage = await service.ensure_available()
+    spend(session, employee, 200)
+    await session.flush()
     await service.note_spend(usage, 200)
     await session.commit()
 

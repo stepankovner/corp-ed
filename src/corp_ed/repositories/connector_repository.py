@@ -53,6 +53,16 @@ class ConnectorRepository:
         )
         return int(result or 0)
 
+    async def kinds(self) -> set[str]:
+        """Какие системы (виды коннекторов) подключены у компании: тариф
+        «Базовый» считает их, а не подключения."""
+        result = await self.session.scalars(
+            select(Connector.kind)
+            .where(Connector.tenant_id == require_tenant())
+            .distinct()
+        )
+        return set(result)
+
     async def list_due(self, now: datetime) -> list[Connector]:
         """Активные подключения, чей интервал истёк.
 

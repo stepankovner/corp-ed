@@ -14,6 +14,7 @@ import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { useAuth } from "../auth/context";
 import { plural } from "../lib/format";
+import { credits } from "../lib/credits";
 import { companyInitials } from "../lib/initials";
 import { useDocumentTitle } from "../lib/title";
 import { Section } from "../settings/common";
@@ -95,6 +96,11 @@ export function CompanySettingsPage() {
           <NotFoundSection settings={settings.data} />
           <SecuritySection settings={settings.data} />
           <RetentionSection settings={settings.data} />
+          {/* Ключ — сохранённый лимит: после сохранения поле начинается с него. */}
+          <DailyLimitSection
+            key={String(settings.data.daily_credits_per_member)}
+            limit={settings.data.daily_credits_per_member}
+          />
           {/* Ключ — сохранённый список: после сохранения правка начинается с него. */}
           <DomainsSection key={settings.data.email_domains.join("\n")} settings={settings.data} />
         </div>
@@ -287,6 +293,77 @@ function NameForm({ name }: { name: string }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** Как в схеме бэкенда (CompanySettingsRequest). */
+const MAX_DAILY_CREDITS = 10_000;
+
+/**
+ * Личный дневной лимит кредитов (решение владельца 09.10): по умолчанию
+ * выключен. Действует на всех, включая администраторов; день — по
+ * московскому времени.
+ */
+function DailyLimitSection({ limit }: { limit: number | null }) {
+  const [value, setValue] = useState(limit === null ? "" : String(limit));
+  const [problem, setProblem] = useState<string | null>(null);
+  const save = useSave((body) =>
+    body.daily_credits_per_member == null ? "Дневной лимит снят" : "Дневной лимит сохранён",
+  );
+
+  function submit(event: SubmitEvent) {
+    event.preventDefault();
+    const count = Number(value.trim());
+    if (!value.trim() || !Number.isInteger(count) || count < 1 || count > MAX_DAILY_CREDITS) {
+      setProblem(`Укажите целое число от 1 до ${credits(MAX_DAILY_CREDITS)}.`);
+      return;
+    }
+    setProblem(null);
+    if (count !== limit) save.mutate({ daily_credits_per_member: count });
+  }
+
+  return (
+    <Section
+      title="Личный дневной лимит"
+      description="Сколько кредитов в день может потратить один человек, включая администраторов. Новый день начинается в полночь по московскому времени. Кто израсходовал свой лимит, увидит, что он обновится завтра."
+    >
+      <p>
+        {limit === null ? "Сейчас лимита нет." : `Сейчас — ${credits(limit)} в день на человека.`}
+      </p>
+      <form className={styles.form} onSubmit={submit} noValidate>
+        {save.isError ? <Notice kind="error">{errorMessage(save.error)}</Notice> : null}
+        <TextField
+          label="Кредитов в день на сотрудника"
+          optional
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={MAX_DAILY_CREDITS}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setProblem(null);
+          }}
+          hint="Пусто — без лимита."
+          error={problem}
+        />
+        <div className={styles.actions}>
+          <Button type="submit" size="sm" busy={save.isPending}>
+            Сохранить
+          </Button>
+          {limit !== null ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={save.isPending}
+              onClick={() => save.mutate({ daily_credits_per_member: null })}
+            >
+              Снять лимит
+            </Button>
+          ) : null}
+        </div>
+      </form>
+    </Section>
   );
 }
 

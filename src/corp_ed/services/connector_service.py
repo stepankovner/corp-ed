@@ -64,7 +64,7 @@ from corp_ed.domain.models import (
     Tenant,
     User,
 )
-from corp_ed.domain.tariffs import TariffPlan, connector_limit, plan_for
+from corp_ed.domain.tariffs import TariffPlan, plan_for, system_fits
 from corp_ed.domain.types import (
     ConnectorMode,
     ConnectorStatus,
@@ -96,6 +96,22 @@ REVOKE_CONCURRENCY = 5
 OAUTH_STATE_ONCE = "connector-oauth-state"
 """Ключ лимитера для одноразовости state: первый вызов с этим jti
 проходит, второй — нет (RISKS №33)."""
+
+
+@dataclass(frozen=True)
+class Allowance:
+    """Тариф компании и что уже подключено."""
+
+    plan: TariffPlan
+    connector_limit: int
+    """Технический потолок подключений (не тарифный)."""
+    connectors: int
+    systems: frozenset[str]
+    """Подключённые системы (виды коннекторов)."""
+
+    def limit_reached(self, kind: str) -> bool:
+        """Новая система kind не влезет в тариф."""
+        return not system_fits(self.plan, self.systems, kind)
 
 
 @dataclass(frozen=True)
@@ -193,32 +209,32 @@ class ConnectorService:
 
     # --- настройка (ADMIN) ----------------------------------------------------
 
-    async def allowance(self) -> tuple[Tenant, TariffPlan, int, int]:
-        """Компания, её тариф, сколько подключений можно и сколько есть."""
+    async def allowance(self) -> Allowance:
+        """Тариф компании, подключённые системы и технический потолок."""
         tenant = await self.session.get(Tenant, require_tenant())
         if tenant is None:
             raise NotFoundError("Компания не найдена")
-        plan = plan_for(tenant.tariff)
-        technical = tenant.connector_limit or self.settings.max_per_tenant
-        return (
-            tenant,
-            plan,
-            connector_limit(plan, technical),
-            await self.connectors.count(),
+        return Allowance(
+            plan=plan_for(tenant.tariff),
+            connector_limit=tenant.connector_limit or self.settings.max_per_tenant,
+            connectors=await self.connectors.count(),
+            systems=frozenset(await self.connectors.kinds()),
         )
 
     async def _check_tariff(self, spec: KindSpec) -> None:
         """Тариф (решение 30.09): небазовые системы — только в
-        «Корпоративном»; число подключений — по тарифу, но не больше
-        технического потолка."""
-        tenant, plan, limit, used = await self.allowance()
+        «Корпоративном»; число разных систем — по тарифу (решение 09.10);
+        число подключений — до технического потолка в любом тарифе."""
+        allowance = await self.allowance()
+        plan = allowance.plan
         if not spec.base and not plan.non_base_connectors:
             raise ConnectorNotInTariffError(plan.title)
-        if used < limit:
-            return
-        if plan.max_connectors is not None and plan.max_connectors <= limit:
-            raise TariffConnectorLimitError(plan.title, plan.max_connectors)
-        raise ConnectorLimitError(limit)
+        if plan.max_systems is not None and not system_fits(
+            plan, allowance.systems, spec.kind
+        ):
+            raise TariffConnectorLimitError(plan.title, plan.max_systems)
+        if allowance.connectors >= allowance.connector_limit:
+            raise ConnectorLimitError(allowance.connector_limit)
 
     async def create(
         self,

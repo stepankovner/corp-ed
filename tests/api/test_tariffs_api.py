@@ -1,7 +1,8 @@
 """Тарифы компании (решение Артёма 30.09, domain/tariffs.py).
 
-«Базовый» — до 5 подключений, «Расширенный» — без тарифного лимита,
-«Корпоративный» — ещё и системы вне базового списка. Технический потолок
+«Базовый» — до 5 разных рабочих систем (подключений к одной системе —
+сколько угодно), «Расширенный» — без тарифного лимита, «Корпоративный» —
+ещё и системы вне базового списка. Технический потолок подключений
 действует в любом тарифе.
 """
 
@@ -27,11 +28,11 @@ from corp_ed.core.outbound import OutboundClient
 from corp_ed.core.secrets import SecretBox
 from corp_ed.domain.models import AuditEvent, Tenant, User
 from corp_ed.domain.tariffs import (
-    BASE_MAX_CONNECTORS,
+    BASE_MAX_SYSTEMS,
     PLANS,
     Tariff,
-    connector_limit,
     plan_for,
+    system_fits,
 )
 from corp_ed.main import app
 from corp_ed.repositories.audit_repository import AuditRepository
@@ -60,6 +61,15 @@ CREATE = {
 }
 NON_BASE = replace(ORG_SPEC, kind="custom_erp", title="Система клиента", base=False)
 NON_BASE_CREATE = {**CREATE, "kind": NON_BASE.kind}
+# Ещё пять базовых систем: «Базовый» считает разные системы, а не подключения.
+OTHER_SYSTEMS = [
+    replace(ORG_SPEC, kind=f"system_{n}", title=f"Система {n}") for n in range(2, 7)
+]
+
+
+def _system(n: int) -> dict[str, object]:
+    """Подключение к n-й системе: 1 — ORG_SPEC, 2…6 — OTHER_SYSTEMS."""
+    return CREATE if n == 1 else {**CREATE, "kind": f"system_{n}"}
 
 
 @pytest.fixture
@@ -70,6 +80,8 @@ async def tariff_api(
     выше лимита «Базового», чтобы видеть, какое ограничение сработало."""
     registry = make_registry(FakeSource())
     registry.register(NON_BASE, lambda *args: None)  # type: ignore[arg-type,return-value]
+    for spec in OTHER_SYSTEMS:
+        registry.register(spec, lambda *args: None)  # type: ignore[arg-type,return-value]
     settings = ConnectorSettings(
         secrets_keys=Fernet.generate_key().decode(),  # type: ignore[arg-type]
         max_per_tenant=7,
@@ -126,36 +138,68 @@ def test_plans() -> None:
         "Расширенный",
         "Корпоративный",
     ]
-    assert plan_for("base").max_connectors == BASE_MAX_CONNECTORS == 5
-    assert plan_for(Tariff.EXTENDED).max_connectors is None
+    assert plan_for("base").max_systems == BASE_MAX_SYSTEMS == 5
+    assert plan_for(Tariff.EXTENDED).max_systems is None
     assert not plan_for("extended").non_base_connectors
     assert plan_for("enterprise").non_base_connectors
 
 
+FIVE = frozenset({"a", "b", "c", "d", "e"})
+
+
 @pytest.mark.parametrize(
-    ("tariff", "technical", "limit"),
-    [("base", 20, 5), ("base", 3, 3), ("extended", 20, 20), ("enterprise", 50, 50)],
+    ("tariff", "used", "kind", "fits"),
+    [
+        ("base", frozenset({"a", "b", "c", "d"}), "e", True),
+        ("base", FIVE, "f", False),
+        # Ещё одно подключение к уже подключённой системе — не новая система.
+        ("base", FIVE, "a", True),
+        ("extended", FIVE, "f", True),
+        ("enterprise", FIVE, "f", True),
+    ],
 )
-def test_connector_limit_is_tariff_capped_by_technical(
-    tariff: str, technical: int, limit: int
+def test_system_fits_counts_distinct_systems(
+    tariff: str, used: frozenset[str], kind: str, fits: bool
 ) -> None:
-    assert connector_limit(plan_for(tariff), technical) == limit
+    assert system_fits(plan_for(tariff), used, kind) is fits
 
 
 # --- API ------------------------------------------------------------------------
 
 
-async def test_base_tariff_allows_five_connectors(
+async def test_base_tariff_allows_five_systems(
     tariff_api: httpx.AsyncClient, admin_account: User
 ) -> None:
-    assert await _create_many(tariff_api, admin_account, 5, CREATE) == [201] * 5
+    for n in range(1, 6):
+        response = await tariff_api.post(
+            URL, json=_system(n), headers=bearer(admin_account)
+        )
+        assert response.status_code == 201, response.text
+
+    response = await tariff_api.post(
+        URL, json=_system(6), headers=bearer(admin_account)
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "tariff_connector_limit"
+    assert "«Базовый» — до 5 рабочих систем" in response.json()["detail"]
+    assert "«Расширенный»" in response.json()["detail"]
+    # Шестая система не влезла, а второе подключение к первой — можно.
+    again = await tariff_api.post(URL, json=_system(1), headers=bearer(admin_account))
+    assert again.status_code == 201
+
+
+async def test_base_tariff_counts_connections_to_one_system_once(
+    tariff_api: httpx.AsyncClient, admin_account: User
+) -> None:
+    """Подключений к одной системе — сколько угодно, до технического
+    потолка (здесь 7)."""
+    assert await _create_many(tariff_api, admin_account, 7, CREATE) == [201] * 7
 
     response = await tariff_api.post(URL, json=CREATE, headers=bearer(admin_account))
 
     assert response.status_code == 409
-    assert response.json()["code"] == "tariff_connector_limit"
-    assert "«Базовый» — до 5 подключений" in response.json()["detail"]
-    assert "«Расширенный»" in response.json()["detail"]
+    assert response.json()["code"] == "connector_limit"
 
 
 async def test_extended_tariff_stops_only_at_the_technical_cap(
@@ -216,6 +260,23 @@ async def test_catalog_marks_what_the_tariff_allows(
     assert by_kind[ORG_SPEC.kind]["available"] is True
     assert by_kind[NON_BASE.kind]["base"] is False
     assert by_kind[NON_BASE.kind]["available"] is False
+    assert not any(kind["limit_reached"] for kind in kinds)
+
+
+async def test_catalog_marks_new_systems_when_five_are_used(
+    tariff_api: httpx.AsyncClient, admin_account: User
+) -> None:
+    for n in range(1, 6):
+        await tariff_api.post(URL, json=_system(n), headers=bearer(admin_account))
+
+    kinds = (await tariff_api.get(f"{URL}/kinds", headers=bearer(admin_account))).json()
+
+    by_kind = {kind["kind"]: kind for kind in kinds}
+    # К подключённой системе можно добавить ещё подключение, новую — нельзя.
+    assert by_kind[ORG_SPEC.kind]["limit_reached"] is False
+    assert by_kind["system_5"]["limit_reached"] is False
+    assert by_kind["system_6"]["limit_reached"] is True
+    assert by_kind["system_6"]["available"] is True
 
 
 async def test_tariff_allowance_for_admin(
@@ -223,14 +284,17 @@ async def test_tariff_allowance_for_admin(
 ) -> None:
     await _create_many(tariff_api, admin_account, 2, CREATE)
 
+    await tariff_api.post(URL, json=_system(2), headers=bearer(admin_account))
+
     body = (await tariff_api.get(f"{URL}/tariff", headers=bearer(admin_account))).json()
 
     assert body == {
         "tariff": "base",
         "title": "Базовый",
-        "connectors": 2,
-        "connector_limit": 5,
-        "limited_by_tariff": True,
+        "connectors": 3,
+        "connector_limit": 7,
+        "systems": 2,
+        "systems_limit": 5,
     }
 
 
@@ -260,12 +324,13 @@ async def test_set_tariff_is_audited_and_warns_over_limit(
     tenant_ctx: Tenant,
 ) -> None:
     await _tariff(session, tenant_ctx, Tariff.EXTENDED)
-    await _create_many(tariff_api, admin_account, 6, CREATE)
+    for n in range(1, 7):
+        await tariff_api.post(URL, json=_system(n), headers=bearer(admin_account))
 
     change = await _service(session).set_tariff(tenant_ctx.company_code, Tariff.BASE)
 
     assert change.tenant.tariff == "base"
-    assert change.connectors == 6
+    assert change.systems == 6
     assert change.over_tariff
     event = await session.scalar(
         select(AuditEvent).where(AuditEvent.action == "tenant.tariff_changed")
@@ -275,6 +340,21 @@ async def test_set_tariff_is_audited_and_warns_over_limit(
         "from": {"tariff": "extended", "connector_limit": None},
         "to": {"tariff": "base", "connector_limit": None},
     }
+
+
+async def test_set_tariff_counts_systems_not_connections(
+    tariff_api: httpx.AsyncClient,
+    admin_account: User,
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+) -> None:
+    await _tariff(session, tenant_ctx, Tariff.EXTENDED)
+    await _create_many(tariff_api, admin_account, 6, CREATE)
+
+    change = await _service(session).set_tariff(tenant_ctx.company_code, Tariff.BASE)
+
+    assert (change.connectors, change.systems) == (6, 1)
+    assert not change.over_tariff
 
 
 async def test_set_tariff_changes_and_resets_the_connector_limit(
