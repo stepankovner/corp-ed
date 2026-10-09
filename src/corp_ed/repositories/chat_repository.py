@@ -52,6 +52,17 @@ class ConversationRepository:
         stmt = select(Conversation).where(Conversation.share_token == token)
         return (await self.session.scalars(stmt)).first()
 
+    async def list_shared(self, user_id: UUID) -> Sequence[Conversation]:
+        stmt = (
+            select(Conversation)
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.share_token.is_not(None),
+            )
+            .order_by(Conversation.shared_at.desc(), Conversation.id)
+        )
+        return (await self.session.scalars(stmt)).all()
+
     async def list_for(
         self,
         user_id: UUID,

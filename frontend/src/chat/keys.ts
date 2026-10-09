@@ -2,6 +2,8 @@
 export const CONVERSATIONS_KEY = ["conversations"] as const;
 export const CONVERSATION_LISTS_KEY = ["conversations", "list"] as const;
 export const SUGGESTIONS_KEY = ["suggestions"] as const;
+/** «Мои общие ссылки» в настройках. */
+export const SHARED_LINKS_KEY = ["conversations", "shares"] as const;
 
 export function conversationListKey(query: string) {
   return [...CONVERSATION_LISTS_KEY, query] as const;

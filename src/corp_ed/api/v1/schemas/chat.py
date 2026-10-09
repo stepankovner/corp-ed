@@ -15,6 +15,7 @@ from corp_ed.services.chat_service import (
     MAX_QUESTION_CHARS,
     MAX_TITLE_CHARS,
     MessageView,
+    share_active,
 )
 from corp_ed.services.suggestion_service import MAX_TEXT as MAX_SUGGESTION_TEXT
 
@@ -142,10 +143,50 @@ class MessageResponse(BaseModel):
 
 
 class ShareResponse(BaseModel):
-    """Ссылка на /shared/{token} в приложении; открывают коллеги по компании."""
+    """Ссылка /shared#<token> в приложении; открывают коллеги по компании.
+    Токен — во фрагменте адреса: на сервер и в журналы он не уходит.
+    expired — срок вышел: по ссылке не открыть, пока владелец не продлит."""
 
     token: str
     shared_at: datetime
+    expires_at: datetime
+    expired: bool
+
+    @classmethod
+    def of(cls, conversation: Conversation) -> "ShareResponse | None":
+        if (
+            conversation.share_token is None
+            or conversation.shared_at is None
+            or conversation.share_expires_at is None
+        ):
+            return None
+        return cls(
+            token=conversation.share_token,
+            shared_at=conversation.shared_at,
+            expires_at=conversation.share_expires_at,
+            expired=not share_active(conversation),
+        )
+
+
+class SharedLinkResponse(BaseModel):
+    """Ссылка в «Моих общих ссылках»: без токена — его копируют из диалога."""
+
+    id: UUID
+    title: str
+    shared_at: datetime
+    expires_at: datetime
+    expired: bool
+
+
+class SharedLinkListResponse(BaseModel):
+    items: list[SharedLinkResponse]
+
+
+class SharedOpenRequest(RequestModel):
+    """Токен общей ссылки — в теле, не в адресе: путь запроса пишут журналы
+    прокси и сервера."""
+
+    token: str = Field(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class ConversationResponse(ConversationSummary):

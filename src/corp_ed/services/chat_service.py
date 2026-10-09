@@ -10,7 +10,7 @@ current_message_id — лист показанной ветки; её и вид�
 диалогов не видит ни здесь, ни где-либо ещё: у него обезличенная
 статистика (ТЗ §6, «анонимность»). Поделиться можно ссылкой — её откроет
 только коллега по той же компании, и только снимок ветки на момент, когда
-поделились.
+поделились. Ссылка живёт CHAT_SHARE_TTL_DAYS дней, владелец её продлевает.
 
 Сам ответ пишет фоновая задача (services/chat_generation.py): этот
 сервис готовит ход (begin, begin_regenerate) и всё остальное.
@@ -61,6 +61,9 @@ MAX_ATTACHMENTS_PER_QUESTION = 5
 MAX_ATTACHMENTS_PER_CONVERSATION = 10
 MAX_FEEDBACK_COMMENT = 1000
 
+SHARE_TTL = timedelta(days=30)
+"""Срок общей ссылки по умолчанию (CHAT_SHARE_TTL_DAYS)."""
+
 STALE_GENERATION = timedelta(minutes=10)
 """Ответ «пишется» дольше — задача умерла (перезапуск API): он прерван.
 Больше, чем предел самой генерации (chat_generation.GENERATION_TIMEOUT)."""
@@ -82,7 +85,8 @@ UNSET = _Unset()
 @dataclass(frozen=True)
 class SourceView:
     """Источник ответа для показа. content=None — документ удалён или
-    недоступен смотрящему: видно только название."""
+    недоступен смотрящему: в своём диалоге видно только название, по общей
+    ссылке — и его нет (CLOSED_SOURCE_TITLE)."""
 
     kind: str
     title: str
@@ -188,6 +192,7 @@ class ChatService:
         credits: CreditService,
         *,
         history_turns: int,
+        share_ttl: timedelta = SHARE_TTL,
     ) -> None:
         self.session = session
         self.conversations = ConversationRepository(session)
@@ -198,6 +203,7 @@ class ChatService:
         self.users = UserRepository(session)
         self.credits = credits
         self.history_turns = history_turns
+        self.share_ttl = share_ttl
 
     # --- список и карточка ---------------------------------------------------
 
@@ -476,8 +482,8 @@ class ChatService:
     async def share(self, member: User, conversation_id: UUID) -> Conversation:
         """Ссылка для коллег по компании: снимок показанной ветки.
 
-        Повторный вызов обновляет снимок, ссылка та же. Отозвать — unshare:
-        старая ссылка перестаёт открываться.
+        Повторный вызов обновляет снимок и срок, ссылка та же. Отозвать —
+        unshare: старая ссылка перестаёт открываться.
         """
         conversation = await self._own(member, conversation_id)
         if conversation.current_message_id is None:
@@ -486,6 +492,17 @@ class ChatService:
             conversation.share_token = secrets.token_urlsafe(24)
         conversation.shared_message_id = conversation.current_message_id
         conversation.shared_at = _now()
+        conversation.share_expires_at = conversation.shared_at + self.share_ttl
+        await self.session.commit()
+        return conversation
+
+    async def renew_share(self, member: User, conversation_id: UUID) -> Conversation:
+        """Продлить ссылку (и истёкшую): срок — от сегодня, токен и снимок
+        прежние."""
+        conversation = await self._own(member, conversation_id)
+        if conversation.share_token is None:
+            raise ConflictError("Ссылки на диалог нет — создайте её")
+        conversation.share_expires_at = _now() + self.share_ttl
         await self.session.commit()
         return conversation
 
@@ -494,14 +511,25 @@ class ChatService:
         conversation.share_token = None
         conversation.shared_message_id = None
         conversation.shared_at = None
+        conversation.share_expires_at = None
         await self.session.commit()
+
+    async def shares(self, member: User) -> Sequence[Conversation]:
+        """«Мои общие ссылки»: свои диалоги со ссылкой — и с истёкшей, её
+        можно продлить. Свежие снимки — первыми."""
+        return await self.conversations.list_shared(member.id)
 
     async def shared(self, viewer: User, token: str) -> SharedView:
         """Диалог по ссылке. Чужая компания ссылку не откроет (RLS и фильтр
-        по компании), отозванная или от ушедшего коллеги — тоже 404.
-        Источники — по правам смотрящего, не автора."""
+        по компании), отозванная, истёкшая или от ушедшего коллеги — тоже
+        404, неотличимо от несуществующей. Источники — по правам
+        смотрящего, не автора."""
         conversation = await self.conversations.get_by_share_token(token)
-        if conversation is None or conversation.shared_message_id is None:
+        if (
+            conversation is None
+            or conversation.shared_message_id is None
+            or not share_active(conversation)
+        ):
             raise NotFoundError("Ссылка недействительна")
         owner = await self.users.get_by_id(conversation.user_id)
         if owner is None or owner.status is not MemberStatus.ACTIVE:
@@ -515,7 +543,7 @@ class ChatService:
             if m.status != "generating"
         ]
         messages = [
-            _hide_closed_answer(view)
+            _hide_closed_sources(_hide_closed_answer(view))
             for view in await self._message_views(path, tree, viewer=viewer)
         ]
         return SharedView(
@@ -671,6 +699,7 @@ class ChatService:
 
 
 HIDDEN_ANSWER = "Ответ опирается на документы, к которым у вас нет доступа."
+CLOSED_SOURCE_TITLE = "Документ, к которому у вас нет доступа"
 
 
 def _material_ids(message: ChatMessage) -> set[UUID]:
@@ -695,6 +724,42 @@ def _hide_closed_answer(view: MessageView) -> MessageView:
     ):
         return view
     return _hide_answer(view)
+
+
+def _hide_closed_sources(view: MessageView) -> MessageView:
+    """Общая ссылка: документ без доступа смотрящему не называем — ни
+    названия, ни раздела, ни адреса, ни id (решение владельца 09.10).
+    Автор в своём диалоге видит название и удалённого документа."""
+    if not any(source.content is None for source in view.sources):
+        return view
+    return replace(
+        view,
+        sources=[
+            source
+            if source.content is not None
+            else SourceView(
+                kind=source.kind,
+                title=CLOSED_SOURCE_TITLE,
+                heading_path=[],
+                position=0,
+                content=None,
+                source_url=None,
+                material_id=None,
+                attachment_id=None,
+            )
+            for source in view.sources
+        ],
+    )
+
+
+def share_active(conversation: Conversation) -> bool:
+    """Ссылка есть и срок не вышел. Без срока — не открывается."""
+    expires = conversation.share_expires_at
+    return (
+        conversation.share_token is not None
+        and expires is not None
+        and expires > _now()
+    )
 
 
 def source_view(raw: dict[str, Any], visible: set[UUID]) -> SourceView:

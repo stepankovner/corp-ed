@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # хранить их дольше, чем нужно отчёту о пробелах, незачем (152-ФЗ).
     qa_log_retention_days: int = Field(default=90, gt=0, le=365)
 
+    # Сколько дней живёт ссылка «поделиться диалогом» (решение владельца
+    # 09.10: 30). Продлить — ещё столько же от сегодня, токен прежний.
+    chat_share_ttl_days: int = Field(default=30, gt=0, le=365)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
