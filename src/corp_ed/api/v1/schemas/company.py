@@ -35,6 +35,9 @@ class CompanySettingsResponse(BaseModel):
     seats: int
     members: int
     """Работающие люди — сколько мест занято."""
+    daily_credits_per_member: int | None
+    """Личный дневной лимит кредитов на человека (включая администратора);
+    null — без лимита."""
 
 
 class CompanySettingsRequest(RequestModel):
@@ -45,6 +48,8 @@ class CompanySettingsRequest(RequestModel):
     mfa_policy: MfaPolicy | None = None
     allow_remember_device: bool | None = None
     email_domains: list[str] | None = Field(default=None, max_length=10)
+    daily_credits_per_member: int | None = Field(default=None, ge=1, le=10_000)
+    """Прислан null — лимит снимается; не прислан — не меняется."""
 
 
 class LogoResponse(BaseModel):

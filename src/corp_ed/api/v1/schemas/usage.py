@@ -42,6 +42,21 @@ class UsageResponse(BaseModel):
     для пояснения на странице тарифа."""
 
 
+class TopupStatusResponse(BaseModel):
+    """stopped — кредиты компании кончились; requested — в этом эпизоде
+    исчерпания администратора уже попросили пополнить."""
+
+    stopped: bool
+    requested: bool
+
+
+class TopupRequestResponse(BaseModel):
+    """sent — уведомление ушло сейчас; false — администратор уже
+    уведомлён (кто-то попросил раньше)."""
+
+    sent: bool
+
+
 class CreditPackResponse(BaseModel):
     code: str
     credits: int

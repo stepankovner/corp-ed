@@ -43,7 +43,7 @@ async def test_exhausted_pool_is_402_with_code(
 
     assert response.status_code == 402
     assert response.json()["code"] == "credits_exhausted"
-    assert "администратору" in response.json()["detail"]
+    assert "администратора" in response.json()["detail"]
     assert fake_llm.calls == []
 
 

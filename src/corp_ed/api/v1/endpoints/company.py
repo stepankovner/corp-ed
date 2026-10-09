@@ -48,6 +48,7 @@ def _response(settings: CompanySettings) -> CompanySettingsResponse:
         tariff=Tariff(tenant.tariff),
         seats=tenant.seats,
         members=settings.members,
+        daily_credits_per_member=tenant.daily_credits_per_member,
     )
 
 
@@ -61,7 +62,8 @@ async def update_settings(
     data: CompanySettingsRequest, service: Service, admin: Admin
 ) -> CompanySettingsResponse:
     """Название, режим «ответа нет», второй фактор, «запомнить устройство»,
-    домены почты. Каждое изменение — в журнал действий."""
+    домены почты, личный дневной лимит кредитов. Каждое изменение — в
+    журнал действий."""
     fields = data.model_dump(exclude_unset=True)
 
     def value(name: str) -> object:
@@ -74,6 +76,12 @@ async def update_settings(
         mfa_policy=value("mfa_policy"),  # type: ignore[arg-type]
         allow_remember_device=value("allow_remember_device"),  # type: ignore[arg-type]
         email_domains=value("email_domains"),  # type: ignore[arg-type]
+        # null здесь значит «снять лимит», а не «не менять».
+        daily_credits_per_member=(
+            data.daily_credits_per_member
+            if "daily_credits_per_member" in fields
+            else UNSET
+        ),
     )
     return _response(settings)
 

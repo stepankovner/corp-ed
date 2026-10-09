@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from corp_ed.core.config import DemoSettings
 from corp_ed.core.exceptions import (
     CreditsExhaustedError,
+    DailyLimitExhaustedError,
     DemoUnavailableError,
     DomainError,
 )
@@ -136,7 +137,7 @@ class DemoService:
                     result = await faq.answer_turn(
                         question, member, history=[], sink=sink
                     )
-                except CreditsExhaustedError:
+                except (CreditsExhaustedError, DailyLimitExhaustedError):
                     logger.warning("demo_pool_exhausted")
                     raise DemoUnavailableError(
                         "demo_busy",

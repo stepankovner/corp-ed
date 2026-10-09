@@ -670,6 +670,19 @@
             ],
             "title": "Allow Remember Device"
           },
+          "daily_credits_per_member": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Credits Per Member"
+          },
           "email_domains": {
             "anyOf": [
               {
@@ -739,6 +752,17 @@
             "title": "Company Code",
             "type": "string"
           },
+          "daily_credits_per_member": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Credits Per Member"
+          },
           "email_domains": {
             "items": {
               "type": "string"
@@ -800,7 +824,8 @@
           "email_domains",
           "tariff",
           "seats",
-          "members"
+          "members",
+          "daily_credits_per_member"
         ],
         "title": "CompanySettingsResponse",
         "type": "object"
@@ -3823,7 +3848,7 @@
         "type": "object"
       },
       "MessageResponse": {
-        "description": "Вопрос или ответ.\n\nstatus: complete; generating — ответ ещё пишется (поток или фоновая\nзадача; обновите диалог позже); stopped — остановлен сотрудником,\ncontent — что успело прийти; failed — не удалось (error_code:\ncredits_exhausted, busy, llm_unavailable, timeout, interrupted, internal).\nsiblings — версии этого сообщения по порядку, включая его само\n(правки вопроса, «Ответить заново»); переключить — PUT …/current.\norigin, sources и оценка — только у ответа.",
+        "description": "Вопрос или ответ.\n\nstatus: complete; generating — ответ ещё пишется (поток или фоновая\nзадача; обновите диалог позже); stopped — остановлен сотрудником,\ncontent — что успело прийти; failed — не удалось (error_code:\ncredits_exhausted, daily_limit_exhausted, busy, llm_unavailable, timeout,\ninterrupted, internal).\nsiblings — версии этого сообщения по порядку, включая его само\n(правки вопроса, «Ответить заново»); переключить — PUT …/current.\norigin, sources и оценка — только у ответа.",
         "properties": {
           "attachments": {
             "items": {
@@ -6781,6 +6806,39 @@
         "title": "TokenResponse",
         "type": "object"
       },
+      "TopupRequestResponse": {
+        "description": "sent — уведомление ушло сейчас; false — администратор уже\nуведомлён (кто-то попросил раньше).",
+        "properties": {
+          "sent": {
+            "title": "Sent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sent"
+        ],
+        "title": "TopupRequestResponse",
+        "type": "object"
+      },
+      "TopupStatusResponse": {
+        "description": "stopped — кредиты компании кончились; requested — в этом эпизоде\nисчерпания администратора уже попросили пополнить.",
+        "properties": {
+          "requested": {
+            "title": "Requested",
+            "type": "boolean"
+          },
+          "stopped": {
+            "title": "Stopped",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stopped",
+          "requested"
+        ],
+        "title": "TopupStatusResponse",
+        "type": "object"
+      },
       "TotpEnableRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8981,7 +9039,7 @@
         ]
       },
       "patch": {
-        "description": "Название, режим «ответа нет», второй фактор, «запомнить устройство»,\nдомены почты. Каждое изменение — в журнал действий.",
+        "description": "Название, режим «ответа нет», второй фактор, «запомнить устройство»,\nдомены почты, личный дневной лимит кредитов. Каждое изменение — в\nжурнал действий.",
         "operationId": "update_settings_api_v1_company_patch",
         "requestBody": {
           "content": {
@@ -10682,6 +10740,58 @@
           }
         ],
         "summary": "List Packs",
+        "tags": [
+          "credits"
+        ]
+      }
+    },
+    "/api/v1/credits/topup-request": {
+      "get": {
+        "description": "Кончились ли кредиты и просил ли уже кто-то пополнить: тогда вместо\nкнопки — «Администратор уже уведомлён».",
+        "operationId": "topup_status_api_v1_credits_topup_request_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopupStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Topup Status",
+        "tags": [
+          "credits"
+        ]
+      },
+      "post": {
+        "description": "«Попросить администратора пополнить»: администраторам — одно\nуведомление на эпизод исчерпания (до пополнения или нового месяца),\nсколько бы сотрудников ни нажали. 409 credits_available — кредиты есть.",
+        "operationId": "request_topup_api_v1_credits_topup_request_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopupRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Request Topup",
         "tags": [
           "credits"
         ]

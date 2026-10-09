@@ -854,7 +854,8 @@ export interface paths {
         /**
          * Update Settings
          * @description Название, режим «ответа нет», второй фактор, «запомнить устройство»,
-         *     домены почты. Каждое изменение — в журнал действий.
+         *     домены почты, личный дневной лимит кредитов. Каждое изменение — в
+         *     журнал действий.
          */
         patch: operations["update_settings_api_v1_company_patch"];
         trace?: never;
@@ -1402,6 +1403,33 @@ export interface paths {
         get: operations["list_packs_api_v1_credits_packs_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/credits/topup-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Topup Status
+         * @description Кончились ли кредиты и просил ли уже кто-то пополнить: тогда вместо
+         *     кнопки — «Администратор уже уведомлён».
+         */
+        get: operations["topup_status_api_v1_credits_topup_request_get"];
+        put?: never;
+        /**
+         * Request Topup
+         * @description «Попросить администратора пополнить»: администраторам — одно
+         *     уведомление на эпизод исчерпания (до пополнения или нового месяца),
+         *     сколько бы сотрудников ни нажали. 409 credits_available — кредиты есть.
+         */
+        post: operations["request_topup_api_v1_credits_topup_request_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2930,6 +2958,8 @@ export interface components {
         CompanySettingsRequest: {
             /** Allow Remember Device */
             allow_remember_device?: boolean | null;
+            /** Daily Credits Per Member */
+            daily_credits_per_member?: number | null;
             /** Email Domains */
             email_domains?: string[] | null;
             /** Mfa Policy */
@@ -2952,6 +2982,8 @@ export interface components {
             allow_remember_device: boolean;
             /** Company Code */
             company_code: string;
+            /** Daily Credits Per Member */
+            daily_credits_per_member: number | null;
             /** Email Domains */
             email_domains: string[];
             /**
@@ -4203,7 +4235,8 @@ export interface components {
          *     status: complete; generating — ответ ещё пишется (поток или фоновая
          *     задача; обновите диалог позже); stopped — остановлен сотрудником,
          *     content — что успело прийти; failed — не удалось (error_code:
-         *     credits_exhausted, busy, llm_unavailable, timeout, interrupted, internal).
+         *     credits_exhausted, daily_limit_exhausted, busy, llm_unavailable, timeout,
+         *     interrupted, internal).
          *     siblings — версии этого сообщения по порядку, включая его само
          *     (правки вопроса, «Ответить заново»); переключить — PUT …/current.
          *     origin, sources и оценка — только у ответа.
@@ -5351,6 +5384,26 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /**
+         * TopupRequestResponse
+         * @description sent — уведомление ушло сейчас; false — администратор уже
+         *     уведомлён (кто-то попросил раньше).
+         */
+        TopupRequestResponse: {
+            /** Sent */
+            sent: boolean;
+        };
+        /**
+         * TopupStatusResponse
+         * @description stopped — кредиты компании кончились; requested — в этом эпизоде
+         *     исчерпания администратора уже попросили пополнить.
+         */
+        TopupStatusResponse: {
+            /** Requested */
+            requested: boolean;
+            /** Stopped */
+            stopped: boolean;
         };
         /** TotpEnableRequest */
         TotpEnableRequest: {
@@ -7875,6 +7928,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreditPackResponse"][];
+                };
+            };
+        };
+    };
+    topup_status_api_v1_credits_topup_request_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopupStatusResponse"];
+                };
+            };
+        };
+    };
+    request_topup_api_v1_credits_topup_request_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopupRequestResponse"];
                 };
             };
         };

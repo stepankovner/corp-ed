@@ -23,6 +23,7 @@ function companySettings(
     tariff: "base",
     seats: 30,
     members: 12,
+    daily_credits_per_member: null,
     ...overrides,
   };
 }

@@ -1,6 +1,6 @@
 """Настройки компании в интерфейсе (ТЗ §7): название, логотип, режим
 «ответа нет», правила второго фактора и «запомнить устройство», домены
-почты; заявка на смену тарифа.
+почты, личный дневной лимит кредитов; заявка на смену тарифа.
 
 До этапа 7 всё это меняла команда через CLI. Теперь — администратор
 компании; каждое изменение пишется в журнал действий с тем, что было и
@@ -169,6 +169,7 @@ class CompanyService:
         mfa_policy: str | _Unset = UNSET,
         allow_remember_device: bool | _Unset = UNSET,
         email_domains: list[str] | _Unset = UNSET,
+        daily_credits_per_member: int | None | _Unset = UNSET,
     ) -> CompanySettings:
         """Поменять настройки; в журнал — что было и что стало.
 
@@ -176,6 +177,8 @@ class CompanyService:
         без них данные компании закрыты, фронт ведёт на настройку защиты.
         allow_remember_device=False: галочка «запомнить» перестаёт
         действовать для людей этой компании при следующем входе.
+        daily_credits_per_member: личный дневной лимит кредитов (решение
+        владельца 09.10); None — без лимита.
         """
         tenant = await self._tenant()
         changes: dict[str, dict[str, Any]] = {}
@@ -201,6 +204,8 @@ class CompanyService:
             if len(domains) > MAX_DOMAINS:
                 raise InvalidDomainError(f"Доменов — не больше {MAX_DOMAINS}")
             change("email_domains", domains)
+        if not isinstance(daily_credits_per_member, _Unset):
+            change("daily_credits_per_member", daily_credits_per_member)
         if changes:
             self.audit.record(
                 AuditAction.TENANT_SETTINGS_UPDATED,
