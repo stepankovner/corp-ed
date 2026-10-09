@@ -1,8 +1,14 @@
 """Непроверенные модули скрыты, пока их не включили (решение 28.09);
 виды целиком скрываются CONNECTOR_HIDDEN_KINDS."""
 
-from corp_ed.connectors.registry import default_registry
+from corp_ed.connectors.registry import (
+    AdapterRegistry,
+    KindSpec,
+    ModuleSpec,
+    default_registry,
+)
 from corp_ed.core.config import ConnectorSettings
+from corp_ed.domain.types import ConnectorMode
 
 
 def _modules(settings: ConnectorSettings) -> set[str]:
@@ -41,3 +47,35 @@ def test_misspelt_hidden_kind_is_reported() -> None:
     registry = default_registry(ConnectorSettings(hidden_kinds="yandex,confluence"))
     assert registry.unknown_hidden() == frozenset({"yandex"})
     assert [spec.kind for spec in registry.kinds()] == ["bitrix24", "yandex360"]
+
+
+def _preview_kind_registry(enabled: frozenset[str] = frozenset()) -> AdapterRegistry:
+    registry = AdapterRegistry(enabled_preview_kinds=enabled)
+    for kind, preview in (("ready", False), ("fresh", True)):
+        registry.register(
+            KindSpec(
+                kind=kind,
+                title=kind,
+                mode=ConnectorMode.ORGANIZATION,
+                modules=(ModuleSpec("pages", "Страницы"),),
+                preview=preview,
+            ),
+            lambda *_: None,  # type: ignore[arg-type,return-value]
+        )
+    return registry
+
+
+def test_unverified_kind_is_not_offered_until_enabled() -> None:
+    registry = _preview_kind_registry()
+    assert [spec.kind for spec in registry.kinds()] == ["ready"]
+    assert not registry.offered("fresh")
+    # Живой проверке (`cli connector-check`) спецификация доступна.
+    assert registry.spec("fresh").preview
+
+    enabled = _preview_kind_registry(frozenset({"fresh"}))
+    assert [spec.kind for spec in enabled.kinds()] == ["fresh", "ready"]
+
+
+def test_preview_kinds_setting() -> None:
+    settings = ConnectorSettings(preview_kinds=" webdav , gdrive ")
+    assert settings.enabled_preview_kinds == frozenset({"webdav", "gdrive"})

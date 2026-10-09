@@ -796,6 +796,10 @@ class ConnectorSettings(BaseSettings):
     # `cli connector-check` их тоже видит — для живой проверки. Для
     # решения «не проверили на живой системе к MVP — скрыть» (STATUS.md).
     hidden_kinds: str = ""
+    # Виды, ещё не проверенные на живой системе (KindSpec.preview): в
+    # каталоге только если перечислены здесь. Новые коннекторы приходят
+    # такими и открываются после живой проверки (решение 09.10).
+    preview_kinds: str = ""
 
     # OAuth-приложения (режим per_user, этап 2). callback — публичный
     # адрес ручки GET /api/v1/connectors/oauth/callback: его админ
@@ -867,6 +871,10 @@ class ConnectorSettings(BaseSettings):
     @property
     def hidden_kind_names(self) -> frozenset[str]:
         return frozenset(_split_csv(self.hidden_kinds))
+
+    @property
+    def enabled_preview_kinds(self) -> frozenset[str]:
+        return frozenset(_split_csv(self.preview_kinds))
 
 
 @lru_cache
