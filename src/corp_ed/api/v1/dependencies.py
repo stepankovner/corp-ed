@@ -939,6 +939,7 @@ def get_tenant_deletion_service(
     ],
     registry: Annotated[AdapterRegistry, Depends(get_adapter_registry)],
     secrets: Annotated[SecretBox, Depends(get_secret_box)],
+    billing: Annotated[Billing, Depends(get_billing)],
 ) -> TenantDeletionService:
     async def revoke(revocations: Sequence[TokenRevocation]) -> None:
         # Клиент наружу — только если есть что отзывать.
@@ -951,6 +952,11 @@ def get_tenant_deletion_service(
         registry=registry,
         secrets=secrets,
         revoke=revoke,
+        cancel_card=(
+            billing.provider.cancel_card_subscription
+            if billing.enabled and billing.provider is not None
+            else None
+        ),
         protected_codes=(get_demo_settings().company_code,),
     )
 

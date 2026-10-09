@@ -49,6 +49,7 @@
 
 import argparse
 import asyncio
+import contextlib
 import getpass
 import json
 import sys
@@ -612,7 +613,10 @@ async def _delete_tenant(code: str, confirm: str | None) -> int:
         confirm = input("Введите код компании для подтверждения: ")
     settings = get_connector_settings()
     registry = default_registry(settings)
-    async with outbound_http_client(via_proxy=settings.outbound_via_proxy) as client:
+    async with contextlib.AsyncExitStack() as stack:
+        client = await stack.enter_async_context(
+            outbound_http_client(via_proxy=settings.outbound_via_proxy)
+        )
         http = OutboundClient(
             client,
             via_proxy=settings.outbound_via_proxy,
@@ -622,11 +626,21 @@ async def _delete_tenant(code: str, confirm: str | None) -> int:
         async def revoke(revocations: Sequence[TokenRevocation]) -> None:
             await revoke_all(revocations, registry, http)
 
+        # Автосписание по карте отменяется в банке до удаления.
+        cancel_card = None
+        if get_payment_settings().provider == "tochka":
+            tochka = get_tochka_settings()
+            bank = await stack.enter_async_context(
+                tochka_http_client(tochka, via_proxy=settings.outbound_via_proxy)
+            )
+            cancel_card = TochkaProvider(bank, tochka).cancel_card_subscription
+
         report = await TenantDeletionService(
             session_maker,
             registry=registry,
             secrets=SecretBox(settings.keys),
             revoke=revoke,
+            cancel_card=cancel_card,
             protected_codes=(get_demo_settings().company_code,),
         ).delete(tenant_id, confirm)
     print(f"данные компании удалены, теперь она — {report.ref}")
