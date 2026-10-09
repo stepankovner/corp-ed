@@ -407,15 +407,18 @@ async def cancel_invoice(
     а у нас он отменён — такой платёж уйдёт команде на разбор."""
     invoice.status = CANCELLED
     invoice.cancelled_at = billing.now()
-    if (
-        billing.provider is not None
-        and invoice.payment_method == PaymentMethod.INVOICE.value
-        and invoice.provider_ref
-    ):
-        try:
-            await billing.provider.delete_bill(invoice.provider_ref)
-        except PaymentProviderError as exc:
-            logger.warning("billing_bill_delete_failed", code=exc.code)
+    provider = billing.provider
+    ref = invoice.provider_ref
+    try:
+        if provider is not None and ref:
+            if invoice.payment_method == PaymentMethod.INVOICE.value:
+                await provider.delete_bill(ref)
+            elif invoice.kind == "subscription" and invoice.payment_url:
+                # Неоплаченная ссылка на подписку по карте: отменяем график,
+                # чтобы по старой ссылке не завелось автосписание.
+                await provider.cancel_card_subscription(ref)
+    except PaymentProviderError as exc:
+        logger.warning("billing_cancel_in_bank_failed", code=exc.code)
     AuditRepository(session).record(
         AuditAction.BILLING_INVOICE_CANCELLED,
         tenant_id=tenant_id,

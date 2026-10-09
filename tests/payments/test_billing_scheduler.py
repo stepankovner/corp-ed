@@ -380,3 +380,16 @@ async def test_scheduler_does_nothing_when_payments_are_off(world: World) -> Non
     report = await world.scheduler.run_due()
     assert (report.invoices, report.acts, report.overdue) == (0, 0, 0)
     assert len(await world.invoices()) == 1
+
+
+async def test_new_choice_cancels_the_unpaid_card_link(world: World) -> None:
+    first = await world.choose(BillingPeriod.MONTH, PaymentMethod.CARD)
+    second = await world.choose(BillingPeriod.QUARTER, PaymentMethod.INVOICE)
+
+    assert first.provider_ref is not None
+    assert world.bank.links[first.provider_ref]["status"] == "Cancelled"
+    assert [i.status for i in await world.invoices()] == [
+        "cancelled",
+        "awaiting_payment",
+    ]
+    assert second.amount_kopecks == 84_645_00
