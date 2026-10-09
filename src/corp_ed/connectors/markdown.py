@@ -20,12 +20,17 @@
 
 Лишнее удаление безопаснее пропуска: код с отступом в 4 пробела не
 распознаётся, и теги в нём вырезаются. Проход повторяется, пока текст
-меняется: «<scr<b></b>ipt>» не соберётся в живой тег. Сетевых загрузок
-нет — разбирается строка.
+меняется: «<scr<b></b>ipt>» не соберётся в живой тег. Каждый проход
+снимает один слой такой вложенности; если и после MAX_PASSES текст
+меняется, документ не принимается (ExtractionError «corrupted») — лучше
+пропустить его, чем сохранить недочищенным. Сетевых загрузок нет —
+разбирается строка.
 """
 
 import re
 from collections.abc import Callable
+
+from corp_ed.ingest.extract import ExtractionError
 
 # Элементы, чьё содержимое — не текст документа (как _DROP в html.py).
 _HIDDEN = frozenset(
@@ -104,14 +109,18 @@ MAX_PASSES = 8
 
 
 def strip_raw_html(markdown: str) -> str:
-    """Вырезать сырой HTML из Markdown, не трогая код и разметку."""
+    """Вырезать сырой HTML из Markdown, не трогая код и разметку.
+
+    ExtractionError("corrupted") — вложенность тегов глубже MAX_PASSES:
+    такого в настоящем документе не бывает.
+    """
     text = re.sub(r"\r\n?", "\n", markdown)
     for _ in range(MAX_PASSES):
         cleaned = _strip_once(text)
         if cleaned == text:
-            break
+            return text
         text = cleaned
-    return text
+    raise ExtractionError("corrupted")
 
 
 def _strip_once(text: str) -> str:

@@ -149,6 +149,18 @@ def test_split_tags_do_not_reassemble() -> None:
     )
 
 
+def test_deeply_split_tags_fail_closed() -> None:
+    # Каждый проход снимает один слой; глубже предела — документ не
+    # принимается, а не сохраняется недочищенным.
+    depth = 12
+    text = "Текст " + "<scr" * depth + "<b></b>" + "ipt>" * depth + "alert(1)"
+    with pytest.raises(ExtractionError, match="corrupted"):
+        markdown_as_is(text)
+    # Неглубокая вложенность дочищается как обычно.
+    shallow = "Текст " + "<scr" * 3 + "<b></b>" + "ipt>" * 3 + "конец"
+    assert markdown_as_is(shallow) == "Текст конец"
+
+
 def test_unclosed_hidden_tag_drops_only_the_tag() -> None:
     assert markdown_as_is("Тег <script> подключает код; дальше текст.") == (
         "Тег  подключает код; дальше текст."
