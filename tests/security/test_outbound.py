@@ -197,6 +197,43 @@ async def test_request_goes_to_pinned_ip_with_host_and_sni() -> None:
     assert request.extensions["sni_hostname"] == "portal.example.com"
 
 
+async def test_cookies_of_one_account_never_reach_the_next_request() -> None:
+    """Один клиент на процесс — общий для всех сотрудников и компаний.
+    Каждый запрос несёт только учётные данные своей учётки: cookie из
+    ответов не уходят ни в request, ни в download; свой заголовок адаптер
+    передать может."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200, headers={"set-cookie": "nc_session=ivan; Path=/; Secure"}, text="ok"
+        )
+
+    async with _client(handler) as raw:
+        client = OutboundClient(raw, resolver=resolver_for(PUBLIC))
+        await client.get("https://cloud.example.com/remote.php/dav/")
+        await client.request("PROPFIND", "https://cloud.example.com/remote.php/dav/")
+        await client.download("https://cloud.example.com/f.txt", max_bytes=100)
+        await client.get("https://cloud.example.com/api", headers={"Cookie": "own=1"})
+
+    assert [r.headers.get("cookie") for r in seen] == [None, None, None, "own=1"]
+
+
+async def test_outbound_http_client_keeps_no_cookies() -> None:
+    client = outbound.outbound_http_client(via_proxy=False)
+    try:
+        response = httpx.Response(
+            200,
+            headers={"set-cookie": "nc_session=ivan; Path=/"},
+            request=httpx.Request("GET", "https://93.184.216.34/"),
+        )
+        client.cookies.extract_cookies(response)
+        assert not client.cookies
+    finally:
+        await client.aclose()
+
+
 async def test_via_proxy_sends_the_name_and_still_checks_the_address() -> None:
     """За egress-прокси запрос уходит по имени (прокси отвергает CONNECT
     к IP), но имя всё равно резолвится и проверяется."""

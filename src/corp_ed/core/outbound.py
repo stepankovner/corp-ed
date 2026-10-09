@@ -16,7 +16,9 @@
   (DNS rebinding);
 - редиректы не следуются автоматически: каждый новый адрес проходит ту
   же проверку, не больше MAX_REDIRECTS; на другой хост не уходят ни
-  заголовки с учётными данными, ни параметры запроса, ни тело.
+  заголовки с учётными данными, ни параметры запроса, ни тело;
+- cookie из ответов не хранятся и не отправляются: клиент общий для всех
+  сотрудников и компаний, а сессия одного не должна пускать другого.
 
 Одна функция для всех адаптеров, с тестами на каждый класс адресов
 (tests/security/test_outbound.py). Вторая линия — egress-политика
@@ -37,6 +39,7 @@ import ipaddress
 import socket
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -280,7 +283,28 @@ def outbound_http_client(*, via_proxy: bool) -> httpx.AsyncClient:
     сертификат для коробочного портала в этом режиме не подхватится
     (DEPLOY.md). Клиент к моделям (LLM, эмбеддинги, реранкер) — отдельный.
     """
-    return httpx.AsyncClient(trust_env=via_proxy)
+    return httpx.AsyncClient(trust_env=via_proxy, cookies=_no_cookies())
+
+
+def _no_cookies() -> CookieJar:
+    """Банка cookie, которая ничего не хранит: клиент один на процесс,
+    общий для всех сотрудников и компаний (OutboundClient и так не
+    отправляет cookie из банки — это вторая линия и память)."""
+    return CookieJar(policy=DefaultCookiePolicy(allowed_domains=[]))
+
+
+def _without_jar_cookies(
+    request: httpx.Request, headers: dict[str, str]
+) -> httpx.Request:
+    """Cookie из прошлых ответов не уходят с запросом — только свой заголовок
+    Cookie, если адаптер передал его сам.
+
+    Клиент один на процесс, а запросы идут от учёток разных сотрудников:
+    каждый запрос несёт только свои учётные данные (системы вроде
+    Nextcloud выдают cookie сессии на вход по паролю приложения)."""
+    if not any(name.lower() == "cookie" for name in headers):
+        request.headers.pop("cookie", None)
+    return request
 
 
 class OutboundClient:
@@ -353,13 +377,16 @@ class OutboundClient:
                     k: v for k, v in kwargs.items() if k not in _PAYLOAD_ARGUMENTS
                 }
             send_url, route_headers, extensions = self._route(target)
-            request = self._client.build_request(
-                method,
-                send_url,
-                headers={**request_headers, **route_headers},
-                timeout=timeout,
-                extensions=extensions,
-                **kwargs,
+            request = _without_jar_cookies(
+                self._client.build_request(
+                    method,
+                    send_url,
+                    headers={**request_headers, **route_headers},
+                    timeout=timeout,
+                    extensions=extensions,
+                    **kwargs,
+                ),
+                request_headers,
             )
             response = await self._client.send(
                 request, stream=True, follow_redirects=False
@@ -442,12 +469,15 @@ class OutboundClient:
                     raise OutboundURLError("redirect_foreign")
                 request_headers = _without_credentials(request_headers)
             send_url, route_headers, extensions = self._route(target)
-            request = self._client.build_request(
-                "GET",
-                send_url,
-                headers={**request_headers, **route_headers},
-                timeout=timeout,
-                extensions=extensions,
+            request = _without_jar_cookies(
+                self._client.build_request(
+                    "GET",
+                    send_url,
+                    headers={**request_headers, **route_headers},
+                    timeout=timeout,
+                    extensions=extensions,
+                ),
+                request_headers,
             )
             response = await self._client.send(request, stream=True)
             try:
