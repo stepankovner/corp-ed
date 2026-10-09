@@ -21,6 +21,7 @@ from corp_ed.core.exceptions import SeatsLimitError
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.credits import billing_period
 from corp_ed.domain.models import MemberStatus, Tenant, User
+from corp_ed.repositories.credit_repository import CreditRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 
 ADMIN_SEATS_MESSAGE = (
@@ -83,14 +84,21 @@ async def seats_check(
     with tenant_scope(tenant.id):
         used = await QaLogRepository(session).credits_since(start)
         active = await count_active_users(session, tenant.id)
+        purchased = (await CreditRepository(session).balance(_now())).remaining
     pool = seats * billing.credits_per_seat
     notes: list[str] = []
-    stops = used >= pool
-    if stops:
+    spent = used >= pool
+    # Купленные кредиты (решение 09.10): пул кончился — вопросы идут из них.
+    stops = spent and purchased <= 0
+    if spent:
+        then = (
+            f"вопросы пойдут из купленных кредитов (осталось {purchased})."
+            if purchased > 0
+            else f"вопросы сотрудников остановятся до {end:%d.%m.%Y}."
+        )
         notes.append(
             f"за месяц потрачено {used} кредитов, новый пул — {pool} "
-            f"({seats} × {billing.credits_per_seat}): вопросы сотрудников "
-            f"остановятся до {end:%d.%m.%Y}."
+            f"({seats} × {billing.credits_per_seat}): {then}"
         )
     if active > seats:
         notes.append(
