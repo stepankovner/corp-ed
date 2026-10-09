@@ -78,6 +78,7 @@ async def test_harness_end_to_end(kronto: Kronto) -> None:
             "password": "Kh7-velvet-orbit-2026",
             "first_name": "Анна",
             "last_name": "Иванова",
+            "terms": True,
             "consent": True,
         },
     )

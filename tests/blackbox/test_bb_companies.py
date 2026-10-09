@@ -238,6 +238,7 @@ async def register(
         "last_name": last,
         "email": email,
         "password": PASSWORD,
+        "terms": True,
         "consent": True,
     }
     if invite is not None:

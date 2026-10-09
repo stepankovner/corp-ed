@@ -238,6 +238,7 @@ async def register(
             "last_name": last_name,
             "email": email,
             "password": password,
+            "terms": True,
             "consent": True,
         },
     )
@@ -697,6 +698,7 @@ async def test_register_rejects_invalid_input(
         "last_name": "Петрова",
         "email": email,
         "password": PASSWORD,
+        "terms": True,
         "consent": True,
     }
     for key, value in patch.items():

@@ -576,14 +576,18 @@ class RegistrationSettings(BaseSettings):
     """Самостоятельная регистрация (ТЗ §2, §11).
 
     enabled=false — регистрироваться можно только по приглашению: так
-    на боевом домене, пока нет юридических текстов от ИП. policy_version
-    — редакция политики обработки ПДн, на которую человек дал согласие
-    (пишется в учётку).
+    на боевом домене, пока юрист не проверил тексты. Галочки две
+    (ч. 1 ст. 9 152-ФЗ): policy_version — редакция текста согласия на
+    обработку персональных данных (/consent), terms_version — редакция
+    пользовательского соглашения (/terms); обе пишутся в учётку. Сменился
+    текст на сайте (frontend/src/site/legal/documents.ts) — новая версия
+    здесь и в .env.
     """
 
     enabled: bool = True
-    policy_url: str = "/privacy"
-    policy_version: str = Field(default="draft-2026-10-04", max_length=64)
+    policy_url: str = "/consent"
+    policy_version: str = Field(default="draft-2026-10-09", max_length=64)
+    terms_version: str = Field(default="terms-draft-2026-10-09", max_length=64)
 
     model_config = SettingsConfigDict(
         env_prefix="REGISTRATION_",
