@@ -234,9 +234,10 @@ describe("приглашение", () => {
     ).toBeInTheDocument();
     expect(previewBody).toEqual({ secret: INVITE });
     expect(screen.getByText(/Администратор компании подтвердит вступление/)).toBeInTheDocument();
-    // Секрет — не в адресе, а во вкладке.
+    // Секрет — не в адресе и не в хранилище браузера, а в памяти страницы.
     expect(router.state.location.hash).toBe("");
     expect(pendingInvite()).toBe(INVITE);
+    expect(sessionStorage.length).toBe(0);
 
     await user.click(screen.getByRole("link", { name: "Создать учётную запись" }));
     expect(await screen.findByText(/вернём вас к приглашению/)).toBeInTheDocument();
