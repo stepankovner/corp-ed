@@ -387,6 +387,7 @@ class OutboundClient:
         max_bytes: int,
         headers: dict[str, str] | None = None,
         timeout: float = 30.0,
+        same_host: bool = False,
     ) -> Downloaded:
         """GET с потоковым чтением тела не больше max_bytes.
 
@@ -395,13 +396,20 @@ class OutboundClient:
         документа, не займёт память воркера. Заголовок Content-Length
         проверяется до чтения — но ему нельзя верить, поэтому считаем и
         сами. Редиректы — как в request: каждый адрес проверяется.
+        same_host — на другой хост редирект не следуется вовсе
+        (OutboundURLError("redirect_foreign")): WebDAV-сервер отдаёт файл
+        сам, уход на чужой адрес — не часть протокола.
         timeout — на каждое чтение; на весь файл, с редиректами, —
         download_deadline: дольше — OutboundDeadlineError.
         """
         try:
             async with asyncio.timeout(self._download_deadline):
                 return await self._download(
-                    url, max_bytes=max_bytes, headers=headers, timeout=timeout
+                    url,
+                    max_bytes=max_bytes,
+                    headers=headers,
+                    timeout=timeout,
+                    same_host=same_host,
                 )
         except TimeoutError as exc:
             raise OutboundDeadlineError("download deadline exceeded") from exc
@@ -413,6 +421,7 @@ class OutboundClient:
         max_bytes: int,
         headers: dict[str, str] | None,
         timeout: float,
+        same_host: bool,
     ) -> Downloaded:
         current = url
         request_headers = dict(headers or {})
@@ -421,6 +430,8 @@ class OutboundClient:
             target = await validate_outbound_url(current, resolver=self._resolver)
             origin = origin or target.host
             if target.host != origin:
+                if same_host:
+                    raise OutboundURLError("redirect_foreign")
                 request_headers = _without_credentials(request_headers)
             send_url, route_headers, extensions = self._route(target)
             request = self._client.build_request(

@@ -459,6 +459,35 @@ async def test_download_follows_checked_redirects() -> None:
     assert hosts == ["portal.example.com", "cdn.example.com"]
 
 
+async def test_download_can_stay_on_the_same_host() -> None:
+    """same_host: файл с WebDAV-сервера не уходит по редиректу на другой
+    хост вовсе — ни с учётными данными, ни без них."""
+    hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hosts.append(request.headers["host"])
+        if request.url.path == "/old":
+            return httpx.Response(302, headers={"location": "/new"})
+        if request.url.path == "/new":
+            return httpx.Response(200, content=b"data")
+        return httpx.Response(302, headers={"location": "https://cdn.example.com/f"})
+
+    client = OutboundClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        resolver=resolver_for(PUBLIC),
+    )
+    downloaded = await client.download(
+        "https://dav.example.com/old", max_bytes=100, same_host=True
+    )
+    assert downloaded.content == b"data"
+    with pytest.raises(OutboundURLError) as exc:
+        await client.download(
+            "https://dav.example.com/away", max_bytes=100, same_host=True
+        )
+    assert exc.value.code == "redirect_foreign"
+    assert hosts == ["dav.example.com"] * 3
+
+
 class _Stream(httpx.AsyncByteStream):
     def __init__(self, chunks: AsyncIterator[bytes]) -> None:
         self._chunks = chunks

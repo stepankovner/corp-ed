@@ -174,3 +174,34 @@ async def test_preview_module_needs_the_flag(
 
     assert code == 2
     assert "неизвестные модули knowledge_base_v2" in capsys.readouterr().err
+
+
+async def test_check_walks_nextcloud_with_app_password(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Живая проверка WebDAV-видов — тем же CLI: вид в preview, но
+    connector-check видит его без флага; запись — ответы PROPFIND."""
+    from tests.connectors.fake_webdav import IVAN_LOGIN, IVAN_PASSWORD, sample_nextcloud
+
+    server = sample_nextcloud(host=HOST)
+    record = tmp_path / "dav"
+    namespace = argparse.Namespace(
+        kind="nextcloud",
+        config=[f"server=https://{HOST}/", "folders=Проекты"],
+        credential=[f"login={IVAN_LOGIN}", f"password={IVAN_PASSWORD}"],
+        module=None,
+        limit=50,
+        fetch=1,
+        record=str(record),
+        fast=True,
+    )
+    code = await cli._connector_check(namespace, http=server.client())
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "check: ok" in out
+    assert "«План 100%.md»" in out and "«Старый.md»" in out
+    assert "Заметка" not in out
+    assert ": md," in out
+    dumped = "\n".join(f.read_text(encoding="utf-8") for f in record.glob("*.json"))
+    assert "PROPFIND" in dumped
+    assert IVAN_PASSWORD not in dumped
