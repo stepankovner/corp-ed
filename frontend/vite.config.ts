@@ -80,6 +80,9 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // Под нагрузкой CI (файлы параллельно) длинный сценарий страницы не
+    // укладывается в 5 с по умолчанию; ожидания findBy — 5 с (setup.ts).
+    testTimeout: 20_000,
     // Стили в тестах не нужны; ?raw — текст файла для проверок токенов.
     css: { include: [/\.css\?raw$/], modules: { classNameStrategy: "non-scoped" } },
     include: ["src/**/*.test.{ts,tsx}"],
