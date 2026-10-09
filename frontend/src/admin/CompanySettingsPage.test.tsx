@@ -20,9 +20,11 @@ function companySettings(overrides: Partial<Settings> = {}): Settings {
     mfa_policy: "any",
     allow_remember_device: true,
     email_domains: ["meridian-stroy.ru"],
+    chat_retention_months: 12,
     tariff: "base",
     seats: 30,
     members: 12,
+    daily_credits_per_member: null,
     ...overrides,
   };
 }
@@ -128,6 +130,44 @@ describe("настройки компании", () => {
     ]);
   });
 
+  it("дневной лимит кредитов: по умолчанию выключен, задаётся и снимается", async () => {
+    const user = userEvent.setup();
+    shell();
+    let settings = companySettings();
+    const bodies: Partial<Settings>[] = [];
+    server.use(
+      http.get("/api/v1/company", () => HttpResponse.json(settings)),
+      http.patch("/api/v1/company", async ({ request }) => {
+        const body = (await request.json()) as Partial<Settings>;
+        bodies.push(body);
+        settings = { ...settings, ...body };
+        return HttpResponse.json(settings);
+      }),
+    );
+    renderApp("/admin/settings");
+
+    const section = await screen.findByRole("region", { name: "Личный дневной лимит" });
+    expect(section).toHaveTextContent("Сейчас лимита нет");
+    const field = within(section).getByLabelText(/Кредитов в день на сотрудника/);
+    expect(field).toHaveValue(null);
+    await user.type(field, "0");
+    await user.click(within(section).getByRole("button", { name: "Сохранить" }));
+    expect(within(section).getByText(/целое число от 1/)).toBeInTheDocument();
+    expect(bodies).toEqual([]);
+
+    await user.clear(field);
+    await user.type(field, "15");
+    await user.click(within(section).getByRole("button", { name: "Сохранить" }));
+    expect(await screen.findByText("Дневной лимит сохранён")).toBeInTheDocument();
+    // После сохранения раздел начинается с сохранённого значения.
+    const saved = screen.getByRole("region", { name: "Личный дневной лимит" });
+    expect(saved).toHaveTextContent("15 кредитов в день");
+
+    await user.click(within(saved).getByRole("button", { name: "Снять лимит" }));
+    expect(await screen.findByText("Дневной лимит снят")).toBeInTheDocument();
+    expect(bodies).toEqual([{ daily_credits_per_member: 15 }, { daily_credits_per_member: null }]);
+  });
+
   it("домены: явную опечатку ловит сразу, ошибку сервера показывает под полем", async () => {
     const user = userEvent.setup();
     shell();
@@ -158,6 +198,57 @@ describe("настройки компании", () => {
       expect(field).toHaveAccessibleDescription("Не похоже на домен почты: acme-.ru"),
     );
     expect(sent).toBe(1);
+  });
+
+  it("срок хранения диалогов: длиннее — сразу, короче — после подтверждения", async () => {
+    const user = userEvent.setup();
+    shell();
+    let settings = companySettings();
+    const bodies: Partial<Settings>[] = [];
+    server.use(
+      http.get("/api/v1/company", () => HttpResponse.json(settings)),
+      http.patch("/api/v1/company", async ({ request }) => {
+        const body = (await request.json()) as Partial<Settings>;
+        bodies.push(body);
+        settings = { ...settings, ...body };
+        return HttpResponse.json(settings);
+      }),
+    );
+    renderApp("/admin/settings");
+
+    const section = await screen.findByRole("region", { name: "Хранение диалогов" });
+    const select = within(section).getByLabelText("Хранить диалоги");
+    expect(select).toHaveValue("12");
+    expect(select).toHaveAccessibleDescription(
+      /удаляются целиком, вместе с вложениями и общими ссылками/,
+    );
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["1 месяц", "3 месяца", "6 месяцев", "12 месяцев", "24 месяца", "36 месяцев"]);
+
+    await user.selectOptions(select, "24");
+    expect(await screen.findByText("Диалоги хранятся 24 месяца")).toBeInTheDocument();
+    expect(bodies).toEqual([{ chat_retention_months: 24 }]);
+
+    // Короче — часть диалогов удалится насовсем: сначала спрашиваем.
+    await user.selectOptions(select, "3");
+    const ask = screen.getByRole("dialog", { name: "Сократить срок хранения диалогов?" });
+    expect(ask).toHaveAccessibleDescription(/не было вопросов дольше 3 месяцев/);
+    await user.click(within(ask).getByRole("button", { name: "Отмена" }));
+    expect(select).toHaveValue("24");
+    expect(bodies).toHaveLength(1);
+
+    await user.selectOptions(select, "1");
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Сократить срок хранения диалогов?" })).getByRole(
+        "button",
+        { name: "Сократить" },
+      ),
+    );
+    await waitFor(() => expect(select).toHaveValue("1"));
+    expect(bodies).toEqual([{ chat_retention_months: 24 }, { chat_retention_months: 1 }]);
   });
 
   it("логотип: загрузка, отказ сервера, проверка размера и удаление", async () => {

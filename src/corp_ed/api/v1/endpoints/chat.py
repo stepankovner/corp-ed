@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -41,6 +41,9 @@ from corp_ed.api.v1.schemas.chat import (
     MessageResponse,
     SelectMessageRequest,
     SharedConversationResponse,
+    SharedLinkListResponse,
+    SharedLinkResponse,
+    SharedOpenRequest,
     ShareResponse,
     StreamDelta,
     StreamDone,
@@ -51,7 +54,7 @@ from corp_ed.api.v1.schemas.chat import (
     StreamStart,
 )
 from corp_ed.api.v1.schemas.faq import AnswerDiagnosticsResponse
-from corp_ed.domain.models import User
+from corp_ed.domain.models import Conversation, User
 from corp_ed.services.chat_generation import (
     ChatEvent,
     ChatGenerator,
@@ -138,24 +141,45 @@ async def start_conversation(
     return _stream(turn, member, generator, runner)
 
 
-@router.get(
-    "/shared/{token}",
+@router.post(
+    "/shared/open",
     response_model=SharedConversationResponse,
     dependencies=[Depends(limit_by_user(SHARED_VIEW_PER_USER))],
 )
 async def shared_conversation(
-    token: Annotated[str, Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
-    chat: Chat,
-    member: Member,
+    data: SharedOpenRequest, chat: Chat, member: Member
 ) -> SharedConversationResponse:
-    """Диалог, которым поделился коллега по компании (только чтение)."""
-    view = await chat.shared(member, token)
+    """Диалог, которым поделился коллега по компании (только чтение).
+
+    Токен — в теле: путь запроса пишут журналы прокси и сервера. Ссылка
+    отозвана, истекла или неизвестна — одинаковый 404."""
+    view = await chat.shared(member, data.token)
     return SharedConversationResponse(
         title=view.conversation.title,
         owner_name=view.owner_name,
         shared_at=view.conversation.shared_at or view.conversation.updated_at,
         messages=[MessageResponse.of(m, with_feedback=False) for m in view.messages],
     )
+
+
+@router.get("/shares", response_model=SharedLinkListResponse)
+async def list_shares(chat: Chat, member: Member) -> SharedLinkListResponse:
+    """«Мои общие ссылки»: свои диалоги со ссылкой, и с истёкшей тоже —
+    продлить (POST …/share/renew) или отключить (DELETE …/share)."""
+    items = []
+    for conversation in await chat.shares(member):
+        share = ShareResponse.of(conversation)
+        if share is not None:
+            items.append(
+                SharedLinkResponse(
+                    id=conversation.id,
+                    title=conversation.title,
+                    shared_at=share.shared_at,
+                    expires_at=share.expires_at,
+                    expired=share.expired,
+                )
+            )
+    return SharedLinkListResponse(items=items)
 
 
 @router.get("/{conversation_id}", response_model=ConversationResponse)
@@ -299,13 +323,23 @@ async def select_version(
     dependencies=[Depends(limit_by_user(CHAT_EDIT_PER_USER))],
 )
 async def share(conversation_id: UUID, chat: Chat, member: Member) -> ShareResponse:
-    """Ссылка для коллег по компании на то, что видно сейчас. Повторно —
-    обновить снимок, ссылка та же."""
-    conversation = await chat.share(member, conversation_id)
-    return ShareResponse(
-        token=conversation.share_token or "",
-        shared_at=conversation.shared_at or conversation.updated_at,
-    )
+    """Ссылка для коллег по компании на то, что видно сейчас, на
+    CHAT_SHARE_TTL_DAYS дней. Повторно — обновить снимок и срок, ссылка та
+    же."""
+    return _share(await chat.share(member, conversation_id))
+
+
+@router.post(
+    "/{conversation_id}/share/renew",
+    response_model=ShareResponse,
+    dependencies=[Depends(limit_by_user(CHAT_EDIT_PER_USER))],
+)
+async def renew_share(
+    conversation_id: UUID, chat: Chat, member: Member
+) -> ShareResponse:
+    """Продлить ссылку, и истёкшую: срок — от сегодня, токен и снимок
+    прежние. Ссылки нет — 409."""
+    return _share(await chat.renew_share(member, conversation_id))
 
 
 @router.delete("/{conversation_id}/share", status_code=status.HTTP_204_NO_CONTENT)
@@ -321,14 +355,15 @@ def _conversation(view: ConversationView) -> ConversationResponse:
         **summary.model_dump(),
         current_message_id=conversation.current_message_id,
         messages=[MessageResponse.of(m) for m in view.messages],
-        share=(
-            ShareResponse(
-                token=conversation.share_token, shared_at=conversation.shared_at
-            )
-            if conversation.share_token and conversation.shared_at
-            else None
-        ),
+        share=ShareResponse.of(conversation),
     )
+
+
+def _share(conversation: Conversation) -> ShareResponse:
+    share = ShareResponse.of(conversation)
+    if share is None:  # pragma: no cover — сервис вернул диалог со ссылкой
+        raise RuntimeError("conversation has no share link")
+    return share
 
 
 def _stream(

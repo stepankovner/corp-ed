@@ -12,13 +12,18 @@ NotificationKindName = Literal[
     "connector_stopped",
     "credits_warning",
     "credits_exhausted",
+    "credits_added",
+    "credits_topup_requested",
     "join_request",
     "department_request",
     "department_confirmed",
     "department_rejected",
     "weekly_digest",
 ]
-"""department_request — администраторам: сотрудник выбрал отдел, которому
+"""credits_added — администраторам: команда зачислила купленные кредиты или
+начислила бонус; credits_topup_requested — сотрудник упёрся в лимит и
+просит пополнить (одно на эпизод исчерпания). department_request —
+администраторам: сотрудник выбрал отдел, которому
 открыта закрытая папка, и ждёт подтверждения; department_confirmed и
 department_rejected — сотруднику: решение по его отделу (ТЗ §7)."""
 

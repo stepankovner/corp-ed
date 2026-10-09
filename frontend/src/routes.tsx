@@ -79,6 +79,9 @@ const SuggestionsPage = lazy(() =>
   import("./admin/SuggestionsPage").then((m) => ({ default: m.SuggestionsPage })),
 );
 const SharedPage = lazy(() => import("./chat/SharedPage").then((m) => ({ default: m.SharedPage })));
+const LegacySharedRedirect = lazy(() =>
+  import("./chat/SharedPage").then((m) => ({ default: m.LegacySharedRedirect })),
+);
 // Наша панель (ТЗ §9): вкладки — вложенные маршруты в staff/.
 const StaffPage = lazy(() => import("./staff/StaffPage").then((m) => ({ default: m.StaffPage })));
 const RequestsTab = lazy(() =>
@@ -92,6 +95,9 @@ const PeopleTab = lazy(() => import("./staff/PeopleTab").then((m) => ({ default:
 const LeadsTab = lazy(() => import("./staff/LeadsTab").then((m) => ({ default: m.LeadsTab })));
 const SupportTab = lazy(() =>
   import("./staff/SupportTab").then((m) => ({ default: m.SupportTab })),
+);
+const CreditsTab = lazy(() =>
+  import("./staff/CreditsTab").then((m) => ({ default: m.CreditsTab })),
 );
 // Настройки учётки (ТЗ §4): вкладки — вложенные маршруты в settings/.
 const SettingsPage = lazy(() =>
@@ -163,6 +169,7 @@ export const routes: RouteObject[] = [
                   { index: true, element: <Navigate to="/staff/requests" replace /> },
                   { path: "requests", element: lazyPage(<RequestsTab />) },
                   { path: "companies", element: lazyPage(<CompaniesTab />) },
+                  { path: "credits", element: lazyPage(<CreditsTab />) },
                   { path: "spend", element: lazyPage(<SpendTab />) },
                   { path: "people", element: lazyPage(<PeopleTab />) },
                   { path: "leads", element: lazyPage(<LeadsTab />) },
@@ -179,7 +186,10 @@ export const routes: RouteObject[] = [
               { path: "/sources", element: <SourcesRedirect /> },
               // Диалоги на сервере (ТЗ §6): свой — по id, коллеги — по ссылке.
               { path: "/c/:conversationId", element: <ChatPage /> },
-              { path: "/shared/:token", element: lazyPage(<SharedPage />) },
+              // Токен — во фрагменте (/shared#<токен>); старый вид с токеном
+              // в пути переводим на новый.
+              { path: "/shared", element: lazyPage(<SharedPage />) },
+              { path: "/shared/:token", element: lazyPage(<LegacySharedRedirect />) },
               { path: "/people", element: lazyPage(<PeoplePage />) },
               {
                 path: "/admin",

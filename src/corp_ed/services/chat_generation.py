@@ -28,7 +28,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.core.exceptions import CreditsExhaustedError
+from corp_ed.core.exceptions import CreditsExhaustedError, DailyLimitExhaustedError
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import ChatMessage, User, UserRole
 from corp_ed.domain.tokens import count_tokens
@@ -92,8 +92,12 @@ ChatEvent = StageEvent | OriginEvent | DeltaEvent | ResetEvent | DoneEvent | Err
 
 ERROR_MESSAGES = {
     "credits_exhausted": (
-        "Лимит обращений компании на этот месяц исчерпан. "
-        "Обратитесь к администратору вашей компании"
+        "Кредиты компании на этот месяц закончились. "
+        "Попросите администратора пополнить их"
+    ),
+    "daily_limit_exhausted": (
+        "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. "
+        "Лимит задаёт администратор компании"
     ),
     "llm_unavailable": "Сервис ответов временно недоступен. Попробуйте ещё раз",
     # Очередь к квоте модели переполнена (docs/LOAD-TEST.md): сервис жив,
@@ -372,6 +376,8 @@ class ChatGenerator:
                 )
         except CreditsExhaustedError:
             code = "credits_exhausted"
+        except DailyLimitExhaustedError:
+            code = "daily_limit_exhausted"
         except ThrottleBusyError as exc:
             logger.warning("chat_answer_busy", error=str(exc))
             code = "busy"

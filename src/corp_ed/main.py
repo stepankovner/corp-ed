@@ -24,6 +24,7 @@ from corp_ed.api.v1.endpoints import (
     chat,
     company,
     connectors,
+    credits,
     demo,
     departments,
     faq,
@@ -55,6 +56,7 @@ from corp_ed.core.exception_handlers import (
     conflict_error_handler,
     connector_limit_handler,
     credits_exhausted_handler,
+    daily_limit_handler,
     demo_unavailable_handler,
     domain_fallback_handler,
     duplicate_material_handler,
@@ -76,6 +78,7 @@ from corp_ed.core.exceptions import (
     ConnectorLimitError,
     ConnectorNotInTariffError,
     CreditsExhaustedError,
+    DailyLimitExhaustedError,
     DemoUnavailableError,
     DomainError,
     DuplicateMaterialError,
@@ -100,6 +103,7 @@ from corp_ed.core.middleware import (
     RequestIDMiddleware,
     SecurityHeadersMiddleware,
 )
+from corp_ed.core.outbound import outbound_http_client
 from corp_ed.core.rate_limit import (
     InMemoryRateLimiter,
     RateLimitedError,
@@ -185,9 +189,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         RedisStopSignals(redis) if redis is not None else InMemoryStopSignals()
     )
 
+    # Модели (LLM, эмбеддинги, реранкер) — свой клиент, как и раньше.
+    # Наружу — системы клиентов и уведомления — другой: прокси из
+    # окружения он берёт только с CONNECTOR_OUTBOUND_VIA_PROXY.
     app.state.http_client = httpx.AsyncClient()
+    app.state.outbound_http_client = outbound_http_client(
+        via_proxy=get_connector_settings().outbound_via_proxy
+    )
     app.state.team_notifier = build_team_notifier(
-        app.state.http_client, get_team_notify_settings()
+        app.state.outbound_http_client, get_team_notify_settings()
     )
     try:
         yield
@@ -196,6 +206,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.chat_runner.shutdown()
         await drain_team_notifier(app.state.team_notifier)
         await app.state.http_client.aclose()
+        await app.state.outbound_http_client.aclose()
         if redis is not None:
             await redis.aclose()
 
@@ -289,6 +300,7 @@ app.include_router(support.router, prefix="/api/v1")
 app.include_router(demo.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
+app.include_router(credits.router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
 app.include_router(gaps.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
@@ -345,6 +357,7 @@ app.add_exception_handler(ServiceUnavailableError, service_unavailable_handler)
 app.add_exception_handler(UnacceptableFileError, unacceptable_file_handler)
 app.add_exception_handler(DuplicateMaterialError, duplicate_material_handler)
 app.add_exception_handler(CreditsExhaustedError, credits_exhausted_handler)
+app.add_exception_handler(DailyLimitExhaustedError, daily_limit_handler)
 app.add_exception_handler(DemoUnavailableError, demo_unavailable_handler)
 app.add_exception_handler(ConnectorLimitError, connector_limit_handler)
 app.add_exception_handler(TariffConnectorLimitError, connector_limit_handler)

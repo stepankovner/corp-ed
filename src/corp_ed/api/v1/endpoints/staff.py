@@ -14,10 +14,12 @@ from corp_ed.api.v1.dependencies import (
     get_company_request_service,
     get_lead_service,
     get_staff_account,
+    get_staff_credit_service,
     get_staff_service,
     get_support_service,
     get_tenant_service,
 )
+from corp_ed.api.v1.endpoints.credits import order_response
 from corp_ed.api.v1.rate_limits import (
     STAFF_EDIT_PER_ACCOUNT,
     STAFF_RESET_PER_ACCOUNT,
@@ -44,6 +46,11 @@ from corp_ed.api.v1.schemas.staff import (
     StaffPersonResponse,
     StaffRequestResponse,
 )
+from corp_ed.api.v1.schemas.usage import (
+    StaffCreditGrantRequest,
+    StaffCreditGrantResponse,
+    StaffCreditOrderResponse,
+)
 from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import CodedConflictError
 from corp_ed.core.rate_limit import RateLimiter
@@ -53,6 +60,7 @@ from corp_ed.domain.models import Account, CompanyRequest
 from corp_ed.domain.tariffs import Tariff
 from corp_ed.services.account_service import AccountService
 from corp_ed.services.company_request_service import CompanyRequestService
+from corp_ed.services.credit_order_service import StaffCreditService, StaffOrder
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.seats import seats_check
 from corp_ed.services.staff_service import CompanyRow, Person, StaffService
@@ -63,6 +71,7 @@ router = APIRouter(prefix="/staff", tags=["staff"])
 
 Staff = Annotated[Account, Depends(get_staff_account)]
 Service = Annotated[StaffService, Depends(get_staff_service)]
+Credits = Annotated[StaffCreditService, Depends(get_staff_credit_service)]
 Limiter = Annotated[RateLimiter, Depends(get_rate_limiter)]
 
 
@@ -81,6 +90,7 @@ def _company(row: CompanyRow) -> StaffCompanyResponse:
         admins=row.admins,
         credits_used=row.credits_used,
         pool=row.pool,
+        purchased_credits=row.purchased,
         questions_month=row.questions_month,
         last_question_at=row.last_question_at,
         documents=row.documents,
@@ -257,6 +267,86 @@ async def update_company(
     if body.is_active is not None and body.is_active != row.tenant.is_active:
         await tenants.set_active(code, active=body.is_active)
     return _company(await service.company(tenant_id))
+
+
+# --- кредиты: заказы пакетов и начисления -----------------------------------------
+
+
+def _order(item: StaffOrder) -> StaffCreditOrderResponse:
+    order = item.order
+    return StaffCreditOrderResponse(
+        **order_response(order).model_dump(),
+        tenant_id=item.tenant.id,
+        company_name=item.tenant.name,
+        company_code=item.tenant.company_code,
+    )
+
+
+@router.get("/credit-orders", response_model=list[StaffCreditOrderResponse])
+async def list_credit_orders(
+    credits: Credits,
+    staff: Staff,
+    state: Annotated[
+        str, Query(alias="status", pattern="^(awaiting_payment|all)$")
+    ] = "awaiting_payment",
+) -> list[StaffCreditOrderResponse]:
+    """Заказы пакетов всех компаний: по умолчанию — ждут оплаты."""
+    items = await credits.orders(None if state == "all" else state)
+    return [_order(item) for item in items]
+
+
+@router.post(
+    "/companies/{tenant_id}/credit-orders/{order_id}/paid",
+    response_model=StaffCreditOrderResponse,
+)
+async def mark_credit_order_paid(
+    tenant_id: UUID,
+    order_id: UUID,
+    credits: Credits,
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffCreditOrderResponse:
+    """Оплата по счёту пришла: кредиты зачисляются на 12 месяцев,
+    администраторам компании — «Кредиты зачислены»."""
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    return _order(await credits.mark_paid(tenant_id, order_id))
+
+
+@router.post(
+    "/companies/{tenant_id}/credit-orders/{order_id}/cancel",
+    response_model=StaffCreditOrderResponse,
+)
+async def cancel_credit_order(
+    tenant_id: UUID,
+    order_id: UUID,
+    credits: Credits,
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffCreditOrderResponse:
+    """Отменить неоплаченный заказ."""
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    return _order(await credits.cancel(tenant_id, order_id))
+
+
+@router.post(
+    "/companies/{tenant_id}/credits",
+    response_model=StaffCreditGrantResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def grant_credits(
+    tenant_id: UUID,
+    body: StaffCreditGrantRequest,
+    credits: Credits,
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffCreditGrantResponse:
+    """Начислить кредиты без заказа (бонус, компенсация): на 12 месяцев,
+    комментарий — в журнал действий компании."""
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    grant = await credits.grant(tenant_id, body.credits, body.comment.strip())
+    return StaffCreditGrantResponse(
+        id=grant.id, credits=grant.credits, expires_at=grant.expires_at
+    )
 
 
 # --- расход --------------------------------------------------------------------

@@ -373,6 +373,11 @@ async def assign_department(
     return response.json()
 
 
+async def open_shared(browser: httpx.AsyncClient, token: str) -> httpx.Response:
+    """Общая ссылка: токен — в теле запроса, не в адресе (схема)."""
+    return await browser.post(f"{API}/conversations/shared/open", json={"token": token})
+
+
 async def my_company(browser: httpx.AsyncClient) -> dict:
     response = await browser.get(f"{API}/auth/me")
     assert response.status_code == 200, response.text
@@ -1473,10 +1478,12 @@ async def test_shared_dialog_hides_closed_folder_from_unconfirmed(
     token = response.json()["token"]
 
     await pick_department(anna, world.dept_a)
-    response = await anna.browser.get(f"{API}/conversations/shared/{token}")
+    response = await open_shared(anna.browser, token)
 
     if response.status_code == 200:
         assert world.secret_a.code not in response.text, response.text
+        # Закрытый документ по ссылке не назван (решение владельца 09.10).
+        assert world.secret_a.material_id not in response.text, response.text
         for message in response.json()["messages"]:
             for source in message["sources"]:
                 if source.get("material_id") == world.secret_a.material_id:
@@ -1487,7 +1494,7 @@ async def test_shared_dialog_hides_closed_folder_from_unconfirmed(
 
     # Контроль: после подтверждения тот же диалог показывает ответ.
     assert (await confirm(company.admin, anna)).status_code == 200
-    response = await anna.browser.get(f"{API}/conversations/shared/{token}")
+    response = await open_shared(anna.browser, token)
     assert response.status_code == 200, response.text
     assert world.secret_a.code in response.text
 

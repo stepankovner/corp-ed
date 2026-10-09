@@ -64,7 +64,7 @@ from corp_ed.domain.models import (
     Tenant,
     User,
 )
-from corp_ed.domain.tariffs import TariffPlan, connector_limit, plan_for
+from corp_ed.domain.tariffs import TariffPlan, plan_for, system_fits
 from corp_ed.domain.types import (
     ConnectorMode,
     ConnectorStatus,
@@ -89,15 +89,47 @@ CHECK_TIMEOUT = 20.0
 """Проверка учётных данных — один запрос к системе клиента; дольше —
 источник недоступен, а не «подумаем ещё»."""
 RUNS_LIMIT = 50
+REVOKE_TIMEOUT = 20.0
+"""Отзыв токенов у провайдера после удаления — best-effort: подключение
+уже удалено, дольше этого ответ админу и сотруднику не ждёт."""
+REVOKE_CONCURRENCY = 5
 OAUTH_STATE_ONCE = "connector-oauth-state"
 """Ключ лимитера для одноразовости state: первый вызов с этим jti
 проходит, второй — нет (RISKS №33)."""
 
 
 @dataclass(frozen=True)
+class Allowance:
+    """Тариф компании и что уже подключено."""
+
+    plan: TariffPlan
+    connector_limit: int
+    """Технический потолок подключений (не тарифный)."""
+    connectors: int
+    systems: frozenset[str]
+    """Подключённые системы (виды коннекторов)."""
+
+    def limit_reached(self, kind: str) -> bool:
+        """Новая система kind не влезет в тариф."""
+        return not system_fits(self.plan, self.systems, kind)
+
+
+@dataclass(frozen=True)
 class CheckResult:
     ok: bool
     error_code: str | None = None
+
+
+@dataclass(frozen=True)
+class _Revocation:
+    """Что нужно для отзыва токенов, собранное до удаления: после него
+    ни подключения, ни грантов в базе уже нет. Только плоские значения."""
+
+    connector_id: UUID
+    kind: str
+    config: dict[str, str]
+    app_credentials: Mapping[str, str]
+    tokens: list[Mapping[str, str]]
 
 
 @dataclass(frozen=True)
@@ -177,32 +209,32 @@ class ConnectorService:
 
     # --- настройка (ADMIN) ----------------------------------------------------
 
-    async def allowance(self) -> tuple[Tenant, TariffPlan, int, int]:
-        """Компания, её тариф, сколько подключений можно и сколько есть."""
+    async def allowance(self) -> Allowance:
+        """Тариф компании, подключённые системы и технический потолок."""
         tenant = await self.session.get(Tenant, require_tenant())
         if tenant is None:
             raise NotFoundError("Компания не найдена")
-        plan = plan_for(tenant.tariff)
-        technical = tenant.connector_limit or self.settings.max_per_tenant
-        return (
-            tenant,
-            plan,
-            connector_limit(plan, technical),
-            await self.connectors.count(),
+        return Allowance(
+            plan=plan_for(tenant.tariff),
+            connector_limit=tenant.connector_limit or self.settings.max_per_tenant,
+            connectors=await self.connectors.count(),
+            systems=frozenset(await self.connectors.kinds()),
         )
 
     async def _check_tariff(self, spec: KindSpec) -> None:
         """Тариф (решение 30.09): небазовые системы — только в
-        «Корпоративном»; число подключений — по тарифу, но не больше
-        технического потолка."""
-        tenant, plan, limit, used = await self.allowance()
+        «Корпоративном»; число разных систем — по тарифу (решение 09.10);
+        число подключений — до технического потолка в любом тарифе."""
+        allowance = await self.allowance()
+        plan = allowance.plan
         if not spec.base and not plan.non_base_connectors:
             raise ConnectorNotInTariffError(plan.title)
-        if used < limit:
-            return
-        if plan.max_connectors is not None and plan.max_connectors <= limit:
-            raise TariffConnectorLimitError(plan.title, plan.max_connectors)
-        raise ConnectorLimitError(limit)
+        if plan.max_systems is not None and not system_fits(
+            plan, allowance.systems, spec.kind
+        ):
+            raise TariffConnectorLimitError(plan.title, plan.max_systems)
+        if allowance.connectors >= allowance.connector_limit:
+            raise ConnectorLimitError(allowance.connector_limit)
 
     async def create(
         self,
@@ -292,8 +324,17 @@ class ConnectorService:
 
     async def delete(self, actor: User, connector_id: UUID) -> None:
         """Удалить подключение вместе с его документами, грантами и
-        журналом: ответы по документам источника прекращаются сразу."""
-        connector = await self.get(connector_id)
+        журналом: ответы по документам источника прекращаются сразу.
+
+        Токены сотрудников (OAuth, режим per_user) затем отзываются у
+        провайдера, где это возможно, — best-effort: удаление уже
+        состоялось, ошибка отзыва только пишется в журнал."""
+        connector = await self.connectors.get_with_credentials(connector_id)
+        if connector is None:
+            raise NotFoundError("Подключение не найдено")
+        revocation = self._revocation(
+            connector, await self.grants.list_with_credentials(connector.id)
+        )
         self._record(
             AuditAction.CONNECTOR_DELETED,
             actor,
@@ -303,6 +344,7 @@ class ConnectorService:
         await self.connectors.delete(connector)
         await self.session.commit()
         logger.info("connector_deleted", connector_id=str(connector_id))
+        await self._revoke(revocation)
 
     async def set_credentials(
         self, actor: User, connector_id: UUID, credentials: Mapping[str, str]
@@ -694,15 +736,22 @@ class ConnectorService:
         return grant
 
     async def revoke_my_credentials(self, user: User, connector_id: UUID) -> None:
-        connector = await self.get(connector_id)
+        """Отключить свой источник: грант удаляется, токен отзывается у
+        провайдера (best-effort, как при удалении подключения)."""
+        connector = await self.connectors.get_with_credentials(connector_id)
+        if connector is None:
+            raise NotFoundError("Подключение не найдено")
         grant = await self.grants.get(connector.id, user.id)
         if grant is None:
             raise NotFoundError("Вы не подключали этот источник")
+        token = await self.grants.credentials_of(grant.id)
+        revocation = self._revocation(connector, [token] if token else [])
         await self.grants.delete(grant)
         # Права были выведены из его листинга — без гранта их нет.
         await self.materials.revoke_all_access(connector.id, user.id)
         self._record(AuditAction.CONNECTOR_GRANT_REVOKED, user, connector)
         await self.session.commit()
+        await self._revoke(revocation)
 
     # --- вспомогательное ------------------------------------------------------
 
@@ -713,6 +762,101 @@ class ConnectorService:
             raise InvalidConnectorConfigError(
                 "kind_unknown", f"Неизвестный вид подключения: {kind}"
             ) from exc
+
+    def _revocation(
+        self, connector: Connector, grant_tokens: Sequence[str]
+    ) -> _Revocation | None:
+        """Отзывать есть что — только у OAuth режима per_user: в режиме
+        organization учётные данные — вебхук или токен служебной учётки,
+        их выпускал и отзывает админ системы клиента."""
+        if connector.mode != ConnectorMode.PER_USER.value or not grant_tokens:
+            return None
+        try:
+            spec = self.registry.spec(connector.kind)
+        except UnknownKindError:
+            return None
+        if not spec.oauth or connector.credentials is None:
+            return None
+        try:
+            app_credentials = self.secrets.decrypt(connector.credentials)
+        except SecretDecryptionError:
+            logger.warning(
+                "connector_token_revoke_failed",
+                connector_id=str(connector.id),
+                kind=connector.kind,
+                error="SecretDecryptionError",
+                code="credentials_unreadable",
+            )
+            return None
+        tokens: list[Mapping[str, str]] = []
+        for token in grant_tokens:
+            try:
+                tokens.append(self.secrets.decrypt(token))
+            except SecretDecryptionError:
+                continue
+        return _Revocation(
+            connector.id,
+            connector.kind,
+            {str(k): str(v) for k, v in connector.config.items()},
+            app_credentials,
+            tokens,
+        )
+
+    async def _revoke(self, revocation: _Revocation | None) -> None:
+        """Отозвать токены у провайдера. Никогда не бросает: в журнал —
+        тип ошибки и её код (с кодом ответа HTTP), без токенов и тел."""
+        if revocation is None or not revocation.tokens:
+            return
+        fields = {
+            "connector_id": str(revocation.connector_id),
+            "kind": revocation.kind,
+        }
+        try:
+            flow = self.registry.build_oauth(
+                revocation.kind,
+                revocation.config,
+                revocation.app_credentials,
+                self.http,
+            )
+        except (OAuthNotSupportedError, AdapterError) as exc:
+            logger.warning(
+                "connector_token_revoke_failed",
+                **fields,
+                error=type(exc).__name__,
+                code=getattr(exc, "code", None),
+            )
+            return
+        slots = asyncio.Semaphore(REVOKE_CONCURRENCY)
+
+        async def one(tokens: Mapping[str, str]) -> None:
+            async with slots:
+                try:
+                    revoked = await flow.revoke(tokens)
+                except Exception as exc:
+                    # Не str(exc): в тексте ошибки httpx бывает адрес, а
+                    # тело ответа провайдера в журнал не идёт вовсе.
+                    logger.warning(
+                        "connector_token_revoke_failed",
+                        **fields,
+                        error=type(exc).__name__,
+                        code=getattr(exc, "code", None),
+                    )
+                    return
+            if revoked:
+                logger.info("connector_token_revoked", **fields)
+            else:
+                logger.info("connector_token_not_revocable", **fields)
+
+        try:
+            async with asyncio.timeout(REVOKE_TIMEOUT):
+                await asyncio.gather(*(one(t) for t in revocation.tokens))
+        except TimeoutError:
+            logger.warning(
+                "connector_token_revoke_failed",
+                **fields,
+                error="TimeoutError",
+                code="timeout",
+            )
 
     async def _grant_with_credentials(
         self, connector_id: UUID, user_id: UUID

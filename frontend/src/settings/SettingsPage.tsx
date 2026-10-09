@@ -9,13 +9,17 @@ import { ConnectionsTab } from "./ConnectionsTab";
 import { NotificationsTab } from "./NotificationsTab";
 import { ProfileTab } from "./ProfileTab";
 import { SecurityTab } from "./SecurityTab";
+import { SharedLinksTab } from "./SharedLinksTab";
 
 interface Tab {
   path: string;
   label: string;
 }
 
-/** «Мои подключения» и «Уведомления» — про компанию: только когда она выбрана и открыта. */
+/**
+ * «Мои подключения», «Уведомления» и «Общие ссылки» — про компанию: только
+ * когда она выбрана и открыта.
+ */
 function tabsFor(me: Me): Tab[] {
   const inCompany = me.company !== null && !needsStrongFactor(me);
   return [
@@ -25,6 +29,7 @@ function tabsFor(me: Me): Tab[] {
       ? [
           { path: "connections", label: "Мои подключения" },
           { path: "notifications", label: "Уведомления" },
+          { path: "shared-links", label: "Общие ссылки" },
         ]
       : []),
     { path: "companies", label: "Компании" },
@@ -54,6 +59,7 @@ export function SettingsPage() {
         <Route path="security" element={<SecurityTab />} />
         {connections ? <Route path="connections" element={<ConnectionsTab />} /> : null}
         {connections ? <Route path="notifications" element={<NotificationsTab />} /> : null}
+        {connections ? <Route path="shared-links" element={<SharedLinksTab />} /> : null}
         <Route path="companies" element={<CompaniesTab />} />
         <Route path="account" element={<AccountTab />} />
         <Route path="*" element={<Navigate to="/settings/profile" replace />} />

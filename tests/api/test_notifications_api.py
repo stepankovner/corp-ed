@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.api.v1.dependencies import get_team_notifier
 from corp_ed.core.config import EMBEDDING_DIM
-from corp_ed.domain.credits import CreditUsage
 from corp_ed.domain.models import (
     AuditEvent,
     Invite,
@@ -32,6 +31,7 @@ from tests.api.conftest import account_bearer, bearer
 from tests.conftest import make_credit_service
 from tests.factories import make_account
 from tests.team_notify_helpers import RecordingNotifier
+from tests.test_credits import spend
 
 MSK = ZoneInfo("Europe/Moscow")
 
@@ -69,18 +69,18 @@ async def test_credit_thresholds_reach_admins_by_bell_and_mail_per_settings(
 ) -> None:
     # Письма о лимите администратор выключил — колокольчик остаётся.
     session.add(NotificationSetting(user_id=admin.id, email_credits=False))
+    tenant_ctx.seats = 1  # пул 420, порог 336
     await session.commit()
-    now = datetime.now(UTC)
-    usage = CreditUsage(
-        period_start=now - timedelta(days=1),
-        period_end=now + timedelta(days=20),
-        seats=1,
-        credits_per_seat=100,
-        used=0,
-    )
     service = make_credit_service(session)
-    await service.note_spend(usage, 85)
-    await session.commit()
+
+    async def answer(credits: int) -> None:
+        usage = await service.ensure_available()
+        spend(session, employee, credits)
+        await session.flush()
+        await service.note_spend(usage, credits)
+        await session.commit()
+
+    await answer(340)
 
     inbox = await api.get("/api/v1/notifications", headers=bearer(admin))
     assert inbox.status_code == 200, inbox.text
@@ -105,14 +105,13 @@ async def test_credit_thresholds_reach_admins_by_bell_and_mail_per_settings(
         headers=bearer(admin),
     )
     assert put.json()["email_credits"] is True
-    await service.note_spend(usage, 100)
-    await session.commit()
+    await answer(100)
     [mail] = await _mails(session, "notice_credits_exhausted")
     assert mail.to_email == "admin@test.com"
     assert "/settings/notifications" in mail.text_body
 
     # Повторный порог в том же месяце — без второго уведомления.
-    await service.note_spend(usage, 120)
+    await service.note_spend(await service.usage(), 0)
     await session.commit()
     assert len((await session.scalars(select(Notification))).all()) == 2
 

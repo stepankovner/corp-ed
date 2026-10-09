@@ -289,7 +289,8 @@ test.describe.serial("путь компании", () => {
     const share = page.getByRole("dialog", { name: "Поделиться диалогом" });
     await share.getByRole("button", { name: "Создать ссылку" }).click();
     sharedUrl = await share.getByLabel("Ссылка на диалог").inputValue();
-    expect(sharedUrl).toMatch(/\/shared\/[\w-]{24,}$/);
+    // Токен — во фрагменте адреса: в журналы сервера он не попадает.
+    expect(sharedUrl).toMatch(/\/shared#[\w-]{24,}$/);
     await page.keyboard.press("Escape");
   });
 
@@ -411,6 +412,8 @@ test.describe.serial("путь компании", () => {
     await expect(dialogs.getByRole("link", { name: new RegExp(`^${sharedTitle}`) })).toHaveCount(0);
     await page.goto(sharedUrl);
     await expect(page.getByRole("heading", { name: new RegExp(`^${sharedTitle}`) })).toBeVisible();
+    // Страница убирает токен из адресной строки, как только прочла его.
+    await expect(page).toHaveURL(/\/shared$/);
     await expect(page.getByText(/^Автор: /)).toBeVisible();
     await expect(page.getByText(codeWord).first()).toBeVisible();
     await expect(page.getByLabel("Ваш вопрос")).toHaveCount(0);

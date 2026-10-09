@@ -79,7 +79,16 @@ class AuditAction(StrEnum):
     STAFF_ADDED = "staff.added"
     STAFF_REMOVED = "staff.removed"
     CREDITS_WARNING = "credits.warning"
+    # Пул месяца кончился, вопросы идут из купленных кредитов.
+    CREDITS_POOL_EXHAUSTED = "credits.pool_exhausted"
+    # Вопросы остановлены: пул кончился, купленных кредитов нет.
     CREDITS_EXHAUSTED = "credits.exhausted"
+    CREDITS_ORDER_CREATED = "credits.order_created"
+    CREDITS_ORDER_PAID = "credits.order_paid"
+    CREDITS_ORDER_CANCELLED = "credits.order_cancelled"
+    # Начисление командой без заказа: бонус, компенсация.
+    CREDITS_GRANTED = "credits.granted"
+    CREDITS_TOPUP_REQUESTED = "credits.topup_requested"
     CONNECTOR_CREATED = "connector.created"
     CONNECTOR_UPDATED = "connector.updated"
     CONNECTOR_DELETED = "connector.deleted"

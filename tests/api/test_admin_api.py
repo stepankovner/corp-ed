@@ -3,6 +3,7 @@
 
 import io
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,7 @@ from corp_ed.domain.models import (
     User,
     UserRole,
 )
+from corp_ed.ingest import sandbox
 from corp_ed.main import app
 from tests.api.conftest import account_bearer, bearer
 from tests.factories import make_account, make_user
@@ -106,6 +108,45 @@ async def test_employee_cannot_open_company_settings(
         await api.patch("/api/v1/company", json={"name": "x"}, headers=headers)
     ).status_code == 403
     assert (await api.get("/api/v1/analytics", headers=headers)).status_code == 403
+
+
+async def test_admin_sets_dialog_retention_from_the_list_only(
+    api: httpx.AsyncClient,
+    admin: User,
+    employee: User,
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+) -> None:
+    headers = bearer(admin)
+    before = (await api.get("/api/v1/company", headers=headers)).json()
+    assert before["chat_retention_months"] == 12
+
+    response = await api.patch(
+        "/api/v1/company", json={"chat_retention_months": 6}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["chat_retention_months"] == 6
+    with tenant_scope(tenant_ctx.id):
+        event = (
+            await session.scalars(
+                select(AuditEvent).where(AuditEvent.action == "tenant.settings_updated")
+            )
+        ).one()
+    assert event.actor_user_id == admin.id
+    assert event.details == {"chat_retention_months": {"old": 12, "new": 6}}
+
+    # Только из списка: 1, 3, 6, 12, 24, 36.
+    for value in (0, 2, 5, 37, -1, "шесть", True, 6.5):
+        bad = await api.patch(
+            "/api/v1/company", json={"chat_retention_months": value}, headers=headers
+        )
+        assert bad.status_code == 422, value
+    forbidden = await api.patch(
+        "/api/v1/company", json={"chat_retention_months": 1}, headers=bearer(employee)
+    )
+    assert forbidden.status_code == 403
+    await session.refresh(tenant_ctx)
+    assert tenant_ctx.chat_retention_months == 6
 
 
 async def test_strong_policy_closes_company_to_employee_without_app(
@@ -196,6 +237,29 @@ async def test_logo_is_fitted_into_square_and_shown_to_members(
     ).status_code == 204
     me = (await api.get("/api/v1/auth/me", headers=bearer(employee))).json()
     assert me["company"]["logo_url"] is None
+
+
+async def test_logo_is_decoded_outside_the_api_process(
+    api: httpx.AsyncClient, admin: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        sandbox,
+        "_worker_command",
+        lambda mode, cpu_seconds: [
+            sys.executable,
+            "-I",
+            "-c",
+            "import os, signal; os.kill(os.getpid(), signal.SIGKILL)",
+        ],
+    )
+    response = await api.put(
+        "/api/v1/company/logo",
+        files={"file": ("logo.png", _png(), "image/png")},
+        headers=bearer(admin),
+    )
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_logo"
+    assert response.json()["detail"] == "Загрузите логотип в PNG, JPEG или WebP до 5 МБ"
 
 
 # --- тариф -----------------------------------------------------------------------

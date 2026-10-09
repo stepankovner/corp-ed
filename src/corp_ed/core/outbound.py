@@ -27,6 +27,9 @@
 Тогда запрос уходит по имени, а проверка адреса остаётся (имя резолвится
 и проверяется перед каждым запросом); закрепление адреса против DNS
 rebinding в этом режиме делает политика прокси, не мы (DEPLOY.md §9a).
+Прокси из окружения httpx берёт только в этом режиме (outbound_http_client):
+без флага HTTPS_PROXY, заданный для чего-то другого, не уведёт запросы
+к системам клиентов, письма и уведомления через чужой узел молча.
 """
 
 import asyncio
@@ -51,6 +54,12 @@ MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 страницы Confluence — до единиц мегабайт; 20 МиБ — с большим запасом.
 Больше — портал сломан или враждебен: чтение обрывается, а не
 занимает память общего воркера. Вызов может задать свой max_bytes."""
+DOWNLOAD_DEADLINE = 300.0
+"""Общий срок скачивания одного файла, секунд (CONNECTOR_DOWNLOAD_TIMEOUT_SECONDS).
+
+timeout запроса — на каждое чтение: портал, который отдаёт файл по байту
+раз в несколько секунд, укладывается в него бесконечно и держит слот
+воркера. Срок считается на весь download, редиректы включительно."""
 # Заголовки с учётными данными не уходят на другой хост при редиректе:
 # токен служебной учётки Confluence не должен уехать на CDN или чужой
 # сервер, куда система клиента вдруг перенаправила скачивание.
@@ -66,6 +75,11 @@ class OutboundURLError(ValueError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+class OutboundDeadlineError(httpx.TimeoutException):
+    """Файл не скачался за общий срок. Наследник httpx.TimeoutException:
+    адаптеры переводят его в свой код таймаута, как и обычный."""
 
 
 class OutboundTooLargeError(Exception):
@@ -251,6 +265,19 @@ def _buffered(response: httpx.Response, body: bytes) -> httpx.Response:
     )
 
 
+def outbound_http_client(*, via_proxy: bool) -> httpx.AsyncClient:
+    """httpx-клиент процесса для запросов наружу: системы клиентов,
+    почта (Postbox), уведомления команде.
+
+    trust_env — только в режиме via_proxy (CONNECTOR_OUTBOUND_VIA_PROXY):
+    иначе httpx молча взял бы HTTPS_PROXY, ALL_PROXY и .netrc из окружения.
+    Вместе с ними выключаются SSL_CERT_FILE и SSL_CERT_DIR: свой корневой
+    сертификат для коробочного портала в этом режиме не подхватится
+    (DEPLOY.md). Клиент к моделям (LLM, эмбеддинги, реранкер) — отдельный.
+    """
+    return httpx.AsyncClient(trust_env=via_proxy)
+
+
 class OutboundClient:
     """httpx-клиент, который ходит только по проверенным адресам.
 
@@ -265,11 +292,13 @@ class OutboundClient:
         resolver: Resolver | None = None,
         max_redirects: int = MAX_REDIRECTS,
         via_proxy: bool = False,
+        download_deadline: float = DOWNLOAD_DEADLINE,
     ) -> None:
         self._client = client
         self._resolver = resolver
         self._max_redirects = max_redirects
         self._via_proxy = via_proxy
+        self._download_deadline = download_deadline
 
     def _route(
         self, target: OutboundTarget
@@ -366,7 +395,25 @@ class OutboundClient:
         документа, не займёт память воркера. Заголовок Content-Length
         проверяется до чтения — но ему нельзя верить, поэтому считаем и
         сами. Редиректы — как в request: каждый адрес проверяется.
+        timeout — на каждое чтение; на весь файл, с редиректами, —
+        download_deadline: дольше — OutboundDeadlineError.
         """
+        try:
+            async with asyncio.timeout(self._download_deadline):
+                return await self._download(
+                    url, max_bytes=max_bytes, headers=headers, timeout=timeout
+                )
+        except TimeoutError as exc:
+            raise OutboundDeadlineError("download deadline exceeded") from exc
+
+    async def _download(
+        self,
+        url: str,
+        *,
+        max_bytes: int,
+        headers: dict[str, str] | None,
+        timeout: float,
+    ) -> Downloaded:
         current = url
         request_headers = dict(headers or {})
         origin: str | None = None

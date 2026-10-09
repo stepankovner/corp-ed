@@ -14,8 +14,17 @@ import {
   summary,
 } from "../test/chat";
 import { me } from "../test/fixtures";
+import { pendingShare, savePendingShare } from "./pendingShare";
 import { renderApp } from "../test/render";
 import { server } from "../test/server";
+
+const SHARE = {
+  token: "tok-123",
+  shared_at: "2026-10-04T10:00:00Z",
+  expires_at: "2026-11-03T10:00:00Z",
+  expired: false,
+};
+const EXPIRED_SHARE = { ...SHARE, expires_at: "2026-10-01T10:00:00Z", expired: true };
 
 function signedIn() {
   server.use(http.get("/api/v1/auth/me", () => HttpResponse.json(me())));
@@ -218,19 +227,73 @@ describe("новый диалог", () => {
     );
   });
 
-  it("исчерпанный лимит — сообщение над полем, вопрос остаётся", async () => {
+  it("кредиты кончились — сообщение над полем, вопрос остаётся, можно попросить пополнить", async () => {
+    signedIn();
+    const pressed: number[] = [];
+    server.use(
+      http.post("/api/v1/conversations", () =>
+        HttpResponse.json({ detail: "Кредиты", code: "credits_exhausted" }, { status: 402 }),
+      ),
+      http.get("/api/v1/credits/topup-request", () =>
+        HttpResponse.json({ stopped: true, requested: false }),
+      ),
+      http.post("/api/v1/credits/topup-request", () => {
+        pressed.push(1);
+        return HttpResponse.json({ sent: true });
+      }),
+    );
+    renderApp("/");
+    const user = await ask("Вопрос");
+    expect(
+      await screen.findByText(/Кредиты компании на этот месяц закончились/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Ваш вопрос")).toHaveValue("Вопрос");
+
+    await user.click(
+      await screen.findByRole("button", { name: "Попросить администратора пополнить" }),
+    );
+    expect(await screen.findByText("Администратор уведомлён.")).toBeInTheDocument();
+    expect(pressed).toHaveLength(1);
+  });
+
+  it("кто-то уже попросил пополнить — «Администратор уже уведомлён»", async () => {
     signedIn();
     server.use(
       http.post("/api/v1/conversations", () =>
-        HttpResponse.json({ detail: "Лимит", code: "credits_exhausted" }, { status: 402 }),
+        HttpResponse.json({ detail: "Кредиты", code: "credits_exhausted" }, { status: 402 }),
+      ),
+      http.get("/api/v1/credits/topup-request", () =>
+        HttpResponse.json({ stopped: true, requested: true }),
+      ),
+    );
+    renderApp("/");
+    await ask("Вопрос");
+    expect(await screen.findByText("Администратор уже уведомлён.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Попросить администратора пополнить" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("дневной лимит — свой текст, без просьбы пополнить", async () => {
+    signedIn();
+    server.use(
+      http.post("/api/v1/conversations", () =>
+        HttpResponse.json(
+          {
+            detail:
+              "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. Лимит задаёт администратор компании",
+            code: "daily_limit_exhausted",
+          },
+          { status: 429 },
+        ),
       ),
     );
     renderApp("/");
     await ask("Вопрос");
     expect(
-      await screen.findByText(/Лимит вопросов компании на этот месяц исчерпан/),
+      await screen.findByText(/Ваш дневной лимит на сегодня исчерпан, он обновится завтра/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Ваш вопрос")).toHaveValue("Вопрос");
+    expect(screen.queryByRole("button", { name: /Попросить/ })).not.toBeInTheDocument();
   });
 });
 
@@ -303,6 +366,43 @@ describe("открытый диалог", () => {
       screen.getByText("В документах компании нет ответа на этот вопрос."),
     ).toBeInTheDocument();
     expect(screen.getByText("Вопрос попадёт в отчёт о пробелах в документах")).toBeInTheDocument();
+  });
+
+  it("ответ остановлен кредитами или дневным лимитом — понятный текст", async () => {
+    signedIn();
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(
+          conversation([
+            question(),
+            reply({ status: "failed", error_code: "credits_exhausted", content: "", sources: [] }),
+            question({ id: "q-2", parent_id: "a-1", content: "Ещё вопрос" }),
+            reply({
+              id: "a-2",
+              parent_id: "q-2",
+              status: "failed",
+              error_code: "daily_limit_exhausted",
+              content: "",
+              sources: [],
+            }),
+          ]),
+        ),
+      ),
+      http.get("/api/v1/credits/topup-request", () =>
+        HttpResponse.json({ stopped: false, requested: false }),
+      ),
+    );
+    renderApp("/c/c-1");
+    expect(
+      await screen.findByText(/Кредиты компании на этот месяц закончились/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. Лимит задаёт администратор компании.",
+      ),
+    ).toBeInTheDocument();
+    // Кредиты уже пополнили — просить нечего.
+    expect(screen.queryByRole("button", { name: /Попросить/ })).not.toBeInTheDocument();
   });
 
   it("после сбоя отвечает заново: новая версия ответа", async () => {
@@ -491,13 +591,11 @@ describe("открытый диалог", () => {
     expect(selected).toEqual({ message_id: "q-1" });
   });
 
-  it("делится ссылкой и закрывает доступ", async () => {
+  it("делится ссылкой со сроком и закрывает доступ", async () => {
     signedIn();
     server.use(
       http.get("/api/v1/conversations/c-1", () => HttpResponse.json(conversation())),
-      http.post("/api/v1/conversations/c-1/share", () =>
-        HttpResponse.json({ token: "tok-123", shared_at: "2026-10-04T10:00:00Z" }),
-      ),
+      http.post("/api/v1/conversations/c-1/share", () => HttpResponse.json(SHARE)),
       http.delete("/api/v1/conversations/c-1/share", () => new HttpResponse(null, { status: 204 })),
     );
     renderApp("/c/c-1");
@@ -508,57 +606,169 @@ describe("открытый диалог", () => {
       within(dialog).getByText(/только коллеги по «ООО «Меридиан Строй»»/),
     ).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Создать ссылку" }));
+    // Токен — во фрагменте: на сервер и в журналы он не уходит.
     expect(await within(dialog).findByLabelText("Ссылка на диалог")).toHaveValue(
-      `${window.location.origin}/shared/tok-123`,
+      `${window.location.origin}/shared#tok-123`,
     );
+    expect(within(dialog).getByText(/Ссылка действует до 3 ноября 2026/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Закрыть доступ" }));
     expect(
       await within(dialog).findByRole("button", { name: "Создать ссылку" }),
     ).toBeInTheDocument();
   });
+
+  it("истёкшая ссылка: автор видит, что срок вышел, и продлевает", async () => {
+    signedIn();
+    let renewed = 0;
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(conversation(undefined, { shared: true, share: EXPIRED_SHARE })),
+      ),
+      http.post("/api/v1/conversations/c-1/share/renew", () => {
+        renewed += 1;
+        return HttpResponse.json(SHARE);
+      }),
+    );
+    renderApp("/c/c-1");
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Поделиться" }));
+    const dialog = await screen.findByRole("dialog", { name: "Поделиться диалогом" });
+    expect(within(dialog).getByText(/Срок ссылки истёк 1 октября 2026/)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Продлить" }));
+
+    expect(
+      await within(dialog).findByText(/Ссылка действует до 3 ноября 2026/),
+    ).toBeInTheDocument();
+    expect(renewed).toBe(1);
+    expect(within(dialog).getByLabelText("Ссылка на диалог")).toHaveValue(
+      `${window.location.origin}/shared#tok-123`,
+    );
+  });
 });
 
 describe("диалог коллеги по ссылке", () => {
-  it("только чтение; закрытый документ — без фрагмента", async () => {
-    signedIn();
-    server.use(
-      http.get("/api/v1/conversations/shared/tok-123", () =>
-        HttpResponse.json({
-          title: "Какие суточные?",
-          owner_name: "Пётр Коллегин",
-          shared_at: "2026-10-04T10:00:00Z",
-          messages: [
-            question(),
-            reply({
-              sources: [
-                { ...conversation().messages[1]!.sources[0]!, content: null, source_url: null },
-              ],
-              content: "Суточные — 700 рублей [1].",
-            }),
+  function sharedView() {
+    return {
+      title: "Какие суточные?",
+      owner_name: "Пётр Коллегин",
+      shared_at: "2026-10-04T10:00:00Z",
+      messages: [
+        question(),
+        reply({
+          // Документ без доступа сервер не называет.
+          sources: [
+            {
+              kind: "document" as const,
+              title: "Документ, к которому у вас нет доступа",
+              heading_path: [],
+              position: 0,
+              content: null,
+              source_url: null,
+              material_id: null,
+              attachment_id: null,
+            },
           ],
+          content: "Суточные — 700 рублей [1].",
         }),
-      ),
-    );
-    renderApp("/shared/tok-123");
+      ],
+    };
+  }
+
+  function openShared(requests: { url: string; body: unknown }[]) {
+    return http.post("/api/v1/conversations/shared/open", async ({ request }) => {
+      requests.push({ url: request.url, body: await request.json() });
+      return HttpResponse.json(sharedView());
+    });
+  }
+
+  it("токен — из фрагмента адреса: уходит телом запроса, из адресной строки убран", async () => {
+    signedIn();
+    const requests: { url: string; body: unknown }[] = [];
+    server.use(openShared(requests));
+    const { router } = renderApp("/shared#tok-123");
+
     expect(await screen.findByRole("heading", { name: "Какие суточные?" })).toBeInTheDocument();
+    expect(requests).toEqual([
+      {
+        url: `${window.location.origin}/api/v1/conversations/shared/open`,
+        body: { token: "tok-123" },
+      },
+    ]);
+    expect(router.state.location.pathname).toBe("/shared");
+    expect(router.state.location.hash).toBe("");
     expect(screen.getByText(/Автор: Пётр Коллегин/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Ваш вопрос")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ответ помог" })).not.toBeInTheDocument();
 
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: "Источник 1: Положение о командировках.docx" }));
-    expect(await screen.findByText(/Документ удалён или вам недоступен/)).toBeInTheDocument();
+    // Блок ответа после загрузки один раз перерисовывается, и кнопка,
+    // найденная до этого, уже не в документе — клик по ней теряется.
+    // Ищем её заново, пока панель не откроется.
+    const user = userEvent.setup();
+    await waitFor(async () => {
+      await user.click(
+        screen.getByRole("button", { name: "Источник 1: Документ, к которому у вас нет доступа" }),
+      );
+      expect(screen.getByText(/Документ удалён или вам недоступен/)).toBeInTheDocument();
+    });
   });
 
-  it("закрытая ссылка", async () => {
+  it("старая ссылка /shared/<токен> становится /shared#<токен> и открывается", async () => {
+    signedIn();
+    const requests: { url: string; body: unknown }[] = [];
+    server.use(openShared(requests));
+    const { router } = renderApp("/shared/tok-123");
+
+    expect(await screen.findByRole("heading", { name: "Какие суточные?" })).toBeInTheDocument();
+    expect(requests.map((r) => r.body)).toEqual([{ token: "tok-123" }]);
+    expect(requests[0]?.url).not.toContain("tok-123");
+    expect(router.state.location.pathname).toBe("/shared");
+    expect(router.state.location.hash).toBe("");
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("гость: токен ждёт входа в хранилище вкладки, а не в адресе", async () => {
+    const { router } = renderApp("/shared#tok-123", { signedIn: false });
+
+    expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?next=%2Fshared");
+    expect(router.state.location.hash).toBe("");
+    expect(pendingShare()).toBe("tok-123");
+  });
+
+  it("гость по старой ссылке: токена нет и в адресе входа", async () => {
+    const { router } = renderApp("/shared/tok-123", { signedIn: false });
+
+    expect(await screen.findByLabelText("Почта")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?next=%2Fshared");
+    expect(pendingShare()).toBe("tok-123");
+  });
+
+  it("после входа /shared без фрагмента открывает ссылку из хранилища вкладки", async () => {
+    signedIn();
+    savePendingShare("tok-123");
+    const requests: { url: string; body: unknown }[] = [];
+    server.use(openShared(requests));
+    renderApp("/shared");
+
+    expect(await screen.findByRole("heading", { name: "Какие суточные?" })).toBeInTheDocument();
+    expect(requests.map((r) => r.body)).toEqual([{ token: "tok-123" }]);
+  });
+
+  it("закрытая, истёкшая или чужая ссылка", async () => {
     signedIn();
     server.use(
-      http.get("/api/v1/conversations/shared/old", () =>
+      http.post("/api/v1/conversations/shared/open", () =>
         HttpResponse.json({ detail: "Ссылка недействительна" }, { status: 404 }),
       ),
     );
-    renderApp("/shared/old");
+    renderApp("/shared#old");
+    expect(await screen.findByText("Ссылка не открывается")).toBeInTheDocument();
+  });
+
+  it("без токена — не открывается, запроса нет", async () => {
+    signedIn();
+    renderApp("/shared");
     expect(await screen.findByText("Ссылка не открывается")).toBeInTheDocument();
   });
 });

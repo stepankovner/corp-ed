@@ -111,7 +111,9 @@ class FetchedPage:
 @dataclass(frozen=True)
 class FetchedMarkdown:
     """Документ, который источник отдаёт уже в Markdown (База знаний 2.0
-    Битрикс24, Яндекс Вики): в конвейер идёт как есть, без очистки HTML."""
+    Битрикс24, Яндекс Вики): в конвейер идёт без перевода из HTML, но
+    сырой HTML внутри Markdown вырезается (connectors/markdown.py,
+    markdown_as_is) — код и разметка Markdown остаются."""
 
     markdown: str
 
@@ -146,6 +148,14 @@ class OAuthFlow(Protocol):
         AdapterAuthError — код не принят (истёк, чужой); AdapterConfigError
         — не принято само приложение (client_id/secret, не установлено,
         не оплачено); AdapterError — сервер авторизации недоступен.
+        """
+        ...
+
+    async def revoke(self, credentials: Mapping[str, str]) -> bool:
+        """Отозвать токены сотрудника у провайдера (удаление подключения
+        или гранта). True — отозваны; False — у провайдера нет отзыва или
+        этот токен отозвать нельзя. AdapterError — отказ или сбой: ядро
+        пишет код в журнал и удаляет грант всё равно.
         """
         ...
 

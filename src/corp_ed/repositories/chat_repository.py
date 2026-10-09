@@ -52,6 +52,17 @@ class ConversationRepository:
         stmt = select(Conversation).where(Conversation.share_token == token)
         return (await self.session.scalars(stmt)).first()
 
+    async def list_shared(self, user_id: UUID) -> Sequence[Conversation]:
+        stmt = (
+            select(Conversation)
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.share_token.is_not(None),
+            )
+            .order_by(Conversation.shared_at.desc(), Conversation.id)
+        )
+        return (await self.session.scalars(stmt)).all()
+
     async def list_for(
         self,
         user_id: UUID,
@@ -92,6 +103,30 @@ class ConversationRepository:
     async def delete(self, conversation: Conversation) -> None:
         # Сообщения, вложения и их фрагменты удаляет база (ON DELETE CASCADE).
         await self.session.delete(conversation)
+
+    async def delete_inactive_before(self, cutoff: datetime) -> int:
+        """Диалоги без активности с cutoff — целиком (purge).
+
+        Активность — updated_at: его ставят только новый вопрос и «Ответить
+        заново» (ChatService.begin, begin_regenerate), то есть это время
+        последнего сообщения; переименование, закрепление, оценка и
+        «поделиться» его не двигают, как и порядок в списке диалогов.
+        Сообщения, вложения с фрагментами и общая ссылка (она в самой
+        строке диалога) уходят вместе с ним.
+
+        Вопрос, заданный в старом диалоге в ту же минуту, не оставит его
+        наполовину удалённым: begin берёт строку FOR UPDATE, а DELETE с
+        условием перепроверяет её после чужой транзакции. Либо вопрос
+        успел — updated_at свежий и диалог остаётся, — либо диалог уже
+        удалён и вопрос получает 404.
+        """
+        result = await self.session.execute(
+            delete(Conversation).where(
+                Conversation.tenant_id == require_tenant(),
+                Conversation.updated_at < cutoff,
+            )
+        )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 
 class MessageRepository:

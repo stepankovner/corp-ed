@@ -16,7 +16,7 @@ from corp_ed.connectors.base import (
 from corp_ed.connectors.registry import UserAuth, default_registry
 from corp_ed.connectors.yandex import KIND, SPEC
 from corp_ed.connectors.yandex.adapter import YandexAdapter, build_adapter
-from corp_ed.connectors.yandex.oauth import YandexOAuth
+from corp_ed.connectors.yandex.oauth import DEVICE_ID, YandexOAuth
 from corp_ed.core import outbound
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.domain.types import ConnectorMode, RemoteDocumentKind
@@ -516,3 +516,76 @@ async def test_exchange_and_errors(server: FakeYandex) -> None:
     server.oauth_error = "weird"
     with pytest.raises(AdapterError, match="oauth_weird"):
         await flow.exchange(AUTH_CODE)
+
+
+# --- отзыв токена ---------------------------------------------------------------
+
+
+def _flow(server: FakeYandex) -> YandexOAuth:
+    return YandexOAuth(
+        server.client(),
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server=OAUTH_SERVER,
+    )
+
+
+async def test_tokens_are_issued_for_a_device_so_they_can_be_revoked(
+    server: FakeYandex,
+) -> None:
+    """Яндекс ID отзывает только токен, выданный с device_id: без него
+    revoke_token отвечает unsupported_token_type."""
+    flow = _flow(server)
+    url = flow.authorize_url("st")
+    assert f"device_id={DEVICE_ID}" in url and "device_name=kronto" in url
+    exchanged = await flow.exchange(AUTH_CODE)
+    _, form = server.calls[-1]
+    assert form["device_id"] == DEVICE_ID
+    assert exchanged.credentials["access_token"] in server.device_tokens
+
+
+async def test_revoke_sends_the_token_with_the_app_secret(server: FakeYandex) -> None:
+    flow = _flow(server)
+    token = (await flow.exchange(AUTH_CODE)).credentials["access_token"]
+
+    assert await flow.revoke({"access_token": token, "refresh_token": "r"}) is True
+
+    method, form = server.calls[-1]
+    assert method == "oauth/revoke_token"
+    assert form == {
+        "access_token": token,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+    }
+    assert token not in server.access_tokens
+
+
+async def test_token_without_device_is_not_revocable(server: FakeYandex) -> None:
+    # Токены, выданные до привязки к устройству, отозвать нельзя.
+    assert await _flow(server).revoke({"access_token": ACCESS_TOKEN}) is False
+    assert ACCESS_TOKEN in server.access_tokens
+
+
+async def test_revoke_without_token_does_nothing(server: FakeYandex) -> None:
+    assert await _flow(server).revoke({"refresh_token": REFRESH_TOKEN}) is False
+    assert server.calls == []
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "code"),
+    [
+        (400, {"error": "invalid_client"}, "oauth_revoke_invalid_client"),
+        (401, {"error": "invalid_client"}, "oauth_revoke_invalid_client"),
+        (400, {"error": "invalid_grant"}, "oauth_revoke_invalid_grant"),
+        (400, {"error": "Странная <ошибка>"}, "oauth_revoke_"),
+        (500, {"message": "oops"}, "oauth_http_500"),
+    ],
+)
+async def test_revoke_errors_are_codes(
+    server: FakeYandex, status: int, body: dict[str, str], code: str
+) -> None:
+    server.revoke_error = (status, body)
+    with pytest.raises(AdapterError) as caught:
+        await _flow(server).revoke({"access_token": ACCESS_TOKEN})
+    assert caught.value.code.startswith(code)
+    assert ACCESS_TOKEN not in caught.value.code

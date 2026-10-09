@@ -1,23 +1,25 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Link2, Link2Off, RefreshCw } from "lucide-react";
+import { CalendarClock, Check, Copy, Link2, Link2Off, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 import { api, unwrap } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { useCompany } from "../auth/context";
-import { formatDateTime } from "../lib/format";
+import { formatDate, formatDateTime } from "../lib/format";
 import { Button } from "../ui/Button";
 import { Modal } from "../ui/Modal";
 import { Notice } from "../ui/Notice";
 import { useToast } from "../ui/useToast";
-import { shareUrl, type Conversation } from "./api";
+import { renewShare, revokeShare, shareUrl, type Conversation } from "./api";
 import styles from "./Chat.module.css";
-import { CONVERSATION_LISTS_KEY, conversationKey } from "./keys";
+import { CONVERSATION_LISTS_KEY, conversationKey, SHARED_LINKS_KEY } from "./keys";
 
 /**
  * «Поделиться диалогом» (ТЗ §6): ссылку откроют только коллеги по
  * компании. По ссылке — диалог таким, каким он был в момент «Создать» или
- * «Обновить»; оценки и комментарии автора не видны.
+ * «Обновить»; оценки и комментарии автора не видны. Срок ссылки (30 дней)
+ * отсчитывается от «Создать», «Обновить» или «Продлить»; истёкшая не
+ * открывается, пока её не продлят.
  */
 export function ShareDialog({
   conversation,
@@ -38,14 +40,19 @@ export function ShareDialog({
       old ? { ...old, share, shared: share !== null } : old,
     );
     void queryClient.invalidateQueries({ queryKey: CONVERSATION_LISTS_KEY });
+    void queryClient.invalidateQueries({ queryKey: SHARED_LINKS_KEY });
   }
 
   const create = useMutation({
     mutationFn: () => unwrap(api.POST("/api/v1/conversations/{conversation_id}/share", path)),
     onSuccess: (share) => store(share),
   });
+  const renew = useMutation({
+    mutationFn: () => renewShare(conversation.id),
+    onSuccess: (share) => store(share),
+  });
   const revoke = useMutation({
-    mutationFn: () => unwrap(api.DELETE("/api/v1/conversations/{conversation_id}/share", path)),
+    mutationFn: () => revokeShare(conversation.id),
     onSuccess: () => {
       store(null);
       toast.show("Доступ по ссылке закрыт");
@@ -53,7 +60,7 @@ export function ShareDialog({
   });
   const share = conversation.share;
   const url = share ? shareUrl(share.token) : null;
-  const failure = create.error ?? revoke.error;
+  const failure = create.error ?? renew.error ?? revoke.error;
 
   async function copy() {
     if (!url) return;
@@ -96,11 +103,29 @@ export function ShareDialog({
                 Скопировать
               </Button>
             </div>
+            {share.expired ? (
+              <Notice kind="warn">
+                Срок ссылки истёк {formatDate(share.expires_at)}: коллеги её не откроют. Продлите —
+                ссылка останется прежней.
+              </Notice>
+            ) : (
+              <p className="muted">Ссылка действует до {formatDate(share.expires_at)}.</p>
+            )}
             <p className="muted">
               Снимок от {formatDateTime(share.shared_at)}. Новые сообщения появятся по ссылке после
               «Обновить».
             </p>
             <div className={styles.shareActions}>
+              {share.expired ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  busy={renew.isPending}
+                  onClick={() => renew.mutate()}
+                >
+                  <CalendarClock size={16} aria-hidden /> Продлить
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 size="sm"

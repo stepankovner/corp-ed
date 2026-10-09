@@ -2,6 +2,7 @@
 активных членств не больше мест (П-2д); set-seats предупреждает, если
 новый пул меньше потраченного (П-2г)."""
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.cli import _parser
 from corp_ed.core.security import hash_password
-from corp_ed.domain.models import MemberStatus, Tenant, User, UserRole
+from corp_ed.domain.models import CreditGrant, MemberStatus, Tenant, User, UserRole
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -130,6 +131,30 @@ async def test_seats_check_warns_when_new_pool_is_spent(
     assert cut.message is not None
     assert "потрачено 500 кредитов, новый пул — 420 (1 × 420)" in cut.message
     assert "остановятся до" in cut.message
+
+
+async def test_seats_check_counts_purchased_credits(
+    session: AsyncSession, tenant_ctx: Tenant, admin_account: User
+) -> None:
+    """Пул меньше потраченного, но есть купленные кредиты — вопросы не
+    остановятся, подтверждать нечего."""
+    spend(session, admin_account, 500)
+    session.add(
+        CreditGrant(
+            tenant_id=tenant_ctx.id,
+            credits=100,
+            remaining=100,
+            source="manual",
+            expires_at=datetime.now(UTC) + timedelta(days=30),
+        )
+    )
+    await session.commit()
+
+    cut = await seats_check(session, "test", 1)
+
+    assert cut.stops_pool is False
+    assert cut.message is not None
+    assert "вопросы пойдут из купленных кредитов (осталось 100)" in cut.message
 
 
 async def test_seats_check_mentions_extra_active_users(

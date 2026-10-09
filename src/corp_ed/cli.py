@@ -81,6 +81,7 @@ from corp_ed.core.mail import MailDeliveryError, OutgoingEmail, build_sender
 from corp_ed.core.outbound import (
     OutboundClient,
     OutboundURLError,
+    outbound_http_client,
     validate_outbound_url,
 )
 from corp_ed.core.secrets import SecretBox
@@ -381,7 +382,8 @@ async def _run(args: argparse.Namespace) -> int:
             f"refresh_tokens: {purged.refresh_tokens}, "
             f"auth_challenges: {purged.auth_challenges}, "
             f"email_tokens: {purged.email_tokens}, "
-            f"trusted_devices: {purged.trusted_devices}"
+            f"trusted_devices: {purged.trusted_devices}, "
+            f"conversations: {purged.conversations}"
         )
         return 0
 
@@ -535,9 +537,9 @@ async def _run(args: argparse.Namespace) -> int:
             )
             if change.over_tariff:
                 print(
-                    f"Внимание: подключений {change.connectors}, а тариф даёт "
-                    f"{plan.max_connectors}. Заведённые продолжат работать, "
-                    "новые добавить нельзя."
+                    f"Внимание: подключено систем {change.systems}, а тариф даёт "
+                    f"{plan.max_systems}. Заведённые продолжат работать, "
+                    "новые системы добавить нельзя."
                 )
             return 0
 
@@ -752,8 +754,12 @@ async def _connector_check(
         config[spec.url_field] = target.url
 
     recorder = _FixtureRecorder(Path(args.record)) if args.record else None
-    async with httpx.AsyncClient() as client:
-        outbound = http or OutboundClient(client, via_proxy=settings.outbound_via_proxy)
+    async with outbound_http_client(via_proxy=settings.outbound_via_proxy) as client:
+        outbound = http or OutboundClient(
+            client,
+            via_proxy=settings.outbound_via_proxy,
+            download_deadline=settings.download_timeout_seconds,
+        )
         adapter: SourceAdapter
         try:
             adapter = registry.build(
@@ -876,7 +882,8 @@ async def _mail_check(days: int, send_to: str | None) -> int:
         return 1
     text = "Это проверочное письмо с сервера kronto. Отвечать не нужно."
     try:
-        async with httpx.AsyncClient() as client:
+        via_proxy = get_connector_settings().outbound_via_proxy
+        async with outbound_http_client(via_proxy=via_proxy) as client:
             await build_sender(settings, client).send(
                 OutgoingEmail(
                     to=send_to,

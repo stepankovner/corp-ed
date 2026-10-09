@@ -99,14 +99,23 @@ async def duplicate_material_handler(request: Request, exc: Exception) -> JSONRe
 
 
 async def credits_exhausted_handler(request: Request, exc: Exception) -> JSONResponse:
-    """402: пул компании на месяц исчерпан.
+    """402: кредиты компании кончились (пул месяца и купленные).
 
     code — чтобы фронт показал отдельный экран, а не общую ошибку:
-    повтор запроса здесь не поможет до следующего месяца.
+    повтор запроса не поможет, пока кредиты не пополнят.
     """
     return JSONResponse(
         status_code=status.HTTP_402_PAYMENT_REQUIRED,
         content={"detail": str(exc), "code": "credits_exhausted"},
+    )
+
+
+async def daily_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+    """429: личный дневной лимит кредитов исчерпан до полуночи."""
+    return JSONResponse(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        content={"detail": str(exc), "code": "daily_limit_exhausted"},
+        headers={"Retry-After": str(getattr(exc, "retry_after", 3600))},
     )
 
 

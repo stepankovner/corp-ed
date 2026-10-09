@@ -53,6 +53,16 @@ class ConnectorRepository:
         )
         return int(result or 0)
 
+    async def kinds(self) -> set[str]:
+        """Какие системы (виды коннекторов) подключены у компании: тариф
+        «Базовый» считает их, а не подключения."""
+        result = await self.session.scalars(
+            select(Connector.kind)
+            .where(Connector.tenant_id == require_tenant())
+            .distinct()
+        )
+        return set(result)
+
     async def list_due(self, now: datetime) -> list[Connector]:
         """Активные подключения, чей интервал истёк.
 
@@ -153,6 +163,19 @@ class GrantRepository:
             .order_by(ConnectorUserGrant.created_at)
         )
         return list(result)
+
+    async def list_with_credentials(self, connector_id: UUID) -> list[str]:
+        """Шифротексты всех грантов подключения, в любом состоянии: у
+        отвергнутого гранта (expired) токен у провайдера может быть ещё
+        жив (отзыв при удалении). Колоночный select — фильтр по тенанту
+        явный."""
+        result = await self.session.scalars(
+            select(ConnectorUserGrant.credentials).where(
+                ConnectorUserGrant.tenant_id == require_tenant(),
+                ConnectorUserGrant.connector_id == connector_id,
+            )
+        )
+        return [str(value) for value in result if value is not None]
 
     async def active_counts(self) -> dict[UUID, int]:
         """Сколько сотрудников подключилось к каждому коннектору per_user

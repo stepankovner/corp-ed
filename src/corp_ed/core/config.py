@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # хранить их дольше, чем нужно отчёту о пробелах, незачем (152-ФЗ).
     qa_log_retention_days: int = Field(default=90, gt=0, le=365)
 
+    # Сколько дней живёт ссылка «поделиться диалогом» (решение владельца
+    # 09.10: 30). Продлить — ещё столько же от сегодня, токен прежний.
+    chat_share_ttl_days: int = Field(default=30, gt=0, le=365)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -318,12 +322,13 @@ class BillingSettings(BaseSettings):
     """Пул кредитов компании (досье 10.2).
 
     Структура решена командой 24.09: один пул на компанию, один тип
-    кредита, персональных лимитов нет, жёсткая остановка при
-    исчерпании. 420 кредитов на место в месяц (20 обращений × 21 день,
-    досье v3.3). 1 кредит = 4 000 токенов ≈ одно обращение, в том числе
-    уточняющее (решение Артёма 29.09, BH-30): при 2 000 вопрос с медианой
-    1 844 токена округлялся до 2 кредитов в 13 из 33 случаев — выходило
-    14–15 вопросов в день вместо 20 (ROADMAP.md, «Р-4 подробно»).
+    кредита, жёсткая остановка при исчерпании. 420 кредитов на место в
+    месяц (20 вопросов × 21 день, досье v3.3). 1 кредит = 4 000 токенов ≈
+    один вопрос, в том числе уточняющий (решение Артёма 29.09, BH-30): при
+    2 000 вопрос с медианой 1 844 токена округлялся до 2 кредитов в 13 из
+    33 случаев — выходило 14–15 вопросов в день вместо 20 (ROADMAP.md,
+    «Р-4 подробно»). Сверх пула — пакеты кредитов (domain/credit_packs.py)
+    и, по желанию компании, личный дневной лимит (решение владельца 09.10).
     """
 
     credits_per_seat: int = Field(default=420, gt=0)
@@ -331,6 +336,9 @@ class BillingSettings(BaseSettings):
     # Месяц считается по московскому времени: клиенты и счета — в России.
     billing_timezone: str = "Europe/Moscow"
     warn_at_percent: int = Field(default=80, gt=0, lt=100)
+    # Сколько в среднем стоит вопрос — для пояснения в интерфейсе («один
+    # вопрос — около N кредитов»). Уточняется по журналу ответов стенда.
+    avg_credits_per_question: float = Field(default=1, gt=0, le=100)
     # Цена 1 000 токенов модели ответа в рублях — для оценки расхода в
     # нашей панели (ТЗ §9). Не задана — панель показывает только токены.
     llm_rub_per_1k_tokens: float | None = Field(default=None, ge=0)
@@ -765,6 +773,9 @@ class ConnectorSettings(BaseSettings):
     max_run_minutes: int = Field(default=20, gt=0, le=180)
     # Больше — не скачивается: тот же порядок, что у ручной загрузки.
     max_document_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    # Срок на скачивание одного файла целиком (core/outbound.py): таймаут
+    # запроса — на каждое чтение, и медленная отдача его не исчерпает.
+    download_timeout_seconds: int = Field(default=300, gt=0, le=3600)
     sync_run_retention_days: int = Field(default=90, gt=0, le=365)
     # Процесс за egress-прокси (HTTPS_PROXY): запросы к системам клиентов
     # уходят по имени хоста, а не на закреплённый IP — прокси отвергает
@@ -785,6 +796,10 @@ class ConnectorSettings(BaseSettings):
     # `cli connector-check` их тоже видит — для живой проверки. Для
     # решения «не проверили на живой системе к MVP — скрыть» (STATUS.md).
     hidden_kinds: str = ""
+    # Виды, ещё не проверенные на живой системе (KindSpec.preview): в
+    # каталоге только если перечислены здесь. Новые коннекторы приходят
+    # такими и открываются после живой проверки (решение 09.10).
+    preview_kinds: str = ""
 
     # OAuth-приложения (режим per_user, этап 2). callback — публичный
     # адрес ручки GET /api/v1/connectors/oauth/callback: его админ
@@ -856,6 +871,10 @@ class ConnectorSettings(BaseSettings):
     @property
     def hidden_kind_names(self) -> frozenset[str]:
         return frozenset(_split_csv(self.hidden_kinds))
+
+    @property
+    def enabled_preview_kinds(self) -> frozenset[str]:
+        return frozenset(_split_csv(self.preview_kinds))
 
 
 @lru_cache

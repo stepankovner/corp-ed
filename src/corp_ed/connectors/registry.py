@@ -86,6 +86,10 @@ class KindSpec:
     # базовые — только в «Корпоративном» (domain/tariffs.py). Список
     # базовых определит команда; пока базовые все.
     base: bool = True
+    # Вид не проверен на живой системе: компаниям не предлагается, пока не
+    # перечислен в CONNECTOR_PREVIEW_KINDS. `cli connector-check` видит его
+    # и без флага — для той самой живой проверки.
+    preview: bool = False
 
     @property
     def module_names(self) -> frozenset[str]:
@@ -124,9 +128,11 @@ class AdapterRegistry:
         self,
         enabled_preview: frozenset[str] = frozenset(),
         hidden_kinds: frozenset[str] = frozenset(),
+        enabled_preview_kinds: frozenset[str] = frozenset(),
     ) -> None:
         self._enabled_preview = enabled_preview
         self._hidden_kinds = hidden_kinds
+        self._enabled_preview_kinds = enabled_preview_kinds
         self._specs: dict[str, KindSpec] = {}
         self._factories: dict[str, AdapterFactory] = {}
         self._oauth: dict[str, OAuthFactory] = {}
@@ -166,7 +172,10 @@ class AdapterRegistry:
     def offered(self, kind: str) -> bool:
         """Можно ли завести новое подключение этого вида. Уже заведённые
         скрытых видов работают: spec() и build() их не различают."""
-        return kind in self._specs and kind not in self._hidden_kinds
+        spec = self._specs.get(kind)
+        if spec is None or kind in self._hidden_kinds:
+            return False
+        return not spec.preview or kind in self._enabled_preview_kinds
 
     def unknown_hidden(self) -> frozenset[str]:
         """Скрытые настройкой имена, которых нет среди видов, — опечатка."""
@@ -217,7 +226,9 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry(
-        settings.enabled_preview_modules, settings.hidden_kind_names
+        settings.enabled_preview_modules,
+        settings.hidden_kind_names,
+        settings.enabled_preview_kinds,
     )
     register_bitrix24(registry, settings)
     register_confluence(registry, settings)

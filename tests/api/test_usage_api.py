@@ -1,5 +1,6 @@
 """Пул кредитов через HTTP: 402 при исчерпании и отчёт о расходе для админа."""
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -7,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import QaLog, Tenant, User, UserRole
+from corp_ed.domain.models import CreditGrant, QaLog, Tenant, User, UserRole
 from corp_ed.llm.fake import FakeAdapter
 from tests.api.conftest import bearer
 from tests.factories import make_user
@@ -42,7 +43,7 @@ async def test_exhausted_pool_is_402_with_code(
 
     assert response.status_code == 402
     assert response.json()["code"] == "credits_exhausted"
-    assert "администратору" in response.json()["detail"]
+    assert "администратора" in response.json()["detail"]
     assert fake_llm.calls == []
 
 
@@ -124,6 +125,50 @@ async def test_admin_sees_usage(
     assert body["warn_at_percent"] == 80
     assert body["warning"] is False
     assert body["period_start"] < body["period_end"]
+    assert (body["purchased"], body["purchased_expires_at"], body["stopped"]) == (
+        0,
+        None,
+        False,
+    )
+    # Пояснение «один вопрос — около N кредитов» — из настроек сервера.
+    assert body["avg_credits_per_question"] == 1
+
+
+async def test_usage_shows_purchased_credits(
+    api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+) -> None:
+    tenant_ctx.seats = 1
+    spend(session, account, 420)
+    expires = datetime.now(UTC) + timedelta(days=40)
+    session.add_all(
+        [
+            CreditGrant(
+                tenant_id=tenant_ctx.id,
+                credits=100,
+                remaining=60,
+                source="manual",
+                expires_at=expires,
+            ),
+            CreditGrant(
+                tenant_id=tenant_ctx.id,
+                credits=500,
+                remaining=500,
+                source="manual",
+                expires_at=expires + timedelta(days=200),
+            ),
+        ]
+    )
+    await session.commit()
+
+    body = (await api.get("/api/v1/usage", headers=bearer(admin_account))).json()
+
+    assert (body["exhausted"], body["stopped"]) == (True, False)
+    assert (body["purchased"], body["purchased_expiring"]) == (560, 60)
+    assert datetime.fromisoformat(body["purchased_expires_at"]) == expires
 
 
 async def test_usage_warns_admin_from_threshold(

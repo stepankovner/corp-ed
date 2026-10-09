@@ -422,7 +422,11 @@ async def _chat(client: StandClient, report: Report, smoke: SmokeDocument) -> No
     shared = await client.request("POST", f"/conversations/{conversation}/share")
     token = shared.json().get("token") if shared.status_code == 200 else None
     opened = (
-        await client.request("GET", f"/conversations/shared/{token}") if token else None
+        await client.request(
+            "POST", "/conversations/shared/open", json={"token": token}
+        )
+        if token
+        else None
     )
     unshared = await client.request("DELETE", f"/conversations/{conversation}/share")
     deleted = await client.request("DELETE", f"/conversations/{conversation}")

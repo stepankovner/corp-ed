@@ -1,9 +1,10 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type SubmitEvent } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
-import { formatCalendarDate, formatNumber, plural } from "../lib/format";
+import { averageQuestionNote, credits, formatKopecks } from "../lib/credits";
+import { formatCalendarDate, formatDate, formatNumber, plural } from "../lib/format";
 import { formatPrice, tariffByCode, TARIFFS, type TariffCode } from "../lib/tariffs";
 import { useDocumentTitle } from "../lib/title";
 import { Section } from "../settings/common";
@@ -15,21 +16,28 @@ import { Notice } from "../ui/Notice";
 import { Page, PageHeader } from "../ui/Page";
 import pageStyles from "../ui/Page.module.css";
 import { PageSpinner } from "../ui/Spinner";
+import { Table } from "../ui/Table";
 import adminStyles from "./Admin.module.css";
 import styles from "./Company.module.css";
 import { ChoiceCards, type Choice } from "./CompanySettingsPage";
 
 type Settings = Schemas["CompanySettingsResponse"];
 type Usage = Schemas["UsageResponse"];
+type Pack = Schemas["CreditPackResponse"];
+type Order = Schemas["CreditOrderResponse"];
 
 /** Как в схеме бэкенда (TariffRequest). */
 const MAX_SEATS = 10_000;
 const MAX_COMMENT = 1000;
 
+const ORDERS_KEY = ["credits", "orders"] as const;
+const BUY_OR_ADD = "Купите пакет кредитов или добавьте места.";
+
 /**
- * Тариф и лимит вопросов (ТЗ §7). Тариф и места меняет команда kronto:
- * администратор оставляет заявку, она приходит команде в Telegram. Оплата
- * картой и счётом — позже (§10).
+ * Тариф и кредиты (ТЗ §7, решение владельца 09.10). Тариф и места меняет
+ * команда kronto по заявке. Кредиты: месячный пул и купленные пакеты;
+ * пакет администратор заказывает здесь, оплата — по счёту, кредиты
+ * зачисляет команда. Цены пакетов — с бэкенда (GET /credits/packs).
  */
 export function TariffPage() {
   useDocumentTitle("Тариф");
@@ -43,11 +51,7 @@ export function TariffPage() {
 
   return (
     <Page>
-      <PageHeader
-        label="управление"
-        title="Тариф"
-        description="Тариф, рабочие места и лимит вопросов на месяц."
-      />
+      <PageHeader label="управление" title="Тариф" description="Тариф, рабочие места и кредиты." />
       {company.isPending || usage.isPending ? (
         <PageSpinner />
       ) : (
@@ -62,9 +66,10 @@ export function TariffPage() {
           ) : (
             <UsageSection usage={usage.data} />
           )}
+          <PacksSection />
           <p className={`muted ${styles.small}`}>
-            Оплата картой и по счёту появится позже — пока тариф и места меняет команда kronto по
-            вашей заявке.
+            Тариф и места меняет команда kronto по вашей заявке. Пакеты кредитов пока оплачиваются
+            по счёту, оплата картой появится позже.
           </p>
         </div>
       )}
@@ -127,24 +132,28 @@ function PlanSection({ settings, onChange }: { settings: Settings; onChange: () 
 
 function UsageSection({ usage }: { usage: Usage }) {
   const share = usage.pool > 0 ? Math.min(1, usage.used / usage.pool) : 1;
-  const tone = usage.exhausted
+  const tone = usage.stopped
     ? adminStyles.progressError
     : usage.warning
       ? adminStyles.progressWarn
       : "";
+  const renews = formatCalendarDate(usage.period_end);
   return (
     <Section
-      title="Лимит вопросов"
-      description="Кредиты — общий пул компании на месяц: столько-то на каждое рабочее место. Один вопрос обычно стоит один кредит, длинный — несколько."
+      title="Кредиты"
+      description={`Кредиты — общий пул компании на месяц: ${credits(usage.credits_per_seat)} на каждое рабочее место. Сверх пула расходуются купленные пакеты. ${averageQuestionNote(usage.avg_credits_per_question)}`}
     >
-      {usage.exhausted ? (
-        <Notice kind="error" title="Лимит исчерпан">
-          Сотрудники не могут задавать вопросы до {formatCalendarDate(usage.period_end)}. Чтобы
-          увеличить лимит, добавьте места — заявкой «Сменить тариф».
+      {usage.stopped ? (
+        <Notice kind="error" title="Кредиты закончились">
+          Сотрудники не могут задавать вопросы до {renews}. {BUY_OR_ADD}
+        </Notice>
+      ) : usage.exhausted ? (
+        <Notice kind="warn" title="Месячный пул израсходован">
+          Вопросы списываются с купленных кредитов. Пул обновится {renews}.
         </Notice>
       ) : usage.warning ? (
-        <Notice kind="warn" title="Лимит скоро закончится">
-          Израсходовано {Math.round(share * 100)} % пула.
+        <Notice kind="warn" title="Кредиты скоро закончатся">
+          Израсходовано {Math.round(share * 100)} % месячного пула. {BUY_OR_ADD}
         </Notice>
       ) : null}
       <div>
@@ -157,7 +166,7 @@ function UsageSection({ usage }: { usage: Usage }) {
         <div
           className={adminStyles.progress}
           role="progressbar"
-          aria-label="Израсходовано кредитов"
+          aria-label="Израсходовано кредитов месячного пула"
           aria-valuemin={0}
           aria-valuemax={usage.pool}
           aria-valuenow={usage.used}
@@ -167,12 +176,170 @@ function UsageSection({ usage }: { usage: Usage }) {
             style={{ width: `${share * 100}%` }}
           />
         </div>
+        <p className={`muted ${styles.small} ${styles.after}`}>Пул обновится {renews}.</p>
       </div>
       <div className={adminStyles.stats}>
-        <Stat value={formatNumber(usage.remaining)} label="осталось кредитов" />
+        <Stat value={formatNumber(usage.remaining)} label="осталось в пуле" />
         <Stat value={formatNumber(usage.credits_per_seat)} label="кредитов на место в месяц" />
+        <Stat value={formatNumber(usage.purchased)} label="купленных кредитов" />
       </div>
+      <p className={`muted ${styles.small}`}>
+        {usage.purchased > 0 && usage.purchased_expires_at
+          ? `Ближайшее сгорание: ${credits(usage.purchased_expiring)} ${plural(usage.purchased_expiring, "сгорит", "сгорят", "сгорят")} ${formatCalendarDate(usage.purchased_expires_at)}.`
+          : "Купленных кредитов нет."}
+      </p>
     </Section>
+  );
+}
+
+/**
+ * Пакеты кредитов: цены и срок жизни — с бэкенда. «Купить» создаёт заказ,
+ * он ждёт оплаты по счёту; кредиты зачисляет команда kronto.
+ */
+function PacksSection() {
+  const packs = useQuery({
+    queryKey: ["credits", "packs"],
+    queryFn: () => unwrap(api.GET("/api/v1/credits/packs")),
+  });
+  const orders = useQuery({
+    queryKey: ORDERS_KEY,
+    queryFn: () => unwrap(api.GET("/api/v1/credits/orders")),
+  });
+  const [buying, setBuying] = useState<Pack | null>(null);
+  const months = packs.data?.[0]?.valid_months;
+  return (
+    <Section
+      title="Пакеты кредитов"
+      description={
+        months
+          ? `Расходуются после месячного пула и действуют ${months} ${plural(months, "месяц", "месяца", "месяцев")} с зачисления; первыми списываются те, что раньше сгорают. Оплата — по счёту: команда kronto пришлёт его и зачислит кредиты после оплаты.`
+          : undefined
+      }
+    >
+      {packs.isPending ? (
+        <PageSpinner />
+      ) : packs.isError ? (
+        <Notice kind="error">{errorMessage(packs.error)}</Notice>
+      ) : (
+        <div className={adminStyles.stats}>
+          {packs.data.map((pack) => (
+            <div key={pack.code} className={adminStyles.stat}>
+              <span className={adminStyles.statValue}>{credits(pack.credits)}</span>
+              <span className="num">{formatKopecks(pack.price_kopecks)}</span>
+              <span className={adminStyles.statLabel}>
+                {formatKopecks(Math.round(pack.price_kopecks / pack.credits))} за кредит
+              </span>
+              <div>
+                <Button
+                  size="sm"
+                  onClick={() => setBuying(pack)}
+                  aria-label={`Купить ${credits(pack.credits)}`}
+                >
+                  Купить
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {orders.isPending ? null : orders.isError ? (
+        <Notice kind="error">{errorMessage(orders.error)}</Notice>
+      ) : (
+        <OrdersTable orders={orders.data} />
+      )}
+      {buying ? <BuyDialog pack={buying} onClose={() => setBuying(null)} /> : null}
+    </Section>
+  );
+}
+
+const ORDER_STATUS: Record<Order["status"], { label: string; tone: "warn" | "ok" | "muted" }> = {
+  awaiting_payment: { label: "Ждёт оплаты", tone: "warn" },
+  paid: { label: "Оплачен", tone: "ok" },
+  cancelled: { label: "Отменён", tone: "muted" },
+};
+
+function OrdersTable({ orders }: { orders: Order[] }) {
+  if (orders.length === 0) return <p className={`muted ${styles.small}`}>Заказов пока нет</p>;
+  return (
+    <Table label="Заказы">
+      <thead>
+        <tr>
+          <th>Заказ</th>
+          <th>Пакет</th>
+          <th>Сумма</th>
+          <th>Статус</th>
+          <th>Создан</th>
+        </tr>
+      </thead>
+      <tbody>
+        {orders.map((order) => {
+          const status = ORDER_STATUS[order.status];
+          return (
+            <tr key={order.id}>
+              <td>№ {order.number}</td>
+              <td>{credits(order.credits)}</td>
+              <td className="num">{formatKopecks(order.amount_kopecks)}</td>
+              <td>
+                <Badge tone={status.tone}>{status.label}</Badge>
+              </td>
+              <td>{formatDate(order.created_at)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </Table>
+  );
+}
+
+/** Подтверждение заказа. Окно монтируется на время покупки. */
+function BuyDialog({ pack, onClose }: { pack: Pack; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const order = useMutation({
+    mutationFn: () => unwrap(api.POST("/api/v1/credits/orders", { body: { pack: pack.code } })),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ORDERS_KEY }),
+  });
+  const done = order.data;
+  const months = plural(pack.valid_months, "месяц", "месяца", "месяцев");
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => !open && !order.isPending && onClose()}
+      title="Купить пакет кредитов"
+      description={
+        done ? undefined : `${credits(pack.credits)} за ${formatKopecks(pack.price_kopecks)}`
+      }
+      footer={
+        done ? (
+          <Button size="sm" onClick={onClose}>
+            Готово
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={order.isPending}>
+              Отмена
+            </Button>
+            <Button size="sm" busy={order.isPending} onClick={() => order.mutate()}>
+              Заказать
+            </Button>
+          </>
+        )
+      }
+    >
+      {done ? (
+        <Notice kind="ok" title={`Заказ № ${done.number} ждёт оплаты`}>
+          Команда kronto пришлёт счёт на {formatKopecks(done.amount_kopecks)}. Кредиты появятся
+          после оплаты — администраторам придёт уведомление.
+        </Notice>
+      ) : (
+        <>
+          {order.isError ? <Notice kind="error">{errorMessage(order.error)}</Notice> : null}
+          <p>
+            Создадим заказ, команда kronto пришлёт счёт. Кредиты расходуются после месячного пула и
+            действуют {pack.valid_months} {months} с зачисления.
+          </p>
+        </>
+      )}
+    </Modal>
   );
 }
 

@@ -1,7 +1,8 @@
 """Уведомления (ТЗ §8): колокольчик в приложении и письма.
 
 Администратору — о том, что требует его действий: остановилось
-подключение, лимит вопросов на 80 % и исчерпан, заявка на вступление,
+подключение, кредиты на 80 % и кончились, зачислены купленные кредиты,
+сотрудник просит пополнить кредиты, заявка на вступление,
 отдел с закрытой папкой ждёт подтверждения, недельная сводка. Письма —
 по его настройкам (строки настроек нет — все включены). Сотруднику
 письма приходят только о безопасности (их шлют сервисы входа, здесь их
@@ -42,6 +43,8 @@ class NotificationKind(StrEnum):
     CONNECTOR_STOPPED = "connector_stopped"
     CREDITS_WARNING = "credits_warning"
     CREDITS_EXHAUSTED = "credits_exhausted"
+    CREDITS_ADDED = "credits_added"
+    CREDITS_TOPUP_REQUESTED = "credits_topup_requested"
     JOIN_REQUEST = "join_request"
     DEPARTMENT_REQUEST = "department_request"
     DEPARTMENT_CONFIRMED = "department_confirmed"
@@ -53,6 +56,8 @@ _EMAIL_FLAG = {
     NotificationKind.CONNECTOR_STOPPED: "email_connectors",
     NotificationKind.CREDITS_WARNING: "email_credits",
     NotificationKind.CREDITS_EXHAUSTED: "email_credits",
+    NotificationKind.CREDITS_ADDED: "email_credits",
+    NotificationKind.CREDITS_TOPUP_REQUESTED: "email_credits",
     NotificationKind.JOIN_REQUEST: "email_join_requests",
     # Подтвердить отдел — тоже заявка: отдельной настройки писем не
     # заводим (ТЗ §8).
