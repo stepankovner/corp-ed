@@ -218,19 +218,73 @@ describe("новый диалог", () => {
     );
   });
 
-  it("исчерпанный лимит — сообщение над полем, вопрос остаётся", async () => {
+  it("кредиты кончились — сообщение над полем, вопрос остаётся, можно попросить пополнить", async () => {
+    signedIn();
+    const pressed: number[] = [];
+    server.use(
+      http.post("/api/v1/conversations", () =>
+        HttpResponse.json({ detail: "Кредиты", code: "credits_exhausted" }, { status: 402 }),
+      ),
+      http.get("/api/v1/credits/topup-request", () =>
+        HttpResponse.json({ stopped: true, requested: false }),
+      ),
+      http.post("/api/v1/credits/topup-request", () => {
+        pressed.push(1);
+        return HttpResponse.json({ sent: true });
+      }),
+    );
+    renderApp("/");
+    const user = await ask("Вопрос");
+    expect(
+      await screen.findByText(/Кредиты компании на этот месяц закончились/),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Ваш вопрос")).toHaveValue("Вопрос");
+
+    await user.click(
+      await screen.findByRole("button", { name: "Попросить администратора пополнить" }),
+    );
+    expect(await screen.findByText("Администратор уведомлён.")).toBeInTheDocument();
+    expect(pressed).toHaveLength(1);
+  });
+
+  it("кто-то уже попросил пополнить — «Администратор уже уведомлён»", async () => {
     signedIn();
     server.use(
       http.post("/api/v1/conversations", () =>
-        HttpResponse.json({ detail: "Лимит", code: "credits_exhausted" }, { status: 402 }),
+        HttpResponse.json({ detail: "Кредиты", code: "credits_exhausted" }, { status: 402 }),
+      ),
+      http.get("/api/v1/credits/topup-request", () =>
+        HttpResponse.json({ stopped: true, requested: true }),
+      ),
+    );
+    renderApp("/");
+    await ask("Вопрос");
+    expect(await screen.findByText("Администратор уже уведомлён.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Попросить администратора пополнить" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("дневной лимит — свой текст, без просьбы пополнить", async () => {
+    signedIn();
+    server.use(
+      http.post("/api/v1/conversations", () =>
+        HttpResponse.json(
+          {
+            detail:
+              "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. Лимит задаёт администратор компании",
+            code: "daily_limit_exhausted",
+          },
+          { status: 429 },
+        ),
       ),
     );
     renderApp("/");
     await ask("Вопрос");
     expect(
-      await screen.findByText(/Лимит вопросов компании на этот месяц исчерпан/),
+      await screen.findByText(/Ваш дневной лимит на сегодня исчерпан, он обновится завтра/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Ваш вопрос")).toHaveValue("Вопрос");
+    expect(screen.queryByRole("button", { name: /Попросить/ })).not.toBeInTheDocument();
   });
 });
 
@@ -303,6 +357,43 @@ describe("открытый диалог", () => {
       screen.getByText("В документах компании нет ответа на этот вопрос."),
     ).toBeInTheDocument();
     expect(screen.getByText("Вопрос попадёт в отчёт о пробелах в документах")).toBeInTheDocument();
+  });
+
+  it("ответ остановлен кредитами или дневным лимитом — понятный текст", async () => {
+    signedIn();
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(
+          conversation([
+            question(),
+            reply({ status: "failed", error_code: "credits_exhausted", content: "", sources: [] }),
+            question({ id: "q-2", parent_id: "a-1", content: "Ещё вопрос" }),
+            reply({
+              id: "a-2",
+              parent_id: "q-2",
+              status: "failed",
+              error_code: "daily_limit_exhausted",
+              content: "",
+              sources: [],
+            }),
+          ]),
+        ),
+      ),
+      http.get("/api/v1/credits/topup-request", () =>
+        HttpResponse.json({ stopped: false, requested: false }),
+      ),
+    );
+    renderApp("/c/c-1");
+    expect(
+      await screen.findByText(/Кредиты компании на этот месяц закончились/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. Лимит задаёт администратор компании.",
+      ),
+    ).toBeInTheDocument();
+    // Кредиты уже пополнили — просить нечего.
+    expect(screen.queryByRole("button", { name: /Попросить/ })).not.toBeInTheDocument();
   });
 
   it("после сбоя отвечает заново: новая версия ответа", async () => {

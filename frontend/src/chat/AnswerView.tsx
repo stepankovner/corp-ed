@@ -12,7 +12,6 @@ import {
   X,
 } from "lucide-react";
 import { useState, type ReactNode, type SubmitEvent } from "react";
-import { Link } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import { errorMessage } from "../api/errors";
@@ -23,6 +22,7 @@ import { IconButton } from "../ui/IconButton";
 import { Spinner } from "../ui/Spinner";
 import { useToast } from "../ui/useToast";
 import type { Conversation, FeedbackReason, Message, Source } from "./api";
+import { CreditsStopped } from "./CreditsStopped";
 import { FEEDBACK_REASONS } from "./feedbackReasons";
 import styles from "./Chat.module.css";
 import { stripGeneralPrefix } from "./citations";
@@ -78,6 +78,9 @@ const ERRORS: Record<string, string> = {
   timeout: "Ответ занял слишком много времени.",
   interrupted: "Ответ прервался: сервис перезапускался.",
   internal: "Не удалось получить ответ.",
+  credits_exhausted: "Кредиты компании на этот месяц закончились.",
+  daily_limit_exhausted:
+    "Ваш дневной лимит на сегодня исчерпан, он обновится завтра. Лимит задаёт администратор компании.",
 };
 
 /**
@@ -203,19 +206,12 @@ export function AnswerBody({
 
 function FailedBody({ message, isAdmin }: { message: Message; isAdmin: boolean }) {
   if (message.error_code === "credits_exhausted") {
+    return <CreditsStopped admin={isAdmin} />;
+  }
+  if (message.error_code === "daily_limit_exhausted") {
     return (
       <div className={`${styles.msg} ${styles.limit}`} role="alert">
-        <p className={styles.refusalTitle}>Лимит вопросов компании на этот месяц исчерпан.</p>
-        <p>
-          {isAdmin ? (
-            <>
-              Расход и дату обновления лимита видно в разделе{" "}
-              <Link to="/admin/tariff">«Тариф»</Link>.
-            </>
-          ) : (
-            "Новые вопросы станут доступны в следующем месяце. Если ответ нужен срочно — напишите администратору."
-          )}
-        </p>
+        <p>{ERRORS.daily_limit_exhausted}</p>
       </div>
     );
   }

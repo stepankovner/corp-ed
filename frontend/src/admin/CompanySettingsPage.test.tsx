@@ -129,6 +129,44 @@ describe("настройки компании", () => {
     ]);
   });
 
+  it("дневной лимит кредитов: по умолчанию выключен, задаётся и снимается", async () => {
+    const user = userEvent.setup();
+    shell();
+    let settings = companySettings();
+    const bodies: Partial<Settings>[] = [];
+    server.use(
+      http.get("/api/v1/company", () => HttpResponse.json(settings)),
+      http.patch("/api/v1/company", async ({ request }) => {
+        const body = (await request.json()) as Partial<Settings>;
+        bodies.push(body);
+        settings = { ...settings, ...body };
+        return HttpResponse.json(settings);
+      }),
+    );
+    renderApp("/admin/settings");
+
+    const section = await screen.findByRole("region", { name: "Личный дневной лимит" });
+    expect(section).toHaveTextContent("Сейчас лимита нет");
+    const field = within(section).getByLabelText(/Кредитов в день на сотрудника/);
+    expect(field).toHaveValue(null);
+    await user.type(field, "0");
+    await user.click(within(section).getByRole("button", { name: "Сохранить" }));
+    expect(within(section).getByText(/целое число от 1/)).toBeInTheDocument();
+    expect(bodies).toEqual([]);
+
+    await user.clear(field);
+    await user.type(field, "15");
+    await user.click(within(section).getByRole("button", { name: "Сохранить" }));
+    expect(await screen.findByText("Дневной лимит сохранён")).toBeInTheDocument();
+    // После сохранения раздел начинается с сохранённого значения.
+    const saved = screen.getByRole("region", { name: "Личный дневной лимит" });
+    expect(saved).toHaveTextContent("15 кредитов в день");
+
+    await user.click(within(saved).getByRole("button", { name: "Снять лимит" }));
+    expect(await screen.findByText("Дневной лимит снят")).toBeInTheDocument();
+    expect(bodies).toEqual([{ daily_credits_per_member: 15 }, { daily_credits_per_member: null }]);
+  });
+
   it("домены: явную опечатку ловит сразу, ошибку сервера показывает под полем", async () => {
     const user = userEvent.setup();
     shell();
