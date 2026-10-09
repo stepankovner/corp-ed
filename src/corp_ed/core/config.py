@@ -508,6 +508,12 @@ class TochkaSettings(BaseSettings):
             raise ValueError("TOCHKA_API_URL must be https://")
         return value.rstrip("/") + "/"
 
+    @field_validator("webhook_public_key")
+    @classmethod
+    def default_webhook_key(cls, value: str) -> str:
+        # Пустая переменная в .env — «не задано», а не «ключа нет».
+        return value.strip() or TOCHKA_WEBHOOK_KEY
+
     def missing(self) -> list[str]:
         """Каких переменных не хватает для работы с Точкой."""
         names = {
