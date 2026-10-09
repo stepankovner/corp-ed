@@ -219,6 +219,11 @@ function CompanyRow({
         {share !== null ? (
           <span className={`${styles.share} ${shareTone(share)}`}>{share} %</span>
         ) : null}
+        {company.purchased_credits ? (
+          <span className={tableStyles.sub}>
+            купленных: {formatNumber(company.purchased_credits)}
+          </span>
+        ) : null}
       </td>
       <td>
         <div className={styles.cell}>
@@ -389,7 +394,8 @@ function CompanyDialog({ company, onClose }: { company: Company; onClose: () => 
           </dd>
           <dt>Кредиты</dt>
           <dd>
-            {formatNumber(company.credits_used)} из {formatNumber(company.pool)} за месяц
+            {formatNumber(company.credits_used)} из {formatNumber(company.pool)} за месяц,
+            купленных: {formatNumber(company.purchased_credits)}
           </dd>
           <dt>Источники</dt>
           <dd>
