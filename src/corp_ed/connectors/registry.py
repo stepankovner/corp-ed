@@ -23,6 +23,8 @@ from corp_ed.domain.types import ConnectorMode
 
 logger = structlog.get_logger()
 
+MAX_FIELD_LENGTH = 2048
+
 
 @dataclass(frozen=True)
 class FieldSpec:
@@ -32,6 +34,9 @@ class FieldSpec:
     # Секретные поля живут только в credentials, шифруются и не
     # возвращаются; несекретные — в config, видны админу.
     secret: bool = False
+    # Длина значения: адрес, токен, шаблон — до 2 КиБ; больше — только
+    # если вид так задумал (JSON-ключ сервисного аккаунта Google — 2,4 КиБ).
+    max_length: int = MAX_FIELD_LENGTH
 
 
 @dataclass(frozen=True)
