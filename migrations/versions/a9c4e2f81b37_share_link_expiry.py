@@ -1,7 +1,7 @@
 """share link expiry
 
 Revision ID: a9c4e2f81b37
-Revises: b2c3d4e5f6a7
+Revises: e8c2a4f61d93
 Create Date: 2026-10-09 12:00:00
 
 ТЗ §6 (решение владельца 09.10): ссылка «поделиться диалогом» живёт
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a9c4e2f81b37"
-down_revision: Union[str, Sequence[str], None] = "b2c3d4e5f6a7"
+down_revision: Union[str, Sequence[str], None] = "e8c2a4f61d93"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
