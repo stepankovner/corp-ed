@@ -165,7 +165,7 @@ class StaffService:
     async def is_staff(self, account_id: UUID) -> bool:
         return await self.session.get(StaffMember, account_id) is not None
 
-    # --- обзор ---------------------------------------------------------------
+    # --- обзор ------------------------------------------------------------------------
 
     async def overview(self, now: datetime | None = None) -> Overview:
         today = (now or datetime.now(UTC)).astimezone(self.zone).date()
@@ -188,7 +188,7 @@ class StaffService:
             accounts=int(accounts or 0),
         )
 
-    # --- компании ------------------------------------------------------------
+    # --- компании ---------------------------------------------------------------------
 
     async def companies(self, now: datetime | None = None) -> list[CompanyRow]:
         tenants = (
@@ -281,7 +281,7 @@ class StaffService:
             connectors=int(connectors or 0),
         )
 
-    # --- расход --------------------------------------------------------------
+    # --- расход -----------------------------------------------------------------------
 
     async def spend(self, days: int, now: datetime | None = None) -> Spend:
         """Расход на модель ответа за days дней по времени биллинга:
@@ -383,7 +383,7 @@ class StaffService:
             companies=sorted(companies, key=lambda c: c.tokens, reverse=True),
         )
 
-    # --- люди ----------------------------------------------------------------
+    # --- люди -------------------------------------------------------------------------
 
     async def search_people(self, query: str) -> list[Person]:
         """Учётки по почте или имени — помочь со входом. Не меньше трёх

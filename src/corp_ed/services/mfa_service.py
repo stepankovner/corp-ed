@@ -180,7 +180,7 @@ class MfaService:
         self.audit = audit
         self.mail = EmailService(session)
 
-    # --- состояние --------------------------------------------------------
+    # --- состояние --------------------------------------------------------------------
 
     async def passkeys(self, account: Account) -> list[Passkey]:
         result = await self.session.scalars(
@@ -220,7 +220,7 @@ class MfaService:
             methods.append("backup")
         return methods
 
-    # --- вход ---------------------------------------------------------------
+    # --- вход -------------------------------------------------------------------------
 
     async def start_login(self, account: Account, *, remember: bool) -> LoginStep:
         """Пароль верный — шаг входа. Код на почту уходит сразу."""
@@ -440,7 +440,7 @@ class MfaService:
         challenge.webauthn_challenge = None
         return True
 
-    # --- доверенные устройства ---------------------------------------------
+    # --- доверенные устройства --------------------------------------------------------
 
     async def is_trusted(self, account: Account, raw: str | None) -> bool:
         if not raw:
@@ -502,7 +502,7 @@ class MfaService:
         )
         return int(result or 0)
 
-    # --- приложение-аутентификатор --------------------------------------------
+    # --- приложение-аутентификатор ----------------------------------------------------
 
     async def start_totp_setup(
         self, account: Account, password: str
@@ -575,7 +575,7 @@ class MfaService:
         )
         await self.session.commit()
 
-    # --- ключи доступа ---------------------------------------------------------
+    # --- ключи доступа ----------------------------------------------------------------
 
     async def passkey_registration_options(
         self, account: Account, rp: RelyingParty, password: str
@@ -677,7 +677,7 @@ class MfaService:
         )
         await self.session.commit()
 
-    # --- резервные коды ---------------------------------------------------------
+    # --- резервные коды ---------------------------------------------------------------
 
     async def regenerate_backup_codes(
         self, account: Account, password: str
@@ -712,7 +712,7 @@ class MfaService:
             )
         return codes
 
-    # --- сеансы --------------------------------------------------------------------
+    # --- сеансы -----------------------------------------------------------------------
 
     async def sessions(
         self, account: Account, current_raw: str | None
@@ -792,7 +792,7 @@ class MfaService:
         await self.forget_devices(account)
         await self.session.commit()
 
-    # --- правила -------------------------------------------------------------------
+    # --- правила ----------------------------------------------------------------------
 
     async def strong_required(self, account: Account) -> bool:
         """Нужен ли надёжный фактор: администратор хоть в одной компании

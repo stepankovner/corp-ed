@@ -19,8 +19,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-import pypdfium2 as pdfium
-import pypdfium2.raw as pdfium_c
+import pypdfium2 as pdfium  # type: ignore[import-untyped]
+import pypdfium2.raw as pdfium_c  # type: ignore[import-untyped]
 
 from corp_ed.core.config import SellerSettings
 

@@ -50,6 +50,10 @@ class NotificationKind(StrEnum):
     DEPARTMENT_CONFIRMED = "department_confirmed"
     DEPARTMENT_REJECTED = "department_rejected"
     WEEKLY_DIGEST = "weekly_digest"
+    BILLING_INVOICE = "billing_invoice"
+    BILLING_PAID = "billing_paid"
+    BILLING_OVERDUE = "billing_overdue"
+    BILLING_ACT = "billing_act"
 
 
 _EMAIL_FLAG = {
@@ -63,6 +67,11 @@ _EMAIL_FLAG = {
     # заводим (ТЗ §8).
     NotificationKind.DEPARTMENT_REQUEST: "email_join_requests",
     NotificationKind.WEEKLY_DIGEST: "email_weekly_digest",
+    # Оплата — та же настройка, что у кредитов: «Кредиты и оплата».
+    NotificationKind.BILLING_INVOICE: "email_credits",
+    NotificationKind.BILLING_PAID: "email_credits",
+    NotificationKind.BILLING_OVERDUE: "email_credits",
+    NotificationKind.BILLING_ACT: "email_credits",
 }
 
 EMAIL_FLAGS = (
@@ -171,7 +180,7 @@ class NotificationService:
             )
         )
 
-    # --- колокольчик -----------------------------------------------------------
+    # --- колокольчик ------------------------------------------------------------------
 
     async def inbox(self, member: User, limit: int = INBOX_LIMIT) -> Inbox:
         items = (
@@ -201,7 +210,7 @@ class NotificationService:
         await self.session.execute(statement)
         await self.session.commit()
 
-    # --- настройки писем -------------------------------------------------------
+    # --- настройки писем --------------------------------------------------------------
 
     async def settings(self, member: User) -> dict[str, bool]:
         setting = await self.session.get(NotificationSetting, member.id)

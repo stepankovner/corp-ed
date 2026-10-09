@@ -126,7 +126,7 @@ class AccountService:
         self.tenants = TenantRepository(session)
         self.mail = EmailService(session)
 
-    # --- регистрация и подтверждение почты ------------------------------------
+    # --- регистрация и подтверждение почты --------------------------------------------
 
     async def register(
         self,
@@ -254,7 +254,7 @@ class AccountService:
             ),
         )
 
-    # --- пароль ---------------------------------------------------------------
+    # --- пароль -----------------------------------------------------------------------
 
     async def forgot_password(self, email: str) -> None:
         account = await self.accounts.get_by_email(email)
@@ -331,7 +331,7 @@ class AccountService:
             ),
         )
 
-    # --- смена почты ----------------------------------------------------------
+    # --- смена почты ------------------------------------------------------------------
 
     async def request_email_change(
         self,
@@ -514,7 +514,7 @@ class AccountService:
             await self.accounts.delete(other)
             logger.info("unverified_account_released", account_id=str(other.id))
 
-    # --- профиль, компании, удаление ------------------------------------------
+    # --- профиль, компании, удаление --------------------------------------------------
 
     async def update_profile(
         self, account: Account, changes: dict[str, Any]

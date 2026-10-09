@@ -132,7 +132,7 @@ class InviteService:
         self.audit = audit
         self.session = session
 
-    # --- администратор компании (тенант из токена) ----------------------------
+    # --- администратор компании (тенант из токена) ------------------------------------
 
     async def create(
         self,
@@ -205,7 +205,7 @@ class InviteService:
             logger.info("invite_revoked", invite_id=str(invite.id))
         return invite
 
-    # --- человек с приглашением -----------------------------------------------
+    # --- человек с приглашением -------------------------------------------------------
 
     async def preview(self, secret: str) -> InvitePreview:
         """В какую компанию ведёт приглашение — для карточки «Вступить»."""

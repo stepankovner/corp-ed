@@ -124,7 +124,7 @@ class FolderService:
     async def get(self, folder_id: UUID) -> Folder:
         return await self._get(folder_id)
 
-    # --- внутреннее -------------------------------------------------------------
+    # --- внутреннее -------------------------------------------------------------------
 
     async def _get(self, folder_id: UUID) -> Folder:
         folder = (

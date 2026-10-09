@@ -261,7 +261,7 @@ class ConnectorSyncService:
         log.info("sync_finished", status=status.value, **run.stats.as_dict())
         return SyncOutcome(status, run.stats, run.error_code, retryable)
 
-    # --- режимы ---------------------------------------------------------------
+    # --- режимы -----------------------------------------------------------------------
 
     async def _sync_organization(self, session: AsyncSession, run: _Run) -> None:
         connector = run.connector
@@ -374,7 +374,7 @@ class ConnectorSyncService:
             )
             await session.commit()
 
-    # --- обход ----------------------------------------------------------------
+    # --- обход ------------------------------------------------------------------------
 
     async def _walk(
         self,
@@ -549,7 +549,7 @@ class ConnectorSyncService:
         else:
             await materials.replace_access(material.id, ())
 
-    # --- вспомогательное ------------------------------------------------------
+    # --- вспомогательное --------------------------------------------------------------
 
     def _decrypt(self, token: str) -> Mapping[str, str] | None:
         try:

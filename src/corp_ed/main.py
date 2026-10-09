@@ -21,6 +21,7 @@ from corp_ed.api.v1.endpoints import (
     audit,
     auth,
     avatars,
+    billing,
     chat,
     company,
     connectors,
@@ -48,7 +49,9 @@ from corp_ed.core.config import (
     LLMSettings,
     get_connector_settings,
     get_http_settings,
+    get_payment_settings,
     get_team_notify_settings,
+    get_tochka_settings,
 )
 from corp_ed.core.database import get_engine
 from corp_ed.core.dialogue_store import InMemoryDialogueStore, RedisDialogueStore
@@ -61,11 +64,13 @@ from corp_ed.core.exception_handlers import (
     domain_fallback_handler,
     duplicate_material_handler,
     internal_error_handler,
+    invalid_billing_input_handler,
     invalid_connector_config_handler,
     invalid_credentials_handler,
     llm_error_handler,
     not_authenticated_handler,
     not_found_error_handler,
+    payment_unavailable_handler,
     permission_error_handler,
     rate_limited_handler,
     service_unavailable_handler,
@@ -82,12 +87,14 @@ from corp_ed.core.exceptions import (
     DemoUnavailableError,
     DomainError,
     DuplicateMaterialError,
+    InvalidBillingInputError,
     InvalidConnectorConfigError,
     InvalidCredentialsError,
     InvalidLeadError,
     InviteEmailDomainError,
     NotAuthenticatedError,
     NotFoundError,
+    PaymentUnavailableError,
     PermissionError,
     ServiceUnavailableError,
     TariffConnectorLimitError,
@@ -118,6 +125,7 @@ from corp_ed.services.chat_generation import (
     InMemoryStopSignals,
     RedisStopSignals,
 )
+from corp_ed.services.payments.tochka import TochkaProvider, tochka_http_client
 from corp_ed.services.team_notify import build_team_notifier
 from corp_ed.services.team_notify import drain as drain_team_notifier
 
@@ -199,6 +207,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.team_notifier = build_team_notifier(
         app.state.outbound_http_client, get_team_notify_settings()
     )
+    # Банк (решения владельца 09.10) — только с PAYMENTS_PROVIDER=tochka:
+    # нет ключа или сертификата Минцифры — ошибка старта, а не первого счёта.
+    app.state.payment_provider = None
+    tochka_client: httpx.AsyncClient | None = None
+    if get_payment_settings().provider == "tochka":
+        tochka = get_tochka_settings()
+        tochka_client = tochka_http_client(
+            tochka, via_proxy=get_connector_settings().outbound_via_proxy
+        )
+        app.state.payment_provider = TochkaProvider(tochka_client, tochka)
     try:
         yield
     finally:
@@ -207,6 +225,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await drain_team_notifier(app.state.team_notifier)
         await app.state.http_client.aclose()
         await app.state.outbound_http_client.aclose()
+        if tochka_client is not None:
+            await tochka_client.aclose()
         if redis is not None:
             await redis.aclose()
 
@@ -301,6 +321,9 @@ app.include_router(demo.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(usage.router, prefix="/api/v1")
 app.include_router(credits.router, prefix="/api/v1")
+app.include_router(billing.router, prefix="/api/v1")
+app.include_router(billing.requisites_router, prefix="/api/v1")
+app.include_router(billing.payments_router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
 app.include_router(gaps.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
@@ -363,6 +386,8 @@ app.add_exception_handler(ConnectorLimitError, connector_limit_handler)
 app.add_exception_handler(TariffConnectorLimitError, connector_limit_handler)
 app.add_exception_handler(ConnectorNotInTariffError, connector_limit_handler)
 app.add_exception_handler(InvalidConnectorConfigError, invalid_connector_config_handler)
+app.add_exception_handler(InvalidBillingInputError, invalid_billing_input_handler)
+app.add_exception_handler(PaymentUnavailableError, payment_unavailable_handler)
 
 # Выполняются в порядке, обратном добавлению. Снаружи внутрь:
 #   CORS → заголовки безопасности → request_id и ловушка 500 →

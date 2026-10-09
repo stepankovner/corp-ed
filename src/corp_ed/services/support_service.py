@@ -98,7 +98,7 @@ class SupportService:
             ).all()
         )
 
-    # --- команда kronto (наша панель) -----------------------------------------
+    # --- команда kronto (наша панель) -------------------------------------------------
 
     async def list(self, status: Status | None) -> list[SupportItem]:
         statement = self._items().limit(LIST_LIMIT)

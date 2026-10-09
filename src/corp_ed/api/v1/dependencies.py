@@ -18,12 +18,16 @@ from corp_ed.core.config import (
     BillingSettings,
     ConnectorSettings,
     LLMSettings,
+    PaymentSettings,
     RagSettings,
     get_auth_settings,
     get_billing_settings,
     get_connector_settings,
     get_demo_settings,
     get_lead_settings,
+    get_mail_settings,
+    get_payment_settings,
+    get_seller_settings,
     get_settings,
 )
 from corp_ed.core.database import get_session, get_session_maker
@@ -83,6 +87,12 @@ from corp_ed.services.analytics_service import AnalyticsService
 from corp_ed.services.attachment_service import AttachmentService
 from corp_ed.services.auth_service import AuthService
 from corp_ed.services.avatar_service import AvatarService
+from corp_ed.services.billing_service import (
+    BankInvoiceIssuer,
+    Billing,
+    BillingService,
+    RequisitesService,
+)
 from corp_ed.services.chat_generation import (
     ChatGenerator,
     ChatRunner,
@@ -94,7 +104,9 @@ from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.company_service import CompanyService
 from corp_ed.services.connector_service import ConnectorService
 from corp_ed.services.credit_order_service import (
+    NO_INVOICES,
     CreditOrderService,
+    InvoiceIssuer,
     StaffCreditService,
 )
 from corp_ed.services.credit_service import CreditService
@@ -111,6 +123,8 @@ from corp_ed.services.material_service import MaterialService
 from corp_ed.services.mfa_service import MfaService, RelyingParty
 from corp_ed.services.notification_service import NotificationService
 from corp_ed.services.onboarding_service import OnboardingService
+from corp_ed.services.payment_service import PaymentService, StaffBillingService
+from corp_ed.services.payments.provider import PaymentProvider
 from corp_ed.services.people_service import PeopleService
 from corp_ed.services.sources_service import SourcesService
 from corp_ed.services.staff_service import StaffService
@@ -564,12 +578,62 @@ def get_credit_service(
     )
 
 
+def get_payments_settings() -> PaymentSettings:
+    """PAYMENTS_* (отдельная функция — тесты подменяют её)."""
+    return get_payment_settings()
+
+
+def get_payment_provider(request: Request) -> PaymentProvider | None:
+    """Банк процесса (main.py собирает его на старте, если оплата
+    включена); в тестах — поддельная Точка через dependency_overrides."""
+    provider: PaymentProvider | None = getattr(
+        request.app.state, "payment_provider", None
+    )
+    return provider
+
+
+def get_billing(
+    settings: Annotated[PaymentSettings, Depends(get_payments_settings)],
+    provider: Annotated[PaymentProvider | None, Depends(get_payment_provider)],
+    billing: Annotated[BillingSettings, Depends(get_billing_settings)],
+    notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
+) -> Billing:
+    return Billing(
+        settings=settings,
+        provider=provider if settings.enabled else None,
+        seller=get_seller_settings(),
+        zone=billing.zone,
+        site_url=get_mail_settings().site_url,
+        notifier=notifier,
+    )
+
+
+def get_billing_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    billing: Annotated[Billing, Depends(get_billing)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> BillingService:
+    return BillingService(session, billing, audit)
+
+
+def get_requisites_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    audit: Annotated[AuditRepository, Depends(get_audit_repository)],
+) -> RequisitesService:
+    return RequisitesService(session, audit)
+
+
 def get_credit_order_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     audit: Annotated[AuditRepository, Depends(get_audit_repository)],
     notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
+    billing: Annotated[Billing, Depends(get_billing)],
 ) -> CreditOrderService:
-    return CreditOrderService(session, audit, notifier=notifier)
+    """С подключённым банком заказ сразу получает счёт или ссылку."""
+    invoices: InvoiceIssuer = (
+        BankInvoiceIssuer(billing) if billing.enabled else NO_INVOICES
+    )
+    return CreditOrderService(session, audit, notifier=notifier, invoices=invoices)
 
 
 FaqBuilder = Callable[[AsyncSession], FaqService]
@@ -870,6 +934,25 @@ def get_staff_credit_service(
     ],
 ) -> StaffCreditService:
     return StaffCreditService(session, session_maker)
+
+
+def get_staff_billing_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    session_maker: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+    billing: Annotated[Billing, Depends(get_billing)],
+) -> StaffBillingService:
+    return StaffBillingService(session, session_maker, billing)
+
+
+def get_payment_service(
+    session_maker: Annotated[
+        async_sessionmaker[AsyncSession], Depends(get_session_factory)
+    ],
+    billing: Annotated[Billing, Depends(get_billing)],
+) -> PaymentService:
+    return PaymentService(session_maker, billing)
 
 
 def get_tenant_service(
