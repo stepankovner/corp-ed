@@ -231,6 +231,8 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.webdav import register as register_webdav
     from corp_ed.connectors.gdrive import register as register_gdrive
     from corp_ed.connectors.website import register as register_website
+    from corp_ed.connectors.kaiten import register as register_kaiten
+    from corp_ed.connectors.outline import register as register_outline
     from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry(
@@ -244,6 +246,8 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     register_yandex(registry, settings)
     register_webdav(registry, settings)
     register_gdrive(registry, settings)
+    register_kaiten(registry, settings)
+    register_outline(registry, settings)
     if unknown := registry.unknown_hidden():
         # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
         # все ручки подключений: реестр собирается при первом запросе.
