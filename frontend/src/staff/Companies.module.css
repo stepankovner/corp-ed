@@ -67,3 +67,15 @@
 .pilotHint {
   margin-top: 6px;
 }
+
+/* «Удалить данные компании» — внизу окна, отделено чертой. */
+.danger {
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.danger p {
+  margin: 0;
+}

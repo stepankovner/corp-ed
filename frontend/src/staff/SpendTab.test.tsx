@@ -28,6 +28,7 @@ function spend(overrides: Partial<Spend> = {}): Spend {
     companies: [
       {
         tenant_id: "t-1",
+        ref: "1a2b3c4d",
         name: "ООО «Меридиан Строй»",
         company_code: "meridian",
         questions: 30,
@@ -36,6 +37,7 @@ function spend(overrides: Partial<Spend> = {}): Spend {
       },
       {
         tenant_id: "t-2",
+        ref: "9f00aa11",
         name: "АО «Север»",
         company_code: "sever",
         questions: 10,
@@ -96,7 +98,7 @@ describe("расход на модель", () => {
 
     const companies = screen.getByRole("table", { name: "Расход по компаниям" });
     const meridian = within(companies).getByText("ООО «Меридиан Строй»").closest("tr")!;
-    expect(within(meridian).getByText("meridian")).toBeInTheDocument();
+    expect(within(meridian).getByText("meridian · 1a2b3c4d")).toBeInTheDocument();
     expect(within(meridian).getByText("75 %")).toBeInTheDocument();
     expect(within(meridian).getByText("56,25")).toBeInTheDocument();
     const sever = within(companies).getByText("АО «Север»").closest("tr")!;

@@ -145,6 +145,8 @@ function OrderCard({ order }: { order: Order }) {
         <dd className="mono">
           {order.company_code}-{order.number}
         </dd>
+        <dt>id компании</dt>
+        <dd className="mono">{order.company_ref}</dd>
         <dt>Оплата</dt>
         <dd>{order.payment_method === "invoice" ? "по счёту" : "картой"}</dd>
       </dl>

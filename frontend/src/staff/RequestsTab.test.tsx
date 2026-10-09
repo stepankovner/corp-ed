@@ -29,9 +29,11 @@ function companyRequest(overrides: Partial<CompanyRequest> = {}): CompanyRequest
 function createdCompany(name: string): Schemas["StaffCompanyResponse"] {
   return {
     id: "t-new",
+    ref: "5c6d7e8f",
     name,
     company_code: "severnyy-veter-1a2b",
     is_active: true,
+    data_deleted_at: null,
     tariff: "base",
     seats: 10,
     pilot_until: null,
