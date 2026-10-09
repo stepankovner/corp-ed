@@ -25,7 +25,7 @@ from typing import Any
 import httpx
 import structlog
 
-from corp_ed.connectors.base import AdapterAuthError, AdapterError
+from corp_ed.connectors.base import AdapterAuthError, AdapterConfigError, AdapterError
 from corp_ed.connectors.common import Recorder, json_object, redact, safe_code
 from corp_ed.connectors.gdrive.auth import DRIVE_SCOPE, ServiceAccountAuth
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
@@ -39,6 +39,7 @@ RATE_LIMIT_BACKOFF = (1.0, 2.0, 4.0, 8.0, 16.0)
 MAX_RETRY_AFTER = 30.0
 _RATE_REASONS = frozenset({"rateLimitExceeded", "userRateLimitExceeded"})
 _TOO_LARGE_REASONS = frozenset({"exportSizeLimitExceeded"})
+_DISABLED_REASONS = frozenset({"accessNotConfigured", "SERVICE_DISABLED"})
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -219,7 +220,7 @@ class GoogleClient:
         """Пауза перед повтором, если это лимит квоты; None — не лимит.
         Паузы кончились — AdapterError('rate_limited')."""
         status = response.status_code
-        if status != 429 and not (status == 403 and _reason(response) in _RATE_REASONS):
+        if status != 429 and not (status == 403 and _reasons(response) & _RATE_REASONS):
             return None
         delay = next(backoff, None)
         if delay is None:
@@ -238,23 +239,33 @@ class GoogleClient:
         }
 
 
-def _reason(response: httpx.Response) -> str:
+def _reasons(response: httpx.Response) -> frozenset[str]:
+    """Причины ошибки Google: errors[].reason (Drive, Directory) и
+    details[].reason (google.rpc.ErrorInfo — например, SERVICE_DISABLED)."""
     data = json_object(response) or {}
     error = data.get("error")
     if not isinstance(error, dict):
-        return ""
-    errors = error.get("errors")
-    if isinstance(errors, list) and errors and isinstance(errors[0], dict):
-        return str(errors[0].get("reason") or "")
-    return str(error.get("status") or "")
+        return frozenset()
+    found: set[str] = set()
+    for key in ("errors", "details"):
+        items = error.get(key)
+        for item in items if isinstance(items, list) else []:
+            if isinstance(item, dict) and item.get("reason"):
+                found.add(str(item["reason"]))
+    return frozenset(found)
 
 
 def _error(response: httpx.Response) -> AdapterError:
     status = response.status_code
-    reason = _reason(response)
+    reasons = _reasons(response)
+    reason = ",".join(sorted(reasons))
     if status == 401:
         return AdapterAuthError("unauthorized")
-    if status == 403 and reason in _TOO_LARGE_REASONS:
+    if status == 403 and reasons & _DISABLED_REASONS:
+        # Drive API или Admin SDK API не включён в проекте сервисного
+        # аккаунта: чинит админ в Google Cloud, а не права в Workspace.
+        return AdapterConfigError("api_not_enabled")
+    if status == 403 and reasons & _TOO_LARGE_REASONS:
         return AdapterError("document_too_large")
     if status == 403:
         # Причин у 403 много (нет прав, скачивание запрещено владельцем,

@@ -159,6 +159,12 @@ class FakeGoogle:
     rate_limit_hits: int = 0
     rate_limit_403_hits: int = 0
     export_too_large: set[str] = field(default_factory=set)
+    listing_forbidden: set[str] = field(default_factory=set)
+    """Почты, кому files.list отвечает 403 (Диск выключен для их отдела)."""
+    forbid_next_file_pages: bool = False
+    """files.list по файлам (не папкам) со второй страницы — 403."""
+    api_disabled: bool = False
+    """API не включён в проекте сервисного аккаунта: 403 на всё."""
     forbidden_files: set[str] = field(default_factory=set)
     calls: list[tuple[str, str, dict[str, str]]] = field(default_factory=list)
     """(почта, путь, параметры) каждого запроса к API."""
@@ -288,6 +294,16 @@ class FakeGoogle:
         query = {k: v[0] for k, v in parse_qs(request.url.query.decode()).items()}
         path = unquote(request.url.path)
         self.calls.append((subject, path, query))
+        if self.api_disabled:
+            response = _error(403, "accessNotConfigured", "API has not been used")
+            body = response.json()
+            body["error"]["details"] = [
+                {
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": "SERVICE_DISABLED",
+                }
+            ]
+            return httpx.Response(403, json=body)
         if self.rate_limit_hits > 0:
             self.rate_limit_hits -= 1
             return _error(429, "rateLimitExceeded", "Rate Limit Exceeded")
@@ -438,6 +454,10 @@ class FakeGoogle:
 
     def _list(self, subject: str, query: dict[str, str]) -> httpx.Response:
         q = query.get("q", "")
+        if subject in self.listing_forbidden:
+            return _error(403, "forbidden", "Drive is disabled for this user")
+        if self.forbid_next_file_pages and "pageToken" in query and "!=" in q:
+            return _error(403, "forbidden")
         corpora = query.get("corpora", "user")
         if corpora == "drive":
             drive = self.drives.get(query.get("driveId", ""))

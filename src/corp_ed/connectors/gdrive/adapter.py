@@ -324,17 +324,11 @@ class GoogleDriveAdapter:
                 logger.warning("gdrive_drive_skipped", drive_id=drive_id)
                 continue
             audience = await self._access.audience(members)
-            try:
-                async for document in self._drive_files(
-                    drive_id, f"Общие диски/{name}", subject, audience
-                ):
-                    yield document
-            except SubjectRejectedError as exc:
-                # Читающего заблокировали посреди обхода: листинг диска
-                # неполон, удалять по нему нельзя — повтор, читающий будет
-                # выбран заново.
-                await self._ensure_admin()
-                raise AdapterError("drive_reader_rejected", retryable=True) from exc
+            files = self._drive_files(
+                drive_id, f"Общие диски/{name}", subject, audience
+            )
+            async for document in self._guarded(files, "drive"):
+                yield document
 
     async def _drive_subject(self, members: Sequence[Mapping[str, Any]]) -> str | None:
         """От чьего имени читать файлы диска: организатор из домена, потом
@@ -355,6 +349,9 @@ class GoogleDriveAdapter:
                 candidates.extend(
                     sorted(e for e in group.emails if self._access.in_domain(e))
                 )
+        # Последним — администратор: участником он может быть через группу
+        # «все в аккаунте»; если нет, листинг ответит 404 и диск пропустится.
+        candidates.append(self._admin)
         for email in dict.fromkeys(candidates):
             try:
                 await self._client.auth.token(email, DRIVE_SCOPE)
@@ -463,14 +460,37 @@ class GoogleDriveAdapter:
                 raise AdapterConfigError("admin_required") from exc
             raise
         for email in emails:
-            try:
-                async for document in self._owned_files(email):
-                    yield document
-            except SubjectRejectedError:
-                # Удалён или заблокирован между списком и обменом токена.
-                await self._ensure_admin()
-                logger.info("gdrive_user_skipped")
-                continue
+            async for document in self._guarded(self._owned_files(email), "user_drive"):
+                yield document
+
+    async def _guarded(
+        self, documents: AsyncIterator[RemoteDocument], what: str
+    ) -> AsyncIterator[RemoteDocument]:
+        """Обход одного диска или сотрудника. Недоступен с самого начала
+        (диск удалён, Диск выключен для отдела сотрудника, сотрудник
+        заблокирован) — пропуск, остальные обходятся. Оборвался посреди —
+        повтор запуска позже: по неполному листингу ядро удалило бы
+        документы, которые просто не успели встретиться."""
+        yielded = False
+        try:
+            async for document in documents:
+                yielded = True
+                yield document
+        except SubjectRejectedError as exc:
+            await self._ensure_admin()
+            if yielded:
+                raise AdapterError(f"{what}_interrupted", retryable=True) from exc
+            logger.info("gdrive_source_skipped", what=what, code=exc.code)
+        except AdapterError as exc:
+            if (
+                exc.retryable
+                or isinstance(exc, AdapterAuthError)
+                or exc.code not in _SKIPPABLE
+            ):
+                raise
+            if yielded:
+                raise AdapterError(f"{what}_interrupted", retryable=True) from exc
+            logger.warning("gdrive_source_skipped", what=what, code=exc.code)
 
     async def _owned_files(self, email: str) -> AsyncIterator[RemoteDocument]:
         listing = {"corpora": "user", "pageSize": FILES_PAGE}

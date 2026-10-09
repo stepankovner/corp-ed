@@ -284,8 +284,10 @@ async def test_shared_drives_mirror_permissions(server: FakeGoogle) -> None:
         for subject, path, query in server.calls
         if path == "/drive/v3/files"
     ]
-    assert {drive for _, drive in listings} == {"drv-hr"}
-    assert {subject for subject, _ in listings} == {ANNA}
+    assert {subject for subject, drive in listings if drive == "drv-hr"} == {ANNA}
+    # «Бухгалтерия»: никого из домена — последняя попытка от имени
+    # администратора, он не участник, диск пропущен.
+    assert {subject for subject, drive in listings if drive == "drv-acc"} == {ADMIN}
     # permissions.list — только где права отличаются от состава диска.
     assert sorted(_permission_calls(server)) == [
         "drv-acc",
@@ -299,7 +301,11 @@ async def test_shared_drives_mirror_permissions(server: FakeGoogle) -> None:
 async def test_organizer_is_preferred_for_reading_a_drive(server: FakeGoogle) -> None:
     server.drives["drv-hr"]["perms"].append(perm("user", BORIS, "organizer"))
     await listed(make_adapter(server), ("shared_drives",))
-    subjects = {s for s, path, _ in server.calls if path == "/drive/v3/files"}
+    subjects = {
+        s
+        for s, path, query in server.calls
+        if path == "/drive/v3/files" and query.get("driveId") == "drv-hr"
+    }
     assert subjects == {BORIS}
 
 
@@ -442,8 +448,55 @@ async def test_drive_reader_rejected_mid_listing_is_retried(
     with pytest.raises(AdapterError) as caught:
         async for _ in documents:
             pass
-    assert caught.value.code == "drive_reader_rejected"
+    assert caught.value.code == "drive_interrupted"
     assert caught.value.retryable
+
+
+async def test_unreadable_drive_or_user_is_skipped(server: FakeGoogle) -> None:
+    """Диск выключен для отдела сотрудника — его диски пропускаются,
+    остальное обходится, запуск не падает."""
+    server.add_drive("drv-b", "Склад", perm("user", BORIS, "organizer"))
+    server.add_file("f-b", "Остатки.txt", "drv-b", b"x", drive="drv-b")
+    server.listing_forbidden.add(ANNA)
+
+    docs = await listed(make_adapter(server), ("shared_drives", "user_drives"))
+
+    assert set(docs) == {"gdrive:f-b"}
+
+
+async def test_listing_broken_midway_is_retried_not_trimmed(
+    server: FakeGoogle,
+) -> None:
+    server.page_size = 1
+    server.forbid_next_file_pages = True
+    documents = make_adapter(server).list(["shared_drives"])
+    assert (await anext(documents)).external_id == "gdrive:f-vacation"
+    with pytest.raises(AdapterError) as caught:
+        async for _ in documents:
+            pass
+    assert caught.value.code == "drive_interrupted"
+    assert caught.value.retryable
+
+
+async def test_disabled_api_is_a_setup_error(server: FakeGoogle) -> None:
+    server.api_disabled = True
+    with pytest.raises(AdapterConfigError, match="api_not_enabled"):
+        await make_adapter(server).check()
+
+
+async def test_drive_open_to_the_whole_account_is_read_as_admin(
+    server: FakeGoogle,
+) -> None:
+    server.add_group("everyone@example.com", ("CUSTOMER", "C0abc123"))
+    server.add_group("all@example.com", ("CUSTOMER", "C0abc123"), ("USER", ADMIN))
+    server.add_drive("drv-all", "Всем", perm("group", "everyone@example.com"))
+    # Фейк считает участником по составу группы: админ — в группе all@.
+    server.drives["drv-all"]["perms"].append(perm("group", "all@example.com"))
+    server.add_file("f-all", "Памятка.txt", "drv-all", b"x", drive="drv-all")
+
+    docs = await listed(make_adapter(server), ("shared_drives",))
+
+    assert docs["gdrive:f-all"].visibility is MaterialVisibility.TENANT
 
 
 # --- скачивание ----------------------------------------------------------------------
