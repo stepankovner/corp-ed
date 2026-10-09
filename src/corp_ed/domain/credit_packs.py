@@ -13,7 +13,7 @@ PACK_VALID_MONTHS месяцев с зачисления; списываются
 
 import calendar
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 PACK_VALID_MONTHS = 12
 
@@ -36,9 +36,10 @@ def pack_by_code(code: str) -> CreditPack | None:
     return next((pack for pack in PACKS if pack.code == code), None)
 
 
-def add_months(moment: datetime, months: int) -> datetime:
+def add_months[Moment: date](moment: Moment, months: int) -> Moment:
     """Тот же день через months месяцев; нет такого дня — последний день
-    месяца (29 февраля + 12 месяцев = 28 февраля)."""
+    месяца (29 февраля + 12 месяцев = 28 февраля). Дата или момент —
+    что передали, то и вернётся (периоды подписки — датами)."""
     index = moment.month - 1 + months
     year, month = moment.year + index // 12, index % 12 + 1
     day = min(moment.day, calendar.monthrange(year, month)[1])

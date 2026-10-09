@@ -27,7 +27,7 @@ from corp_ed.api.v1.schemas.usage import (
     TopupStatusResponse,
 )
 from corp_ed.domain.credit_packs import PACK_VALID_MONTHS, PACKS
-from corp_ed.domain.models import CreditOrder, User, UserRole
+from corp_ed.domain.models import CreditOrder, Invoice, User, UserRole
 from corp_ed.services.credit_order_service import CreditOrderService
 from corp_ed.services.credit_service import CreditService
 
@@ -39,7 +39,9 @@ Orders = Annotated[CreditOrderService, Depends(get_credit_order_service)]
 Credits = Annotated[CreditService, Depends(get_credit_service)]
 
 
-def order_response(order: CreditOrder) -> CreditOrderResponse:
+def order_response(
+    order: CreditOrder, invoice: Invoice | None = None
+) -> CreditOrderResponse:
     return CreditOrderResponse(
         id=order.id,
         number=order.number,
@@ -51,6 +53,8 @@ def order_response(order: CreditOrder) -> CreditOrderResponse:
         created_at=order.created_at,
         paid_at=order.paid_at,
         cancelled_at=order.cancelled_at,
+        invoice_id=order.invoice_id,
+        payment_url=invoice.payment_url if invoice is not None else None,
     )
 
 
@@ -84,9 +88,12 @@ async def list_orders(orders: Orders, admin: Admin) -> list[CreditOrderResponse]
 async def create_order(
     body: CreditOrderRequest, orders: Orders, admin: Admin
 ) -> CreditOrderResponse:
-    """Заказать пакет: заказ ждёт оплаты по счёту, команде kronto уходит
-    уведомление. Кредиты зачисляются, когда команда отметит оплату."""
-    return order_response(await orders.create(admin, body.pack))
+    """Заказать пакет. Без подключённого банка заказ ждёт оплаты по счёту,
+    команде kronto уходит уведомление, кредиты зачисляет команда. С банком
+    — сразу счёт юрлицу или ссылка на оплату картой (payment_url), кредиты
+    зачисляются по вебхуку банка."""
+    order, invoice = await orders.create(admin, body.pack, body.payment_method)
+    return order_response(order, invoice)
 
 
 @router.get("/topup-request", response_model=TopupStatusResponse)

@@ -8,12 +8,15 @@
 журнал вопросов и отчёт о пробелах, запуски синхронизации, папки,
 отделы, глоссарий, подсказки, приглашения, уведомления, сотрудники
 компании (членства), логотип, сеансы в этой компании, заявка на
-подключение.
+подключение, реквизиты и подписка. Автосписание по карте сначала
+отменяется в банке: не отменилось — данные не удаляются (иначе банк
+списывал бы с карты компании, которой у нас уже нет).
 
 Остаётся:
-- заказы пакетов кредитов, начисления и списания — бухгалтерский учёт
-  (5 лет, ст. 29 402-ФЗ); кто заказал — обнуляется вместе с членствами,
-  комментарий начисления стирается;
+- заказы пакетов кредитов, начисления и списания, счета, акты и платежи
+  из банка — бухгалтерский учёт (5 лет, ст. 29 402-ФЗ); кто заказал —
+  обнуляется вместе с членствами, комментарии команды к начислению и
+  платежу стираются;
 - строка компании — обезличенная («Удалённая компания 1a2b3c4d»): на
   неё ссылаются заказы;
 - журнал действий — по своему сроку (365 дней): его записи нельзя
@@ -42,12 +45,14 @@ from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.company_ref import company_ref
 from corp_ed.domain.models import (
     Account,
+    Act,
     ChatAttachment,
     ChatAttachmentChunk,
     ChatMessage,
     ChatSuggestion,
     Chunk,
     CompanyRequest,
+    CompanyRequisites,
     Connector,
     ConnectorSyncJob,
     ConnectorSyncRun,
@@ -66,12 +71,16 @@ from corp_ed.domain.models import (
     IngestJob,
     Invite,
     InviteLookup,
+    Invoice,
+    InvoiceRef,
     Material,
     MaterialAccess,
     Notification,
     NotificationSetting,
+    PaymentEvent,
     QaLog,
     RefreshToken,
+    Subscription,
     SupportRequest,
     Tenant,
     TenantLogo,
@@ -82,6 +91,7 @@ from corp_ed.services.connector_service import (
     TokenRevocation,
     collect_revocation,
 )
+from corp_ed.services.payments.provider import PaymentProviderError
 
 logger = structlog.get_logger()
 
@@ -109,11 +119,21 @@ DELETED_TABLES: tuple[type[Any], ...] = (
     GlossaryTerm,
     Invite,
     CreditTopupRequest,
+    CompanyRequisites,
+    Subscription,
     User,
 )
 """Таблицы компании под RLS, которые удаляются целиком."""
 
-KEPT_TABLES: tuple[type[Any], ...] = (CreditOrder, CreditGrant, CreditSpend)
+KEPT_TABLES: tuple[type[Any], ...] = (
+    CreditOrder,
+    CreditGrant,
+    CreditSpend,
+    Invoice,
+    Act,
+    InvoiceRef,
+    PaymentEvent,
+)
 """Финансовые записи: нужны бухгалтерии, остаются обезличенными."""
 
 GLOBAL_TABLES: tuple[type[Any], ...] = (
@@ -127,6 +147,7 @@ GLOBAL_TABLES: tuple[type[Any], ...] = (
 """Таблицы вне RLS со ссылкой на компанию: удаляются по tenant_id."""
 
 Revoker = Callable[[Sequence[TokenRevocation]], Awaitable[None]]
+CardCanceller = Callable[[str], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -145,12 +166,15 @@ class TenantDeletionService:
         registry: AdapterRegistry,
         secrets: SecretBox,
         revoke: Revoker,
+        cancel_card: CardCanceller | None = None,
         protected_codes: Sequence[str] = (),
     ) -> None:
         self.session_maker = session_maker
         self.registry = registry
         self.secrets = secrets
         self.revoke = revoke
+        # Отмена автосписания по карте в банке; None — банк не подключён.
+        self.cancel_card = cancel_card
         # Песочница сайта: её компанию заводит и обновляет cli demo.
         self.protected_codes = frozenset(protected_codes)
 
@@ -174,6 +198,7 @@ class TenantDeletionService:
                 if tenant is None:
                     raise NotFoundError("Компания не найдена")
                 _check(tenant, confirm_code, self.protected_codes)
+                await self._cancel_cards(session, tenant_id)
                 revocations = await self._revocations(session, tenant_id)
                 deleted = await _delete_all(session, tenant_id)
                 await _anonymize(session, tenant, now)
@@ -190,6 +215,35 @@ class TenantDeletionService:
         # данные у нас уже удалены, сбой провайдера этого не отменит.
         await self.revoke(revocations)
         return DeletionReport(tenant_id=tenant_id, ref=ref, deleted=deleted)
+
+    async def _cancel_cards(self, session: AsyncSession, tenant_id: UUID) -> None:
+        """Отменить автосписание по карте до удаления — в той же
+        транзакции: банк не ответил — ничего не удаляется."""
+        refs = (
+            await session.scalars(
+                select(Subscription.card_ref).where(
+                    Subscription.tenant_id == tenant_id,
+                    Subscription.card_ref.is_not(None),
+                )
+            )
+        ).all()
+        for ref in refs:
+            if ref is None:
+                continue
+            if self.cancel_card is None:
+                raise CodedConflictError(
+                    "У компании включено автосписание по карте, а банк не "
+                    "подключён — отмените его в интернет-банке и повторите",
+                    "card_subscription_active",
+                )
+            try:
+                await self.cancel_card(ref)
+            except PaymentProviderError:
+                raise CodedConflictError(
+                    "Банк не отменил автосписание по карте — данные не "
+                    "удалены, повторите позже",
+                    "card_cancel_failed",
+                ) from None
 
     async def _revocations(
         self, session: AsyncSession, tenant_id: UUID
@@ -288,6 +342,13 @@ async def _delete_all(session: AsyncSession, tenant_id: UUID) -> dict[str, int]:
         update(CreditGrant)
         .where(CreditGrant.tenant_id == tenant_id)
         .values(comment=None)
+        .execution_options(synchronize_session=False)
+    )
+    # Так же — заметка команды к платежу из банка.
+    await session.execute(
+        update(PaymentEvent)
+        .where(PaymentEvent.tenant_id == tenant_id)
+        .values(note=None)
         .execution_options(synchronize_session=False)
     )
     return deleted

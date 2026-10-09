@@ -341,3 +341,23 @@ class DemoUnavailableError(DomainError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class InvalidBillingInputError(DomainError):
+    """Реквизиты или выбор оплаты не прошли проверку. HTTP 422 с кодом и
+    полем, которое подсветить в форме."""
+
+    def __init__(self, message: str, *, code: str, field: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+
+class PaymentUnavailableError(DomainError):
+    """Банк не ответил или отказал: счёт или ссылку сейчас не создать.
+    HTTP 503 с кодом payment_unavailable — попробовать позже."""
+
+    code = "payment_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__("Банк сейчас не отвечает — попробуйте через несколько минут")

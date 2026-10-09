@@ -24,10 +24,12 @@ from corp_ed.core.secrets import SecretBox
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import (
     Account,
+    Act,
     AuditEvent,
     ChatSuggestion,
     Chunk,
     CompanyRequest,
+    CompanyRequisites,
     Connector,
     ConnectorSyncJob,
     ConnectorSyncRun,
@@ -45,18 +47,23 @@ from corp_ed.domain.models import (
     IngestJob,
     Invite,
     InviteLookup,
+    Invoice,
+    InvoiceRef,
     Material,
     MaterialAccess,
     Notification,
     NotificationSetting,
+    PaymentEvent,
     QaLog,
     RefreshToken,
+    Subscription,
     SupportRequest,
     Tenant,
     TenantLogo,
     UserRole,
 )
 from corp_ed.services.connector_service import TokenRevocation
+from corp_ed.services.payments.provider import PaymentProviderError
 from corp_ed.services.tenant_deletion_service import (
     DELETED_TABLES,
     GLOBAL_TABLES,
@@ -178,7 +185,33 @@ async def _fill(session: AsyncSession, tenant: Tenant) -> dict[str, Any]:
             comment="Оплатил Иванов",
             expires_at=NOW + timedelta(days=365),
         )
-        session.add(grant)
+        subscription = Subscription(
+            tenant_id=tenant.id,
+            tariff="base",
+            seats=10,
+            period="month",
+            payment_method="invoice",
+            status="active",
+            created_by=admin.id,
+        )
+        session.add_all([grant, subscription])
+        await session.flush()
+        number = uuid4().int % 1_000_000
+        invoice = Invoice(
+            id=uuid4(),
+            tenant_id=tenant.id,
+            number=number,
+            kind="subscription",
+            payment_method="invoice",
+            amount_kopecks=990_000,
+            title="Подписка",
+            lines=[{"name": "Подписка", "amount_kopecks": 990_000}],
+            purpose=f"Оплата по счёту № KR-{number}",
+            subscription_id=subscription.id,
+            payer_name=tenant.name,
+            created_by=admin.id,
+        )
+        session.add(invoice)
         await session.flush()
         session.add_all(
             [
@@ -234,6 +267,24 @@ async def _fill(session: AsyncSession, tenant: Tenant) -> dict[str, Any]:
                 CreditTopupRequest(
                     tenant_id=tenant.id, episode_start=NOW, requested_by=employee.id
                 ),
+                CompanyRequisites(
+                    tenant_id=tenant.id,
+                    legal_name=tenant.name,
+                    inn="7707083893",
+                    payer_type="company",
+                    address="Москва",
+                    documents_email=f"buh@{code}.ru",
+                    updated_by=admin.id,
+                ),
+                Act(
+                    tenant_id=tenant.id,
+                    number=number,
+                    month=date(2026, 9, 1),
+                    amount_kopecks=990_000,
+                    lines=[{"name": "Подписка", "amount_kopecks": 990_000}],
+                    invoice_ids=[invoice.id],
+                    payer_name=tenant.name,
+                ),
             ]
         )
         await session.commit()
@@ -267,6 +318,18 @@ async def _fill(session: AsyncSession, tenant: Tenant) -> dict[str, Any]:
                 message="Не вижу документ",
             ),
             AuditEvent(tenant_id=tenant.id, actor_user_id=admin.id, action="user.left"),
+            InvoiceRef(invoice_id=invoice.id, number=number, tenant_id=tenant.id),
+            PaymentEvent(
+                provider="tochka",
+                kind="incoming",
+                delivery_key=uuid4().hex,
+                amount_kopecks=990_000,
+                payer_inn="7707083893",
+                status="resolved",
+                tenant_id=tenant.id,
+                invoice_id=invoice.id,
+                note="Звонил Иванов, сумма верна",
+            ),
         ]
     )
     await session.commit()
@@ -366,6 +429,20 @@ async def test_deletes_everything_of_the_company_but_finance(
         await session.commit()
     assert (order.amount_kopecks, order.created_by) == (99_000, None)
     assert (grant.remaining, grant.comment) == (900, None)
+    # Счёт и акт — бухгалтерии; подписка удалена — ссылка на неё снята,
+    # заметка команды к платежу стёрта.
+    with tenant_scope(gone.id):
+        invoice = (await session.scalars(select(Invoice))).one()
+        act = (await session.scalars(select(Act))).one()
+        payment = (
+            await session.scalars(
+                select(PaymentEvent).where(PaymentEvent.tenant_id == gone.id)
+            )
+        ).one()
+        await session.commit()
+    assert (invoice.amount_kopecks, invoice.subscription_id) == (990_000, None)
+    assert act.invoice_ids == [invoice.id]
+    assert (payment.amount_kopecks, payment.note) == (990_000, None)
 
     # Учётки людей живы; ссылки на компанию сняты.
     admin_account = await session.get(Account, rows["admin"].account_id)
@@ -480,3 +557,72 @@ async def test_cli_asks_for_the_code_and_prints_counts(
     assert "  users: 2" in out
     await session.refresh(tenant)
     assert tenant.data_deleted_at is not None
+
+
+class CardBank:
+    """Банк: отменяет автосписание по карте или отказывает."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.cancelled: list[str] = []
+
+    async def cancel(self, ref: str) -> None:
+        if self.fail:
+            raise PaymentProviderError("bank_unavailable", retryable=True)
+        self.cancelled.append(ref)
+
+
+async def _card_subscription(session: AsyncSession, tenant: Tenant) -> None:
+    with tenant_scope(tenant.id):
+        sub = (await session.scalars(select(Subscription))).one()
+        sub.payment_method = "card"
+        sub.card_ref = f"card-{tenant.company_code}"
+        await session.commit()
+
+
+@pytest.mark.parametrize(
+    ("bank", "error"),
+    [
+        (None, "card_subscription_active"),
+        (CardBank(fail=True), "card_cancel_failed"),
+    ],
+)
+async def test_card_autopay_must_be_cancelled_first(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    bank: CardBank | None,
+    error: str,
+) -> None:
+    """Банк списывал бы с карты компании, которой у нас уже нет: не
+    отменили автосписание — данные не удаляются."""
+    gone = await _suspended(session, "ivanov")
+    await _fill(session, gone)
+    await _card_subscription(session, gone)
+    before = await _counts(session, gone.id)
+    service = make_service(session_maker, Revocations())
+    service.cancel_card = bank.cancel if bank else None
+
+    with pytest.raises(CodedConflictError) as caught:
+        await service.delete(gone.id, "ivanov", now=NOW)
+
+    assert caught.value.code == error
+    assert await _counts(session, gone.id) == before
+    tenant = await session.get(Tenant, gone.id)
+    assert tenant is not None and tenant.data_deleted_at is None
+
+
+async def test_card_autopay_is_cancelled_in_the_bank(
+    session: AsyncSession, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    gone = await _suspended(session, "ivanov")
+    await _fill(session, gone)
+    await _card_subscription(session, gone)
+    bank = CardBank()
+    service = make_service(session_maker, Revocations())
+    service.cancel_card = bank.cancel
+
+    report = await service.delete(gone.id, "ivanov", now=NOW)
+
+    assert bank.cancelled == ["card-ivanov"]
+    assert report.deleted["subscriptions"] == 1
+    assert report.deleted["company_requisites"] == 1

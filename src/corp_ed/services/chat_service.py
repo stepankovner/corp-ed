@@ -205,7 +205,7 @@ class ChatService:
         self.history_turns = history_turns
         self.share_ttl = share_ttl
 
-    # --- список и карточка ---------------------------------------------------
+    # --- список и карточка ------------------------------------------------------------
 
     async def page(
         self,
@@ -285,7 +285,7 @@ class ChatService:
         await self.session.commit()
         return await self._view(conversation, tree, viewer=member)
 
-    # --- ход диалога ---------------------------------------------------------
+    # --- ход диалога ------------------------------------------------------------------
 
     async def begin(
         self,
@@ -477,7 +477,7 @@ class ChatService:
         await self.session.commit()
         return message
 
-    # --- поделиться ----------------------------------------------------------
+    # --- поделиться -------------------------------------------------------------------
 
     async def share(self, member: User, conversation_id: UUID) -> Conversation:
         """Ссылка для коллег по компании: снимок показанной ветки.
@@ -552,7 +552,7 @@ class ChatService:
             messages=messages,
         )
 
-    # --- внутреннее ----------------------------------------------------------
+    # --- внутреннее -------------------------------------------------------------------
 
     async def _own(
         self, member: User, conversation_id: UUID, *, for_update: bool = False

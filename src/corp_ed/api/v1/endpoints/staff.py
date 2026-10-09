@@ -5,6 +5,7 @@
 from typing import Annotated
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,18 +15,27 @@ from corp_ed.api.v1.dependencies import (
     get_company_request_service,
     get_lead_service,
     get_staff_account,
+    get_staff_billing_service,
     get_staff_credit_service,
     get_staff_service,
     get_support_service,
     get_tenant_deletion_service,
     get_tenant_service,
 )
+from corp_ed.api.v1.endpoints.billing import invoice_response, subscription_response
 from corp_ed.api.v1.endpoints.credits import order_response
 from corp_ed.api.v1.rate_limits import (
     STAFF_EDIT_PER_ACCOUNT,
     STAFF_RESET_PER_ACCOUNT,
     enforce,
     get_rate_limiter,
+)
+from corp_ed.api.v1.schemas.billing import (
+    StaffBillingResponse,
+    StaffInvoiceResponse,
+    StaffPaymentResolveRequest,
+    StaffPaymentResponse,
+    StaffSubscriptionResponse,
 )
 from corp_ed.api.v1.schemas.notification import (
     StaffSupportResponse,
@@ -55,7 +65,11 @@ from corp_ed.api.v1.schemas.usage import (
     StaffCreditOrderResponse,
 )
 from corp_ed.core.database import get_session
-from corp_ed.core.exceptions import CodedConflictError
+from corp_ed.core.exceptions import (
+    CodedConflictError,
+    InvalidBillingInputError,
+    PaymentUnavailableError,
+)
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.tenant_context import current_tenant
 from corp_ed.domain.company_ref import company_ref
@@ -66,17 +80,26 @@ from corp_ed.services.account_service import AccountService
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.credit_order_service import StaffCreditService, StaffOrder
 from corp_ed.services.lead_service import LeadService
+from corp_ed.services.payment_service import (
+    SeatsPlan,
+    StaffBillingService,
+    StaffInvoice,
+)
 from corp_ed.services.seats import seats_check
 from corp_ed.services.staff_service import CompanyRow, Person, StaffService
 from corp_ed.services.support_service import SupportItem, SupportService
+from corp_ed.services.team_notify import seats_topup_failed_message
 from corp_ed.services.tenant_deletion_service import TenantDeletionService
 from corp_ed.services.tenant_service import TenantService
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/staff", tags=["staff"])
 
 Staff = Annotated[Account, Depends(get_staff_account)]
 Service = Annotated[StaffService, Depends(get_staff_service)]
 Credits = Annotated[StaffCreditService, Depends(get_staff_credit_service)]
+Payments = Annotated[StaffBillingService, Depends(get_staff_billing_service)]
 Limiter = Annotated[RateLimiter, Depends(get_rate_limiter)]
 
 
@@ -239,11 +262,16 @@ async def update_company(
     service: Service,
     tenants: Annotated[TenantService, Depends(get_tenant_service)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    payments: Payments,
     staff: Staff,
     limiter: Limiter,
 ) -> StaffCompanyResponse:
     """Тариф, места, срок пилота, приостановка — как cli set-tariff,
-    set-seats, suspend-tenant, но с журналом от имени команды."""
+    set-seats, suspend-tenant, но с журналом от имени команды.
+
+    С подключённой оплатой и оплаченным периодом места добавляются сразу
+    с доплатой пропорционально оставшимся дням, а сокращаются со
+    следующего периода (решение владельца 09.10)."""
     await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
     row = await service.company(tenant_id)
     if row.tenant.data_deleted_at is not None:
@@ -263,14 +291,31 @@ async def update_company(
             "переключитесь на другую или используйте cli suspend-tenant",
             "own_company",
         )
-    new_seats = body.seats if body.seats not in (None, row.tenant.seats) else None
-    if new_seats is not None:
+    current_seats = row.tenant.seats
+    new_seats = body.seats if body.seats not in (None, current_seats) else None
+    plan = (
+        await payments.plan_seats(tenant_id, current_seats, new_seats)
+        if new_seats is not None
+        else SeatsPlan()
+    )
+    if new_seats is not None and not plan.defer:
         check = await seats_check(session, code, new_seats)
         if check.stops_pool and not body.confirm:
             raise CodedConflictError(check.message or "", "seats_stop_pool")
 
-    if new_seats is not None:
+    if new_seats is not None and plan.defer:
+        await payments.defer_seats(tenant_id, new_seats)
+    elif new_seats is not None:
         await tenants.set_seats(code, new_seats)
+        if plan.topup:
+            try:
+                await payments.issue_topup(tenant_id, new_seats - current_seats)
+            except (PaymentUnavailableError, InvalidBillingInputError) as exc:
+                # Места уже добавлены; доплату команда выставит сама.
+                logger.warning("billing_topup_failed", error=type(exc).__name__)
+                payments.billing.notifier.notify(
+                    seats_topup_failed_message(tenant_id=tenant_id)
+                )
     if body.tariff is not None and body.tariff.value != row.tenant.tariff:
         await tenants.set_tariff(code, body.tariff)
     if "pilot_until" in fields:
@@ -391,6 +436,148 @@ async def grant_credits(
     return StaffCreditGrantResponse(
         id=grant.id, credits=grant.credits, expires_at=grant.expires_at
     )
+
+
+# --- оплата: подписки, счета, платежи из банка -------------------------------------
+
+
+def _staff_invoice(item: StaffInvoice) -> StaffInvoiceResponse:
+    return StaffInvoiceResponse(
+        **invoice_response(item.invoice).model_dump(),
+        tenant_id=item.tenant.id,
+        company_name=item.tenant.name,
+        company_code=item.tenant.company_code,
+        payer_name=item.invoice.payer_name,
+        payer_inn=item.invoice.payer_inn,
+    )
+
+
+@router.get("/billing", response_model=StaffBillingResponse)
+async def billing_overview(payments: Payments, staff: Staff) -> StaffBillingResponse:
+    """Подписки компаний: просроченные первыми. enabled=false — банк не
+    подключён (PAYMENTS_PROVIDER=none), оплату отмечают вручную."""
+    items = await payments.subscriptions()
+    return StaffBillingResponse(
+        enabled=payments.billing.enabled,
+        provider=payments.billing.settings.provider,
+        subscriptions=[
+            StaffSubscriptionResponse(
+                **subscription_response(item.subscription).model_dump(),
+                tenant_id=item.tenant.id,
+                company_name=item.tenant.name,
+                company_code=item.tenant.company_code,
+                is_active=item.tenant.is_active,
+            )
+            for item in items
+        ],
+    )
+
+
+@router.get("/billing/invoices", response_model=list[StaffInvoiceResponse])
+async def list_invoices(
+    payments: Payments,
+    staff: Staff,
+    state: Annotated[
+        str, Query(alias="status", pattern="^(awaiting_payment|all)$")
+    ] = "awaiting_payment",
+) -> list[StaffInvoiceResponse]:
+    """Счета и ссылки всех компаний; по умолчанию — ждут оплаты."""
+    items = await payments.invoices(None if state == "all" else state)
+    return [_staff_invoice(item) for item in items]
+
+
+@router.post(
+    "/companies/{tenant_id}/invoices/{invoice_id}/paid",
+    response_model=StaffInvoiceResponse,
+)
+async def mark_invoice_paid(
+    tenant_id: UUID,
+    invoice_id: UUID,
+    payments: Payments,
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffInvoiceResponse:
+    """Оплата пришла мимо автоматики: счёт оплачен, услуга зачислена (как
+    по вебхуку)."""
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    return _staff_invoice(await payments.mark_paid(tenant_id, invoice_id))
+
+
+@router.post(
+    "/companies/{tenant_id}/invoices/{invoice_id}/cancel",
+    response_model=StaffInvoiceResponse,
+)
+async def cancel_invoice(
+    tenant_id: UUID,
+    invoice_id: UUID,
+    payments: Payments,
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffInvoiceResponse:
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    return _staff_invoice(await payments.cancel(tenant_id, invoice_id))
+
+
+@router.get("/billing/payments", response_model=list[StaffPaymentResponse])
+async def list_payments(
+    payments: Payments,
+    staff: Staff,
+    state: Annotated[str, Query(alias="status", pattern="^(review|all)$")] = "review",
+) -> list[StaffPaymentResponse]:
+    """Платежи из банка: по умолчанию — те, что ждут разбора (не сошлись
+    сумма, ИНН, номер; банк не подтвердил)."""
+    rows = await payments.payments(review_only=state == "review")
+    return [
+        StaffPaymentResponse(
+            id=row.id,
+            kind=row.kind,  # type: ignore[arg-type]
+            status=row.status,  # type: ignore[arg-type]
+            problem=row.problem,
+            amount_kopecks=row.amount_kopecks,
+            payer_inn=row.payer_inn,
+            payer_name=row.payer_name,
+            purpose=row.purpose,
+            tenant_id=row.tenant_id,
+            company_name=tenant.name if tenant else None,
+            invoice_id=row.invoice_id,
+            note=row.note,
+            created_at=row.created_at,
+        )
+        for row, tenant in rows
+    ]
+
+
+@router.post(
+    "/billing/payments/{event_id}/resolve",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def resolve_payment(
+    event_id: UUID,
+    body: StaffPaymentResolveRequest,
+    payments: Payments,
+    staff: Staff,
+    limiter: Limiter,
+) -> Response:
+    """Ручной разбор: зачесть платёж в счёт (tenant_id и invoice_id) или
+    закрыть без зачёта — с комментарием (возврат, чужой платёж)."""
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    if (body.tenant_id is None) != (body.invoice_id is None):
+        raise CodedConflictError(
+            "Укажите и компанию, и счёт — или ни того, ни другого",
+            "invoice_and_company_required",
+        )
+    if body.invoice_id is None and not (body.note or "").strip():
+        raise CodedConflictError(
+            "Без зачёта нужен комментарий: почему платёж закрыт", "note_required"
+        )
+    await payments.resolve(
+        event_id,
+        staff_account=staff.id,
+        tenant_id=body.tenant_id,
+        invoice_id=body.invoice_id,
+        note=body.note,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # --- расход --------------------------------------------------------------------

@@ -67,11 +67,15 @@ class CreditPackResponse(BaseModel):
 
 class CreditOrderRequest(RequestModel):
     pack: str = Field(min_length=1, max_length=32)
+    payment_method: PaymentMethod = "invoice"
+    """card — ссылка на оплату картой или СБП с чеком; только с
+    подключённым банком (иначе 409 payments_disabled)."""
 
 
 class CreditOrderResponse(BaseModel):
     """Заказ пакета кредитов. number — по порядку в компании: «Заказ № 3».
-    Оплата пока по счёту (payment_method=invoice)."""
+    invoice_id — счёт или ссылка банка (только с подключённой оплатой);
+    payment_url — куда перейти, чтобы оплатить картой."""
 
     id: UUID
     number: int
@@ -83,6 +87,8 @@ class CreditOrderResponse(BaseModel):
     created_at: datetime
     paid_at: datetime | None
     cancelled_at: datetime | None
+    invoice_id: UUID | None = None
+    payment_url: str | None = None
 
 
 class StaffCreditOrderResponse(CreditOrderResponse):

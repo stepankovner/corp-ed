@@ -111,7 +111,7 @@ async def drain(notifier: TeamNotifier) -> None:
         await notifier.drain()
 
 
-# --- тексты: только то, что можно отправить в чужой мессенджер ------------------
+# --- тексты: только то, что можно отправить в чужой мессенджер ------------------------
 
 
 def lead_message(
@@ -141,6 +141,37 @@ def credit_order_message(
         f"Компания {company_ref(tenant_id)}: заказ № {number} — "
         f"{_thousands(credits)} кредитов на {_thousands(amount_kopecks // 100)} ₽, "
         "ждёт оплаты по счёту. Отметить оплату — в нашей панели, «Кредиты»."
+    )
+
+
+def payment_review_message(
+    *, amount_kopecks: int | None, problem: str, tenant_id: UUID | None
+) -> str:
+    """Платёж из банка не зачёлся сам — разобрать в панели. Без реквизитов
+    и назначения: в чужой мессенджер — только сумма и код причины."""
+    amount = (
+        f"{_thousands(amount_kopecks // 100)} ₽" if amount_kopecks is not None else "?"
+    )
+    company = f" (компания {company_ref(tenant_id)})" if tenant_id else ""
+    return (
+        f"Платёж на {amount}{company} не зачтён автоматически: {problem}. "
+        "Разобрать — в нашей панели, «Оплата»."
+    )
+
+
+def billing_overdue_message(*, tenant_id: UUID, paid_until: date) -> str:
+    return (
+        f"Компания {company_ref(tenant_id)}: подписка просрочена — оплачено до "
+        f"{paid_until:%d.%m.%Y}, счёт на продление не оплачен. Блокировки нет; "
+        "решение — в нашей панели."
+    )
+
+
+def seats_topup_failed_message(*, tenant_id: UUID) -> str:
+    return (
+        f"Компания {company_ref(tenant_id)}: места добавлены, но доплату выставить не "
+        "удалось (банк не ответил или нет почты для чека). Выставьте счёт "
+        "вручную."
     )
 
 

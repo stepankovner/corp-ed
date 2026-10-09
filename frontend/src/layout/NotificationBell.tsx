@@ -3,7 +3,11 @@ import {
   Bell,
   BellOff,
   ChartColumn,
+  CircleAlert,
+  CircleCheck,
   Coins,
+  FileCheck,
+  FileText,
   Gauge,
   HandCoins,
   Mail,
@@ -51,6 +55,10 @@ const KINDS: Record<Notification["kind"], { icon: LucideIcon; tone: Tone }> = {
   department_confirmed: { icon: Network, tone: "muted" },
   department_rejected: { icon: Network, tone: "warn" },
   weekly_digest: { icon: ChartColumn, tone: "muted" },
+  billing_invoice: { icon: FileText, tone: "accent" },
+  billing_paid: { icon: CircleCheck, tone: "muted" },
+  billing_overdue: { icon: CircleAlert, tone: "error" },
+  billing_act: { icon: FileCheck, tone: "muted" },
 };
 
 /** Ссылка уведомления — путь сайта («/admin/…»); чужие адреса не открываем. */

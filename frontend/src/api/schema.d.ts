@@ -837,6 +837,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Billing Overview
+         * @description Подписка, цены периодов со скидкой, реквизиты, счета и акты.
+         */
+        get: operations["billing_overview_api_v1_billing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/acts/{act_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Act Pdf */
+        get: operations["act_pdf_api_v1_billing_acts__act_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/invoices/{invoice_id}/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Invoice Pdf
+         * @description Счёт в PDF: от банка, если он отдаёт, иначе — своим шаблоном.
+         */
+        get: operations["invoice_pdf_api_v1_billing_invoices__invoice_id__pdf_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Choose Subscription
+         * @description Период и способ оплаты. Первый раз — счёт или ссылка сразу; у
+         *     оплаченной подписки выбор действует со следующего счёта.
+         */
+        post: operations["choose_subscription_api_v1_billing_subscription_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/company": {
         parameters: {
             query?: never;
@@ -877,6 +955,31 @@ export interface paths {
         post?: never;
         /** Delete Logo */
         delete: operations["delete_logo_api_v1_company_logo_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/company/requisites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Requisites
+         * @description Реквизиты компании для счёта; null — ещё не заполнены.
+         */
+        get: operations["read_requisites_api_v1_company_requisites_get"];
+        /**
+         * Save Requisites
+         * @description 422 invalid_requisites с полем field — ИНН с ошибкой в контрольных
+         *     цифрах, КПП не того вида, КПП у ИП.
+         */
+        put: operations["save_requisites_api_v1_company_requisites_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1427,8 +1530,10 @@ export interface paths {
         put?: never;
         /**
          * Create Order
-         * @description Заказать пакет: заказ ждёт оплаты по счёту, команде kronto уходит
-         *     уведомление. Кредиты зачисляются, когда команда отметит оплату.
+         * @description Заказать пакет. Без подключённого банка заказ ждёт оплаты по счёту,
+         *     команде kronto уходит уведомление, кредиты зачисляет команда. С банком
+         *     — сразу счёт юрлицу или ссылка на оплату картой (payment_url), кредиты
+         *     зачисляются по вебхуку банка.
          */
         post: operations["create_order_api_v1_credits_orders_post"];
         delete?: never;
@@ -2174,6 +2279,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Billing Overview
+         * @description Подписки компаний: просроченные первыми. enabled=false — банк не
+         *     подключён (PAYMENTS_PROVIDER=none), оплату отмечают вручную.
+         */
+        get: operations["billing_overview_api_v1_staff_billing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/billing/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Invoices
+         * @description Счета и ссылки всех компаний; по умолчанию — ждут оплаты.
+         */
+        get: operations["list_invoices_api_v1_staff_billing_invoices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/billing/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Payments
+         * @description Платежи из банка: по умолчанию — те, что ждут разбора (не сошлись
+         *     сумма, ИНН, номер; банк не подтвердил).
+         */
+        get: operations["list_payments_api_v1_staff_billing_payments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/billing/payments/{event_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Payment
+         * @description Ручной разбор: зачесть платёж в счёт (tenant_id и invoice_id) или
+         *     закрыть без зачёта — с комментарием (возврат, чужой платёж).
+         */
+        post: operations["resolve_payment_api_v1_staff_billing_payments__event_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/companies": {
         parameters: {
             query?: never;
@@ -2209,6 +2397,10 @@ export interface paths {
          * Update Company
          * @description Тариф, места, срок пилота, приостановка — как cli set-tariff,
          *     set-seats, suspend-tenant, но с журналом от имени команды.
+         *
+         *     С подключённой оплатой и оплаченным периодом места добавляются сразу
+         *     с доплатой пропорционально оставшимся дням, а сокращаются со
+         *     следующего периода (решение владельца 09.10).
          */
         patch: operations["update_company_api_v1_staff_companies__tenant_id__patch"];
         trace?: never;
@@ -2292,6 +2484,44 @@ export interface paths {
          *     действий до своего срока; в журнал — событие с учёткой команды.
          */
         post: operations["delete_company_data_api_v1_staff_companies__tenant_id__delete_data_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/companies/{tenant_id}/invoices/{invoice_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Invoice */
+        post: operations["cancel_invoice_api_v1_staff_companies__tenant_id__invoices__invoice_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/staff/companies/{tenant_id}/invoices/{invoice_id}/paid": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark Invoice Paid
+         * @description Оплата пришла мимо автоматики: счёт оплачен, услуга зачислена (как
+         *     по вебхуку).
+         */
+        post: operations["mark_invoice_paid_api_v1_staff_companies__tenant_id__invoices__invoice_id__paid_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2784,6 +3014,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActResponse */
+        ActResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Number */
+            number: number;
+        };
         /**
          * AnalyticsResponse
          * @description Обезличенная статистика за период (ТЗ §6–7): ни имён, ни почты.
@@ -2939,6 +3191,30 @@ export interface components {
         BackupCodesResponse: {
             /** Backup Codes */
             backup_codes: string[] | null;
+        };
+        /**
+         * BillingResponse
+         * @description Оплата на странице тарифа. enabled=false — банк не подключён,
+         *     платят по счёту от команды (прежний порядок).
+         */
+        BillingResponse: {
+            /** Acts */
+            acts: components["schemas"]["ActResponse"][];
+            /** Enabled */
+            enabled: boolean;
+            /** Grace Days */
+            grace_days: number;
+            /** Invoices */
+            invoices: components["schemas"]["InvoiceResponse"][];
+            /** Quotes */
+            quotes: components["schemas"]["QuoteResponse"][];
+            requisites: components["schemas"]["RequisitesResponse"] | null;
+            /** Seat Price Kopecks */
+            seat_price_kopecks: number | null;
+            /** Seats */
+            seats: number;
+            subscription: components["schemas"]["SubscriptionResponse"] | null;
+            tariff: components["schemas"]["Tariff"];
         };
         /** Body_upload_attachment_api_v1_attachments_post */
         Body_upload_attachment_api_v1_attachments_post: {
@@ -3336,11 +3612,18 @@ export interface components {
         CreditOrderRequest: {
             /** Pack */
             pack: string;
+            /**
+             * Payment Method
+             * @default invoice
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
         };
         /**
          * CreditOrderResponse
          * @description Заказ пакета кредитов. number — по порядку в компании: «Заказ № 3».
-         *     Оплата пока по счёту (payment_method=invoice).
+         *     invoice_id — счёт или ссылка банка (только с подключённой оплатой);
+         *     payment_url — куда перейти, чтобы оплатить картой.
          */
         CreditOrderResponse: {
             /** Amount Kopecks */
@@ -3359,6 +3642,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Invoice Id */
+            invoice_id?: string | null;
             /** Number */
             number: number;
             /** Pack */
@@ -3370,6 +3655,8 @@ export interface components {
              * @enum {string}
              */
             payment_method: "invoice" | "card";
+            /** Payment Url */
+            payment_url?: string | null;
             /**
              * Status
              * @enum {string}
@@ -4010,6 +4297,54 @@ export interface components {
             /** Secret */
             secret: string;
         };
+        /** InvoiceResponse */
+        InvoiceResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Due Date */
+            due_date: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "subscription" | "seats" | "credits";
+            /** Number */
+            number: string;
+            /** Paid At */
+            paid_at: string | null;
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /** Payment Url */
+            payment_url: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "paid" | "cancelled";
+            /** Title */
+            title: string;
+        };
         /** JoinResponse */
         JoinResponse: {
             /** Company Name */
@@ -4499,7 +4834,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "credits_added" | "credits_topup_requested" | "join_request" | "department_request" | "department_confirmed" | "department_rejected" | "weekly_digest";
+            kind: "connector_stopped" | "credits_warning" | "credits_exhausted" | "credits_added" | "credits_topup_requested" | "join_request" | "department_request" | "department_confirmed" | "department_rejected" | "weekly_digest" | "billing_invoice" | "billing_paid" | "billing_overdue" | "billing_act";
             /** Link */
             link: string | null;
             /** Read */
@@ -4703,6 +5038,18 @@ export interface components {
              */
             telegram?: string | null;
         };
+        /** QuoteResponse */
+        QuoteResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number;
+            /** Discount Percent */
+            discount_percent: number;
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "month" | "quarter" | "year";
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /**
@@ -4731,6 +5078,46 @@ export interface components {
              * @constant
              */
             terms: true;
+        };
+        /**
+         * RequisitesRequest
+         * @description Реквизиты компании для счёта: ИНН и КПП проверяются (контрольные
+         *     цифры), у ИП КПП пустой.
+         */
+        RequisitesRequest: {
+            /** Address */
+            address: string;
+            /** Documents Email */
+            documents_email?: string | null;
+            /** Inn */
+            inn: string;
+            /** Kpp */
+            kpp?: string | null;
+            /** Legal Name */
+            legal_name: string;
+        };
+        /** RequisitesResponse */
+        RequisitesResponse: {
+            /** Address */
+            address: string;
+            /** Documents Email */
+            documents_email: string | null;
+            /** Inn */
+            inn: string;
+            /** Kpp */
+            kpp: string | null;
+            /** Legal Name */
+            legal_name: string;
+            /**
+             * Payer Type
+             * @enum {string}
+             */
+            payer_type: "company" | "ip";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ResetPasswordRequest */
         ResetPasswordRequest: {
@@ -4965,6 +5352,15 @@ export interface components {
             /** @default base */
             tariff: components["schemas"]["Tariff"];
         };
+        /** StaffBillingResponse */
+        StaffBillingResponse: {
+            /** Enabled */
+            enabled: boolean;
+            /** Provider */
+            provider: string;
+            /** Subscriptions */
+            subscriptions: components["schemas"]["StaffSubscriptionResponse"][];
+        };
         /** StaffCompanyDeleteRequest */
         StaffCompanyDeleteRequest: {
             /** Company Code */
@@ -5089,6 +5485,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Invoice Id */
+            invoice_id?: string | null;
             /** Number */
             number: number;
             /** Pack */
@@ -5100,6 +5498,8 @@ export interface components {
              * @enum {string}
              */
             payment_method: "invoice" | "card";
+            /** Payment Url */
+            payment_url?: string | null;
             /**
              * Status
              * @enum {string}
@@ -5110,6 +5510,67 @@ export interface components {
              * Format: uuid
              */
             tenant_id: string;
+        };
+        /** StaffInvoiceResponse */
+        StaffInvoiceResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number;
+            /** Company Code */
+            company_code: string;
+            /** Company Name */
+            company_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Due Date */
+            due_date: string | null;
+            /** Has Pdf */
+            has_pdf: boolean;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "subscription" | "seats" | "credits";
+            /** Number */
+            number: string;
+            /** Paid At */
+            paid_at: string | null;
+            /** Payer Inn */
+            payer_inn: string | null;
+            /** Payer Name */
+            payer_name: string | null;
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /** Payment Url */
+            payment_url: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** Period Start */
+            period_start: string | null;
+            /** Purpose */
+            purpose: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "paid" | "cancelled";
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
+            /** Title */
+            title: string;
         };
         /** StaffLeadResponse */
         StaffLeadResponse: {
@@ -5162,6 +5623,65 @@ export interface components {
             pilots_ending: number;
             /** Requests New */
             requests_new: number;
+        };
+        /**
+         * StaffPaymentResolveRequest
+         * @description Зачесть платёж в счёт компании или закрыть без зачёта (только
+         *     комментарий).
+         */
+        StaffPaymentResolveRequest: {
+            /** Invoice Id */
+            invoice_id?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Tenant Id */
+            tenant_id?: string | null;
+        };
+        /**
+         * StaffPaymentResponse
+         * @description Входящий платёж из банка и как он разобран. problem — код причины,
+         *     если не зачёлся сам: amount_differs, inn_differs, already_paid,
+         *     unknown_invoice, no_invoice_number, bank_not_confirmed…
+         */
+        StaffPaymentResponse: {
+            /** Amount Kopecks */
+            amount_kopecks: number | null;
+            /** Company Name */
+            company_name: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Invoice Id */
+            invoice_id: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "incoming" | "acquiring";
+            /** Note */
+            note: string | null;
+            /** Payer Inn */
+            payer_inn: string | null;
+            /** Payer Name */
+            payer_name: string | null;
+            /** Problem */
+            problem: string | null;
+            /** Purpose */
+            purpose: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "received" | "pending" | "matched" | "mismatch" | "unmatched" | "ignored" | "resolved";
+            /** Tenant Id */
+            tenant_id: string | null;
         };
         /** StaffPersonCompanyResponse */
         StaffPersonCompanyResponse: {
@@ -5248,6 +5768,46 @@ export interface components {
             status: "new" | "approved" | "rejected" | "cancelled";
             /** Tenant Id */
             tenant_id: string | null;
+        };
+        /** StaffSubscriptionResponse */
+        StaffSubscriptionResponse: {
+            /** Card Amount Kopecks */
+            card_amount_kopecks: number | null;
+            /** Company Code */
+            company_code: string;
+            /** Company Name */
+            company_name: string;
+            /** Current End */
+            current_end: string | null;
+            /** Current Start */
+            current_start: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Next Seats */
+            next_seats: number | null;
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "month" | "quarter" | "year";
+            /** Seats */
+            seats: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "active" | "overdue" | "cancelled";
+            tariff: components["schemas"]["Tariff"];
+            /**
+             * Tenant Id
+             * Format: uuid
+             */
+            tenant_id: string;
         };
         /** StaffSupportResponse */
         StaffSupportResponse: {
@@ -5380,6 +5940,56 @@ export interface components {
              * @enum {string}
              */
             type: "start";
+        };
+        /** SubscriptionChoiceRequest */
+        SubscriptionChoiceRequest: {
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "month" | "quarter" | "year";
+        };
+        /**
+         * SubscriptionChoiceResponse
+         * @description invoice — счёт или ссылка на первый период; null — подписка уже
+         *     оплачена, выбор действует со следующего счёта.
+         */
+        SubscriptionChoiceResponse: {
+            invoice: components["schemas"]["InvoiceResponse"] | null;
+        };
+        /** SubscriptionResponse */
+        SubscriptionResponse: {
+            /** Card Amount Kopecks */
+            card_amount_kopecks: number | null;
+            /** Current End */
+            current_end: string | null;
+            /** Current Start */
+            current_start: string | null;
+            /** Next Seats */
+            next_seats: number | null;
+            /**
+             * Payment Method
+             * @enum {string}
+             */
+            payment_method: "invoice" | "card";
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "month" | "quarter" | "year";
+            /** Seats */
+            seats: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "awaiting_payment" | "active" | "overdue" | "cancelled";
+            tariff: components["schemas"]["Tariff"];
         };
         /** SuggestionOrderRequest */
         SuggestionOrderRequest: {
@@ -6995,6 +7605,121 @@ export interface operations {
             };
         };
     };
+    billing_overview_api_v1_billing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingResponse"];
+                };
+            };
+        };
+    };
+    act_pdf_api_v1_billing_acts__act_id__pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                act_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invoice_pdf_api_v1_billing_invoices__invoice_id__pdf_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    choose_subscription_api_v1_billing_subscription_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionChoiceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionChoiceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_settings_api_v1_company_get: {
         parameters: {
             query?: never;
@@ -7096,6 +7821,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    read_requisites_api_v1_company_requisites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequisitesResponse"] | null;
+                };
+            };
+        };
+    };
+    save_requisites_api_v1_company_requisites_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequisitesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequisitesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -9496,6 +10274,121 @@ export interface operations {
             };
         };
     };
+    billing_overview_api_v1_staff_billing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffBillingResponse"];
+                };
+            };
+        };
+    };
+    list_invoices_api_v1_staff_billing_invoices_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffInvoiceResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_payments_api_v1_staff_billing_payments_get: {
+        parameters: {
+            query?: {
+                status?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffPaymentResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_payment_api_v1_staff_billing_payments__event_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffPaymentResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_companies_api_v1_staff_companies_get: {
         parameters: {
             query?: never;
@@ -9703,6 +10596,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StaffCompanyDeletedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_invoice_api_v1_staff_companies__tenant_id__invoices__invoice_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffInvoiceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_invoice_paid_api_v1_staff_companies__tenant_id__invoices__invoice_id__paid_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+                invoice_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffInvoiceResponse"];
                 };
             };
             /** @description Validation Error */

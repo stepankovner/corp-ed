@@ -102,7 +102,7 @@ class DemoService:
         self.settings = settings
         self.build_faq = build_faq
 
-    # --- сайт -----------------------------------------------------------------
+    # --- сайт -------------------------------------------------------------------------
 
     async def info(self) -> DemoInfo:
         tenant = await self._tenant()
@@ -176,7 +176,7 @@ class DemoService:
             return None
         return await UserRepository(session).get_by_account(account.id)
 
-    # --- выкатка: cli demo setup ----------------------------------------------
+    # --- выкатка: cli demo setup ------------------------------------------------------
 
     async def setup(self) -> DemoSetupReport:
         """Завести компанию песочницы или привести её документы к

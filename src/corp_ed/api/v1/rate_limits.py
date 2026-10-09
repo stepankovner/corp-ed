@@ -121,6 +121,16 @@ TARIFF_REQUEST_PER_TENANT = RatePolicy(
 CREDIT_ORDER_PER_TENANT = RatePolicy(
     "credit-order", limit=10, window=86400, fail_open=False
 )
+# Выбор оплаты подписки — каждый раз новый счёт в банке.
+BILLING_CHOICE_PER_TENANT = RatePolicy(
+    "billing-choice", limit=20, window=86400, fail_open=False
+)
+# Вебхук банка: Точка шлёт с нескольких адресов, повторяет до 30 раз.
+# Лимит — от постороннего, который шлёт мусор (подпись всё равно не
+# сойдётся). fail_open: без Redis платёж не теряем — подпись проверяется.
+PAYMENT_WEBHOOK_PER_IP = RatePolicy(
+    "payment-webhook-ip", limit=120, window=60, fail_open=True
+)
 # «Попросить пополнить»: уведомление и так одно на эпизод, лимит — от
 # скрипта, который долбит ручку.
 TOPUP_REQUEST_PER_USER = RatePolicy(
