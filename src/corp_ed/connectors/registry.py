@@ -228,11 +228,11 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     """
     from corp_ed.connectors.bitrix24 import register as register_bitrix24
     from corp_ed.connectors.confluence import register as register_confluence
-    from corp_ed.connectors.webdav import register as register_webdav
     from corp_ed.connectors.gdrive import register as register_gdrive
-    from corp_ed.connectors.website import register as register_website
     from corp_ed.connectors.kaiten import register as register_kaiten
     from corp_ed.connectors.outline import register as register_outline
+    from corp_ed.connectors.webdav import register as register_webdav
+    from corp_ed.connectors.website import register as register_website
     from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry(

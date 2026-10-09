@@ -53,6 +53,8 @@ from tests.api.conftest import bearer
 from tests.fake_connector import (
     FAKE_KIND,
     FAKE_PER_USER_KIND,
+    PUBLIC_KIND,
+    PUBLIC_SPEC,
     FakeSource,
     make_registry,
     public_resolver,
