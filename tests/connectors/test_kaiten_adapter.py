@@ -259,6 +259,14 @@ async def test_document_missing_from_api_list_is_read_by_uid(
     assert ("documents/d-root", {}) in server.calls
 
 
+async def test_oversized_tree_stops_instead_of_truncating(
+    server: FakeKaiten, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(documents_module, "MAX_ENTITIES", 3)
+    with pytest.raises(AdapterError, match="tree_too_large"):
+        await listed(make_adapter(server), "documents")
+
+
 async def test_tree_endpoint_missing_is_a_clear_error(server: FakeKaiten) -> None:
     server.tree_missing = True
     with pytest.raises(AdapterError) as caught:

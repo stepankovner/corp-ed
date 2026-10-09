@@ -106,8 +106,10 @@ class DocumentsModule:
                 if uid in entities:
                     continue
                 if len(entities) >= MAX_ENTITIES:
+                    # Обрезанный листинг ядро сочло бы полным и удалило бы
+                    # остальное: лучше остановиться с понятным кодом.
                     logger.warning("kaiten_tree_too_large", limit=MAX_ENTITIES)
-                    return entities
+                    raise AdapterError("tree_too_large")
                 entities[uid] = entity
                 # Прямой потомок запрошенного узла пришёл на первом уровне —
                 # его собственные потомки уже в ответе. Остальные — нет
