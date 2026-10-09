@@ -17,6 +17,7 @@ from corp_ed.api.v1.dependencies import (
     get_connector_service,
     get_session,
 )
+from corp_ed.connectors.registry import KindSpec
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.core.secrets import SecretBox
@@ -47,6 +48,8 @@ from tests.api.conftest import bearer
 from tests.fake_connector import (
     FAKE_KIND,
     FAKE_PER_USER_KIND,
+    PUBLIC_KIND,
+    PUBLIC_SPEC,
     FakeSource,
     make_registry,
     public_resolver,
@@ -84,6 +87,12 @@ def hidden_kinds() -> frozenset[str]:
 
 
 @pytest.fixture
+def extra_kinds() -> tuple[KindSpec, ...]:
+    """Виды сверх двух поддельных; тест подменяет параметризацией."""
+    return ()
+
+
+@pytest.fixture
 async def connectors_api(
     api: httpx.AsyncClient,
     session: AsyncSession,
@@ -91,8 +100,9 @@ async def connectors_api(
     secrets: SecretBox,
     settings: ConnectorSettings,
     hidden_kinds: frozenset[str],
+    extra_kinds: tuple[KindSpec, ...],
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    registry = make_registry(source, hidden_kinds)
+    registry = make_registry(source, hidden_kinds, extra_kinds)
 
     def build(session: AsyncSession, audit: AuditRepository) -> ConnectorService:
         return ConnectorService(
@@ -193,6 +203,39 @@ async def test_hidden_kind_is_not_offered_but_existing_ones_work(
         f"{URL}/{existing.id}/test", headers=bearer(admin_account)
     )
     assert tested.status_code == 200, tested.text
+
+
+@pytest.mark.parametrize("extra_kinds", [(PUBLIC_SPEC,)])
+async def test_kind_without_keys_is_ready_on_create(
+    connectors_api: httpx.AsyncClient, admin_account: User, session: AsyncSession
+) -> None:
+    """Режим organization без полей учётных данных (публичный сайт): ключей
+    нет и не будет — подключение готово сразу, синхронизация в очереди."""
+    created = await _create(
+        connectors_api,
+        admin_account,
+        {
+            "kind": PUBLIC_KIND,
+            "name": "Сайт",
+            "modules": ["pages"],
+            "config": {"base_url": "https://www.example.com/help/"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["credentials_set_at"] is not None
+    with tenant_scope(admin_account.tenant_id):
+        jobs = await _jobs(session)
+    assert [str(job.connector_id) for job in jobs] == [body["id"]]
+
+    tested = await connectors_api.post(
+        f"{URL}/{body['id']}/test", headers=bearer(admin_account)
+    )
+    assert tested.json() == {"ok": True, "error_code": None}
+
+    # Обычный вид режима organization по-прежнему ждёт ключей.
+    plain = (await _create(connectors_api, admin_account)).json()
+    assert plain["credentials_set_at"] is None
 
 
 @pytest.mark.parametrize(

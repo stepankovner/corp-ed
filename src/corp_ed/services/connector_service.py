@@ -255,6 +255,10 @@ class ConnectorService:
         await self._check_tariff(spec)
         clean_modules = _validate_modules(spec, modules)
         clean_config = await _validate_config(spec, config, self.resolver)
+        # Публичный источник (сайт): ключей нет и не будет. Пустой набор
+        # учётных данных — чтобы планировщик, проверка и синхронизация не
+        # ждали шага «задать ключи», которого у вида нет.
+        keyless = spec.mode is ConnectorMode.ORGANIZATION and not spec.credential_fields
         connector = await self.connectors.create(
             Connector(
                 kind=spec.kind,
@@ -266,8 +270,14 @@ class ConnectorService:
                     sync_interval_minutes or self.settings.default_sync_interval_minutes
                 ),
                 created_by=actor.id,
+                credentials=self.secrets.encrypt({}) if keyless else None,
+                credentials_set_at=_now() if keyless else None,
             )
         )
+        if keyless:
+            await self.jobs.enqueue(
+                connector.tenant_id, connector.id, SyncTrigger.MANUAL
+            )
         self._record(
             AuditAction.CONNECTOR_CREATED,
             actor,

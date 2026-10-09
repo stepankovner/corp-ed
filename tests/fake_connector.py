@@ -54,6 +54,16 @@ PER_USER_SPEC = KindSpec(
     credential_fields=_CREDENTIALS,
     url_field="base_url",
 )
+PUBLIC_KIND = "fake_public"
+PUBLIC_SPEC = KindSpec(
+    kind=PUBLIC_KIND,
+    title="Поддельный публичный источник (без ключей)",
+    mode=ConnectorMode.ORGANIZATION,
+    modules=(ModuleSpec("pages", "Страницы"),),
+    config_fields=(FieldSpec("base_url", "Адрес сайта"),),
+    url_field="base_url",
+)
+"""Режим organization без учётных данных: публичный сайт."""
 
 
 async def public_resolver(host: str) -> list[str]:
@@ -147,7 +157,9 @@ class FakeAdapter:
 
 
 def make_registry(
-    source: FakeSource, hidden_kinds: frozenset[str] = frozenset()
+    source: FakeSource,
+    hidden_kinds: frozenset[str] = frozenset(),
+    extra: Sequence[KindSpec] = (),
 ) -> AdapterRegistry:
     registry = AdapterRegistry(hidden_kinds=hidden_kinds)
 
@@ -162,6 +174,8 @@ def make_registry(
 
     registry.register(ORG_SPEC, factory)
     registry.register(PER_USER_SPEC, factory)
+    for spec in extra:
+        registry.register(spec, factory)
     return registry
 
 
