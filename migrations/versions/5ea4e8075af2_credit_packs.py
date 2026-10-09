@@ -136,9 +136,7 @@ def upgrade() -> None:
         _created_at(),
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
         sa.CheckConstraint("credits > 0", name="ck_credit_spends_credits_positive"),
-        sa.ForeignKeyConstraint(
-            ["grant_id"], ["credit_grants.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["grant_id"], ["credit_grants.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
