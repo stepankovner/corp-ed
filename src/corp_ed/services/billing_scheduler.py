@@ -35,15 +35,11 @@ from corp_ed.core.exceptions import (
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.billing import PaymentMethod
 from corp_ed.domain.models import (
-    Account,
     Act,
     Invoice,
-    MemberStatus,
     PaymentEvent,
     Subscription,
     Tenant,
-    User,
-    UserRole,
 )
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
@@ -53,6 +49,7 @@ from corp_ed.services.billing_service import (
     PAID,
     TARIFF_PATH,
     Billing,
+    admin_email,
     invoice_lines,
     invoice_notice,
     issue,
@@ -230,12 +227,14 @@ class BillingScheduler:
         previous = locked.seats
         locked.seats = sub.next_seats
         sub.next_seats = None
+        # То же событие, что у смены мест командой (TenantService.set_seats):
+        # в журнале компании видно, откуда взялись новые места.
         AuditRepository(session).record(
-            AuditAction.BILLING_SEATS_APPLIED,
+            AuditAction.TENANT_SEATS_CHANGED,
             tenant_id=tenant.id,
             target_type="tenant",
             target_id=tenant.id,
-            details={"from": previous, "to": locked.seats},
+            details={"from": previous, "to": locked.seats, "source": "billing_period"},
         )
 
     async def _renew(
@@ -455,23 +454,6 @@ class BillingScheduler:
         return 1
 
 
-async def admin_email(session: AsyncSession, tenant_id: object) -> str | None:
-    """Почта первого администратора компании — для чека, когда в
-    реквизитах нет почты для документов."""
-    email: str | None = await session.scalar(
-        select(Account.email)
-        .join(User, User.account_id == Account.id)
-        .where(
-            User.tenant_id == tenant_id,
-            User.role == UserRole.ADMIN,
-            User.status == MemberStatus.ACTIVE,
-        )
-        .order_by(User.created_at)
-        .limit(1)
-    )
-    return email
-
-
 def requisites_notice(paid_until: date) -> Notice:
     last = paid_until - timedelta(days=1)
     return Notice(
@@ -481,7 +463,7 @@ def requisites_notice(paid_until: date) -> Notice:
             f"Подписка оплачена по {last:%d.%m.%Y}. Чтобы выставить счёт на "
             "следующий период, нужны реквизиты компании.",
         ],
-        link="/admin/company",
+        link="/admin/settings",
         action="Заполнить реквизиты",
     )
 

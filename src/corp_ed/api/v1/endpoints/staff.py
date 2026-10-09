@@ -84,6 +84,7 @@ from corp_ed.services.payment_service import (
 from corp_ed.services.seats import seats_check
 from corp_ed.services.staff_service import CompanyRow, Person, StaffService
 from corp_ed.services.support_service import SupportItem, SupportService
+from corp_ed.services.team_notify import seats_topup_failed_message
 from corp_ed.services.tenant_service import TenantService
 
 logger = structlog.get_logger()
@@ -279,9 +280,10 @@ async def update_company(
             "переключитесь на другую или используйте cli suspend-tenant",
             "own_company",
         )
-    new_seats = body.seats if body.seats not in (None, row.tenant.seats) else None
+    current_seats = row.tenant.seats
+    new_seats = body.seats if body.seats not in (None, current_seats) else None
     plan = (
-        await payments.plan_seats(tenant_id, row.tenant.seats, new_seats)
+        await payments.plan_seats(tenant_id, current_seats, new_seats)
         if new_seats is not None
         else SeatsPlan()
     )
@@ -296,10 +298,13 @@ async def update_company(
         await tenants.set_seats(code, new_seats)
         if plan.topup:
             try:
-                await payments.issue_topup(tenant_id, new_seats)
+                await payments.issue_topup(tenant_id, new_seats - current_seats)
             except (PaymentUnavailableError, InvalidBillingInputError) as exc:
                 # Места уже добавлены; доплату команда выставит сама.
                 logger.warning("billing_topup_failed", error=type(exc).__name__)
+                payments.billing.notifier.notify(
+                    seats_topup_failed_message(company_code=code)
+                )
     if body.tariff is not None and body.tariff.value != row.tenant.tariff:
         await tenants.set_tariff(code, body.tariff)
     if "pilot_until" in fields:

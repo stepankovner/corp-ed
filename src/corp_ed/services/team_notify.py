@@ -163,6 +163,14 @@ def billing_overdue_message(*, company_code: str, paid_until: date) -> str:
     )
 
 
+def seats_topup_failed_message(*, company_code: str) -> str:
+    return (
+        f"Компания {company_code}: места добавлены, но доплату выставить не "
+        "удалось (банк не ответил или нет почты для чека). Выставьте счёт "
+        "вручную."
+    )
+
+
 def _thousands(value: int) -> str:
     return f"{value:,}".replace(",", " ")
 

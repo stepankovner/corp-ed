@@ -50,6 +50,7 @@ from corp_ed.core.config import (
     get_connector_settings,
     get_http_settings,
     get_payment_settings,
+    get_seller_settings,
     get_team_notify_settings,
     get_tochka_settings,
 )
@@ -217,6 +218,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             tochka, via_proxy=get_connector_settings().outbound_via_proxy
         )
         app.state.payment_provider = TochkaProvider(tochka_client, tochka)
+        if not get_seller_settings().complete:
+            # Свой PDF счёта и акта (когда банк его не отдал) вышел бы без
+            # реквизитов продавца.
+            logger.warning("billing_seller_requisites_missing")
     try:
         yield
     finally:

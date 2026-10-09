@@ -50,14 +50,17 @@ from corp_ed.domain.billing import (
 )
 from corp_ed.domain.credit_packs import PACK_VALID_MONTHS
 from corp_ed.domain.models import (
+    Account,
     Act,
     CompanyRequisites,
     CreditOrder,
     Invoice,
     InvoiceRef,
+    MemberStatus,
     Subscription,
     Tenant,
     User,
+    UserRole,
 )
 from corp_ed.domain.tariffs import Tariff, plan_for
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
@@ -213,6 +216,23 @@ def subscription_line(
         f"Доступ к сервису kronto, тариф «{title}», {seats} {places}, "
         f"{_period_label(period, discounts)}{_dates(start, end)}"
     )
+
+
+async def admin_email(session: AsyncSession, tenant_id: UUID) -> str | None:
+    """Почта первого администратора компании — для чека, когда в
+    реквизитах нет почты для документов."""
+    email: str | None = await session.scalar(
+        select(Account.email)
+        .join(User, User.account_id == Account.id)
+        .where(
+            User.tenant_id == tenant_id,
+            User.role == UserRole.ADMIN,
+            User.status == MemberStatus.ACTIVE,
+        )
+        .order_by(User.created_at)
+        .limit(1)
+    )
+    return email
 
 
 async def requisites_of(session: AsyncSession) -> CompanyRequisites | None:

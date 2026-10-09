@@ -709,3 +709,39 @@ async def test_company_sees_only_its_invoices(
         assert [
             s.tenant_id for s in (await session.scalars(select(Subscription))).all()
         ] == [other.id]
+
+
+async def test_card_company_gets_a_topup_link_without_requisites(
+    api: httpx.AsyncClient,
+    session: AsyncSession,
+    staff: User,
+    bank: FakeTochka,
+    tenant_ctx: Tenant,
+    team: list[str],
+) -> None:
+    await _choose(api, staff, method="card")
+    [operation] = bank.links
+    bank.approve(operation)
+    paid = await api.post(WEBHOOK, content=bank.acquiring_webhook(operation))
+    assert paid.status_code == 200
+
+    response = await api.patch(
+        f"/api/v1/staff/companies/{tenant_ctx.id}",
+        json={"seats": 31},
+        headers=bearer(staff),
+    )
+    assert response.status_code == 200, response.text
+
+    data = (await api.get(BILLING, headers=bearer(staff))).json()
+    topup = next(item for item in data["invoices"] if item["kind"] == "seats")
+    assert topup["payment_method"] == "card"
+    assert topup["payment_url"] is not None
+    assert topup["amount_kopecks"] == 990_00
+    link = next(
+        body for body in bank.links.values() if body["kind"] == "payments_with_receipt"
+    )
+    # Реквизитов нет — чек на почту администратора.
+    assert link["Data"]["Client"]["email"] == "admin@test.com"
+    # Автосписание по карте не трогаем: доплата — разовой ссылкой.
+    assert bank.links[operation]["status"] == "APPROVED"
+    assert team == []
