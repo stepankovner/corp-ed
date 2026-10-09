@@ -962,7 +962,8 @@ export interface paths {
         };
         /**
          * My Connectors
-         * @description Подключения, которые сотрудник авторизует сам, и его состояние в них.
+         * @description Подключения, которые сотрудник авторизует сам, его состояние в них
+         *     и поля формы для видов без OAuth.
          */
         get: operations["my_connectors_api_v1_connectors_mine_get"];
         put?: never;
@@ -1072,8 +1073,10 @@ export interface paths {
         get?: never;
         /**
          * Set My Credentials
-         * @description Авторизовать себя в источнике (режим per_user). Документы из
-         *     листинга сотрудника появятся после ближайшей синхронизации.
+         * @description Авторизовать себя в источнике (режим per_user). Учётные данные
+         *     сразу проверяются в источнике: не приняты — 422 с кодом (auth_failed),
+         *     грант не сохраняется. Документы из листинга сотрудника появятся после
+         *     ближайшей синхронизации.
          */
         put: operations["set_my_credentials_api_v1_connectors__connector_id__mine_put"];
         post?: never;
@@ -4411,6 +4414,8 @@ export interface components {
          * @description Коннектор режима per_user глазами сотрудника: подключён ли он сам.
          */
         MyConnectorResponse: {
+            /** Credential Fields */
+            credential_fields: components["schemas"]["FieldSpecResponse"][];
             /** Grant Error Code */
             grant_error_code: string | null;
             grant_status: components["schemas"]["GrantStatus"] | null;

@@ -4261,6 +4261,13 @@
       "MyConnectorResponse": {
         "description": "Коннектор режима per_user глазами сотрудника: подключён ли он сам.",
         "properties": {
+          "credential_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldSpecResponse"
+            },
+            "title": "Credential Fields",
+            "type": "array"
+          },
           "grant_error_code": {
             "anyOf": [
               {
@@ -4306,7 +4313,8 @@
           "kind",
           "name",
           "grant_status",
-          "grant_error_code"
+          "grant_error_code",
+          "credential_fields"
         ],
         "title": "MyConnectorResponse",
         "type": "object"
@@ -9412,7 +9420,7 @@
     },
     "/api/v1/connectors/mine": {
       "get": {
-        "description": "Подключения, которые сотрудник авторизует сам, и его состояние в них.",
+        "description": "Подключения, которые сотрудник авторизует сам, его состояние в них\nи поля формы для видов без OAuth.",
         "operationId": "my_connectors_api_v1_connectors_mine_get",
         "responses": {
           "200": {
@@ -9791,7 +9799,7 @@
         ]
       },
       "put": {
-        "description": "Авторизовать себя в источнике (режим per_user). Документы из\nлистинга сотрудника появятся после ближайшей синхронизации.",
+        "description": "Авторизовать себя в источнике (режим per_user). Учётные данные\nсразу проверяются в источнике: не приняты — 422 с кодом (auth_failed),\nгрант не сохраняется. Документы из листинга сотрудника появятся после\nближайшей синхронизации.",
         "operationId": "set_my_credentials_api_v1_connectors__connector_id__mine_put",
         "parameters": [
           {

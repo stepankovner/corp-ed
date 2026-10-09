@@ -6,6 +6,8 @@ import { Link, useSearchParams } from "react-router";
 import { api, unwrap, type Schemas } from "../api/client";
 import { ApiError, errorMessage } from "../api/errors";
 import { isAdmin, useMe } from "../auth/context";
+import { filled } from "../admin/connectorModel";
+import { SecretInputs } from "../admin/connectorFields";
 import { describeCode } from "../lib/codes";
 import { formatNumber, plural } from "../lib/format";
 import { useDocumentTitle } from "../lib/title";
@@ -82,7 +84,7 @@ export function ConnectionsTab() {
         ) : null}
         {returned.status === "error" ? (
           <Notice kind="error" title="Не удалось подключить">
-            {describeCode(returned.code) || "Попробуйте ещё раз."}
+            {describeConnectCode(returned.code) || "Попробуйте ещё раз."}
           </Notice>
         ) : null}
         {start.isError ? <Notice kind="error">{errorMessage(start.error)}</Notice> : null}
@@ -125,34 +127,38 @@ export function ConnectionsTab() {
                       <p
                         style={{ color: "var(--error)", fontSize: "var(--fs-small)", marginTop: 4 }}
                       >
-                        {describeCode(item.grant_error_code)}
+                        {describeConnectCode(item.grant_error_code)}
                       </p>
                     ) : null}
                   </div>
                   <GrantBadge item={item} />
                 </div>
-                <div className={pageStyles.row}>
-                  {item.oauth ? (
-                    <Button
-                      size="sm"
-                      variant={item.grant_status === "active" ? "ghost" : "dark"}
-                      busy={start.isPending && start.variables === item.id}
-                      disabled={start.isPending}
-                      onClick={() => start.mutate(item.id)}
-                    >
-                      {item.grant_status === "active" ? "Подключить заново" : "Подключить"}
-                    </Button>
-                  ) : (
-                    <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
-                      Подключается через администратора.
-                    </span>
-                  )}
-                  {item.grant_status ? (
-                    <Button variant="link" size="sm" onClick={() => setDisconnecting(item)}>
-                      Отключить
-                    </Button>
-                  ) : null}
-                </div>
+                {!item.oauth && item.credential_fields.length > 0 ? (
+                  <CredentialsCard item={item} onDisconnect={() => setDisconnecting(item)} />
+                ) : (
+                  <div className={pageStyles.row}>
+                    {item.oauth ? (
+                      <Button
+                        size="sm"
+                        variant={item.grant_status === "active" ? "ghost" : "dark"}
+                        busy={start.isPending && start.variables === item.id}
+                        disabled={start.isPending}
+                        onClick={() => start.mutate(item.id)}
+                      >
+                        {item.grant_status === "active" ? "Подключить заново" : "Подключить"}
+                      </Button>
+                    ) : (
+                      <span className="muted" style={{ fontSize: "var(--fs-small)" }}>
+                        Подключается через администратора.
+                      </span>
+                    )}
+                    {item.grant_status ? (
+                      <Button variant="link" size="sm" onClick={() => setDisconnecting(item)}>
+                        Отключить
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -174,6 +180,126 @@ export function ConnectionsTab() {
           await queryClient.invalidateQueries({ queryKey: ["connectors"] });
         }}
       />
+    </>
+  );
+}
+
+/** Подписи кодов там, где общий текст из codes.ts говорит не о том. */
+function describeConnectCode(code: string | null | undefined): string {
+  if (code === "timeout") return "Источник не ответил вовремя — попробуйте позже";
+  return describeCode(code);
+}
+
+function connectError(error: unknown): string {
+  // Текст 422 — служебный («…: auth_failed»), человеку — подпись кода.
+  if (error instanceof ApiError && error.code) return describeConnectCode(error.code);
+  return errorMessage(error);
+}
+
+/**
+ * Источник без OAuth (Kaiten, Nextcloud и другие WebDAV-диски): сотрудник
+ * сам вводит токен или логин с паролем приложения. Сервер сразу проверяет
+ * их в источнике; сохранённые значения не возвращаются — «Изменить данные»
+ * открывает пустую форму.
+ */
+function CredentialsCard({ item, onDisconnect }: { item: Mine; onDisconnect: () => void }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const fields = item.credential_fields;
+  const save = useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.PUT("/api/v1/connectors/{connector_id}/mine", {
+          params: { path: { connector_id: item.id } },
+          // Пароли не обрезаем: пробел может быть его частью.
+          body: { credentials: filled(values, false) },
+        }),
+      ),
+    onSuccess: async () => {
+      setValues({});
+      setEditing(false);
+      await queryClient.invalidateQueries({ queryKey: ["connectors"] });
+    },
+    onError: () => {
+      // Секреты вводятся заново; логин и прочее остаются.
+      setValues((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(
+            ([name]) => !fields.some((field) => field.name === name && field.secret),
+          ),
+        ),
+      );
+    },
+  });
+  const connected = Boolean(item.grant_status);
+  const formOpen = !connected || editing;
+  const ready = fields.every((field) => !field.required || values[field.name]?.trim());
+
+  return (
+    <>
+      {save.isSuccess && !formOpen ? (
+        <Notice kind="ok" title="Аккаунт подключён">
+          Документы появятся в ответах после ближайшей синхронизации — обычно в течение часа.
+        </Notice>
+      ) : null}
+      {formOpen ? (
+        <form
+          className={settingsStyles.form}
+          onSubmit={(event) => {
+            event.preventDefault();
+            save.mutate();
+          }}
+        >
+          <p className="muted" style={{ fontSize: "var(--fs-small)" }}>
+            {connected
+              ? "Сохранённые данные не показываются — впишите новые."
+              : "kronto сразу проверит данные в источнике и сохранит их зашифрованными."}
+          </p>
+          {save.isError ? <Notice kind="error">{connectError(save.error)}</Notice> : null}
+          <SecretInputs
+            fields={fields}
+            values={values}
+            onChange={(name, value) => setValues((current) => ({ ...current, [name]: value }))}
+            replacing={false}
+          />
+          <div className={pageStyles.row}>
+            <Button type="submit" size="sm" busy={save.isPending} disabled={!ready}>
+              {connected ? "Сохранить" : "Подключить"}
+            </Button>
+            {editing ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={save.isPending}
+                onClick={() => {
+                  setEditing(false);
+                  setValues({});
+                  save.reset();
+                }}
+              >
+                Отмена
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      ) : (
+        <div className={pageStyles.row}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              save.reset();
+              setEditing(true);
+            }}
+          >
+            Изменить данные
+          </Button>
+          <Button variant="link" size="sm" onClick={onDisconnect}>
+            Отключить
+          </Button>
+        </div>
+      )}
     </>
   );
 }
