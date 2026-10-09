@@ -23,6 +23,8 @@ from corp_ed.domain.types import ConnectorMode
 
 logger = structlog.get_logger()
 
+MAX_FIELD_LENGTH = 2048
+
 
 @dataclass(frozen=True)
 class FieldSpec:
@@ -32,6 +34,9 @@ class FieldSpec:
     # Секретные поля живут только в credentials, шифруются и не
     # возвращаются; несекретные — в config, видны админу.
     secret: bool = False
+    # Длина значения: адрес, токен, шаблон — до 2 КиБ; больше — только
+    # если вид так задумал (JSON-ключ сервисного аккаунта Google — 2,4 КиБ).
+    max_length: int = MAX_FIELD_LENGTH
 
 
 @dataclass(frozen=True)
@@ -224,6 +229,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.bitrix24 import register as register_bitrix24
     from corp_ed.connectors.confluence import register as register_confluence
     from corp_ed.connectors.webdav import register as register_webdav
+    from corp_ed.connectors.gdrive import register as register_gdrive
     from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry(
@@ -235,6 +241,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     register_confluence(registry, settings)
     register_yandex(registry, settings)
     register_webdav(registry, settings)
+    register_gdrive(registry, settings)
     if unknown := registry.unknown_hidden():
         # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
         # все ручки подключений: реестр собирается при первом запросе.

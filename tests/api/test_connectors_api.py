@@ -17,7 +17,9 @@ from corp_ed.api.v1.dependencies import (
     get_connector_service,
     get_session,
 )
+from corp_ed.connectors.registry import FieldSpec
 from corp_ed.core.config import ConnectorSettings
+from corp_ed.core.exceptions import InvalidConnectorConfigError
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.core.secrets import SecretBox
 from corp_ed.core.tenant_context import tenant_scope
@@ -42,7 +44,11 @@ from corp_ed.repositories.connector_sync_job_repository import (
     ConnectorSyncJobRepository,
 )
 from corp_ed.repositories.material_repository import MaterialRepository
-from corp_ed.services.connector_service import ConnectorService, _provider_code
+from corp_ed.services.connector_service import (
+    ConnectorService,
+    _provider_code,
+    _validate_fields,
+)
 from tests.api.conftest import bearer
 from tests.fake_connector import (
     FAKE_KIND,
@@ -745,3 +751,18 @@ def test_provider_error_code_keeps_only_safe_characters() -> None:
     assert _provider_code("Отказ") == "provider______"
     assert len(_provider_code("x" * 500)) == 64
     assert _provider_code(None) == "code_missing"
+
+
+def test_field_length_limit_is_per_field() -> None:
+    """Значение поля — не длиннее 2 КиБ, если вид не разрешил больше
+    (JSON-ключ сервисного аккаунта Google — около 2,4 КиБ)."""
+    short = FieldSpec("token", "Токен", secret=True)
+    long = FieldSpec("key", "Ключ", secret=True, max_length=8192)
+    value = "x" * 3000
+
+    with pytest.raises(InvalidConnectorConfigError) as caught:
+        _validate_fields((short,), {"token": value}, "credentials")
+    assert caught.value.code == "field_invalid"
+    assert _validate_fields((long,), {"key": value}, "credentials") == {"key": value}
+    with pytest.raises(InvalidConnectorConfigError):
+        _validate_fields((long,), {"key": "x" * 8193}, "credentials")

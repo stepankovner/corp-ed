@@ -18,7 +18,6 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.api.v1.schemas.connector import MAX_FIELD_VALUE_LENGTH
 from corp_ed.connectors.base import (
     AdapterAuthError,
     AdapterError,
@@ -923,7 +922,7 @@ def _validate_fields(
                     "field_required", f"Не заполнено поле {what}: {name}"
                 )
             continue
-        if not isinstance(value, str) or len(value) > MAX_FIELD_VALUE_LENGTH:
+        if not isinstance(value, str) or len(value) > field.max_length:
             raise InvalidConnectorConfigError(
                 "field_invalid", f"Недопустимое значение поля {name}"
             )
