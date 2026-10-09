@@ -17,7 +17,7 @@ from corp_ed.api.v1.dependencies import (
     get_connector_service,
     get_session,
 )
-from corp_ed.connectors.registry import FieldSpec
+from corp_ed.connectors.registry import FieldSpec, KindSpec
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.exceptions import InvalidConnectorConfigError
 from corp_ed.core.outbound import OutboundClient
@@ -92,6 +92,12 @@ def hidden_kinds() -> frozenset[str]:
 
 
 @pytest.fixture
+def extra_kinds() -> tuple[KindSpec, ...]:
+    """Виды сверх двух поддельных; тест подменяет параметризацией."""
+    return ()
+
+
+@pytest.fixture
 async def connectors_api(
     api: httpx.AsyncClient,
     session: AsyncSession,
@@ -99,8 +105,9 @@ async def connectors_api(
     secrets: SecretBox,
     settings: ConnectorSettings,
     hidden_kinds: frozenset[str],
+    extra_kinds: tuple[KindSpec, ...],
 ) -> AsyncGenerator[httpx.AsyncClient]:
-    registry = make_registry(source, hidden_kinds)
+    registry = make_registry(source, hidden_kinds, extra_kinds)
 
     def build(session: AsyncSession, audit: AuditRepository) -> ConnectorService:
         return ConnectorService(
