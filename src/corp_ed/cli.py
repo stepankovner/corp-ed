@@ -72,7 +72,9 @@ from corp_ed.core.config import (
     get_demo_settings,
     get_lead_settings,
     get_mail_settings,
+    get_payment_settings,
     get_settings,
+    get_tochka_settings,
 )
 from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import DomainError
@@ -103,6 +105,8 @@ from corp_ed.services.digest_service import DigestService
 from corp_ed.services.gap_report_service import GapReportService
 from corp_ed.services.lead_service import LeadService
 from corp_ed.services.mail_check import check_mail
+from corp_ed.services.payments.provider import PaymentProviderError
+from corp_ed.services.payments.tochka import TochkaProvider, tochka_http_client
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
 from corp_ed.services.seats import seats_check
@@ -312,6 +316,17 @@ def _parser() -> argparse.ArgumentParser:
         help="ещё и отправить тестовое письмо на этот адрес — сразу, мимо очереди",
     )
 
+    webhook = commands.add_parser(
+        "payments-webhook",
+        help="подписать ключ Точки на вебхуки входящих платежей и оплаты по "
+        "ссылкам (банк сразу шлёт тестовый вебхук и ждёт 200)",
+    )
+    webhook.add_argument(
+        "url",
+        help="публичный адрес, например https://krontoai.ru/api/v1/payments/"
+        "tochka/webhook (только HTTPS на 443)",
+    )
+
     commands.add_parser(
         "rotate-connector-secrets",
         help="перешифровать учётные данные коннекторов первым ключом "
@@ -426,6 +441,9 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "mail-check":
         return await _mail_check(args.days, args.send_to)
+
+    if args.command == "payments-webhook":
+        return await _payments_webhook(args.url)
 
     if args.command == "rotate-connector-secrets":
         settings = get_connector_settings()
@@ -866,6 +884,28 @@ async def _gaps(company_code: str | None) -> int:
             f"подписано {report.labeled}"
         )
     return 1 if any(report.failed for report in reports) else 0
+
+
+async def _payments_webhook(url: str) -> int:
+    """Вебхук Точки: на client_id ключа — входящие платежи и оплата по
+    ссылкам. После перевыпуска ключа (новый client_id) — заново."""
+    if get_payment_settings().provider != "tochka":
+        print("PAYMENTS_PROVIDER не tochka — вебхук не нужен", file=sys.stderr)
+        return 1
+    if not url.startswith("https://") or not url.endswith("/payments/tochka/webhook"):
+        print("Адрес: https://<домен>/api/v1/payments/tochka/webhook", file=sys.stderr)
+        return 1
+    settings = get_tochka_settings()
+    async with tochka_http_client(
+        settings, via_proxy=get_connector_settings().outbound_via_proxy
+    ) as client:
+        try:
+            await TochkaProvider(client, settings).register_webhook(url)
+        except PaymentProviderError as exc:
+            print(f"Банк отказал: {exc.code}", file=sys.stderr)
+            return 1
+    print(f"Вебхук Точки: {url}")
+    return 0
 
 
 async def _mail_check(days: int, send_to: str | None) -> int:
