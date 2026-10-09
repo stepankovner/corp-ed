@@ -647,7 +647,14 @@ class HttpSettings(BaseSettings):
     redis_url: SecretStr | None = None
 
     max_body_bytes: int = Field(default=1024 * 1024, gt=0)
+    # Файлы: max_upload_bytes — вложения, аватар, логотип и документы
+    # остальных форматов; max_large_upload_bytes — документы pdf, docx и
+    # pptx (ingest.extract.LARGE_FILE_FORMATS, решение 09.10).
     max_upload_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    max_large_upload_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
+    # Большой файл целиком лежит в памяти API, пока идёт разбор (до 90 с),
+    # и копируется в процесс разбора; больше — ждут очереди в процессе.
+    max_concurrent_large_uploads: int = Field(default=2, gt=0, le=16)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -763,8 +770,11 @@ class ConnectorSettings(BaseSettings):
     # Бюджет одного запуска: документов и минут; остаток — следующим.
     max_documents_per_run: int = Field(default=200, gt=0, le=5000)
     max_run_minutes: int = Field(default=20, gt=0, le=180)
-    # Больше — не скачивается: тот же порядок, что у ручной загрузки.
+    # Больше — не скачивается: те же лимиты, что у ручной загрузки.
+    # max_document_bytes — остальные форматы, max_large_document_bytes —
+    # pdf, docx и pptx (ingest.extract.LARGE_FILE_FORMATS).
     max_document_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    max_large_document_bytes: int = Field(default=100 * 1024 * 1024, gt=0)
     sync_run_retention_days: int = Field(default=90, gt=0, le=365)
     # Процесс за egress-прокси (HTTPS_PROXY): запросы к системам клиентов
     # уходят по имени хоста, а не на закреплённый IP — прокси отвергает
@@ -842,6 +852,12 @@ class ConnectorSettings(BaseSettings):
                 "CONNECTOR_OUTBOUND_VIA_PROXY requires HTTPS_PROXY in production"
             )
         return self
+
+    @property
+    def download_limit_bytes(self) -> int:
+        """Сколько адаптер скачивает при любом формате; точный лимит по
+        формату проверяет синхронизация (ingest.extract.max_file_bytes)."""
+        return max(self.max_document_bytes, self.max_large_document_bytes)
 
     @property
     def keys(self) -> list[str]:

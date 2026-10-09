@@ -222,7 +222,53 @@ async def test_oversized_upload_is_rejected(
     monkeypatch.setattr(
         materials_endpoint,
         "get_http_settings",
-        lambda: HttpSettings(max_upload_bytes=100),
+        lambda: HttpSettings(max_upload_bytes=100, max_large_upload_bytes=100),
+    )
+    response = await _upload(api, admin_account)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "document_too_large"
+
+
+async def test_large_formats_get_large_limit(
+    api: httpx.AsyncClient, admin_account: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """pdf, docx и pptx — до max_large_upload_bytes (решение 09.10)."""
+    monkeypatch.setattr(
+        materials_endpoint,
+        "get_http_settings",
+        lambda: HttpSettings(
+            max_upload_bytes=100, max_large_upload_bytes=len(DOCX) + 1
+        ),
+    )
+    assert len(DOCX) > 100
+
+    assert (await _upload(api, admin_account)).status_code == 201
+
+
+async def test_other_formats_keep_small_limit(
+    api: httpx.AsyncClient, admin_account: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        materials_endpoint,
+        "get_http_settings",
+        lambda: HttpSettings(max_upload_bytes=100, max_large_upload_bytes=10**7),
+    )
+    response = await _upload(
+        api, admin_account, filename="sutochnye.xlsx", data=WORKBOOK, title="Суточные"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "document_too_large"
+
+
+async def test_large_format_over_large_limit_is_rejected(
+    api: httpx.AsyncClient, admin_account: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        materials_endpoint,
+        "get_http_settings",
+        lambda: HttpSettings(max_upload_bytes=10, max_large_upload_bytes=100),
     )
     response = await _upload(api, admin_account)
 

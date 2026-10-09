@@ -200,7 +200,7 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
             recorder=options.recorder,
             min_interval=0.0 if options.fast else None,
         )
-        return Bitrix24Adapter(client, max_bytes=settings.max_document_bytes)
+        return Bitrix24Adapter(client, max_bytes=settings.download_limit_bytes)
 
     def oauth(
         spec: KindSpec,
