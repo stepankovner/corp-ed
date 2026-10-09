@@ -85,7 +85,8 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Отчёт о пробелах | `GAPS_CLUSTER_DISTANCE`, `GAPS_HALF_LIFE_DAYS` | значения ML; пороги полнотекста — после подбора на живых логах |
 | HTTP-периметр | `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `FORWARDED_ALLOW_IPS` | см. раздел 5; с мониторингом (раздел 10) — добавить `api`: Prometheus ходит на `api:8000` |
 | Кредиты | `BILLING_*` | 420 на место в месяц, 1 кредит = 4 000 токенов ≈ одно обращение (BH-30, 29.09); `BILLING_LLM_RUB_PER_1K_TOKENS` — цена 1 000 токенов модели ответа в рублях для оценки расхода в нашей панели (не задана — только токены) |
-| Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9) |
+| Коннекторы | `CONNECTOR_SECRETS_KEYS` (обязателен в `production`), `CONNECTOR_*` | ключ Fernet: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`; несколько через запятую — ротация (раздел 9). `CONNECTOR_DOWNLOAD_TIMEOUT_SECONDS` (300) — общий срок скачивания одного файла с редиректами. Прокси из окружения (`HTTPS_PROXY`, `.netrc`, `SSL_CERT_FILE`) клиент для подключений, почты и уведомлений берёт только при `CONNECTOR_OUTBOUND_VIA_PROXY=true` (§9a); клиент к моделям — как раньше. `cli mail-check` читает настройки подключений: в `production` ему нужен `CONNECTOR_SECRETS_KEYS` |
+| Чат | `CHAT_SHARE_TTL_DAYS` | 30 по умолчанию (1–365): срок общей ссылки на диалог с создания или продления (решение 09.10). Срок хранения диалогов — настройка компании в интерфейсе, не переменная |
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION`, `LEADS_NOTIFY_EMAIL` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется; `LEADS_NOTIFY_EMAIL` — ящик команды для письма о каждой заявке с контактами (пусто — писем нет); форма лендинга krontoai.ru шлёт заявки в этот API — её origin нужен в `CORS_ALLOWED_ORIGINS` |
 | OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — `/sources`, фронт переводит на «Настройки → Мои подключения» |
@@ -375,7 +376,7 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > kronto-$
 | `YC_API_KEY` | заменить в `.env`, перезапустить `api` и `worker`; ключ нигде не логируется и не хранится в базе |
 | `APP_DB_PASSWORD` | `ALTER ROLE corp_ed_app PASSWORD '…'`, затем `.env` и перезапуск |
 | `REDIS_PASSWORD` | `.env`, перезапуск `redis`, `api`, `worker` |
-| `CONNECTOR_SECRETS_KEYS` | новый ключ дописать **первым** через запятую, перезапустить `api` и `worker` (новые записи шифруются им, старые читаются вторым), выполнить `cli rotate-connector-secrets`, затем убрать старый ключ и перезапустить снова. Потеря всех ключей = все подключения останавливаются с `credentials_unreadable`, учётные данные вводятся заново |
+| `CONNECTOR_SECRETS_KEYS` | новый ключ дописать **первым** через запятую, перезапустить `api`, **остановить** `worker` (`docker compose stop worker`: синхронизация во время перешифровки может затереть продлённый токен Битрикс24), выполнить `cli rotate-connector-secrets`, запустить `worker`, затем убрать старый ключ и перезапустить снова. Потеря всех ключей = все подключения останавливаются с `credentials_unreadable`, учётные данные вводятся заново |
 
 Утечка любого секрета — повод для ротации в тот же день, а не для
 расследования сначала. «Выйти везде» для одного пользователя —
@@ -456,6 +457,14 @@ Confluence — обычный пользователь, который чита�
   (`deploy/stage/cron-run.sh`), логи 14 дней. На стенде его поднимает
   `deploy.sh`, настройка — `STAGE.md`; для боевого сервера — тот же
   стек на отдельной ВМ (П-9).
+- Песочница разбора без сети (`ingest/no_network.py`, seccomp): событие
+  `sandbox_network_filter_unavailable` в логе API или воркера значит,
+  что фильтр не поставился и разбор файлов в `production` отказывает
+  (`sandbox_unavailable`) — нужен профиль seccomp Docker по умолчанию
+  (`prctl` и `seccomp` разрешены) и x86_64 или aarch64. Проверка после
+  выкатки: `docker compose exec api python -I -c "from
+  corp_ed.ingest.no_network import deny_network; deny_network(); import
+  socket; socket.socket()"` → `PermissionError`.
 - Перегрузка квоты Яндекса — событие `chat_answer_busy` в логе API
   (сотрудник видит «Сейчас очень много вопросов»). Заметная доля таких
   ответов — первый признак, что квоты не хватает (RISKS №56).
