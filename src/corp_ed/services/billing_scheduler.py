@@ -122,7 +122,10 @@ class BillingScheduler:
             report.settled += await self._poll(session, tenant)
         async with self.session_maker() as session:
             sub = await subscription_of(session, for_update=True)
-            if sub is not None and sub.current_end is not None:
+            # Приостановленной компании (в том числе после расторжения, до
+            # удаления данных) счета на продление и просрочка не идут;
+            # сверка с банком и акты за оплаченное — идут.
+            if sub is not None and sub.current_end is not None and tenant.is_active:
                 await self._apply_next_seats(session, tenant, sub, today)
                 report.invoices += await self._renew(session, tenant, sub, today)
                 report.overdue += await self._status(session, tenant, sub, today)

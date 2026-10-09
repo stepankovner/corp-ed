@@ -198,6 +198,21 @@ async def test_renewal_invoice_comes_five_days_ahead_once(world: World) -> None:
     assert (await world.subscription()).status == "active"
 
 
+async def test_suspended_company_gets_no_renewal_or_overdue(world: World) -> None:
+    await _month_paid(world)
+    world.tenant.is_active = False
+    await world.session.commit()
+
+    for day in (date(2026, 11, 4), date(2026, 11, 9), date(2026, 11, 16)):
+        world.clock.set(day)
+        await world.run()
+
+    assert len(await world.invoices()) == 1
+    assert (await world.subscription()).status == "active"
+    assert world.team == []
+    assert await world.notices("billing_overdue") == []
+
+
 async def test_overdue_notifies_the_team_once_and_blocks_nothing(world: World) -> None:
     await _month_paid(world)
     world.clock.set(date(2026, 11, 4))
