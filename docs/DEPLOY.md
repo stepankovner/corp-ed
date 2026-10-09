@@ -12,7 +12,7 @@
 | Сервис | Образ | Что делает |
 |---|---|---|
 | `api` | `kronto-api` | HTTP API (uvicorn), порт 8000 — только для reverse proxy |
-| `worker` | `kronto-api` | фоновый ингест и синхронизация подключений: `python -m corp_ed.worker` |
+| `worker` | `kronto-api` | фоновый ингест, синхронизация подключений и, при `PAYMENTS_PROVIDER=tochka`, оплата (счета на продление, напоминания, сверка с банком, акты — раз в 15 минут): `python -m corp_ed.worker` |
 | `migrate` | `kronto-api` | одноразово при старте: `alembic upgrade head` |
 | `db` | `pgvector/pgvector:pg16` | PostgreSQL + pgvector, единственное хранилище данных |
 | `redis` | `redis:7-alpine` | лимиты частоты, квота эмбеддингов, история диалогов (12 часов), одноразовость OAuth `state`, пульс воркера; без диска, без пароля не стартует |
@@ -90,6 +90,7 @@ docker compose -f compose.yaml exec -e APP_DB_PASSWORD='…' db \
 | Уведомления команде | `TEAM_NOTIFY_TELEGRAM_BOT_TOKEN`, `TEAM_NOTIFY_TELEGRAM_CHAT_ID` | необязательно, только парой; бот в Telegram без персональных данных (заявка, исчерпан пул, остановлено подключение); нужен исходящий доступ API и воркера к `api.telegram.org` |
 | Запись на созвон | `LEADS_ENABLED`, `LEADS_POLICY_URL`, `LEADS_POLICY_VERSION`, `LEADS_NOTIFY_EMAIL` | выключена по умолчанию; включать только с опубликованной политикой обработки ПДн, согласием в форме и уведомлением Роскомнадзора (досье 17.1) — без адреса и версии политики старт отменяется; `LEADS_NOTIFY_EMAIL` — ящик команды для письма о каждой заявке с контактами (пусто — писем нет); форма лендинга krontoai.ru шлёт заявки в этот API — её origin нужен в `CORS_ALLOWED_ORIGINS` |
 | Регистрация и согласия | `REGISTRATION_POLICY_VERSION`, `REGISTRATION_TERMS_VERSION`, `REGISTRATION_POLICY_URL` | версии согласия на ПДн и пользовательского соглашения пишутся в учётку отдельно (09.10; ч. 1 ст. 9 152-ФЗ); по умолчанию — версии текстов на сайте (`frontend/src/site/legal/documents.ts`, их сверяет тест); заданные явно в `.env` старые значения перекрывают умолчания — сменить вместе с текстами. Для созвона — `LEADS_POLICY_URL=/consent-call` |
+| Оплата через банк | `PAYMENTS_PROVIDER`, `PAYMENTS_*`, `TOCHKA_*`, `BILLING_SELLER_*` | `none` по умолчанию — как раньше: счёт выставляет команда, оплату отмечает в панели. `tochka` — счета юрлицам и ссылки на оплату картой с чеком через API Точки, зачисление по вебхуку банка, акты (решения 09.10). Нужны `TOCHKA_JWT` (секрет), `TOCHKA_CLIENT_ID`, `TOCHKA_CUSTOMER_CODE`, `TOCHKA_ACCOUNT_ID`, `TOCHKA_MERCHANT_ID`; без корневого сертификата Минцифры в образе (`TOCHKA_CA_FILE`) старт отменяется. Реквизиты продавца — только в `BILLING_SELLER_*` (без них свой PDF выйдет без реквизитов, при старте — предупреждение). Вебхук: `cli payments-webhook https://<домен>/api/v1/payments/tochka/webhook` после выкатки — банк сразу шлёт тестовый вебхук и ждёт 200; путь под `/api/`, nginx менять не нужно |
 | OAuth коннекторов | `CONNECTOR_OAUTH_CALLBACK_URL`, `CONNECTOR_OAUTH_RETURN_URL`, `CONNECTOR_BITRIX24_OAUTH_SERVER` | только `https://`; callback = `https://<api>/api/v1/connectors/oauth/callback` — его же админ клиента вписывает в карточку локального приложения Битрикс24 («Путь вашего обработчика»); return — `/sources`, фронт переводит на «Настройки → Мои подключения» |
 
 `.env` лежит рядом с `compose.yaml`, права `600`, в репозиторий не
@@ -377,6 +378,7 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > kronto-$
 | `YC_API_KEY` | заменить в `.env`, перезапустить `api` и `worker`; ключ нигде не логируется и не хранится в базе |
 | `APP_DB_PASSWORD` | `ALTER ROLE corp_ed_app PASSWORD '…'`, затем `.env` и перезапуск |
 | `REDIS_PASSWORD` | `.env`, перезапуск `redis`, `api`, `worker` |
+| `TOCHKA_JWT` | выпустить новый ключ в интернет-банке («Интеграции и API») с теми же правами, заменить `TOCHKA_JWT` и `TOCHKA_CLIENT_ID` (у нового ключа он другой), перезапустить `api` и `worker`, **заново** выполнить `cli payments-webhook …`: вебхук привязан к `client_id` старого ключа (RISKS №72) |
 | `CONNECTOR_SECRETS_KEYS` | новый ключ дописать **первым** через запятую, перезапустить `api`, **остановить** `worker` (`docker compose stop worker`: синхронизация во время перешифровки может затереть продлённый токен Битрикс24), выполнить `cli rotate-connector-secrets`, запустить `worker`, затем убрать старый ключ и перезапустить снова. Потеря всех ключей = все подключения останавливаются с `credentials_unreadable`, учётные данные вводятся заново |
 
 Утечка любого секрета — повод для ротации в тот же день, а не для
@@ -399,6 +401,14 @@ docker compose -f compose.yaml exec db pg_dump -U corp_ed -Fc corp_ed > kronto-$
 контейнера `worker` — `STAGE.md` §4.12; на бою — так же, до первого
 подключения системы клиента. Если заданы `TEAM_NOTIFY_TELEGRAM_*`,
 API и воркеру нужен выход к `api.telegram.org` (уведомления команде).
+При `PAYMENTS_PROVIDER=tochka` API и воркеру нужен выход к
+`enter.tochka.com:443` (API банка; сертификат сервера — от НУЦ Минцифры,
+его корень доверен только клиенту Точки, `core/outbound.py` его не
+видит). Сборке образа нужен доступ к `gu-st.ru` (корневой сертификат
+Минцифры, `deploy/fetch_root_ca.py` сверяет SHA-256); без него —
+`--build-arg RUSSIAN_ROOT_CA_URL=<зеркало>` с тем же отпечатком
+`RUSSIAN_ROOT_CA_SHA256`. Шрифт для своих PDF — `fonts-dejavu-core` в
+образе.
 API наружу ходит только в Yandex Cloud
 и, для проверки учётных данных (`POST /connectors/{id}/test`) и
 OAuth-обмена (`/connectors/oauth/callback`), к тем же адресам систем
