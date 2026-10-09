@@ -383,6 +383,36 @@ async def test_broken_sitemap_falls_back_to_crawl() -> None:
     assert f"{BASE}help/a" in documents
 
 
+async def test_sitemap_entry_redirect_is_followed_within_the_section() -> None:
+    """/help/page → /help/page/ (слеш в конце): документ — под конечным
+    адресом; редирект вне раздела — не документ."""
+    site = FakeSite(robots=f"User-agent: *\nSitemap: {BASE}sitemap.xml\n")
+    site.add(
+        "/sitemap.xml",
+        urlset((f"{BASE}help/page", None), (f"{BASE}help/away", None)),
+    )
+    site.redirect("/help/page", "/help/page/")
+    site.add("/help/page/", page("Страница", "Текст."), headers={"etag": '"p"'})
+    site.redirect("/help/away", "https://other.ru/x")
+    documents = await listed(make_adapter(site))
+    assert set(documents) == {f"{BASE}help/page/"}
+    assert documents[f"{BASE}help/page/"].version == 'etag:"p"'
+
+
+async def test_fetch_follows_one_redirect_within_the_section() -> None:
+    site = sitemap_site()
+    adapter = make_adapter(site)
+    documents = await listed(adapter)
+    site.redirect("/help/", "/help/index")
+    site.add("/help/index", page("Справка", "Новый адрес."))
+    fetched = await adapter.fetch(documents[f"{BASE}help/"], max_bytes=MAX_BYTES)
+    assert isinstance(fetched, FetchedPage) and "Новый адрес." in fetched.html
+
+    site.redirect("/help/", "https://other.ru/help/")
+    with pytest.raises(AdapterError, match="page_moved"):
+        await adapter.fetch(documents[f"{BASE}help/"], max_bytes=MAX_BYTES)
+
+
 # --- обход ссылок ----------------------------------------------------------------
 
 
@@ -471,10 +501,15 @@ async def test_robots_server_error_stops_the_run_retryably() -> None:
 
 
 async def test_check_reports_robots_disallow() -> None:
+    """Запрет в robots.txt — не ошибка настройки (ключей у вида нет, снять
+    остановку было бы нечем): запуск не удаётся, следующий перечитает
+    robots.txt, и подключение заработает само, когда сайт разрешит."""
     site = crawl_site()
     site.robots = "User-agent: kronto-bot\nDisallow: /\n"
-    with pytest.raises(AdapterConfigError, match="robots_disallowed"):
+    with pytest.raises(AdapterError, match="robots_disallowed") as caught:
         await make_adapter(site).check()
+    assert not isinstance(caught.value, AdapterConfigError)
+    assert not caught.value.retryable
 
 
 async def test_check_follows_redirect_into_scope() -> None:

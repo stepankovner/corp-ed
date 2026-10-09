@@ -478,7 +478,10 @@ class WebsiteAdapter:
         url = self._scope.start
         for _ in range(MAX_START_REDIRECTS + 1):
             if not robots.allowed(_request_path(url)):
-                raise AdapterConfigError("robots_disallowed")
+                # Не AdapterConfigError: ключей у вида нет, и остановленное
+                # подключение было бы нечем возобновить. Запуск не удаётся,
+                # следующий перечитает robots.txt.
+                raise AdapterError("robots_disallowed")
             response = await self._get(url, max_bytes=PAGE_MAX_BYTES, strict=True)
             if response.is_redirect:
                 target = self._scope.normalize(
@@ -532,11 +535,18 @@ class WebsiteAdapter:
             return await self._fetch_file(document, url, max_bytes)
         page = self._cache.pop(url, None)
         if page is None:
-            response = await self._get(
-                url, max_bytes=min(PAGE_MAX_BYTES, max_bytes), strict=True
-            )
+            limit = min(PAGE_MAX_BYTES, max_bytes)
+            response = await self._get(url, max_bytes=limit, strict=True)
             if response.is_redirect:
-                raise AdapterError("page_moved")
+                # Один переход в пределах раздела (слеш в конце, новый адрес
+                # страницы); дальше или наружу — страница переехала.
+                target = await self._redirect_target(url, response)
+                if target is None:
+                    raise AdapterError("page_moved")
+                url = target
+                response = await self._get(url, max_bytes=limit, strict=True)
+                if response.is_redirect:
+                    raise AdapterError("page_moved")
             if response.status_code != 200:
                 raise _http_error(response.status_code)
             if not _is_html(response):
@@ -640,14 +650,28 @@ class WebsiteAdapter:
             logger.info("website_sitemap_skipped", code=exc.code)
             return None
 
+    async def _redirect_target(self, url: str, response: httpx.Response) -> str | None:
+        """Куда ведёт редирект, если это тот же сайт, тот же раздел и
+        robots.txt разрешает; иначе None."""
+        target = self._scope.normalize(response.headers.get("location", ""), url)
+        if target is None or target == url or not self._scope.in_prefix(target):
+            return None
+        robots = await self._load_robots()
+        return target if robots.allowed(_request_path(target)) else None
+
     async def _sitemap_page(
-        self, url: str, lastmod: str | None
+        self, url: str, lastmod: str | None, *, redirected: bool = False
     ) -> RemoteDocument | None:
         if lastmod:
             return self._page_document(
                 url, _title_from_url(url), _short(f"lastmod:{lastmod}")
             )
         response = await self._client.head(url)
+        if response.is_redirect:
+            target = None if redirected else await self._redirect_target(url, response)
+            if target is None:
+                return None
+            return await self._sitemap_page(target, None, redirected=True)
         version = _validator(response.headers)
         if response.status_code == 200 and version:
             return self._page_document(url, _title_from_url(url), version)
