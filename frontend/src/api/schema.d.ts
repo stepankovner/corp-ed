@@ -3306,6 +3306,8 @@ export interface components {
             credits: number;
             /** Price Kopecks */
             price_kopecks: number;
+            /** Valid Months */
+            valid_months: number;
         };
         /** CurrentCompany */
         CurrentCompany: {

@@ -26,7 +26,7 @@ from corp_ed.api.v1.schemas.usage import (
     TopupRequestResponse,
     TopupStatusResponse,
 )
-from corp_ed.domain.credit_packs import PACKS
+from corp_ed.domain.credit_packs import PACK_VALID_MONTHS, PACKS
 from corp_ed.domain.models import CreditOrder, User, UserRole
 from corp_ed.services.credit_order_service import CreditOrderService
 from corp_ed.services.credit_service import CreditService
@@ -60,7 +60,10 @@ async def list_packs(admin: Admin) -> list[CreditPackResponse]:
     фронт их не хардкодит."""
     return [
         CreditPackResponse(
-            code=pack.code, credits=pack.credits, price_kopecks=pack.price_kopecks
+            code=pack.code,
+            credits=pack.credits,
+            price_kopecks=pack.price_kopecks,
+            valid_months=PACK_VALID_MONTHS,
         )
         for pack in PACKS
     ]

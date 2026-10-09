@@ -61,6 +61,8 @@ class CreditPackResponse(BaseModel):
     code: str
     credits: int
     price_kopecks: int
+    valid_months: int
+    """Сколько месяцев с зачисления живут купленные кредиты."""
 
 
 class CreditOrderRequest(RequestModel):

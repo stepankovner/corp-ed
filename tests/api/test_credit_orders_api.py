@@ -69,10 +69,26 @@ async def test_packs_come_from_the_backend(api: httpx.AsyncClient, admin: User) 
     response = await api.get("/api/v1/credits/packs", headers=bearer(admin))
 
     assert response.status_code == 200
+    # Срок жизни — тоже с бэкенда: страница тарифа его не хардкодит.
     assert response.json() == [
-        {"code": "pack_500", "credits": 500, "price_kopecks": 149_000},
-        {"code": "pack_2000", "credits": 2_000, "price_kopecks": 549_000},
-        {"code": "pack_5000", "credits": 5_000, "price_kopecks": 1_299_000},
+        {
+            "code": "pack_500",
+            "credits": 500,
+            "price_kopecks": 149_000,
+            "valid_months": 12,
+        },
+        {
+            "code": "pack_2000",
+            "credits": 2_000,
+            "price_kopecks": 549_000,
+            "valid_months": 12,
+        },
+        {
+            "code": "pack_5000",
+            "credits": 5_000,
+            "price_kopecks": 1_299_000,
+            "valid_months": 12,
+        },
     ]
 
 

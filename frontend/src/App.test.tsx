@@ -263,7 +263,7 @@ describe("мои источники", () => {
   });
 });
 
-describe("плашка лимита вопросов", () => {
+describe("плашка кредитов", () => {
   function usage(overrides: Partial<Schemas["UsageResponse"]> = {}): Schemas["UsageResponse"] {
     return {
       period_start: "2026-09-01T00:00:00+03:00",
@@ -294,24 +294,50 @@ describe("плашка лимита вопросов", () => {
     );
     renderApp("/");
 
-    expect(await screen.findByText("Лимит вопросов скоро закончится")).toBeInTheDocument();
-    expect(screen.getByText(/Израсходовано 81 %/)).toBeInTheDocument();
+    expect(await screen.findByText("Кредиты скоро закончатся")).toBeInTheDocument();
+    expect(screen.getByText(/Израсходовано 81 % месячного пула/)).toBeInTheDocument();
+    expect(screen.getByText(/Купите пакет кредитов или добавьте места/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Подробнее" })).toHaveAttribute(
       "href",
       "/admin/tariff",
     );
   });
 
-  it("администратор видит исчерпанный лимит", async () => {
+  it("администратор видит, что кредиты закончились", async () => {
     signedInAsAdmin();
     server.use(
       http.get("/api/v1/usage", () =>
-        HttpResponse.json(usage({ used: 420, remaining: 0, warning: true, exhausted: true })),
+        HttpResponse.json(
+          usage({ used: 420, remaining: 0, warning: true, exhausted: true, stopped: true }),
+        ),
       ),
     );
     renderApp("/");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Лимит вопросов исчерпан");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Кредиты закончились");
+    expect(alert).toHaveTextContent("Купите пакет кредитов или добавьте места");
+    expect(screen.getByRole("link", { name: "Купить пакет" })).toHaveAttribute(
+      "href",
+      "/admin/tariff",
+    );
+  });
+
+  it("пул израсходован, но есть купленные кредиты", async () => {
+    signedInAsAdmin();
+    server.use(
+      http.get("/api/v1/usage", () =>
+        HttpResponse.json(
+          usage({ used: 420, remaining: 0, warning: true, exhausted: true, purchased: 380 }),
+        ),
+      ),
+    );
+    renderApp("/");
+
+    expect(await screen.findByText("Месячный пул кредитов израсходован")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Вопросы списываются с купленных кредитов: осталось 380/),
+    ).toBeInTheDocument();
   });
 
   it("ниже порога плашки нет, у сотрудника лимит не запрашивается", async () => {
@@ -326,7 +352,7 @@ describe("плашка лимита вопросов", () => {
     const admin = renderApp("/");
     await screen.findByRole("log", { name: "Переписка" });
     await waitFor(() => expect(requests).toBe(1));
-    expect(screen.queryByText(/Лимит вопросов/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Кредиты/)).not.toBeInTheDocument();
     admin.unmount();
 
     signedInAs();

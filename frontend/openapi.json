@@ -1570,12 +1570,17 @@
           "price_kopecks": {
             "title": "Price Kopecks",
             "type": "integer"
+          },
+          "valid_months": {
+            "title": "Valid Months",
+            "type": "integer"
           }
         },
         "required": [
           "code",
           "credits",
-          "price_kopecks"
+          "price_kopecks",
+          "valid_months"
         ],
         "title": "CreditPackResponse",
         "type": "object"
