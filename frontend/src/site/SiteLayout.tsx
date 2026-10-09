@@ -39,9 +39,13 @@ const FOOTER = [
   {
     title: "Документы",
     links: [
+      { to: "/offer", label: "Публичная оферта" },
       { to: "/privacy", label: "Политика обработки персональных данных" },
       { to: "/terms", label: "Пользовательское соглашение" },
       { to: "/consent", label: "Согласие на обработку данных" },
+      { to: "/consent-call", label: "Согласие для записи на созвон" },
+      { to: "/refund", label: "Политика возврата" },
+      { to: "/cookies", label: "Cookies" },
     ],
   },
 ] as const;
@@ -220,10 +224,16 @@ export function SectionHead({
 }
 
 /** Черновой текст до замены командой: заметная пометка «заменить» (ТЗ §11). */
-export function DraftNote({ children }: { children: ReactNode }) {
+export function DraftNote({
+  children,
+  label = "Черновик — заменить.",
+}: {
+  children: ReactNode;
+  label?: string;
+}) {
   return (
     <p className={styles.draft} role="note">
-      <strong>Черновик — заменить.</strong> {children}
+      <strong>{label}</strong> {children}
     </p>
   );
 }

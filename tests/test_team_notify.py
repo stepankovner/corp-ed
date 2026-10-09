@@ -3,6 +3,7 @@
 
 import json
 from datetime import date, datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -17,6 +18,8 @@ from corp_ed.services.team_notify import (
     NULL_NOTIFIER,
     TelegramNotifier,
     build_team_notifier,
+    connector_stopped_message,
+    credit_order_message,
     lead_message,
     pool_exhausted_message,
 )
@@ -95,12 +98,27 @@ def test_messages_carry_no_personal_data() -> None:
         "Контакты — cli leads list."
     )
     until = datetime(2026, 10, 1, tzinfo=ZoneInfo("Europe/Moscow"))
+    # Компания — первыми 8 символами id: код повторяет название, у ИП это
+    # фамилия, а Telegram — иностранный сервис.
+    tenant_id = UUID("1a2b3c4d-0000-4000-8000-000000000000")
     assert pool_exhausted_message(
-        company_code="acme", used=12600, pool=12600, until=until
+        tenant_id=tenant_id, used=12600, pool=12600, until=until
     ) == (
-        "Компания acme исчерпала пул: 12600 из 12600 кредитов, купленных нет. "
+        "Компания 1a2b3c4d исчерпала пул: 12600 из 12600 кредитов, купленных нет. "
         "Вопросы остановлены до 01.10; пакет кредитов — заказом администратора, "
         "места — в нашей панели."
+    )
+    assert credit_order_message(
+        tenant_id=tenant_id, number=7, credits=2000, amount_kopecks=549_000
+    ) == (
+        "Компания 1a2b3c4d: заказ № 7 — 2 000 кредитов на 5 490 ₽, ждёт оплаты "
+        "по счёту. Отметить оплату — в нашей панели, «Кредиты»."
+    )
+    assert connector_stopped_message(
+        tenant_id=tenant_id, kind="yandex360", code="invalid_grant"
+    ) == (
+        "Компания 1a2b3c4d: подключение yandex360 остановлено, ошибка "
+        "invalid_grant. Нужны новые учётные данные от админа компании."
     )
 
 
@@ -123,4 +141,7 @@ async def test_exhausted_pool_notifies_team_once(
         await session.commit()
 
     assert len(sent) == 1
-    assert sent[0].startswith("Компания test исчерпала пул: 420 из 420 кредитов,")
+    assert sent[0].startswith(
+        f"Компания {str(tenant_ctx.id)[:8]} исчерпала пул: 420 из 420 кредитов,"
+    )
+    assert "test" not in sent[0]

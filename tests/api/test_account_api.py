@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import get_team_notifier
 from corp_ed.core import totp
-from corp_ed.core.config import RegistrationSettings
+from corp_ed.core.config import RegistrationSettings, get_registration_settings
 from corp_ed.core.security import verify_password
 from corp_ed.core.tenant_context import account_scope, current_tenant, tenant_scope
 from corp_ed.domain.models import (
@@ -53,6 +53,7 @@ def _register_body(
         "last_name": "Петрова",
         "email": email,
         "password": PASSWORD,
+        "terms": True,
         "consent": True,
         **overrides,
     }
@@ -127,8 +128,14 @@ async def test_register_creates_unverified_account_and_sends_code(
     account = await _account(session, "new@acme.ru")
     assert account.email_verified_at is None
     assert (account.first_name, account.last_name) == ("Анна", "Петрова")
+    # Два отдельных согласия (ч. 1 ст. 9 152-ФЗ): соглашение и обработка
+    # персональных данных — каждое со своей версией текста.
+    settings = get_registration_settings()
+    assert account.terms_accepted_at is not None
+    assert account.terms_version == settings.terms_version
     assert account.consented_at is not None
-    assert account.consent_policy_version
+    assert account.consent_policy_version == settings.policy_version
+    assert settings.terms_version != settings.policy_version
     mail = await _last_mail(session, "new@acme.ru", "verify_email")
     assert re.fullmatch(r"\d{6}", _code(mail))
     # Без подтверждения не войти.
@@ -175,10 +182,27 @@ async def test_reregistering_unverified_address_overwrites_it(
         assert stale.status_code == 400
 
 
+@pytest.mark.parametrize("missing", ["terms", "consent"])
+async def test_register_needs_both_agreements(
+    api: httpx.AsyncClient, session: AsyncSession, missing: str
+) -> None:
+    """Галочки две и обе обязательны: без любой — учётки нет."""
+    body = _register_body()
+    del body[missing]
+    response = await api.post("/api/v1/auth/register", json=body)
+    assert response.status_code == 422
+    assert (
+        await session.scalar(select(Account).where(Account.email == "new@acme.ru"))
+        is None
+    )
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
         {"consent": False},
+        {"terms": False},
+        {"terms": None},
         {"password": "short"},
         {"first_name": ""},
         {"last_name": "   "},

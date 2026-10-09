@@ -17,9 +17,11 @@ function company(overrides: Partial<Company> = {}): Company {
   return {
     // Компания, в которой сейчас сам сотрудник kronto (adminMe — t-1).
     id: "t-1",
+    ref: "1a2b3c4d",
     name: "Меридиан Строй",
     company_code: "meridian-1a2b",
     is_active: true,
+    data_deleted_at: null,
     tariff: "base",
     seats: 30,
     pilot_until: "2026-10-08",
@@ -39,6 +41,7 @@ function company(overrides: Partial<Company> = {}): Company {
 
 const SEVER = company({
   id: "t-2",
+  ref: "9f00aa11",
   name: "Северный ветер",
   company_code: "sever-9f00",
   is_active: false,
@@ -56,6 +59,7 @@ const SEVER = company({
 
 const VOSTOK = company({
   id: "t-3",
+  ref: "77aa0c3e",
   name: "Восток",
   company_code: "vostok-77aa",
   pilot_until: null,
@@ -70,6 +74,7 @@ const VOSTOK = company({
 function mockStaff(initial: Company[] = [company(), SEVER, VOSTOK]) {
   let companies = initial;
   const bodies: Update[] = [];
+  const deletions: unknown[] = [];
   server.use(
     http.get("/api/v1/auth/me", () => HttpResponse.json(adminMe({ staff: true }))),
     http.get("/api/v1/usage", () => HttpResponse.json({ warning: false })),
@@ -107,8 +112,33 @@ function mockStaff(initial: Company[] = [company(), SEVER, VOSTOK]) {
       companies = companies.map((c) => (c.id === next.id ? next : c));
       return HttpResponse.json(next);
     }),
+    http.post("/api/v1/staff/companies/:id/delete-data", async ({ request, params }) => {
+      const body = (await request.json()) as { company_code: string };
+      deletions.push(body);
+      const current = companies.find((c) => c.id === params.id)!;
+      if (body.company_code !== current.company_code) {
+        return HttpResponse.json(
+          { detail: "Код компании не совпадает — данные не удалены", code: "code_mismatch" },
+          { status: 409 },
+        );
+      }
+      const next: Company = {
+        ...current,
+        name: `Удалённая компания ${current.ref}`,
+        company_code: `deleted-${current.ref}`,
+        data_deleted_at: "2026-10-04T09:00:00Z",
+        members: 0,
+        pending: 0,
+        admins: [],
+        documents: 0,
+        connectors: 0,
+        pilot_until: null,
+      };
+      companies = companies.map((c) => (c.id === next.id ? next : c));
+      return HttpResponse.json({ company: next, deleted: { users: 10, materials: 48 } });
+    }),
   );
-  return { bodies };
+  return { bodies, deletions };
 }
 
 function row(name: string): HTMLElement {
@@ -142,6 +172,8 @@ describe("панель: компании", () => {
 
     const meridian = row("Меридиан Строй");
     expect(within(meridian).getByText("meridian-1a2b")).toBeInTheDocument();
+    // Короткий id — им компания названа в уведомлениях команде в Telegram.
+    expect(within(meridian).getByText("1a2b3c4d")).toBeInTheDocument();
     expect(within(meridian).getByText("anna@meridian.ru")).toBeInTheDocument();
     expect(within(meridian).getByText("Базовый")).toBeInTheDocument();
     expect(within(meridian).getByText("12 из 30 мест")).toBeInTheDocument();
@@ -166,8 +198,12 @@ describe("панель: компании", () => {
     expect(within(vostok).queryByText(/пилот|осталось|закончился/)).not.toBeInTheDocument();
 
     const search = screen.getByRole("searchbox", {
-      name: "Поиск по названию, коду и почте администратора",
+      name: "Поиск по названию, коду, id и почте администратора",
     });
+    await user.type(search, "77AA0C");
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(row("Восток")).toBeInTheDocument();
+    await user.clear(search);
     await user.type(search, "PETR@");
     expect(screen.getAllByRole("row")).toHaveLength(2);
     expect(row("Восток")).toBeInTheDocument();
@@ -313,6 +349,45 @@ describe("панель: компании", () => {
 
     expect(await screen.findByText("Снова работает: Северный ветер")).toBeInTheDocument();
     expect(bodies).toEqual([{ is_active: true }]);
+  });
+
+  it("данные удаляются только у компании на паузе и только с её кодом", async () => {
+    const { deletions } = mockStaff();
+    renderApp("/staff/companies");
+
+    // Работающую — нельзя: сначала пауза.
+    const working = await openEditor("Восток");
+    expect(
+      within(working.dialog).queryByRole("button", { name: "Удалить данные компании" }),
+    ).not.toBeInTheDocument();
+    await working.user.click(within(working.dialog).getByRole("button", { name: "Отмена" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    const { user, dialog } = await openEditor("Северный ветер");
+    await user.click(within(dialog).getByRole("button", { name: "Удалить данные компании" }));
+    const confirm = await screen.findByRole("dialog", { name: "Удалить данные компании?" });
+    expect(confirm).toHaveTextContent("Останутся обезличенные заказы и начисления кредитов");
+    const remove = within(confirm).getByRole("button", { name: "Удалить данные" });
+    expect(remove).toBeDisabled();
+    const code = within(confirm).getByLabelText("Код компании");
+    await user.type(code, "sever");
+    expect(remove).toBeDisabled();
+    await user.type(code, "-9f00");
+    expect(remove).toBeEnabled();
+    await user.click(remove);
+
+    expect(await screen.findByText("Данные удалены: 9f00aa11")).toBeInTheDocument();
+    expect(deletions).toEqual([{ company_code: "sever-9f00" }]);
+    const gone = await screen.findByRole("row", { name: /Удалённая компания 9f00aa11/ });
+    expect(within(gone).getByText("данные удалены")).toBeInTheDocument();
+
+    // У удалённой — только сведения, без правки.
+    await user.click(
+      within(gone).getByRole("button", { name: "Изменить: Удалённая компания 9f00aa11" }),
+    );
+    const info = screen.getByRole("dialog", { name: "Удалённая компания 9f00aa11" });
+    expect(info).toHaveTextContent("Данные компании удалены");
+    expect(within(info).queryByLabelText("Тариф")).not.toBeInTheDocument();
   });
 
   it("компаний нет — подсказывает, откуда они берутся", async () => {

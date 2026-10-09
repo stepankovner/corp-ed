@@ -89,6 +89,8 @@ class StaffCreditOrderResponse(CreditOrderResponse):
     tenant_id: UUID
     company_name: str
     company_code: str
+    company_ref: str
+    """Первые 8 символов id компании — так она названа в Telegram команды."""
 
 
 class StaffCreditGrantRequest(RequestModel):

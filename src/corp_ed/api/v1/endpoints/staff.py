@@ -17,6 +17,7 @@ from corp_ed.api.v1.dependencies import (
     get_staff_credit_service,
     get_staff_service,
     get_support_service,
+    get_tenant_deletion_service,
     get_tenant_service,
 )
 from corp_ed.api.v1.endpoints.credits import order_response
@@ -37,6 +38,8 @@ from corp_ed.api.v1.schemas.staff import (
     SpendModelResponse,
     SpendResponse,
     StaffApproveRequest,
+    StaffCompanyDeletedResponse,
+    StaffCompanyDeleteRequest,
     StaffCompanyResponse,
     StaffCompanyUpdate,
     StaffLeadResponse,
@@ -55,8 +58,9 @@ from corp_ed.core.database import get_session
 from corp_ed.core.exceptions import CodedConflictError
 from corp_ed.core.rate_limit import RateLimiter
 from corp_ed.core.tenant_context import current_tenant
+from corp_ed.domain.company_ref import company_ref
 from corp_ed.domain.leads import LeadStatus
-from corp_ed.domain.models import Account, CompanyRequest
+from corp_ed.domain.models import Account, CompanyRequest, Tenant
 from corp_ed.domain.tariffs import Tariff
 from corp_ed.services.account_service import AccountService
 from corp_ed.services.company_request_service import CompanyRequestService
@@ -65,6 +69,7 @@ from corp_ed.services.lead_service import LeadService
 from corp_ed.services.seats import seats_check
 from corp_ed.services.staff_service import CompanyRow, Person, StaffService
 from corp_ed.services.support_service import SupportItem, SupportService
+from corp_ed.services.tenant_deletion_service import TenantDeletionService
 from corp_ed.services.tenant_service import TenantService
 
 router = APIRouter(prefix="/staff", tags=["staff"])
@@ -79,9 +84,11 @@ def _company(row: CompanyRow) -> StaffCompanyResponse:
     tenant = row.tenant
     return StaffCompanyResponse(
         id=tenant.id,
+        ref=company_ref(tenant.id),
         name=tenant.name,
         company_code=tenant.company_code,
         is_active=tenant.is_active,
+        data_deleted_at=tenant.data_deleted_at,
         tariff=Tariff(tenant.tariff),
         seats=tenant.seats,
         pilot_until=tenant.pilot_until,
@@ -239,6 +246,10 @@ async def update_company(
     set-seats, suspend-tenant, но с журналом от имени команды."""
     await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
     row = await service.company(tenant_id)
+    if row.tenant.data_deleted_at is not None:
+        raise CodedConflictError(
+            "Данные компании удалены — менять в ней нечего", "tenant_data_deleted"
+        )
     code = row.tenant.company_code
     fields = body.model_fields_set
     # Сначала все проверки, потом изменения: каждое изменение коммитится
@@ -269,6 +280,38 @@ async def update_company(
     return _company(await service.company(tenant_id))
 
 
+@router.post(
+    "/companies/{tenant_id}/delete-data", response_model=StaffCompanyDeletedResponse
+)
+async def delete_company_data(
+    tenant_id: UUID,
+    body: StaffCompanyDeleteRequest,
+    deletion: Annotated[TenantDeletionService, Depends(get_tenant_deletion_service)],
+    service: Service,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    staff: Staff,
+    limiter: Limiter,
+) -> StaffCompanyDeletedResponse:
+    """Удалить данные компании после расторжения (оферта п. 13.3): только
+    приостановленной и только с её кодом в подтверждение. Остаются
+    обезличенные заказы и начисления кредитов (бухгалтерия) и журнал
+    действий до своего срока; в журнал — событие с учёткой команды."""
+    await enforce(limiter, STAFF_EDIT_PER_ACCOUNT, str(staff.id))
+    if current_tenant.get() == tenant_id:
+        raise CodedConflictError(
+            "Свою компанию из панели не удалить — используйте cli delete-tenant",
+            "own_company",
+        )
+    report = await deletion.delete(tenant_id, body.company_code)
+    # Удаление шло в своей сессии: строку компании перечитать.
+    tenant = await session.get(Tenant, tenant_id)
+    if tenant is not None:
+        await session.refresh(tenant)
+    return StaffCompanyDeletedResponse(
+        company=_company(await service.company(tenant_id)), deleted=report.deleted
+    )
+
+
 # --- кредиты: заказы пакетов и начисления -----------------------------------------
 
 
@@ -279,6 +322,7 @@ def _order(item: StaffOrder) -> StaffCreditOrderResponse:
         tenant_id=item.tenant.id,
         company_name=item.tenant.name,
         company_code=item.tenant.company_code,
+        company_ref=company_ref(item.tenant.id),
     )
 
 
@@ -386,6 +430,7 @@ async def spend(
         companies=[
             SpendCompanyResponse(
                 tenant_id=c.tenant_id,
+                ref=company_ref(c.tenant_id),
                 name=c.name,
                 company_code=c.company_code,
                 questions=c.questions,

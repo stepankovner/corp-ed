@@ -269,7 +269,7 @@ jobs:
       RAG_FULLTEXT_WEIGHT: "0.5"
       # Запись на созвон открыта тестовой политикой (в бою — LEADS_* стенда).
       LEADS_ENABLED: "true"
-      LEADS_POLICY_URL: https://kronto.example/privacy
+      LEADS_POLICY_URL: /consent-call
       LEADS_POLICY_VERSION: e2e
       E2E_COMPANY: e2e
       E2E_ADMIN_EMAIL: admin@kronto-e2e.ru

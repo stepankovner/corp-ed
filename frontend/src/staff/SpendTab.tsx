@@ -263,7 +263,9 @@ function Companies({
             <tr key={company.tenant_id}>
               <td>
                 {company.name}
-                <span className={`${tableStyles.sub} ${styles.code}`}>{company.company_code}</span>
+                <span className={`${tableStyles.sub} ${styles.code}`}>
+                  {company.company_code} · {company.ref}
+                </span>
               </td>
               <td className={styles.number}>{formatNumber(company.questions)}</td>
               <td className={styles.number}>{formatNumber(company.tokens)}</td>

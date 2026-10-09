@@ -271,6 +271,31 @@
   font-size: var(--fs-small);
 }
 
+/* Таблицы в юридических текстах: широкая прокручивается внутри себя. */
+.tableWrap {
+  overflow-x: auto;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+.prose th,
+.prose td {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.prose th {
+  background: var(--surface-2);
+  font-weight: 500;
+}
+.prose code {
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
 .draft {
   padding: var(--s-3) var(--s-4);
   border-radius: var(--r-md);

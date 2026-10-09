@@ -82,7 +82,7 @@ function tariffName(code: TariffCode): string {
 }
 
 function matches(company: Company, needle: string): boolean {
-  return [company.name, company.company_code, ...company.admins].some((value) =>
+  return [company.name, company.company_code, company.ref, ...company.admins].some((value) =>
     value.toLowerCase().includes(needle),
   );
 }
@@ -102,6 +102,11 @@ function savedMessage(name: string, change: Change): string {
  * команда меняла командами cli set-tariff, set-seats, suspend-tenant.
  * Содержимого компаний панель не показывает: только счётчики и почту
  * администраторов, чтобы им написать.
+ *
+ * Рядом с кодом — короткий id (первые 8 символов): так компания названа в
+ * уведомлениях команде в Telegram, где кода нет — он повторяет название, у
+ * ИП это фамилия. У компании на паузе — «Удалить данные компании» после
+ * расторжения (оферта п. 13.3).
  */
 export function CompaniesTab() {
   useDocumentTitle("Компании");
@@ -111,6 +116,7 @@ export function CompaniesTab() {
   });
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Company | null>(null);
+  const [deleting, setDeleting] = useState<Company | null>(null);
   const needle = search.trim().toLowerCase();
   const visible = useMemo(
     () => (companies.data ?? []).filter((company) => !needle || matches(company, needle)),
@@ -135,8 +141,8 @@ export function CompaniesTab() {
               <input
                 className={adminStyles.search}
                 type="search"
-                placeholder="Название, код, почта"
-                aria-label="Поиск по названию, коду и почте администратора"
+                placeholder="Название, код, id, почта"
+                aria-label="Поиск по названию, коду, id и почте администратора"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -172,7 +178,17 @@ export function CompaniesTab() {
           )}
         </>
       )}
-      {editing ? <CompanyDialog company={editing} onClose={() => setEditing(null)} /> : null}
+      {editing ? (
+        <CompanyDialog
+          company={editing}
+          onClose={() => setEditing(null)}
+          onDeleteData={() => {
+            setEditing(null);
+            setDeleting(editing);
+          }}
+        />
+      ) : null}
+      {deleting ? <DeleteDataDialog company={deleting} onClose={() => setDeleting(null)} /> : null}
     </>
   );
 }
@@ -196,7 +212,12 @@ function CompanyRow({
       <td>
         <div className={styles.company}>
           <span className={styles.name}>{company.name}</span>
-          <span className={`mono ${styles.code}`}>{company.company_code}</span>
+          <span className={`mono ${styles.code}`}>
+            <span>{company.company_code}</span> ·{" "}
+            <span title="Короткий id: так компания названа в уведомлениях команде">
+              {company.ref}
+            </span>
+          </span>
           <span className={tableStyles.sub}>
             {company.admins.length ? company.admins.join(", ") : "администраторов нет"}
           </span>
@@ -227,7 +248,9 @@ function CompanyRow({
       </td>
       <td>
         <div className={styles.cell}>
-          {company.is_active ? (
+          {company.data_deleted_at ? (
+            <Badge>данные удалены</Badge>
+          ) : company.is_active ? (
             <Badge tone="ok">работает</Badge>
           ) : (
             <Badge tone="error">на паузе</Badge>
@@ -274,7 +297,30 @@ function PilotBadge({ until, now }: { until: string; now: string }) {
  * дают пул меньше уже потраченного, сервер отвечает 409 seats_stop_pool —
  * сохраняем повторно с confirm, только когда команда это явно отметила.
  */
-function CompanyDialog({ company, onClose }: { company: Company; onClose: () => void }) {
+function CompanyDialog({
+  company,
+  onClose,
+  onDeleteData,
+}: {
+  company: Company;
+  onClose: () => void;
+  onDeleteData: () => void;
+}) {
+  if (company.data_deleted_at) {
+    return <DeletedCompanyDialog company={company} onClose={onClose} />;
+  }
+  return <EditCompanyDialog company={company} onClose={onClose} onDeleteData={onDeleteData} />;
+}
+
+function EditCompanyDialog({
+  company,
+  onClose,
+  onDeleteData,
+}: {
+  company: Company;
+  onClose: () => void;
+  onDeleteData: () => void;
+}) {
   const formId = useId();
   const pilotHintId = useId();
   const queryClient = useQueryClient();
@@ -345,8 +391,8 @@ function CompanyDialog({ company, onClose }: { company: Company; onClose: () => 
       title={company.name}
       description={
         <>
-          Код <span className="mono">{company.company_code}</span>. Изменения попадут в журнал
-          действий компании.
+          Код <span className="mono">{company.company_code}</span>, id{" "}
+          <span className="mono">{company.ref}</span>. Изменения попадут в журнал действий компании.
         </>
       }
       footer={
@@ -491,6 +537,128 @@ function CompanyDialog({ company, onClose }: { company: Company; onClose: () => 
             здесь же.
           </Notice>
         ) : null}
+        {!company.is_active ? (
+          <div className={styles.danger}>
+            <p className={fieldStyles.hint}>
+              Договор расторгнут — удалите данные компании: документы, подключения, диалоги, журналы
+              и сотрудников. Вернуть их будет нельзя.
+            </p>
+            <Button variant="danger" size="sm" onClick={onDeleteData} disabled={save.isPending}>
+              Удалить данные компании
+            </Button>
+          </div>
+        ) : null}
+      </form>
+    </Modal>
+  );
+}
+
+/** Компания, чьи данные удалены: только сведения — менять в ней нечего. */
+function DeletedCompanyDialog({ company, onClose }: { company: Company; onClose: () => void }) {
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={company.name}
+      description={
+        <>
+          id <span className="mono">{company.ref}</span>
+        </>
+      }
+      footer={
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Закрыть
+        </Button>
+      }
+    >
+      <Notice kind="info" title="Данные компании удалены">
+        {company.data_deleted_at ? `${formatDateTime(company.data_deleted_at)}. ` : null}
+        Остались обезличенные заказы и начисления кредитов — для бухгалтерии — и журнал действий до
+        конца срока хранения.
+      </Notice>
+    </Modal>
+  );
+}
+
+/**
+ * «Удалить данные компании» (оферта п. 13.3): только у компании на паузе и
+ * только после ввода её кода — защита от удаления не той компании. Сервер
+ * проверяет то же самое и пишет событие в журнал от имени команды.
+ */
+function DeleteDataDialog({ company, onClose }: { company: Company; onClose: () => void }) {
+  const formId = useId();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [code, setCode] = useState("");
+  const remove = useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.POST("/api/v1/staff/companies/{tenant_id}/delete-data", {
+          params: { path: { tenant_id: company.id } },
+          body: { company_code: code.trim() },
+        }),
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: STAFF_KEY });
+      toast.show(`Данные удалены: ${company.ref}`);
+      onClose();
+    },
+  });
+  const typed = code.trim() === company.company_code;
+
+  function submit(event: SubmitEvent) {
+    event.preventDefault();
+    if (typed) remove.mutate();
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => !open && !remove.isPending && onClose()}
+      title="Удалить данные компании?"
+      description={
+        <>
+          {company.name}, id <span className="mono">{company.ref}</span>
+        </>
+      }
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={remove.isPending}>
+            Отмена
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            size="sm"
+            variant="danger"
+            busy={remove.isPending}
+            disabled={!typed}
+          >
+            Удалить данные
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} className={pageStyles.form} onSubmit={submit} noValidate>
+        {remove.isError ? <Notice kind="error">{errorMessage(remove.error)}</Notice> : null}
+        <p>
+          Удалятся документы, подключения с ключами и токенами сотрудников, диалоги, журнал
+          вопросов, папки, отделы, приглашения и сотрудники компании. Останутся обезличенные заказы
+          и начисления кредитов — их хранят для бухгалтерии пять лет, — и журнал действий до конца
+          срока. Учётные записи людей не удаляются.
+        </p>
+        <TextField
+          label="Код компании"
+          autoComplete="off"
+          spellCheck={false}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          hint={
+            <>
+              Введите <span className="mono">{company.company_code}</span>, чтобы подтвердить.
+            </>
+          }
+        />
       </form>
     </Modal>
   );

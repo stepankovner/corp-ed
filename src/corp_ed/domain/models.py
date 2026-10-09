@@ -170,6 +170,10 @@ class Tenant(Base):
     # день может потратить один человек, включая администратора. NULL —
     # без лимита (по умолчанию). Меняет администратор компании.
     daily_credits_per_member: Mapped[int | None]
+    # Данные компании удалены после расторжения (TenantDeletionService):
+    # строка остаётся обезличенной ради заказов и начислений кредитов,
+    # которые хранятся для бухгалтерии.
+    data_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class StaffMember(Base):
@@ -225,9 +229,15 @@ class Account(Base):
     telegram: Mapped[str | None] = mapped_column(String(32))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Согласие на обработку персональных данных при регистрации (152-ФЗ):
-    # когда и с какой редакцией политики. NULL — учётка до 03.10.
+    # когда и с какой редакцией текста согласия (/consent). NULL — учётка
+    # до 03.10.
     consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     consent_policy_version: Mapped[str | None] = mapped_column(String(64))
+    # Пользовательское соглашение (/terms) — отдельная галочка: с 01.09.2025
+    # согласие на обработку оформляется отдельно от других документов
+    # (ч. 1 ст. 9 152-ФЗ). NULL — учётка до 09.10 (одна общая галочка).
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terms_version: Mapped[str | None] = mapped_column(String(64))
     # Версия сессий учётки: смена пароля и «выйти везде» увеличивают её,
     # и все выданные access-токены перестают приниматься.
     token_version: Mapped[int] = mapped_column(default=0, server_default="0")
@@ -488,6 +498,10 @@ class User(TenantMixin, Base):
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Через 30 дней после ухода purge удаляет данные человека в компании
+    # (диалоги, уведомления, подключения, должность и отдел) и ставит
+    # отметку; вернулся по приглашению — отметка снимается.
+    data_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Первые шаги (ТЗ §8): подсказки сотруднику показаны, чек-лист
     # администратора скрыт — в членстве, чтобы не всплывали на каждом
     # новом устройстве.

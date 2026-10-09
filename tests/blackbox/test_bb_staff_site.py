@@ -148,6 +148,7 @@ async def register(
             "last_name": last,
             "email": email,
             "password": person.password,
+            "terms": True,
             "consent": True,
         },
     )
@@ -1522,6 +1523,7 @@ async def test_call_booking_is_off_in_test_env(kronto: Kronto) -> None:
         "tariff": "extended",
         "preferred_date": form.json()["first_date"],
         "preferred_slot": slots[0],
+        "terms": True,
         "consent": True,
         "policy_version": form.json().get("policy_version") or "1",
     }
@@ -2145,13 +2147,20 @@ async def test_registration_requires_consent(kronto: Kronto) -> None:
         "email": email,
         "password": new_password(),
     }
-    for consent in ({"consent": False}, {}):
+    # Две отдельные галочки (ч. 1 ст. 9 152-ФЗ): соглашение и согласие.
+    for consent in (
+        {"consent": False, "terms": True},
+        {"terms": True},
+        {"consent": True},
+        {"consent": True, "terms": False},
+        {},
+    ):
         response = await browser.post(f"{API}/auth/register", json={**body, **consent})
         assert response.status_code == 422, f"{consent}: {response.status_code}"
     assert await kronto.inbox(email) == []
 
     response = await browser.post(
-        f"{API}/auth/register", json={**body, "consent": True}
+        f"{API}/auth/register", json={**body, "terms": True, "consent": True}
     )
     assert response.status_code == 202, response.text
     assert six_digit_code(await kronto.inbox(email)), (

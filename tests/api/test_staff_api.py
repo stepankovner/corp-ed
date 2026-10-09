@@ -233,6 +233,62 @@ async def test_staff_changes_seats_tariff_pilot_and_suspends(
     assert len(await _events(session, "tenant.pilot_changed")) == 2
 
 
+async def test_staff_deletes_data_of_suspended_company(
+    api: httpx.AsyncClient, staff: User, session: AsyncSession, tenant_ctx: Tenant
+) -> None:
+    gone = Tenant(id=uuid4(), company_code="ip-ivanov", name="ИП Иванов")
+    session.add(gone)
+    await session.commit()
+    with tenant_scope(gone.id):
+        session.add(make_user(tenant_id=gone.id, email="ivanov@ivanov.ru"))
+        session.add(_log(gone, "Вопрос"))
+        await session.commit()
+    url = f"/api/v1/staff/companies/{gone.id}"
+    listed = await api.get("/api/v1/staff/companies", headers=bearer(staff))
+    [row] = [c for c in listed.json() if c["id"] == str(gone.id)]
+    assert row["ref"] == str(gone.id)[:8]
+    assert row["data_deleted_at"] is None
+
+    # Работающую — нельзя: сначала приостановить.
+    active = await api.post(
+        f"{url}/delete-data", json={"company_code": "ip-ivanov"}, headers=bearer(staff)
+    )
+    assert active.status_code == 409
+    assert active.json()["code"] == "tenant_active"
+    await api.patch(url, json={"is_active": False}, headers=bearer(staff))
+    wrong = await api.post(
+        f"{url}/delete-data", json={"company_code": "ivanov"}, headers=bearer(staff)
+    )
+    assert wrong.json()["code"] == "code_mismatch"
+
+    response = await api.post(
+        f"{url}/delete-data", json={"company_code": "ip-ivanov"}, headers=bearer(staff)
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["deleted"]["users"] == 1
+    assert data["deleted"]["qa_log"] == 1
+    company = data["company"]
+    assert company["name"] == f"Удалённая компания {str(gone.id)[:8]}"
+    assert company["data_deleted_at"] is not None
+    assert company["members"] == 0
+    [event] = await _events(session, "tenant.data_deleted")
+    assert staff.account is not None
+    assert event.details["staff_account_id"] == str(staff.account.id)
+    # Вернуть удалённую — нельзя.
+    resume = await api.patch(url, json={"is_active": True}, headers=bearer(staff))
+    assert resume.status_code == 409
+    assert resume.json()["code"] == "tenant_data_deleted"
+    # Свою компанию из панели — тоже нельзя.
+    own = await api.post(
+        f"/api/v1/staff/companies/{tenant_ctx.id}/delete-data",
+        json={"company_code": "test"},
+        headers=bearer(staff),
+    )
+    assert own.json()["code"] == "own_company"
+
+
 async def test_spend_counts_tokens_by_day_model_and_company(
     api: httpx.AsyncClient, staff: User, session: AsyncSession, tenant_ctx: Tenant
 ) -> None:

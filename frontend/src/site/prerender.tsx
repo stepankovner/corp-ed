@@ -32,6 +32,10 @@ export const PAGES: SiteMeta[] = [
   SITE.privacy,
   SITE.terms,
   SITE.consent,
+  SITE.consentCall,
+  SITE.offer,
+  SITE.refund,
+  SITE.cookies,
 ];
 
 function guestOnly(): never {

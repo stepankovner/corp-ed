@@ -135,6 +135,9 @@ async function register(page: Page, email: string, firstName: string) {
   await page.getByLabel("Пароль", { exact: true }).fill(employeePassword);
   await page.getByLabel("Повторите пароль").fill(employeePassword);
   await page.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }).check();
+  await page
+    .getByRole("checkbox", { name: /Даю согласие на обработку персональных данных/ })
+    .check();
   await page.getByRole("button", { name: "Зарегистрироваться" }).click();
   await expect(page.getByRole("heading", { name: "Подтвердите почту" })).toBeVisible();
   const mail = await waitForMail(email, since, /Код подтверждения/);
@@ -697,7 +700,9 @@ test.describe.serial("путь компании", () => {
     await page.getByLabel("Телефон").fill("+7 999 123-45-67");
     await page.getByLabel("Удобная дата").fill(nextWorkday());
     await page.getByLabel("Удобное время (по Москве)").selectOption({ index: 1 });
-    await page.getByRole("checkbox", { name: /Согласен на обработку/ }).check();
+    await page
+      .getByRole("checkbox", { name: /Даю согласие на обработку персональных данных/ })
+      .check();
     await page.getByRole("button", { name: "Отправить заявку" }).click();
     await expect(page.getByText("Заявка отправлена")).toBeVisible();
   });

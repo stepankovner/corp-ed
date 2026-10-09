@@ -103,7 +103,7 @@ class CreditOrderService:
         tenant_id = require_tenant()
         # Строка компании — на время выдачи номера: два заказа не получат
         # один номер.
-        tenant = await TenantRepository(self.session).lock(tenant_id)
+        await TenantRepository(self.session).lock(tenant_id)
         open_orders = await self.session.scalar(
             select(func.count()).where(
                 CreditOrder.tenant_id == tenant_id, CreditOrder.status == AWAITING
@@ -144,7 +144,7 @@ class CreditOrderService:
         )
         self.notifier.notify(
             credit_order_message(
-                company_code=tenant.company_code,
+                tenant_id=tenant_id,
                 number=order.number,
                 credits=order.credits,
                 amount_kopecks=order.amount_kopecks,

@@ -176,6 +176,10 @@ class AccountService:
         account.hashed_password = hashed
         account.first_name = _clean(first_name)
         account.last_name = _clean(last_name)
+        # Две галочки формы (обе обязательны, проверены схемой запроса):
+        # соглашение и согласие на обработку — каждое со своей версией.
+        account.terms_accepted_at = now
+        account.terms_version = settings.terms_version
         account.consented_at = now
         account.consent_policy_version = settings.policy_version
         await self._send_verification(account)

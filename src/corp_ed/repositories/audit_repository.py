@@ -74,6 +74,9 @@ class AuditAction(StrEnum):
     TENANT_NOT_FOUND_MODE_CHANGED = "tenant.not_found_mode_changed"
     TENANT_TARIFF_CHANGED = "tenant.tariff_changed"
     TENANT_PILOT_CHANGED = "tenant.pilot_changed"
+    # Данные компании удалены после расторжения; в details — только
+    # короткий идентификатор и сколько строк удалено, без названия.
+    TENANT_DATA_DELETED = "tenant.data_deleted"
     DIGEST_SENT = "digest.sent"
     SUPPORT_REQUESTED = "support.requested"
     STAFF_ADDED = "staff.added"

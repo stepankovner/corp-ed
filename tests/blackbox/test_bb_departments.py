@@ -199,6 +199,7 @@ async def join(kronto: Kronto, company: Company, alias: str, first_name: str) ->
             "last_name": "Тестова",
             "email": email,
             "password": PASSWORD,
+            "terms": True,
             "consent": True,
         },
     )

@@ -26,15 +26,18 @@ function order(overrides: Partial<Order> = {}): Order {
     tenant_id: "t-1",
     company_name: "Меридиан Строй",
     company_code: "meridian",
+    company_ref: "1a2b3c4d",
     ...overrides,
   };
 }
 
 const COMPANY: Company = {
   id: "t-1",
+  ref: "1a2b3c4d",
   name: "Меридиан Строй",
   company_code: "meridian",
   is_active: true,
+  data_deleted_at: null,
   tariff: "base",
   seats: 30,
   pilot_until: null,
@@ -109,6 +112,8 @@ describe("кредиты в нашей панели", () => {
     if (!card) throw new Error("no card");
     expect(card).toHaveTextContent("2 000 кредитов · 5 490 ₽");
     expect(card).toHaveTextContent("meridian-1");
+    // Как в уведомлении команде в Telegram: «Компания 1a2b3c4d: заказ № 1».
+    expect(card).toHaveTextContent("id компании1a2b3c4d");
 
     await user.click(within(card).getByRole("button", { name: "Оплачен" }));
     const dialog = screen.getByRole("dialog", { name: "Заказ № 1 оплачен?" });

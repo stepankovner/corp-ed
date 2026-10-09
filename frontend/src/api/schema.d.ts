@@ -2275,6 +2275,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/staff/companies/{tenant_id}/delete-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Company Data
+         * @description Удалить данные компании после расторжения (оферта п. 13.3): только
+         *     приостановленной и только с её кодом в подтверждение. Остаются
+         *     обезличенные заказы и начисления кредитов (бухгалтерия) и журнал
+         *     действий до своего срока; в журнал — событие с учёткой команды.
+         */
+        post: operations["delete_company_data_api_v1_staff_companies__tenant_id__delete_data_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/staff/credit-orders": {
         parameters: {
             query?: never;
@@ -4703,6 +4726,11 @@ export interface components {
             last_name: string;
             /** Password */
             password: string;
+            /**
+             * Terms
+             * @constant
+             */
+            terms: true;
         };
         /** ResetPasswordRequest */
         ResetPasswordRequest: {
@@ -4858,6 +4886,8 @@ export interface components {
             name: string;
             /** Questions */
             questions: number;
+            /** Ref */
+            ref: string;
             /**
              * Tenant Id
              * Format: uuid
@@ -4935,6 +4965,19 @@ export interface components {
             /** @default base */
             tariff: components["schemas"]["Tariff"];
         };
+        /** StaffCompanyDeleteRequest */
+        StaffCompanyDeleteRequest: {
+            /** Company Code */
+            company_code: string;
+        };
+        /** StaffCompanyDeletedResponse */
+        StaffCompanyDeletedResponse: {
+            company: components["schemas"]["StaffCompanyResponse"];
+            /** Deleted */
+            deleted: {
+                [key: string]: number;
+            };
+        };
         /** StaffCompanyResponse */
         StaffCompanyResponse: {
             /** Admins */
@@ -4945,6 +4988,8 @@ export interface components {
             connectors: number;
             /** Credits Used */
             credits_used: number;
+            /** Data Deleted At */
+            data_deleted_at: string | null;
             /** Documents */
             documents: number;
             /**
@@ -4970,6 +5015,8 @@ export interface components {
             purchased_credits: number;
             /** Questions Month */
             questions_month: number;
+            /** Ref */
+            ref: string;
             /** Seats */
             seats: number;
             tariff: components["schemas"]["Tariff"];
@@ -5028,6 +5075,8 @@ export interface components {
             company_code: string;
             /** Company Name */
             company_name: string;
+            /** Company Ref */
+            company_ref: string;
             /**
              * Created At
              * Format: date-time
@@ -9619,6 +9668,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StaffCreditGrantResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_company_data_api_v1_staff_companies__tenant_id__delete_data_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffCompanyDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffCompanyDeletedResponse"];
                 };
             };
             /** @description Validation Error */

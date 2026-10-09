@@ -37,8 +37,11 @@ class RegisterRequest(RequestModel):
     last_name: PersonName
     email: EmailStr
     password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    terms: Literal[True]
+    """Принимаю пользовательское соглашение — обязательно."""
     consent: Literal[True]
-    """Согласие на обработку персональных данных (152-ФЗ) — обязательно."""
+    """Согласие на обработку персональных данных (152-ФЗ) — обязательно и
+    отдельно от соглашения (ч. 1 ст. 9)."""
     invite: str | None = Field(
         default=None,
         min_length=8,
