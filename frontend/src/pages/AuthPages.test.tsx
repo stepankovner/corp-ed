@@ -23,7 +23,7 @@ function companyPreview(overrides: Record<string, unknown> = {}) {
 }
 
 describe("регистрация", () => {
-  it("учётка с согласием, затем код из письма — и вход без компании", async () => {
+  it("учётка с двумя согласиями, затем код из письма — и вход без компании", async () => {
     const user = userEvent.setup();
     let registered: unknown;
     let verified: unknown;
@@ -46,13 +46,39 @@ describe("регистрация", () => {
     await user.type(screen.getByLabelText("Почта"), "anna@meridian-stroy.ru");
     await user.type(screen.getByLabelText("Пароль"), PASSWORD);
     await user.type(screen.getByLabelText("Повторите пароль"), PASSWORD);
+    // Две отдельные галочки (ч. 1 ст. 9 152-ФЗ), обе не отмечены.
+    const terms = screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ });
+    const consent = screen.getByRole("checkbox", {
+      name: /Даю согласие на обработку персональных данных/,
+    });
+    expect(terms).not.toBeChecked();
+    expect(consent).not.toBeChecked();
+    expect(screen.getByRole("link", { name: "пользовательское соглашение" })).toHaveAttribute(
+      "href",
+      "/terms",
+    );
+    expect(
+      screen.getByRole("link", { name: "согласие на обработку персональных данных" }),
+    ).toHaveAttribute("href", "/consent");
+    expect(screen.getByRole("link", { name: "политике" })).toHaveAttribute("href", "/privacy");
+
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
-    // Без согласия форма не уходит.
-    expect(await screen.findByText("Без согласия зарегистрироваться нельзя.")).toBeInTheDocument();
+    // Без любой из галочек форма не уходит.
+    expect(
+      await screen.findByText("Без принятия соглашения зарегистрироваться нельзя."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Без согласия зарегистрироваться нельзя.")).toBeInTheDocument();
     expect(registered).toBeUndefined();
 
     await user.click(
       screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }),
+    );
+    await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
+    expect(screen.getByText("Без согласия зарегистрироваться нельзя.")).toBeInTheDocument();
+    expect(registered).toBeUndefined();
+
+    await user.click(
+      screen.getByRole("checkbox", { name: /Даю согласие на обработку персональных данных/ }),
     );
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
 
@@ -62,6 +88,7 @@ describe("регистрация", () => {
       last_name: "Смирнова",
       email: "anna@meridian-stroy.ru",
       password: PASSWORD,
+      terms: true,
       consent: true,
       invite: null,
     });
@@ -91,6 +118,9 @@ describe("регистрация", () => {
     await user.type(screen.getByLabelText("Повторите пароль"), PASSWORD);
     await user.click(
       screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /Даю согласие на обработку персональных данных/ }),
     );
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
 
@@ -248,6 +278,9 @@ describe("приглашение", () => {
     await user.type(screen.getByLabelText("Повторите пароль"), PASSWORD);
     await user.click(
       screen.getByRole("checkbox", { name: /Принимаю пользовательское соглашение/ }),
+    );
+    await user.click(
+      screen.getByRole("checkbox", { name: /Даю согласие на обработку персональных данных/ }),
     );
     await user.click(screen.getByRole("button", { name: "Зарегистрироваться" }));
 

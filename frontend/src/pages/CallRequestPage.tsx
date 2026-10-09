@@ -19,7 +19,7 @@ import styles from "./PricingPage.module.css";
 /**
  * Запись на созвон (досье 10.1): удобные дата и окно, данные компании и
  * телефон. Команда перезванивает и подтверждает время. Форма открыта,
- * только когда на сервере заданы политика обработки данных и её версия.
+ * только когда на сервере заданы текст согласия на созвон и его версия.
  */
 export function CallRequestPage() {
   useDocumentTitle("Запись на созвон");
@@ -208,14 +208,15 @@ function RequestForm({ form }: { form: Schemas["LeadFormResponse"] }) {
         onChange={(e) => setConsent(e.target.checked)}
         label={
           <>
-            Согласен на обработку персональных данных по{" "}
+            Даю{" "}
             <a
               href={safeLinkHref(form.policy_url) ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
             >
-              политике обработки данных
-            </a>
+              согласие на обработку персональных данных
+            </a>{" "}
+            для записи на созвон
           </>
         }
       />

@@ -15,8 +15,12 @@ import { AuthLayout } from "./AuthLayout";
 /**
  * Регистрация (ТЗ §2): учётка без компании, затем код на почту. Компания
  * — по приглашению или заявкой «Подключить компанию» уже после входа.
- * Пока на боевом домене нет юридических текстов, сервер пускает только с
+ * Пока юрист не проверил тексты, на боевом домене сервер пускает только с
  * приглашением (registration_closed).
+ *
+ * Галочек две и обе не отмечены заранее: с 01.09.2025 согласие на обработку
+ * персональных данных оформляется отдельно от других документов (ч. 1 ст. 9
+ * 152-ФЗ). Версии текстов пишет в учётку сервер.
  */
 export function RegisterPage() {
   useDocumentTitle("Регистрация");
@@ -28,6 +32,7 @@ export function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
+  const [terms, setTerms] = useState(false);
   const [consent, setConsent] = useState(false);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState<ApiError | string | null>(null);
@@ -38,7 +43,7 @@ export function RegisterPage() {
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     setTouched(true);
-    if (problem || !consent) return;
+    if (problem || !terms || !consent) return;
     setError(null);
     setBusy(true);
     try {
@@ -49,6 +54,7 @@ export function RegisterPage() {
             last_name: lastName.trim(),
             email: email.trim(),
             password,
+            terms: true,
             consent: true,
             invite,
           },
@@ -136,14 +142,25 @@ export function RegisterPage() {
                 Принимаю{" "}
                 <a href="/terms" target="_blank" rel="noreferrer">
                   пользовательское соглашение
-                </a>{" "}
-                и даю{" "}
+                </a>
+              </>
+            }
+            checked={terms}
+            onChange={(e) => setTerms(e.target.checked)}
+          />
+          {touched && !terms ? (
+            <p className={authStyles.fieldError} role="alert">
+              Без принятия соглашения зарегистрироваться нельзя.
+            </p>
+          ) : null}
+        </div>
+        <div>
+          <Checkbox
+            label={
+              <>
+                Даю{" "}
                 <a href="/consent" target="_blank" rel="noreferrer">
                   согласие на обработку персональных данных
-                </a>{" "}
-                по{" "}
-                <a href="/privacy" target="_blank" rel="noreferrer">
-                  политике
                 </a>
               </>
             }
@@ -156,6 +173,13 @@ export function RegisterPage() {
             </p>
           ) : null}
         </div>
+        <p className="muted">
+          Как мы обрабатываем данные — в{" "}
+          <a href="/privacy" target="_blank" rel="noreferrer">
+            политике
+          </a>
+          .
+        </p>
         <Button type="submit" block busy={busy}>
           Зарегистрироваться
         </Button>
