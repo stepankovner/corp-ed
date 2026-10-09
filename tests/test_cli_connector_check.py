@@ -174,3 +174,43 @@ async def test_preview_module_needs_the_flag(
 
     assert code == 2
     assert "неизвестные модули knowledge_base_v2" in capsys.readouterr().err
+
+
+async def test_check_runs_google_drive_without_leaking_the_key(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Живая проверка Google: ключ — одним аргументом, в записанных
+    ответах нет ни закрытого ключа, ни токенов."""
+    from tests.connectors.fake_google import (
+        ADMIN,
+        DOMAIN,
+        private_key_pem,
+        sample_google,
+        service_account_key,
+    )
+
+    google = sample_google()
+    # Скачивается первый документ каждого модуля, разбор — настоящий:
+    # поддельные docx и pdf его не пройдут, текстовый — пройдёт.
+    for file_id in ("f-plan", "f-budget", "f-report"):
+        google.files.pop(file_id)
+    record = tmp_path / "gdrive"
+    namespace = argparse.Namespace(
+        kind="gdrive",
+        config=[f"domains={DOMAIN}", f"admin_email={ADMIN}"],
+        credential=[f"service_account_key={service_account_key()}"],
+        module=["shared_drives", "user_drives"],
+        limit=50,
+        fetch=1,
+        record=str(record),
+        fast=True,
+    )
+    code = await cli._connector_check(namespace, http=google.client())
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "[shared_drives] gdrive:f-vacation «Отпуск.txt»" in out
+    assert "[user_drives] gdrive:f-partner «Для партнёра.txt»" in out
+    dumped = "\n".join(f.read_text(encoding="utf-8") for f in record.glob("*.json"))
+    assert dumped
+    assert private_key_pem().splitlines()[1] not in dumped
+    assert "ya29." not in dumped
