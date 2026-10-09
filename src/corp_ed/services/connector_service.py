@@ -759,7 +759,7 @@ class ConnectorService:
         # «Проверить»): неверный пароль — ошибка формы сейчас, а не
         # остановка гранта после синхронизации. До любой записи в базу.
         try:
-            adapter = await self._checked_adapter(
+            await self._checked_adapter(
                 connector, {**self._app_credentials(connector, spec), **clean}
             )
         except _CheckFailedError as exc:
@@ -772,21 +772,16 @@ class ConnectorService:
                 "auth_failed" if exc.auth else exc.code,
                 "Источник не принял учётные данные: " + exc.code,
             ) from None
-        external_user_id = getattr(adapter, "external_user_id", None)
-        token = self.secrets.encrypt(refreshed_credentials(adapter) or clean)
+        token = self.secrets.encrypt(clean)
         grant = await self.grants.get(connector.id, user.id)
         if grant is None:
             grant = await self.grants.add(
                 ConnectorUserGrant(
-                    connector_id=connector.id,
-                    user_id=user.id,
-                    credentials=token,
-                    external_user_id=external_user_id,
+                    connector_id=connector.id, user_id=user.id, credentials=token
                 )
             )
         else:
             grant.credentials = token
-            grant.external_user_id = external_user_id
             grant.status = GrantStatus.ACTIVE.value
             grant.error_code = None
         self._record(
