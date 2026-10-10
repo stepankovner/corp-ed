@@ -265,7 +265,7 @@ STRICT: без выдержек модель не вызывается, обще
 |---|---|---|
 | Заголовки: `X-Content-Type-Options`, `X-Frame-Options: DENY`, строгий CSP, `Referrer-Policy`, COOP, `Permissions-Policy`, `Cache-Control: no-store`; HSTS в `production` | `core/middleware.py` | `security/test_http_hardening.py` |
 | `TrustedHost` по `ALLOWED_HOSTS`; CORS только по списку, `*` в `production` — отказ старта | `main.py`, `core/config.py` | `security/test_http_hardening.py` |
-| Лимит тела: 1 МБ JSON, 25 МБ файл — 413 до чтения тела | `BodySizeLimitMiddleware` | `security/test_http_hardening.py` |
+| Лимит тела: 1 МБ JSON, 25 МБ файл, 100 МБ документ pdf/docx/pptx — 413 до чтения тела | `BodySizeLimitMiddleware` | `security/test_http_hardening.py` |
 | `/docs`, `/redoc`, `/openapi.json` в `production` отсутствуют | `main.py` | `security/test_http_hardening.py` |
 | Необработанное исключение → JSON 500 с `request_id`, без трассировки; ошибки изоляции — 500 без текста про тенанта | `RequestIDMiddleware`, `internal_error_handler` | `security/test_http_hardening.py` |
 | Адрес клиента — `request.client` (uvicorn `--proxy-headers` только от `FORWARDED_ALLOW_IPS`), `X-Forwarded-For` в коде не читается | `api/v1/rate_limits.py::client_ip` | — (конфигурация, чек-лист `DEPLOY.md`) |
@@ -578,7 +578,7 @@ RLS не видит строк.
 **Ввод**
 - [ ] Лишнее поле в теле (`tenant_id`, `role`, `is_active`, `priority`)
       → `422`.
-- [ ] Тело JSON > 1 МБ → `413` до обработки; файл > 25 МБ → `413/422`.
+- [ ] Тело JSON > 1 МБ → `413` до обработки; файл > 25 МБ (документ pdf/docx/pptx > 100 МБ) → `413/422`.
 - [ ] Файлы: PDF под именем `.docx`, `.exe` под `.txt`, xlsx под `.docx`,
       zip-бомба 40 КБ, шифрованный PDF, PDF на 5 000 страниц, имя
       `../../etc/passwd.docx` → отказ с кодом, без деталей парсера, без

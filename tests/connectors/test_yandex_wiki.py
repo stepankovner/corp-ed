@@ -40,6 +40,7 @@ def make_adapter(server: FakeYandex, **config: str) -> YandexAdapter:
         yandex_disk_api=DISK_API,
         yandex_wiki_api=WIKI_API,
         max_document_bytes=MAX_BYTES,
+        max_large_document_bytes=MAX_BYTES,
     )  # type: ignore[arg-type]
     return build_adapter(
         {"client_id": CLIENT_ID, "org_id": ORG_ID, **config},

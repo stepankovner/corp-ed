@@ -24,7 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.config import get_settings
 from corp_ed.core.exceptions import DomainError, NotFoundError
 from corp_ed.core.tenant_context import require_tenant
-from corp_ed.domain.models import MemberStatus, Tenant, TenantLogo, User
+from corp_ed.domain.models import (
+    MemberStatus,
+    SupportRequest,
+    Tenant,
+    TenantLogo,
+    User,
+)
 from corp_ed.domain.tariffs import PLANS, Tariff, plan_for
 from corp_ed.domain.types import NotFoundMode
 from corp_ed.ingest.images import ImageKind
@@ -279,6 +285,21 @@ class CompanyService:
                 "comment": comment,
             },
         )
+        places = f", мест: {tenant.seats} → {seats}" if seats else ""
+        if comment and actor.account_id is not None:
+            # Комментарий — в «Обращения» нашей панели: там команда его
+            # читает и отвечает администратору на почту; в Telegram — нет.
+            self.session.add(
+                SupportRequest(
+                    account_id=actor.account_id,
+                    tenant_id=tenant.id,
+                    topic="billing",
+                    message=(
+                        f"Запрос смены тарифа: {current.title} → {wanted.title}"
+                        f"{places}.\n\n{comment}"
+                    ),
+                )
+            )
         await self.session.commit()
         self.notifier.notify(
             tariff_request_message(
@@ -286,7 +307,7 @@ class CompanyService:
                 current=current.title,
                 wanted=wanted.title,
                 seats=(tenant.seats, seats) if seats else None,
-                comment=comment,
+                has_comment=comment is not None,
             )
         )
         logger.info(

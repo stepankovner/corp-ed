@@ -67,7 +67,9 @@ LIVE_CHECKED = {"nextcloud", "nextcloud_oauth", "owncloud", "seafile", "webdav"}
 
 
 def settings(**overrides: str) -> ConnectorSettings:
-    return ConnectorSettings(max_document_bytes=MAX_BYTES, **overrides)  # type: ignore[arg-type]
+    return ConnectorSettings(
+        max_document_bytes=MAX_BYTES, max_large_document_bytes=MAX_BYTES, **overrides
+    )  # type: ignore[arg-type]
 
 
 class Sleeps(list[float]):

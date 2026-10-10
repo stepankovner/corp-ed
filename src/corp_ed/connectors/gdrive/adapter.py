@@ -779,7 +779,7 @@ def build_adapter(
         recorder=recorder,
     )
     return GoogleDriveAdapter(
-        client, admin=admin, domains=domains, max_bytes=settings.max_document_bytes
+        client, admin=admin, domains=domains, max_bytes=settings.download_limit_bytes
     )
 
 

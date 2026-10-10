@@ -11,7 +11,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.api.v1.dependencies import get_team_notifier
@@ -25,6 +25,7 @@ from corp_ed.domain.models import (
     Material,
     MaterialStatus,
     QaLog,
+    SupportRequest,
     Tenant,
     User,
     UserRole,
@@ -266,7 +267,7 @@ async def test_logo_is_decoded_outside_the_api_process(
 
 
 async def test_tariff_request_goes_to_team(
-    api: httpx.AsyncClient, admin: User, employee: User
+    api: httpx.AsyncClient, session: AsyncSession, admin: User, employee: User
 ) -> None:
     sent: list[str] = []
     app.dependency_overrides[get_team_notifier] = lambda: RecordingNotifier(sent)
@@ -279,9 +280,38 @@ async def test_tariff_request_goes_to_team(
     assert len(sent) == 1
     assert "Базовый → Расширенный" in sent[0]
     assert sent[0].startswith(f"Компания {str(admin.tenant_id)[:8]} просит")
-    assert "test" not in sent[0].split("Комментарий")[0]
+    assert "test" not in sent[0]
     assert "40" in sent[0]
-    assert "Растём" in sent[0]
+    # Комментарий пишет человек свободным текстом — в нём могут быть имена
+    # и телефоны, а Telegram — иностранный сервис (решение 10.10): текст
+    # только в нашей панели, во «Обращениях».
+    assert "Растём" not in sent[0]
+    assert "«Обращения»" in sent[0]
+    request = (
+        await session.scalars(
+            select(SupportRequest).where(SupportRequest.tenant_id == admin.tenant_id)
+        )
+    ).one()
+    assert request.account_id == admin.account_id
+    assert request.topic == "billing"
+    assert "Базовый → Расширенный" in request.message
+    assert "Растём" in request.message
+
+    # Без комментария — обращения нет, только сообщение команде.
+    await api.post(
+        "/api/v1/company/tariff-request",
+        json={"tariff": "extended"},
+        headers=bearer(admin),
+    )
+    assert len(sent) == 2
+    assert "«Обращения»" not in sent[1]
+    assert (
+        await session.scalar(
+            select(func.count())
+            .select_from(SupportRequest)
+            .where(SupportRequest.tenant_id == admin.tenant_id)
+        )
+    ) == 1
     assert (
         await api.post(
             "/api/v1/company/tariff-request",

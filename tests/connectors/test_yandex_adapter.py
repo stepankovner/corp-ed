@@ -48,6 +48,7 @@ def settings(**overrides: str) -> ConnectorSettings:
         yandex_disk_api=DISK_API,
         yandex_wiki_api=WIKI_API,
         max_document_bytes=MAX_BYTES,
+        max_large_document_bytes=MAX_BYTES,
         **overrides,
     )  # type: ignore[arg-type]
 
@@ -370,7 +371,7 @@ async def test_fetch_rejects_oversized_foreign_and_templated_links(
         kind=RemoteDocumentKind.FILE,
         module="disk",
         locator="disk:/Регламенты/Большой.pdf",
-        size=100 * 1024 * 1024,
+        size=200 * 1024 * 1024,
     )
     with pytest.raises(AdapterError, match="document_too_large"):
         await adapter.fetch(big, max_bytes=MAX_BYTES)

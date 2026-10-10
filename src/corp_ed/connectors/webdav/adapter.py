@@ -412,5 +412,5 @@ def build_adapter(
         login=login,
         user_id=user_id,
         folders=folders,
-        max_bytes=settings.max_document_bytes,
+        max_bytes=settings.download_limit_bytes,
     )

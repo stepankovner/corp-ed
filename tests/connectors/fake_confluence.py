@@ -435,7 +435,7 @@ def sample_confluence() -> FakeConfluence:
     server.add_page("103", "HR", "Пустая", "   ")
     server.add_attachment("500", "100", "Правила.docx", b"PK\x03\x04docx")
     server.add_attachment("501", "100", "Схема.png", b"\x89PNG")
-    server.add_attachment("502", "100", "Большой.pdf", b"%PDF-", size=100 * 1024 * 1024)
+    server.add_attachment("502", "100", "Большой.pdf", b"%PDF-", size=200 * 1024 * 1024)
     server.add_attachment("503", "101", "Ведомость.txt", "секретная ведомость".encode())
     server.add_space("BOARD", "Совет")
     server.add_page(

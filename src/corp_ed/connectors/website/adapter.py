@@ -918,7 +918,7 @@ def register(registry: AdapterRegistry, settings: ConnectorSettings) -> None:
         options: AdapterOptions,
     ) -> WebsiteAdapter:
         return build_adapter(
-            config, http, max_bytes=settings.max_document_bytes, fast=options.fast
+            config, http, max_bytes=settings.download_limit_bytes, fast=options.fast
         )
 
     registry.register(SPEC, factory)

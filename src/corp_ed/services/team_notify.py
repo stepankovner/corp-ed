@@ -192,10 +192,13 @@ def tariff_request_message(
     current: str,
     wanted: str,
     seats: tuple[int, int] | None,
-    comment: str | None,
+    has_comment: bool,
 ) -> str:
+    """Комментарий администратора сюда не идёт: его пишут свободным текстом
+    (могут быть имена и телефоны), а Telegram — иностранный сервис
+    (решение 10.10). Текст — в нашей панели, во «Обращениях»."""
     places = f", мест: {seats[0]} → {seats[1]}" if seats else ""
-    note = f"\nКомментарий: {comment}" if comment else ""
+    note = " Есть комментарий — в нашей панели, «Обращения»." if has_comment else ""
     return (
         f"Компания {company_ref(tenant_id)} просит сменить тариф: "
         f"{current} → {wanted}{places}. "

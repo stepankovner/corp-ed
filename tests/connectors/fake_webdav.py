@@ -363,7 +363,7 @@ def sample_nextcloud(flavor: Flavor = "nextcloud", **kwargs: object) -> FakeDav:
     server.add_dir(IVAN, "Документы")
     server.add_file(IVAN, "Документы/Отпуск.txt", "Отпуск — 28 дней.".encode())
     server.add_file(IVAN, "Документы/Схема.png", b"\x89PNG")
-    server.add_file(IVAN, "Документы/Большой.pdf", b"%PDF-", size=100 * 1024 * 1024)
+    server.add_file(IVAN, "Документы/Большой.pdf", b"%PDF-", size=200 * 1024 * 1024)
     server.add_file(IVAN, "Документы/.~lock.Отпуск.txt#", b"lock")
     server.add_dir(IVAN, "Проекты")
     server.add_file(IVAN, "Проекты/План 100%.md", "# План\n\nСрок — май.".encode())
