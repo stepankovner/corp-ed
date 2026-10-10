@@ -148,7 +148,7 @@ def build_adapter(
         raise AdapterConfigError("spaces_invalid")
     return KaitenAdapter(
         KaitenClient(http, base_url=base_url, token=token, recorder=recorder),
-        max_bytes=settings.max_document_bytes,
+        max_bytes=settings.download_limit_bytes,
         spaces=config.get("spaces", "").split(","),
     )
 

@@ -414,7 +414,7 @@ def build_adapter(
     return OutlineAdapter(
         OutlineClient(http, base_url=base_url, token=token, recorder=recorder),
         document_memberships=dialect.document_memberships,
-        max_bytes=settings.max_document_bytes,
+        max_bytes=settings.download_limit_bytes,
     )
 
 

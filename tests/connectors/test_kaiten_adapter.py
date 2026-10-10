@@ -47,7 +47,10 @@ class Sleeps:
 
 def settings(**overrides: Any) -> ConnectorSettings:
     return ConnectorSettings(  # type: ignore[arg-type]
-        secrets_keys=KEY, max_document_bytes=MAX_BYTES, **overrides
+        secrets_keys=KEY,
+        max_document_bytes=MAX_BYTES,
+        max_large_document_bytes=MAX_BYTES,
+        **overrides,
     )
 
 

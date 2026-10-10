@@ -54,6 +54,7 @@ def settings(**overrides: str) -> ConnectorSettings:
         google_drive_api=DRIVE_API,
         google_directory_api=DIRECTORY_API,
         max_document_bytes=MAX_BYTES,
+        max_large_document_bytes=MAX_BYTES,
         **overrides,
     )  # type: ignore[arg-type]
 

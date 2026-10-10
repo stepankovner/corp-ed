@@ -46,6 +46,7 @@ def settings(**overrides: str) -> ConnectorSettings:
         yandex_wiki_api=WIKI_API,
         yandex_tracker_api=TRACKER_API,
         max_document_bytes=MAX_BYTES,
+        max_large_document_bytes=MAX_BYTES,
         **overrides,
     )  # type: ignore[arg-type]
 

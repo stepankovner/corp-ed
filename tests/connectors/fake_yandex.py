@@ -781,7 +781,7 @@ def sample_yandex() -> FakeYandex:
     server.add_dir("disk:/Регламенты")
     server.add_file("disk:/Регламенты/Отпуск.txt", "Отпуск — 28 дней.".encode())
     server.add_file("disk:/Регламенты/Схема.png", b"\x89PNG")
-    server.add_file("disk:/Регламенты/Большой.pdf", b"%PDF-", size=100 * 1024 * 1024)
+    server.add_file("disk:/Регламенты/Большой.pdf", b"%PDF-", size=200 * 1024 * 1024)
     server.add_dir("disk:/Регламенты/Архив")
     server.add_file(
         "disk:/Регламенты/Архив/Старый.md",

@@ -570,7 +570,7 @@ def sample_portal(host: str = DEFAULT_HOST) -> FakePortal:
     rules = portal.add_folder("101", common, "Регламенты")
     portal.add_file("102", rules, "Отпуск.txt", "Отпуск — 28 дней.".encode())
     portal.add_file("103", rules, "Схема.png", b"\x89PNG")
-    portal.add_file("104", rules, "Большой.pdf", b"%PDF-1.4", size=100 * 1024 * 1024)
+    portal.add_file("104", rules, "Большой.pdf", b"%PDF-1.4", size=200 * 1024 * 1024)
     portal.add_file("105", common, "Корзина.txt", b"old", deleted="3")
     secret = portal.add_folder("106", common, "Секретная")
     portal.add_file("107", secret, "Тайна.txt", b"secret")

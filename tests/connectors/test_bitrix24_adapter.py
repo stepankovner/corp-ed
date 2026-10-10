@@ -46,6 +46,7 @@ def settings(**overrides: Any) -> ConnectorSettings:
         secrets_keys=KEY,
         bitrix24_oauth_server=OAUTH_SERVER,
         max_document_bytes=MAX_BYTES,
+        max_large_document_bytes=MAX_BYTES,
         **overrides,
     )  # type: ignore[arg-type]
 

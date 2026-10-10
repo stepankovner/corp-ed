@@ -394,7 +394,7 @@ def sample_kaiten() -> FakeKaiten:
         restricted=False,
     )
     server.add_file(501, "f-pic", "Схема.png", b"\x89PNG")
-    server.add_file(501, "f-big", "Большой.pdf", b"%PDF-", size=100 * 1024 * 1024)
+    server.add_file(501, "f-big", "Большой.pdf", b"%PDF-", size=200 * 1024 * 1024)
     server.add_file(501, "f-gone", "Удалён.txt", b"x", deleted=True)
     server.add_card(502, "Бюджет", board=2)
     server.boards[2] = {ANNA_ID}
