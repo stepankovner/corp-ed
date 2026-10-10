@@ -769,8 +769,7 @@ Yandex Cloud — `open`. Хоть одна строка `FAIL` — снять п
   стенда, пока нет боевого сервера. Включение — в `/opt/kronto/.env`:
   ```
   LEADS_ENABLED=true
-  LEADS_POLICY_URL=https://krontoai.ru/privacy
-  LEADS_POLICY_VERSION=2026-10-06
+  LEADS_POLICY_URL=https://stage.krontoai.ru/consent-call
   LEADS_NOTIFY_EMAIL=info@krontoai.ru
   CORS_ALLOWED_ORIGINS=https://krontoai.ru,https://www.krontoai.ru
   ```
