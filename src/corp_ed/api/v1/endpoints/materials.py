@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 from uuid import UUID
 
@@ -18,12 +19,24 @@ from corp_ed.api.v1.schemas.material import (
 )
 from corp_ed.core.config import get_http_settings
 from corp_ed.core.exceptions import UnacceptableFileError
-from corp_ed.domain.models import User, UserRole
+from corp_ed.domain.models import Material, User, UserRole
+from corp_ed.ingest.extract import max_file_bytes
 from corp_ed.services.material_service import MaterialService
 
 router = APIRouter(prefix="/materials", tags=["materials"])
 
 AdminUser = Annotated[User, Depends(require_role(UserRole.ADMIN))]
+
+_large_uploads: asyncio.Semaphore | None = None
+
+
+def _large_upload_slot(limit: int) -> asyncio.Semaphore:
+    """Очередь больших загрузок в процессе: файл до 100 МБ лежит в памяти,
+    пока идёт разбор, и копируется в процесс разбора (MAX_CONCURRENT_LARGE_UPLOADS)."""
+    global _large_uploads
+    if _large_uploads is None:
+        _large_uploads = asyncio.Semaphore(limit)
+    return _large_uploads
 
 
 @router.get("", response_model=list[MaterialResponse])
@@ -77,20 +90,54 @@ async def upload_material(
     Формат определяется по содержимому, а не по расширению и не по
     Content-Type, который присылает клиент.
     """
-    limit = get_http_settings().max_upload_bytes
-    # Тело уже ограничено middleware; повторная проверка — на случай,
-    # если лимит там и здесь разойдутся.
+    settings = get_http_settings()
+    filename = file.filename or "file"
+    # pdf, docx и pptx — до max_large_upload_bytes, остальное — до
+    # max_upload_bytes. Тело уже ограничено middleware потолком; здесь —
+    # лимит по формату.
+    limit = max_file_bytes(
+        filename,
+        large=settings.max_large_upload_bytes,
+        other=settings.max_upload_bytes,
+    )
+    if file.size is not None and file.size > limit:
+        raise _too_large(limit)
+    if file.size is not None and file.size <= settings.max_upload_bytes:
+        material = await _store(
+            service, current_user, file, limit, title, filename, folder_id
+        )
+    else:
+        async with _large_upload_slot(settings.max_concurrent_large_uploads):
+            material = await _store(
+                service, current_user, file, limit, title, filename, folder_id
+            )
+    return MaterialResponse.model_validate(material)
+
+
+def _too_large(limit: int) -> UnacceptableFileError:
+    megabytes = limit // (1024 * 1024)
+    return UnacceptableFileError("document_too_large", f"Файл больше {megabytes} МБ")
+
+
+async def _store(
+    service: MaterialService,
+    actor: User,
+    file: UploadFile,
+    limit: int,
+    title: str,
+    filename: str,
+    folder_id: UUID | None,
+) -> Material:
     data = await file.read(limit + 1)
     if len(data) > limit:
-        raise UnacceptableFileError("document_too_large", "Файл слишком большой")
-    material = await service.upload(
-        current_user,
+        raise _too_large(limit)
+    return await service.upload(
+        actor,
         title=title.strip(),
-        filename=file.filename or "file",
+        filename=filename,
         data=data,
         folder_id=folder_id,
     )
-    return MaterialResponse.model_validate(material)
 
 
 @router.get("/{material_id}", response_model=MaterialResponse)

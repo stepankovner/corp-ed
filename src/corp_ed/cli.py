@@ -870,7 +870,7 @@ async def _connector_check(
             modules=modules,
             limit=args.limit,
             fetch=args.fetch,
-            max_bytes=settings.max_document_bytes,
+            max_bytes=settings.download_limit_bytes,
         )
     _print_report(report, modules)
     if recorder is not None:

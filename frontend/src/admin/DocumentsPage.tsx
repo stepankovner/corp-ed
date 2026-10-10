@@ -53,6 +53,14 @@ type Filter = "all" | "ready" | "processing" | "failed";
 const ACCEPT = ".pdf,.docx,.doc,.xlsx,.pptx,.txt,.md,.markdown";
 const ACCEPTED = /\.(pdf|docx?|xlsx|pptx|txt|md|markdown)$/i;
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+// PDF, DOCX и PPTX — до 100 МБ: презентации и PDF с картинками тяжёлые,
+// а текста в них мало (решение 09.10). Сервер проверяет то же самое.
+const MAX_LARGE_UPLOAD_BYTES = 100 * 1024 * 1024;
+const LARGE = /\.(pdf|docx|pptx)$/i;
+
+function uploadLimit(name: string): number {
+  return LARGE.test(name) ? MAX_LARGE_UPLOAD_BYTES : MAX_UPLOAD_BYTES;
+}
 
 const STATUS: Record<Material["status"], { label: string; tone: Tone }> = {
   pending: { label: "в очереди", tone: "muted" },
@@ -217,8 +225,12 @@ export function DocumentsPage() {
         });
         continue;
       }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        update(item.id, { state: "error", message: "Больше 25 МБ" });
+      const limit = uploadLimit(file.name);
+      if (file.size > limit) {
+        update(item.id, {
+          state: "error",
+          message: `Больше ${limit / (1024 * 1024)} МБ`,
+        });
         continue;
       }
       update(item.id, { state: "uploading" });
@@ -335,7 +347,8 @@ export function DocumentsPage() {
           <span className="muted">Документы увидят {audience(target)}.</span>
           <span className={`muted ${styles.dropFormats}`}>
             Перетащите файлы сюда: PDF, Word (DOCX, DOC), Excel (XLSX), PowerPoint (PPTX), TXT или
-            MD, до 25 МБ каждый. Сканы без текстового слоя не читаются.
+            MD. PDF, DOCX и PPTX — до 100 МБ, остальные — до 25 МБ. Сканы без текстового слоя не
+            читаются.
           </span>
         </div>
         <Button

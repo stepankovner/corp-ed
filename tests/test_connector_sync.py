@@ -478,6 +478,32 @@ async def test_one_broken_document_does_not_stop_the_run(
     assert set(await materials_of(session, connector)) == {"good"}
 
 
+async def test_large_formats_get_large_document_limit(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    secrets: SecretBox,
+    source: FakeSource,
+    service: ConnectorSyncService,
+) -> None:
+    """pdf, docx и pptx — до max_large_document_bytes, остальное — до
+    max_document_bytes (решение 09.10)."""
+    deck = doc("deck", filename="deck.pdf")
+    source.documents.append(deck)
+    source.contents["deck"] = FetchedFile(
+        data="%PDF-1.7 презентация".encode(), filename="deck.pdf"
+    )
+    source.add(doc("big"), "x" * 10)  # big.txt
+    connector = await make_connector(session, secrets)
+    service.settings = make_settings(
+        max_document_bytes=8, max_large_document_bytes=1000
+    )
+
+    outcome = await run(service, connector)
+
+    assert (outcome.stats.failed, outcome.stats.added) == (1, 1)
+    assert set(await materials_of(session, connector)) == {"deck"}
+
+
 async def test_pages_become_markdown(
     session: AsyncSession,
     tenant_ctx: Tenant,

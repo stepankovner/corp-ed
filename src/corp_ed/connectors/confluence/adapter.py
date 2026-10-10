@@ -497,7 +497,7 @@ def build_adapter(
         ConfluenceClient(http, base_url=base_url, auth=auth, recorder=recorder),
         spaces=config.get("spaces", "").split(","),
         email_template=template,
-        max_bytes=settings.max_document_bytes,
+        max_bytes=settings.download_limit_bytes,
     )
 
 

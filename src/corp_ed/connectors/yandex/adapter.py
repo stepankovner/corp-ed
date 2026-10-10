@@ -305,7 +305,7 @@ def build_adapter(
     return YandexAdapter(
         disk,
         wiki,
-        max_bytes=settings.max_document_bytes,
+        max_bytes=settings.download_limit_bytes,
         org_id=org_id,
         wiki_roots=wiki_module.parse_roots(config.get("wiki_roots", "")),
         tracker=tracker,

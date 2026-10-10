@@ -139,6 +139,9 @@ UPLOAD_PATH_SUFFIXES = (
     "/account/avatar",
     "/company/logo",
 )
+# Загрузка документов: pdf, docx и pptx — до MAX_LARGE_UPLOAD_BYTES, точный
+# лимит по формату — в ручке (ingest.extract.max_file_bytes).
+LARGE_UPLOAD_PATH_SUFFIXES = ("/materials/upload",)
 
 
 @asynccontextmanager
@@ -404,6 +407,8 @@ app.add_middleware(
     max_body_bytes=http_settings.max_body_bytes,
     max_upload_bytes=http_settings.max_upload_bytes,
     upload_paths=UPLOAD_PATH_SUFFIXES,
+    max_large_upload_bytes=http_settings.max_large_upload_bytes,
+    large_upload_paths=LARGE_UPLOAD_PATH_SUFFIXES,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=http_settings.hosts)
 app.add_middleware(MetricsMiddleware)

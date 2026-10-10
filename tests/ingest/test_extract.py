@@ -18,6 +18,7 @@ from corp_ed.ingest.extract import (
     detect_format,
     error_message,
     extract,
+    max_file_bytes,
 )
 from corp_ed.ingest.preprocess import PAGE_BREAK, preprocess
 from corp_ed.ingest.sandbox import _clean_env, _crash_code, cpu_budget, extract_isolated
@@ -458,3 +459,22 @@ def test_sandbox_environment_has_no_secrets(monkeypatch: pytest.MonkeyPatch) -> 
     env = _clean_env()
 
     assert set(env) == {"PATH", "LANG"}
+
+
+@pytest.mark.parametrize(
+    ("filename", "limit"),
+    [
+        ("Презентация.PPTX", 100),
+        ("отчёт.pdf", 100),
+        ("Положение.docx", 100),
+        ("C:\\Users\\a\\deck.pptx", 100),
+        ("таблица.xlsx", 25),
+        ("старый.doc", 25),
+        ("заметки.txt", 25),
+        ("readme.md", 25),
+        ("без_расширения", 25),
+        ("archive.pdf.exe", 25),
+    ],
+)
+def test_large_limit_only_for_pdf_docx_pptx(filename: str, limit: int) -> None:
+    assert max_file_bytes(filename, large=100, other=25) == limit

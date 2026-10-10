@@ -179,6 +179,31 @@ _EXTENSIONS = {
     ".pptx": SourceFormat.PPTX,
     ".doc": SourceFormat.DOC,
 }
+LARGE_FILE_FORMATS = frozenset({SourceFormat.PDF, SourceFormat.DOCX, SourceFormat.PPTX})
+"""Форматы с большим лимитом размера (решение 09.10, DECISIONS.md):
+презентации и PDF с картинками весят десятки мегабайт, хотя текста в них
+килобайты — картинки не читаются (OCR нет). Остальным форматам хватает
+обычного лимита."""
+
+
+def format_by_filename(filename: str) -> SourceFormat | None:
+    """Формат по расширению — только заявка клиента, без проверки
+    содержимого (её делает detect_format)."""
+    name = PurePath(filename.replace("\\", "/")).name
+    return _EXTENSIONS.get(PurePath(name).suffix.lower())
+
+
+def max_file_bytes(filename: str, *, large: int, other: int) -> int:
+    """Лимит размера файла по расширению.
+
+    Расширение может соврать: большой .txt, переименованный в .pdf,
+    получит большой лимит, но не пройдёт сигнатуру в detect_format, а
+    настоящий docx или pptx — проверки zip-контейнера (размер после
+    распаковки, число записей, степень сжатия).
+    """
+    return large if format_by_filename(filename) in LARGE_FILE_FORMATS else other
+
+
 _TEXT_IMPOSTORS = (b"%PDF-", b"PK\x03\x04", b"\xd0\xcf\x11\xe0", b"\x7fELF", b"MZ")
 """PDF, zip (docx, xlsx, pptx), OLE (doc, xls, ppt) и исполняемые файлы
 с расширением .txt или .md."""

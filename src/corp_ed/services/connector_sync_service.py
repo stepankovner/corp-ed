@@ -75,6 +75,7 @@ from corp_ed.ingest.extract import (
     ExtractionError,
     SourceFormat,
     detect_format,
+    max_file_bytes,
 )
 from corp_ed.ingest.sandbox import extract_isolated
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
@@ -466,7 +467,7 @@ class ConnectorSyncService:
             return material
 
         content = await adapter.fetch(
-            document, max_bytes=self.settings.max_document_bytes
+            document, max_bytes=self.settings.download_limit_bytes
         )
         markdown, meta = await self._to_markdown(document, content)
         # Страница сайта из карты: заголовок известен только из её HTML.
@@ -511,7 +512,12 @@ class ConnectorSyncService:
         self, document: RemoteDocument, content: FetchedContent
     ) -> tuple[str, dict[str, str | int | None]]:
         if isinstance(content, FetchedFile):
-            if len(content.data) > self.settings.max_document_bytes:
+            limit = max_file_bytes(
+                content.filename,
+                large=self.settings.max_large_document_bytes,
+                other=self.settings.max_document_bytes,
+            )
+            if len(content.data) > limit:
                 raise ExtractionError("document_too_large")
             detected = detect_format(content.filename, content.data)
             markdown = await self.extractor(detected.format, content.data)

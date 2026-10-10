@@ -121,7 +121,10 @@ class BodySizeLimitMiddleware:
     соврать в заголовке. Без лимита один запрос на гигабайт занимает
     память воркера — отказ в обслуживании (OWASP API4:2023).
 
-    Для путей загрузки файлов — отдельный, больший лимит.
+    Для путей загрузки файлов — отдельный, больший лимит; для загрузки
+    документов (large_upload_paths) — ещё больший: pdf, docx и pptx до
+    max_large_upload_bytes. Точный лимит по формату проверяет ручка — здесь
+    только потолок, чтобы не читать лишнего.
     """
 
     def __init__(
@@ -131,11 +134,17 @@ class BodySizeLimitMiddleware:
         max_body_bytes: int,
         max_upload_bytes: int,
         upload_paths: Iterable[str],
+        max_large_upload_bytes: int | None = None,
+        large_upload_paths: Iterable[str] = (),
     ) -> None:
         self.app = app
         self.max_body_bytes = max_body_bytes
         self.max_upload_bytes = max_upload_bytes
         self.upload_paths = tuple(upload_paths)
+        self.max_large_upload_bytes = max(
+            max_large_upload_bytes or max_upload_bytes, max_upload_bytes
+        )
+        self.large_upload_paths = tuple(large_upload_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -143,11 +152,12 @@ class BodySizeLimitMiddleware:
             return
 
         path = str(scope.get("path", ""))
-        limit = (
-            self.max_upload_bytes
-            if path.endswith(self.upload_paths)
-            else self.max_body_bytes
-        )
+        if self.large_upload_paths and path.endswith(self.large_upload_paths):
+            limit = self.max_large_upload_bytes
+        elif path.endswith(self.upload_paths):
+            limit = self.max_upload_bytes
+        else:
+            limit = self.max_body_bytes
 
         declared = _content_length(scope)
         if declared is not None and declared > limit:
