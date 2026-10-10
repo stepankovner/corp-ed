@@ -9,7 +9,7 @@
 import re
 from pathlib import Path
 
-from corp_ed.core.config import RegistrationSettings
+from corp_ed.core.config import LeadSettings, RegistrationSettings
 
 DOCUMENTS = Path(__file__).resolve().parents[1] / "frontend/src/site/legal/documents.ts"
 
@@ -29,3 +29,10 @@ def test_registration_versions_match_the_site() -> None:
     assert site["consent"] == defaults["policy_version"].default
     assert site["terms"] == defaults["terms_version"].default
     assert site["consent"] != site["terms"]
+
+
+def test_call_consent_version_matches_the_site() -> None:
+    assert (
+        _site_versions()["consentCall"]
+        == LeadSettings.model_fields["policy_version"].default
+    )

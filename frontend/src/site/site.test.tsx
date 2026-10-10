@@ -247,7 +247,7 @@ describe("страницы сайта", () => {
     renderApp(path, { signedIn: false });
     expect(await screen.findByRole("heading", { level: 1, name: title })).toBeVisible();
     expect(screen.getByRole("note")).toHaveTextContent("Проект — проверяется юристом.");
-    expect(screen.getByText("Редакция от 9 октября 2026 г.")).toBeInTheDocument();
+    expect(screen.getByText("Редакция от 10 октября 2026 г.")).toBeInTheDocument();
     if (section) expect(screen.getByRole("heading", { level: 2, name: section })).toBeVisible();
     expect(document.title).toBe(`${title} — kronto`);
     const main = screen.getByRole("main");
@@ -284,16 +284,19 @@ describe("страницы сайта", () => {
     expect(answer).toHaveTextContent("с отключённым сохранением данных запросов у провайдера");
   });
 
-  it("реквизиты в документах — из одного места, пока плейсхолдеры", async () => {
+  it("реквизиты в документах — из одного места", async () => {
     renderApp("/offer", { signedIn: false });
     const requisites = await screen.findByRole("heading", { level: 2, name: /Реквизиты/ });
     const block = requisites.nextElementSibling;
-    expect(block).toHaveTextContent("Индивидуальный предприниматель [ФИО]");
-    expect(block).toHaveTextContent("ИНН [ИНН] · ОГРНИП [ОГРНИП]");
-    expect(block).toHaveTextContent("Адрес для корреспонденции: [адрес]");
-    expect(block).toHaveTextContent("Телефон: [телефон]");
+    expect(block).toHaveTextContent("Индивидуальный предприниматель Ковнер Степан Анатольевич");
+    expect(block).toHaveTextContent("ИНН 272499012240 · ОГРНИП 326270000067321");
+    expect(block).toHaveTextContent(
+      "Р/с 40802810820001208210 в ООО «Банк Точка», к/с 30101810745374525104, БИК 044525104",
+    );
+    // Телефона нет: связь — почта (решение владельца 10.10).
+    expect(block).not.toHaveTextContent("Телефон");
     // Дата редакции подставлена; решения владельца ([30], [__ %]) видны как есть.
-    expect(screen.getByRole("main")).toHaveTextContent("На 9 октября 2026 г.:");
+    expect(screen.getByRole("main")).toHaveTextContent("На 10 октября 2026 г.:");
     expect(screen.getByRole("main")).not.toHaveTextContent("[дата редакции]");
   });
 
@@ -317,14 +320,16 @@ describe("страницы сайта", () => {
     }
   });
 
-  it("«О компании» — контакты и реквизиты-заготовки", async () => {
+  it("«О компании» — контакты и реквизиты", async () => {
     renderApp("/about", { signedIn: false });
     const main = await screen.findByRole("main");
     expect(within(main).getByRole("link", { name: "info@krontoai.ru" })).toHaveAttribute(
       "href",
       "mailto:info@krontoai.ru",
     );
-    expect(within(main).getAllByRole("note")).toHaveLength(2);
+    expect(main).toHaveTextContent("ИНН272499012240");
+    // Заготовкой осталась только команда.
+    expect(within(main).getAllByRole("note")).toHaveLength(1);
   });
 });
 

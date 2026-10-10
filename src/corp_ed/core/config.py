@@ -541,7 +541,10 @@ class LeadSettings(BaseSettings):
 
     enabled: bool = False
     policy_url: str = ""
-    policy_version: str = Field(default="", max_length=64)
+    # Редакция текста согласия на созвон (/consent-call) — та же, что на
+    # сайте (frontend/src/site/legal/documents.ts, сверяет тест): сменился
+    # текст — новая версия здесь, а не в .env.
+    policy_version: str = Field(default="draft-2026-10-10", max_length=64)
     # Сколько хранить заявку: созвон состоялся или нет — через полгода
     # данные не нужны. Удаляет `cli purge`.
     retention_days: int = Field(default=180, gt=0, le=730)
@@ -745,8 +748,8 @@ class RegistrationSettings(BaseSettings):
 
     enabled: bool = True
     policy_url: str = "/consent"
-    policy_version: str = Field(default="draft-2026-10-09", max_length=64)
-    terms_version: str = Field(default="terms-draft-2026-10-09", max_length=64)
+    policy_version: str = Field(default="draft-2026-10-10", max_length=64)
+    terms_version: str = Field(default="terms-draft-2026-10-10", max_length=64)
 
     model_config = SettingsConfigDict(
         env_prefix="REGISTRATION_",

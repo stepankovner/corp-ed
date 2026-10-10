@@ -79,10 +79,11 @@ async def test_form_is_closed_until_policy_is_set(api: httpx.AsyncClient) -> Non
 
     assert form.status_code == 200
     body = form.json()
+    # Версия текста согласия — с сайта по умолчанию; адреса политики нет.
     assert (body["enabled"], body["policy_url"], body["policy_version"]) == (
         False,
         None,
-        None,
+        LeadSettings.model_fields["policy_version"].default,
     )
     assert body["slots"] == list(CALL_SLOTS)
     today = datetime.now(CALL_TIMEZONE).date()

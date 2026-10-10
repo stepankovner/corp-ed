@@ -9,7 +9,7 @@ import site from "./Site.module.css";
 /**
  * «О компании» (ТЗ §1): команда, контакты, реквизиты ИП. Команду
  * присылает владелец; реквизиты — те же, что в юридических документах
- * (legal/documents.ts), пока плейсхолдеры в квадратных скобках.
+ * (legal/documents.ts).
  */
 export function AboutPage() {
   useSiteTitle(SITE.about);
@@ -26,8 +26,8 @@ export function AboutPage() {
           <h2>Команда</h2>
           <DraftNote>Имена, роли и фотографии команды пришлёт владелец продукта.</DraftNote>
           <p>
-            Небольшая команда: продукт и продажи, разработка, машинное обучение. Подключаем компании
-            сами — на созвоне, вместе с их IT-службой.
+            Небольшая команда: продукт и продажи, разработка, машинное обучение. Работаем в Москве.
+            Подключаем компании сами — на созвоне, вместе с их IT-службой.
           </p>
 
           <h2>Контакты</h2>
@@ -49,7 +49,6 @@ export function AboutPage() {
           </dl>
 
           <h2>Реквизиты</h2>
-          <DraftNote>Реквизиты появятся после регистрации ИП — их пришлёт владелец.</DraftNote>
           <dl>
             <dt>Исполнитель</dt>
             <dd>Индивидуальный предприниматель {REQUISITES.fullName}</dd>
@@ -59,8 +58,11 @@ export function AboutPage() {
             <dd>{REQUISITES.ogrnip}</dd>
             <dt>Адрес для писем</dt>
             <dd>{REQUISITES.address}</dd>
-            <dt>Телефон</dt>
-            <dd>{REQUISITES.phone}</dd>
+            <dt>Расчётный счёт</dt>
+            <dd>
+              {REQUISITES.account} в {REQUISITES.bank}, БИК {REQUISITES.bik}, к/с{" "}
+              {REQUISITES.correspondentAccount}
+            </dd>
           </dl>
 
           <div className={site.actions}>
