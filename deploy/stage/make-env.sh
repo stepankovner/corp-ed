@@ -43,6 +43,8 @@ set_var CONNECTOR_SECRETS_KEYS "$(fernet)"
 set_var ALLOWED_HOSTS "$DOMAIN,127.0.0.1,api"
 set_var CONNECTOR_OAUTH_CALLBACK_URL "https://$DOMAIN/api/v1/connectors/oauth/callback"
 set_var CONNECTOR_OAUTH_RETURN_URL "https://$DOMAIN/sources"
+# Ссылки в письмах — на этот же адрес.
+set_var MAIL_SITE_URL "https://$DOMAIN"
 # Заглушки шаблона не должны выглядеть как настоящие ключи.
 set_var YC_FOLDER_ID ""
 set_var YC_API_KEY ""
