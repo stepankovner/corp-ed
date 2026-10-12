@@ -4,11 +4,15 @@ name: Stage resume
 # останавливает его в любой момент в течение суток, и сам он не
 # поднимается. Раз в 10 минут проверяем статус и, если сервер остановил
 # Selectel (SHELVED), возобновляем (deploy/stage/resume.py, docs/STAGE.md).
-# Выключенный вручную сервер (SHUTOFF) не трогаем.
+# Выключенный вручную сервер (SHUTOFF) не трогаем. Тот же запуск проверяет
+# стенд снаружи (/health/ready) и пишет в Telegram, когда он упал и когда
+# поднялся (решение 12.10): мониторинг на сервере молчит, если лежит сервер.
 #
-# Включается переменной репозитория STAGE_RESUME_ENABLED=true. Секреты —
-# сервисный пользователь Selectel в отдельном проекте, где только стенд:
-# его пароль может управлять всеми серверами проекта.
+# Включается переменной репозитория STAGE_RESUME_ENABLED=true. Части
+# необязательны: без SELECTEL_* — только проверка и сообщения, без секретов
+# Telegram — только возобновление. Секреты Selectel — сервисный
+# пользователь в отдельном проекте, где только стенд: его пароль может
+# управлять всеми серверами проекта.
 on:
   schedule:
     # GitHub запускает расписание с задержкой до десятков минут под
@@ -18,6 +22,8 @@ on:
 
 permissions:
   contents: read
+  # Прошлый запуск и его задания: лежал ли стенд (resume.py, previous_down).
+  actions: read
 
 concurrency:
   group: stage-resume
@@ -31,6 +37,8 @@ jobs:
     # своём runner запуски раз в 10 минут не тратят минуты Actions.
     runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
     timeout-minutes: 5
+    outputs:
+      down: ${{ steps.watch.outputs.down }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,7 +47,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      - name: Resume if Selectel stopped the server
+      - name: Resume if Selectel stopped the server, alert if the stand is down
+        id: watch
         env:
           SELECTEL_USER: ${{ secrets.SELECTEL_USER }}
           SELECTEL_PASSWORD: ${{ secrets.SELECTEL_PASSWORD }}
@@ -47,4 +56,23 @@ jobs:
           SELECTEL_PROJECT: ${{ vars.SELECTEL_PROJECT }}
           SELECTEL_REGION: ${{ vars.SELECTEL_REGION }}
           STAGE_SERVER_ID: ${{ vars.STAGE_SERVER_ID }}
+          STAGE_DOMAIN: ${{ vars.STAGE_DOMAIN }}
+          TEAM_NOTIFY_TELEGRAM_BOT_TOKEN: ${{ secrets.TEAM_NOTIFY_TELEGRAM_BOT_TOKEN }}
+          TEAM_NOTIFY_TELEGRAM_CHAT_ID: ${{ secrets.TEAM_NOTIFY_TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 deploy/stage/resume.py
+
+  # Отметка «стенд лежит»: задание выполняется только тогда, и следующий
+  # запуск видит это в списке заданий — сообщение уходит один раз на смену
+  # состояния. always(): отметка нужна и при ошибке API Selectel. Имя —
+  # MARKER_JOB в resume.py.
+  down:
+    name: Stand down marker
+    needs: resume
+    if: always() && needs.resume.outputs.down == 'true'
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 2
+    steps:
+      - name: Mark
+        run: echo "стенд недоступен"
+
