@@ -42,11 +42,20 @@ class MaterialCreateRequest(RequestModel):
 
 
 class MaterialUpdateRequest(RequestModel):
-    """Что прислано, то и меняется: название (с переиндексацией) и папка
-    (null — общие документы; только у загруженных)."""
+    """Что прислано, то и меняется: название (с переиндексацией), папка
+    (null — общие документы; только у загруженных) и пометка «заменён»."""
 
     title: Title | None = None
     folder_id: UUID | None = None
+    superseded: bool | None = None
+    """true — заменённая редакция: документ уходит из поиска и ответов,
+    но остаётся в «Источниках» (BH-41); false — вернуть в поиск."""
+
+
+class EditionHintAnswer(RequestModel):
+    """Ответ на подсказку «Этот документ заменяет «…»?» (BH-41)."""
+
+    accept: bool
 
 
 class MaterialResponse(BaseModel):
@@ -68,6 +77,12 @@ class MaterialResponse(BaseModel):
     synced_at: datetime | None = None
     visibility: str = "tenant"
     folder_id: UUID | None = None
+    # Заменённая редакция (BH-41): с этого момента не в поиске и ответах.
+    superseded_at: datetime | None = None
+    superseded_by_id: UUID | None = None
+    edition_hint: list[UUID] = Field(default_factory=list)
+    """Подсказка при загрузке: какие документы этот, похоже, заменяет. Ждёт
+    ответа администратора; только документы, которые ещё в поиске."""
     created_at: datetime
 
 

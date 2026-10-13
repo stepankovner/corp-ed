@@ -34,6 +34,21 @@ class MaterialRepository:
         )
         return list(result)
 
+    async def titles_in_search(self) -> dict[UUID, str]:
+        """id → название документов, которые участвуют в поиске (не
+        заменены, BH-41) — для подсказки «новая редакция». Без content:
+        текст всех документов компании здесь не нужен.
+
+        Колоночный select — хук изоляции его не видит, фильтр явный.
+        """
+        rows = await self.session.execute(
+            select(Material.id, Material.title).where(
+                Material.tenant_id == require_tenant(),
+                Material.superseded_at.is_(None),
+            )
+        )
+        return {row.id: row.title for row in rows}
+
     async def get_by_sha256(self, sha256: str) -> Material | None:
         """Дубль среди РУЧНЫХ загрузок: документ коннектора с тем же
         содержимым — другой документ с другой ссылкой."""

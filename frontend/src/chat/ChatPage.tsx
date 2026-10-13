@@ -334,7 +334,9 @@ function ConversationScreen({ id }: { id: string }) {
   const announce = live
     ? live.stage === "writing"
       ? "Пишу ответ…"
-      : "Ищу в документах…"
+      : live.stage === "searching_more"
+        ? "Ищу в других документах…"
+        : "Ищу в документах…"
     : lastAnswer?.status === "failed"
       ? "Ошибка, ответа нет."
       : "";

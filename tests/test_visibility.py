@@ -1,5 +1,6 @@
 """Права источников в поиске: restricted виден только по material_access."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -84,3 +85,25 @@ async def test_answer_and_debug_search_use_the_asking_user(
 
     debug = await faq_service.search("отпуск", 10, Retriever.HYBRID, viewer=admin)
     assert {m.title for m in debug} == {"Для всех"}
+
+
+async def test_superseded_edition_is_out_of_both_searches_but_still_visible(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    documents: dict[str, Material],
+    employee: User,
+) -> None:
+    # Заменённая редакция (BH-41) — не в поиске ни по вектору, ни по
+    # словам; но источники прошлых ответов её по-прежнему показывают.
+    old = documents["public"]
+    old.superseded_at = datetime.now(UTC)
+    await session.commit()
+
+    assert await _titles(chunk_repo, employee.id) == {"Только отделу"}
+    found = await chunk_repo.search_fulltext(
+        "отпуск", NEAR, limit=10, viewer=employee.id
+    )
+    assert {m.title for m in found} == {"Только отделу"}
+    assert await chunk_repo.visible_material_ids([old.id], viewer=employee.id) == {
+        old.id
+    }

@@ -13,16 +13,34 @@
 #
 # Повторный запуск безопасен: каждый шаг проверяет, сделан ли он, и
 # ничего не пересоздаёт (.env, сертификат, данные базы остаются).
+#
+# Переезд на другое имя (STAGE.md §4.13) — повторный запуск с новым DOMAIN
+# и старым именем в REDIRECT_FROM: адреса в .env меняются на новые (копия
+# прежнего .env остаётся рядом), старые имена перенаправляют на новое.
+# DEPLOY_PUBKEY при повторном запуске можно не задавать — берётся прежний.
+#
+#   DOMAIN=krontoai.ru REDIRECT_FROM="www.krontoai.ru stage.krontoai.ru" \
+#   LETSENCRYPT_EMAIL=ops@krontoai.ru bash /opt/kronto/deploy/stage/bootstrap.sh
 set -euo pipefail
 
 : "${DOMAIN:?DOMAIN — имя стенда; A-запись уже указывает на этот сервер}"
 : "${LETSENCRYPT_EMAIL:?LETSENCRYPT_EMAIL — почта для уведомлений о сертификате}"
+DEPLOY_USER="${DEPLOY_USER:-deploy}"
+# Повторный запуск: ключ выкатки — прежний, из authorized_keys.
+if [[ -z "${DEPLOY_PUBKEY:-}" ]] && id "$DEPLOY_USER" >/dev/null 2>&1; then
+    DEPLOY_PUBKEY=$(grep -oE 'ssh-(ed25519|rsa) [A-Za-z0-9+/=]+' \
+        "$(getent passwd "$DEPLOY_USER" | cut -d: -f6)/.ssh/authorized_keys" 2>/dev/null | head -n1 || true)
+fi
 : "${DEPLOY_PUBKEY:?DEPLOY_PUBKEY — открытый ключ, которым выкатывает GitHub Actions}"
+# Прежнее имя стенда — из прошлого запуска. Другое — значит, переезд.
+OLD_DOMAIN=$(sed -n 's/^DOMAIN=//p' /etc/kronto/stage.env 2>/dev/null || true)
+# Имена, которые перенаправляют на DOMAIN (через пробел; у каждого своя
+# A-запись на этот сервер). Не задано — как в прошлый раз; пусто — нет.
+REDIRECT_FROM="${REDIRECT_FROM-$(sed -n 's/^REDIRECT_FROM=//p' /etc/kronto/stage.env 2>/dev/null || true)}"
 # Приватный репозиторий — по SSH ключом сервера (deploy key, только чтение).
 REPO_URL="${REPO_URL:-git@github.com:stepankovner/corp-ed.git}"
 IMAGE_PREFIX="${IMAGE_PREFIX:-ghcr.io/stepankovner}"
 APP_DIR="${APP_DIR:-/opt/kronto}"
-DEPLOY_USER="${DEPLOY_USER:-deploy}"
 # Зеркало Docker Hub на случай, если hub.docker.com с сервера недоступен
 # (например, https://mirror.gcr.io). Пусто — без зеркала.
 REGISTRY_MIRROR="${REGISTRY_MIRROR:-}"
@@ -32,7 +50,12 @@ log() { printf '\n==> %s\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || { echo "запускать под root" >&2; exit 1; }
 # Имя подставляется в конфиг nginx и .env — только буквы, цифры, точки, дефисы.
-[[ "$DOMAIN" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || { echo "DOMAIN: $DOMAIN — не имя хоста" >&2; exit 1; }
+hostname_re='^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
+[[ "$DOMAIN" =~ $hostname_re ]] || { echo "DOMAIN: $DOMAIN — не имя хоста" >&2; exit 1; }
+for name in $REDIRECT_FROM; do
+    [[ "$name" =~ $hostname_re ]] || { echo "REDIRECT_FROM: $name — не имя хоста" >&2; exit 1; }
+    [[ "$name" != "$DOMAIN" ]] || { echo "REDIRECT_FROM: $name — это и есть DOMAIN" >&2; exit 1; }
+done
 [[ "$DEPLOY_PUBKEY" =~ ^ssh-(ed25519|rsa)\ [A-Za-z0-9+/=]+(\ .*)?$ ]] || { echo "DEPLOY_PUBKEY — не открытый ключ OpenSSH" >&2; exit 1; }
 
 log "Пакеты"
@@ -45,6 +68,19 @@ apt-get update -q
 apt-get install -y -q --no-install-recommends \
     ca-certificates curl git openssh-client openssl cron ufw unattended-upgrades \
     nginx certbot docker.io docker-compose-v2 age rclone nftables
+
+log "TLS: $DOMAIN${REDIRECT_FROM:+ и $REDIRECT_FROM}"
+# Сертификаты — до остальных шагов: если A-запись ещё не указывает сюда,
+# certbot падает, и при переезде ничего не успевает поменяться. У каждого
+# имени свой сертификат: добавить или убрать имя — остальные не трогаются.
+for name in $DOMAIN $REDIRECT_FROM; do
+    [[ -d "/etc/letsencrypt/live/$name" ]] && continue
+    # standalone: nginx на время выпуска и продления останавливается
+    # (секунды раз в ~60 дней) — для стенда проще, чем webroot.
+    certbot certonly --standalone --non-interactive --agree-tos \
+        -m "$LETSENCRYPT_EMAIL" -d "$name" \
+        --pre-hook "systemctl stop nginx" --post-hook "systemctl start nginx"
+done
 
 log "Журнал: 14 дней, логи Docker — в journald"
 # Логи контейнеров — в journald (решение 30.09: хранить 14 дней). Оттуда
@@ -134,12 +170,33 @@ EOF
 fi
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_DIR"
 
+# Переезд: адреса стенда в .env — на новое имя. До записи stage.env: если
+# скрипт упадёт после неё, повторный запуск не узнает старое имя.
+if [[ -n "$OLD_DOMAIN" && "$OLD_DOMAIN" != "$DOMAIN" && -f "$APP_DIR/.env" ]]; then
+    log ".env: $OLD_DOMAIN → $DOMAIN"
+    env_backup="$APP_DIR/.env.before-$DOMAIN.$(date +%Y%m%d%H%M%S)"
+    install -m 600 -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$APP_DIR/.env" "$env_backup"
+    old_re=${OLD_DOMAIN//./\\.}
+    # Только https://старое-имя целиком (дальше /, запятая, кавычка, пробел
+    # или конец строки) и старое имя в списке ALLOWED_HOSTS.
+    sed -i -E \
+        -e "s#https://${old_re}([/,\"' ]|\$)#https://${DOMAIN}\1#g" \
+        -e "/^ALLOWED_HOSTS=/ s/([=,])${old_re}(,|\$)/\1${DOMAIN}\2/" \
+        -e "/^AUTH_WEBAUTHN_RP_ID=/ s/=${old_re}\$/=${DOMAIN}/" \
+        "$APP_DIR/.env"
+    # Значения не печатаем: только имена изменённых строк.
+    changed=$(diff --unchanged-line-format= --old-line-format= --new-line-format='%L' \
+        "$env_backup" "$APP_DIR/.env" | grep -oE '^[A-Z0-9_]+' | sort -u | paste -sd' ' - || true)
+    echo "изменены: ${changed:-ничего}; прежний файл — $env_backup"
+fi
+
 mkdir -p /etc/kronto
 cat > /etc/kronto/stage.env <<EOF
 # Настройки стенда для kronto-deploy и скриптов deploy/stage (bootstrap.sh).
 APP_DIR=$APP_DIR
 IMAGE_PREFIX=$IMAGE_PREFIX
 DOMAIN=$DOMAIN
+REDIRECT_FROM=$REDIRECT_FROM
 EOF
 install -m 755 "$APP_DIR/deploy/stage/ssh-entry.sh" /usr/local/bin/kronto-deploy
 install -d -m 755 -o "$DEPLOY_USER" -g "$DEPLOY_USER" /var/log/kronto
@@ -173,6 +230,10 @@ if [[ ! -f /etc/kronto/monitoring.env ]]; then
     )
     chgrp "$DEPLOY_USER" /etc/kronto/monitoring.env
 fi
+# Имя — текущее, в том числе после переезда: по нему адрес Grafana
+# (GF_SERVER_ROOT_URL в deploy/monitoring/compose.yaml).
+sed -i -E "s|^DOMAIN=.*|DOMAIN=$DOMAIN|; s|https://[^/ ]+/grafana/|https://$DOMAIN/grafana/|" \
+    /etc/kronto/monitoring.env
 printf -- '- targets: ["https://%s/health/ready"]\n' "$DOMAIN" > /etc/kronto/public-targets.yml
 chmod 644 /etc/kronto/public-targets.yml
 
@@ -217,19 +278,36 @@ else
     echo "у root нет SSH-ключа — вход по паролю оставлен (STAGE.md, шаг 4.1)" >&2
 fi
 
-log "TLS для $DOMAIN"
-if [[ ! -d "/etc/letsencrypt/live/$DOMAIN" ]]; then
-    # standalone: nginx на время выпуска и продления останавливается
-    # (секунды раз в ~60 дней) — для стенда проще, чем webroot.
-    certbot certonly --standalone --non-interactive --agree-tos \
-        -m "$LETSENCRYPT_EMAIL" -d "$DOMAIN" \
-        --pre-hook "systemctl stop nginx" --post-hook "systemctl start nginx"
-fi
-
 log "nginx"
 # Боевой конфиг, только с именем стенда: проверяем ровно то, что пойдёт в бой.
-sed "s/app\.krontoai\.ru/$DOMAIN/g" "$APP_DIR/deploy/nginx/kronto.conf" > /etc/nginx/sites-available/kronto
+sed "s/krontoai\.ru/$DOMAIN/g" "$APP_DIR/deploy/nginx/kronto.conf" > /etc/nginx/sites-available/kronto
 ln -sf /etc/nginx/sites-available/kronto /etc/nginx/sites-enabled/kronto
+# Старые и дополнительные имена (www, имя до переезда) — постоянное
+# перенаправление на DOMAIN с тем же путём: ссылки из писем не ломаются.
+redirects=/etc/nginx/sites-available/kronto-redirects
+if [[ -n "$REDIRECT_FROM" ]]; then
+    {
+        echo "# Создан bootstrap.sh: перенаправление на https://$DOMAIN (STAGE.md §4.13)."
+        for name in $REDIRECT_FROM; do
+            cat <<EOF
+server {
+    listen 80;
+    listen 443 ssl http2;
+    server_name $name;
+    ssl_certificate     /etc/letsencrypt/live/$name/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$name/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    return 301 https://$DOMAIN\$request_uri;
+}
+EOF
+        done
+    } > "$redirects"
+    ln -sf "$redirects" /etc/nginx/sites-enabled/kronto-redirects
+else
+    rm -f /etc/nginx/sites-enabled/kronto-redirects "$redirects"
+fi
 # Grafana стенда (deploy/monitoring) — под паролем, по тому же TLS.
 install -d /etc/nginx/kronto.d
 install -m 644 "$APP_DIR/deploy/monitoring/nginx-grafana.conf" /etc/nginx/kronto.d/grafana.conf

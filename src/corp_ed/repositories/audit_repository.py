@@ -66,6 +66,8 @@ class AuditAction(StrEnum):
     MATERIAL_CREATED = "material.created"
     MATERIAL_UPDATED = "material.updated"
     MATERIAL_DELETED = "material.deleted"
+    MATERIAL_SUPERSEDED = "material.superseded"
+    MATERIAL_RESTORED = "material.restored"
     GLOSSARY_TERM_CREATED = "glossary.created"
     GLOSSARY_TERM_UPDATED = "glossary.updated"
     GLOSSARY_TERM_DELETED = "glossary.deleted"

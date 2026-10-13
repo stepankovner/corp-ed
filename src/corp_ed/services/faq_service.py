@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from collections.abc import AsyncGenerator
 from contextlib import aclosing
@@ -55,11 +56,15 @@ from corp_ed.prompts.faq import (
     GENERAL_ANSWER_PREFIX,
     NOT_FOUND_ANSWER,
     PROMPT_VERSION,
+    SEARCH_PROMPT_VERSION,
+    SEARCH_REQUEST_PREFIX,
+    SearchStep,
     build_faq_messages,
     build_general_messages,
     ensure_general_prefix,
     is_not_found,
     normalize_citations,
+    search_request,
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
@@ -83,6 +88,16 @@ FUSION_CANDIDATES = 50
 
 CONDENSE_MAX_TOKENS = 100
 """Переписанный вопрос — одна строка (контракт BH-28)."""
+
+SEARCH_MORE_LIMIT = 3
+"""Второй шаг поиска (BH-43): сколько новых фрагментов добавить к прежним
+— как в замере ML (eval/offline_e2e.py)."""
+
+MAX_EXCERPTS = 8
+"""Больше выдержек в модель не уходит и со вторым шагом (контракт BH-43)."""
+
+SEARCH_MORE_STAGE = "searching_more"
+"""Этап потока: модель попросила дополнительный поиск, ищем (BH-43)."""
 
 
 @dataclass(frozen=True)
@@ -120,6 +135,19 @@ class _Retrieval:
 
 
 @dataclass
+class _SecondSearch:
+    """Второй шаг поиска (BH-43): с чем искать и что попросила модель."""
+
+    viewer: UUID
+    attached: list[ChunkMatch]
+    """Выдержки вложений: идут первыми, как и в первом вызове."""
+    documents: list[ChunkMatch]
+    """Выдержки документов первого вызова: новые встают после них."""
+    query: str | None = None
+    """Запрос модели — в журнал (search_query)."""
+
+
+@dataclass
 class _Outcome:
     content: str
     origin: AnswerOrigin
@@ -139,7 +167,8 @@ class AnswerSink(Protocol):
     """Куда идёт ход ответа, пока он пишется (чат, ТЗ §6)."""
 
     async def stage(self, stage: str) -> None:
-        """«searching» — ищем в документах, «writing» — модель пишет."""
+        """«searching» — ищем в документах, «writing» — модель пишет,
+        «searching_more» — ищем в других документах по просьбе модели."""
         ...
 
     async def origin(self, origin: AnswerOrigin) -> None:
@@ -197,6 +226,7 @@ class FaqService:
         rerank_max_words: int | None = RERANK_MAX_WORDS,
         gate_distance: float | None = None,
         near_margin: float = 0.0,
+        search_step: bool = False,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -226,6 +256,9 @@ class FaqService:
         self.rerank_depth = rerank_depth
         self.rerank_timeout = rerank_timeout
         self.rerank_max_words = rerank_max_words
+        # Второй шаг поиска (BH-43): выключен — промпт faq-v2.7 байт в байт.
+        self.search_step = search_step
+        self.prompt_version = SEARCH_PROMPT_VERSION if search_step else PROMPT_VERSION
 
     async def answer(
         self, question: str, user: User, conversation_id: UUID | None = None
@@ -324,36 +357,30 @@ class FaqService:
             retriever=self.retriever,
             viewer=user.id,
         )
-        # Реранкер (M3, BH-32) переставляет прошедших порог; отвечать или
-        # нет — по-прежнему по вектору, и в модель идут только прошедшие.
-        # Выключен — первые limit по вектору. Пара для модели — вопрос,
-        # который ушёл в поиск (после переписывания и словаря).
-        if found.limit is None:
-            # Ответа по документам нет — переставлять нечего, модель
-            # реранкера не зовём.
-            reranked = _Reranked(matches=found.candidates, model=None, ms=None)
-        elif self.retriever is Retriever.VECTOR:
-            # Порог — этого вопроса (BH-37): в зоне (max; gate] пул не пуст.
-            reranked = await self._rerank(
-                search_text, found.candidates, max_distance=found.limit
-            )
-        else:
-            # HYBRID: порог решён целиком по лучшему вектору (_retrieve).
-            reranked = await self._rerank(
-                search_text, found.relevant, max_distance=None
-            )
-        relevant = {match.id for match in found.relevant}
-        chosen = [m for m in reranked.matches if m.id in relevant][: self.limit]
+        reranked, chosen = await self._choose(search_text, found)
         # Порядок сохраняется: номер [n] в ответе модели — позиция выдержки
         # в context, и в том же порядке источники уходят клиенту.
         attached = await attachments.select(embedded.embedding) if attachments else []
-        context = attached + select_context(chosen, max_tokens=self.context_max_tokens)
+        documents = select_context(chosen, max_tokens=self.context_max_tokens)
+        context = attached + documents
         nearest = found.nearest
+        second = (
+            _SecondSearch(viewer=user.id, attached=attached, documents=documents)
+            if self.search_step
+            else None
+        )
 
         await self._release()
         outcome = await self._answer(
-            question, context, mode, history=history, standalone=standalone, sink=sink
+            question,
+            context,
+            mode,
+            history=history,
+            standalone=standalone,
+            sink=sink,
+            second=second,
         )
+        search_query = second.query if second else None
 
         # Переписывание — такой же вызов модели, его токены оплачиваются.
         completions = outcome.completions + (
@@ -377,7 +404,7 @@ class FaqService:
                 question=mask_pii(question),
                 question_embedding=embedded.embedding,
                 embedding_model=embedded.model,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=self.prompt_version,
                 llm_model=model,
                 llm_model_version=last.model_version if last else None,
                 best_vector_distance=nearest,
@@ -399,6 +426,7 @@ class FaqService:
                 rerank_model=reranked.model,
                 rerank_ms=reranked.ms,
                 attachment_chunks=len(attached),
+                search_query=mask_pii(search_query) if search_query else None,
             )
         )
         await self.credits.note_spend(usage, credits)
@@ -414,7 +442,7 @@ class FaqService:
             origin=outcome.origin.value,
             used=len(outcome.sources),
             nearest=nearest,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=self.prompt_version,
             model=model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -424,6 +452,7 @@ class FaqService:
             reranked=reranked.model is not None,
             rerank_ms=reranked.ms,
             attachment_chunks=len(attached),
+            searched_more=search_query is not None,
             stopped=outcome.stopped,
         )
         return FaqAnswer(
@@ -435,7 +464,7 @@ class FaqService:
             diagnostics=AnswerDiagnostics(
                 model=model,
                 model_version=last.model_version if last else None,
-                prompt_version=PROMPT_VERSION,
+                prompt_version=self.prompt_version,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 credits=credits,
@@ -495,6 +524,76 @@ class FaqService:
         if reranked.failed:
             raise ServiceUnavailableError()
         return reranked.matches[:limit]
+
+    async def _choose(
+        self, search_text: str, found: _Retrieval
+    ) -> tuple[_Reranked, list[ChunkMatch]]:
+        """Какие выдержки идут в модель: до limit прошедших порог, в порядке
+        реранкера (M3, BH-32) или вектора.
+
+        Реранкер переставляет прошедших порог; отвечать или нет —
+        по-прежнему по вектору, и в модель идут только прошедшие. Выключен —
+        первые limit по вектору. Пара для модели — текст, который ушёл в
+        поиск (после переписывания и словаря).
+        """
+        if found.limit is None:
+            # Ответа по документам нет — переставлять нечего, модель
+            # реранкера не зовём.
+            reranked = _Reranked(matches=found.candidates, model=None, ms=None)
+        elif self.retriever is Retriever.VECTOR:
+            # Порог — этого вопроса (BH-37): в зоне (max; gate] пул не пуст.
+            reranked = await self._rerank(
+                search_text, found.candidates, max_distance=found.limit
+            )
+        else:
+            # HYBRID: порог решён целиком по лучшему вектору (_retrieve).
+            reranked = await self._rerank(
+                search_text, found.relevant, max_distance=None
+            )
+        relevant = {match.id for match in found.relevant}
+        chosen = [m for m in reranked.matches if m.id in relevant][: self.limit]
+        return reranked, chosen
+
+    async def _search_more(
+        self, second: _SecondSearch, query: str
+    ) -> list[ChunkMatch] | None:
+        """Второй шаг поиска по запросу модели (BH-43, faq-v2.9).
+
+        Тот же путь, что у вопроса: словарь, эмбеддинг, поиск с правами
+        сотрудника, порог BH-37 по ближайшему для запроса, реранкер по
+        правилам BH-32 / BH-40. Новые фрагменты (которых не было в первом
+        вызове) — до SEARCH_MORE_LIMIT, после прежних: номера [1]…[k]
+        прежних не меняются. Бюджет токенов — тот же, всего выдержек — не
+        больше MAX_EXCERPTS.
+
+        Возвращает выдержки второго вызова целиком; None — нового не нашлось
+        (или не влезло): ответа по документам нет.
+        """
+        search_text = await self._search_text(query)
+        await self._release()
+        embedded = await self.embedding_gateway.embed_query(search_text)
+        found = await self._retrieve(
+            search_text,
+            embedded.embedding,
+            limit=self._fetch_limit(self.limit),
+            retriever=self.retriever,
+            viewer=second.viewer,
+        )
+        _, chosen = await self._choose(search_text, found)
+        await self._release()
+        seen = {match.id for match in second.attached + second.documents}
+        room = MAX_EXCERPTS - len(seen)
+        fresh = [m for m in chosen if m.id not in seen][
+            : max(0, min(SEARCH_MORE_LIMIT, room))
+        ]
+        # Прежние уже уложились в бюджет и остаются на своих местах; из
+        # новых — сколько влезет.
+        documents = select_context(
+            second.documents + fresh, max_tokens=self.context_max_tokens
+        )
+        if len(documents) == len(second.documents):
+            return None
+        return second.attached + documents
 
     async def _release(self) -> None:
         """Вернуть соединение в пул перед внешним вызовом: модель,
@@ -784,6 +883,7 @@ class FaqService:
         history: list[Turn],
         standalone: str,
         sink: AnswerSink,
+        second: _SecondSearch | None = None,
     ) -> _Outcome:
         """Ответ по выдержкам или, если в них ответа нет, по режиму.
 
@@ -799,6 +899,13 @@ class FaqService:
         В поток отказ модели не попадает: _RefusalGate придерживает
         начало ответа, пока оно может оказаться фразой NOT_FOUND_ANSWER,
         — дальше по режиму пойдёт общий ответ или отказ.
+
+        second — второй шаг поиска (BH-43, faq-v2.9); None — выключен, промпт
+        faq-v2.7. Модель может ответить строкой «Дополнительный поиск: …»:
+        её клиент не видит (_SearchGate), сервис ищет по запросу
+        (_search_more) и спрашивает снова с новыми выдержками после прежних.
+        Один раз на вопрос: нового не нашлось или модель снова просит поиск
+        — ответа по документам нет, дальше как при отказе модели.
         """
         if not context:
             return await self._not_found(
@@ -806,31 +913,66 @@ class FaqService:
             )
 
         answered = [turn for turn in history if not is_not_found(turn.answer)]
-        messages = build_faq_messages(
-            question=question if answered or not history else standalone,
-            matches=context,
-            history=answered,
-            standalone_question=standalone,
-        )
+
+        def messages_for(matches: list[ChunkMatch], step: SearchStep) -> list[Message]:
+            return build_faq_messages(
+                question=question if answered or not history else standalone,
+                matches=matches,
+                history=answered,
+                standalone_question=standalone,
+                search=step,
+            )
+
+        step: SearchStep = "allowed" if second else "off"
         await sink.stage("writing")
-        streamed = await self._consume(
-            self.llm_gateway.stream(messages, temperature=self.temperature),
-            messages,
-            sink=sink,
-            gate=_RefusalGate(),
-        )
+        streamed = await self._ask(messages_for(context, step), sink=sink, step=step)
+        completions = [streamed.completion]
+
+        if second and _answered_with_search(streamed):
+            query = search_request(streamed.completion.content)
+            second.query = query
+            await sink.stage(SEARCH_MORE_STAGE)
+            extended = await self._search_more(second, query) if query else None
+            if extended is None:
+                logger.info("faq_search_more_empty", asked=query is not None)
+                return await self._fallback(
+                    standalone,
+                    mode,
+                    completions,
+                    reason="search_nothing_new",
+                    sink=sink,
+                )
+            context = extended
+            await sink.stage("writing")
+            streamed = await self._ask(
+                messages_for(context, "done"), sink=sink, step="done"
+            )
+            completions.append(streamed.completion)
+            if _answered_with_search(streamed):
+                # Второй раз не ищем: ответа по документам нет.
+                return await self._fallback(
+                    standalone, mode, completions, reason="search_repeated", sink=sink
+                )
+
         completion = streamed.completion
         if streamed.stopped:
+            # Строку запроса (и её начало) сотрудник не видел — и в ответ
+            # она не идёт.
+            content = completion.content
+            if second and _held_back(content):
+                content = ""
             return _Outcome(
-                content=normalize_citations(completion.content, context),
+                content=normalize_citations(content, context),
                 origin=AnswerOrigin.DOCUMENTS,
                 sources=context,
-                completions=[completion],
+                completions=completions,
                 stopped=True,
             )
         if completion.finish_reason is FinishReason.FILTERED:
             await sink.reset()
-            return self._filtered(completion, reason="documents")
+            outcome = self._filtered(completion, reason="documents")
+            outcome.completions = completions
+            return outcome
         # Модели иногда ставят в скобки номер пункта документа [4.2]
         # вместо номера выдержки: фронт такую ссылку не свяжет.
         content = normalize_citations(completion.content, context)
@@ -838,19 +980,47 @@ class FaqService:
         # Выдержки нашлись, но модель по ним отказала: в документах
         # ответа нет — это тот же случай, что и пустой поиск.
         if is_not_found(content):
-            await sink.reset()
-            fallback = await self._not_found(
-                standalone, mode, reason="model_refusal", sink=sink
+            return await self._fallback(
+                standalone, mode, completions, reason="model_refusal", sink=sink
             )
-            fallback.completions.insert(0, completion)
-            return fallback
 
         return _Outcome(
             content=content,
             origin=AnswerOrigin.DOCUMENTS,
             sources=context,
-            completions=[completion],
+            completions=completions,
         )
+
+    async def _ask(
+        self, messages: list[Message], *, sink: AnswerSink, step: SearchStep
+    ) -> _Streamed:
+        """Вызов модели ответа по выдержкам с потоком в sink."""
+        gate: _Gate = _RefusalGate()
+        if step != "off":
+            # faq-v2.9: строка «Дополнительный поиск: …» клиенту не видна.
+            gate = _SearchGate(gate)
+        return await self._consume(
+            self.llm_gateway.stream(messages, temperature=self.temperature),
+            messages,
+            sink=sink,
+            gate=gate,
+        )
+
+    async def _fallback(
+        self,
+        question: str,
+        mode: NotFoundMode,
+        completions: list[Completion],
+        *,
+        reason: str,
+        sink: AnswerSink,
+    ) -> _Outcome:
+        """По выдержкам ответа нет, хотя модель их видела: показанное
+        убрать, дальше — по режиму; вызовы модели по выдержкам оплачиваются."""
+        await sink.reset()
+        fallback = await self._not_found(question, mode, reason=reason, sink=sink)
+        fallback.completions[:0] = completions
+        return fallback
 
     async def _not_found(
         self, question: str, mode: NotFoundMode, *, reason: str, sink: AnswerSink
@@ -1007,6 +1177,66 @@ class _RefusalGate:
         self._open = True
         held, self._held = self._held, ""
         return held
+
+
+# Начало строки запроса второго шага — как в prompts.faq.search_request:
+# регистр, кавычки и пробелы не важны.
+_SEARCH_REQUEST_START = re.compile(
+    r"^[\s«\"*]*дополнительный\s+поиск\s*:", re.IGNORECASE
+)
+_SEARCH_WORDS = " ".join(SEARCH_REQUEST_PREFIX.lower().split())
+
+
+def _asks_search(answer: str) -> bool:
+    """Ответ — просьба о втором шаге поиска (faq-v2.9), даже с пустым
+    запросом: search_request тогда None, а ответа по документам нет."""
+    return _SEARCH_REQUEST_START.match(answer) is not None
+
+
+def _held_back(text: str) -> bool:
+    """Начало ответа — строка запроса или может ещё ею оказаться."""
+    probe = " ".join(text.lstrip(' \t\n«"*').lower().split())
+    return _asks_search(text) or _SEARCH_WORDS.startswith(probe)
+
+
+def _answered_with_search(streamed: _Streamed) -> bool:
+    return (
+        not streamed.stopped
+        and streamed.completion.finish_reason is not FinishReason.FILTERED
+        and _asks_search(streamed.completion.content)
+    )
+
+
+class _SearchGate:
+    """Не показывать строку «Дополнительный поиск: …» (BH-43).
+
+    Модель пишет её первой строкой вместо ответа. Пока начало ответа может
+    оказаться ею — текст придерживается (это не дольше первых ~25
+    символов, контракт BH-43); оказалось — не показывается ничего: сервис
+    ищет и спрашивает модель снова. Нет — придержанное и всё дальше идёт
+    в следующий фильтр (then, отказ модели).
+    """
+
+    def __init__(self, then: "_Gate") -> None:
+        self._then = then
+        self._held = ""
+        self._open = False
+        self._swallow = False
+
+    def feed(self, piece: str) -> str:
+        if self._open:
+            return self._then.feed(piece)
+        if self._swallow:
+            return ""
+        self._held += piece
+        if _asks_search(self._held):
+            self._swallow = True
+            return ""
+        if _held_back(self._held):
+            return ""
+        self._open = True
+        held, self._held = self._held, ""
+        return self._then.feed(held)
 
 
 _GENERAL_HOLD_CHARS = len(GENERAL_ANSWER_PREFIX) + 40

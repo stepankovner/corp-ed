@@ -12,6 +12,7 @@ from corp_ed.api.v1.rate_limits import (
 )
 from corp_ed.api.v1.schemas.material import (
     MAX_TITLE_LENGTH,
+    EditionHintAnswer,
     IngestResponse,
     MaterialCreateRequest,
     MaterialResponse,
@@ -21,7 +22,7 @@ from corp_ed.core.config import get_http_settings
 from corp_ed.core.exceptions import UnacceptableFileError
 from corp_ed.domain.models import Material, User, UserRole
 from corp_ed.ingest.extract import max_file_bytes
-from corp_ed.services.material_service import MaterialService
+from corp_ed.services.material_service import MaterialService, pending_hint
 
 router = APIRouter(prefix="/materials", tags=["materials"])
 
@@ -39,13 +40,24 @@ def _large_upload_slot(limit: int) -> asyncio.Semaphore:
     return _large_uploads
 
 
+def _response(material: Material, in_search: set[UUID]) -> MaterialResponse:
+    return MaterialResponse.model_validate(material).model_copy(
+        update={"edition_hint": pending_hint(material, in_search)}
+    )
+
+
+async def _one(service: MaterialService, material: Material) -> MaterialResponse:
+    return _response(material, await service.in_search_ids(material.edition_hint))
+
+
 @router.get("", response_model=list[MaterialResponse])
 async def list_materials(
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,
 ) -> list[MaterialResponse]:
     materials = await service.list_all()
-    return [MaterialResponse.model_validate(material) for material in materials]
+    in_search = {m.id for m in materials if m.superseded_at is None}
+    return [_response(material, in_search) for material in materials]
 
 
 @router.post(
@@ -63,7 +75,7 @@ async def create_material(
     material = await service.create(
         current_user, title=data.title, content=data.content, folder_id=data.folder_id
     )
-    return MaterialResponse.model_validate(material)
+    return await _one(service, material)
 
 
 @router.post(
@@ -111,7 +123,7 @@ async def upload_material(
             material = await _store(
                 service, current_user, file, limit, title, filename, folder_id
             )
-    return MaterialResponse.model_validate(material)
+    return await _one(service, material)
 
 
 def _too_large(limit: int) -> UnacceptableFileError:
@@ -146,7 +158,7 @@ async def get_material(
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,
 ) -> MaterialResponse:
-    return MaterialResponse.model_validate(await service.get(material_id))
+    return await _one(service, await service.get(material_id))
 
 
 @router.post(
@@ -175,15 +187,35 @@ async def update_material(
     service: Annotated[MaterialService, Depends(get_material_service)],
     current_user: AdminUser,
 ) -> MaterialResponse:
-    """Переименовать (материал встаёт в очередь на переиндексацию) или
-    перенести в папку."""
+    """Переименовать (материал встаёт в очередь на переиндексацию),
+    перенести в папку или пометить заменённой редакцией (BH-41)."""
     fields = data.model_dump(exclude_unset=True)
     material = await service.get(material_id)
     if data.title is not None:
         material = await service.rename(current_user, material_id, data.title)
     if "folder_id" in fields:
         material = await service.move(current_user, material_id, data.folder_id)
-    return MaterialResponse.model_validate(material)
+    if data.superseded is not None:
+        material = await service.set_superseded(
+            current_user, material_id, data.superseded
+        )
+    return await _one(service, material)
+
+
+@router.post("/{material_id}/edition-hint", response_model=MaterialResponse)
+async def answer_edition_hint(
+    material_id: UUID,
+    data: EditionHintAnswer,
+    service: Annotated[MaterialService, Depends(get_material_service)],
+    current_user: AdminUser,
+) -> MaterialResponse:
+    """Ответ на подсказку «Этот документ заменяет «…»?» (BH-41): accept —
+    документы из подсказки помечаются заменёнными этим и уходят из поиска;
+    нет — ничего не меняется. Подсказка снимается в обоих случаях."""
+    material = await service.answer_edition_hint(
+        current_user, material_id, accept=data.accept
+    )
+    return await _one(service, material)
 
 
 @router.delete("/{material_id}", status_code=status.HTTP_204_NO_CONTENT)

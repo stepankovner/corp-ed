@@ -2065,12 +2065,13 @@
         "type": "object"
       },
       "DemoStreamStage": {
-        "description": "searching — ищем в документах; writing — модель пишет ответ.",
+        "description": "searching — ищем в документах; writing — модель пишет ответ;\nsearching_more — ищем в других документах (BH-43).",
         "properties": {
           "stage": {
             "enum": [
               "searching",
-              "writing"
+              "writing",
+              "searching_more"
             ],
             "title": "Stage",
             "type": "string"
@@ -2186,6 +2187,21 @@
           "unconfirmed"
         ],
         "title": "DepartmentResponse",
+        "type": "object"
+      },
+      "EditionHintAnswer": {
+        "additionalProperties": false,
+        "description": "Ответ на подсказку «Этот документ заменяет «…»?» (BH-41).",
+        "properties": {
+          "accept": {
+            "title": "Accept",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accept"
+        ],
+        "title": "EditionHintAnswer",
         "type": "object"
       },
       "EmailChangeRequest": {
@@ -3763,6 +3779,14 @@
             "title": "Created At",
             "type": "string"
           },
+          "edition_hint": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Edition Hint",
+            "type": "array"
+          },
           "folder_id": {
             "anyOf": [
               {
@@ -3850,6 +3874,30 @@
             ],
             "title": "Status Error"
           },
+          "superseded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded At"
+          },
+          "superseded_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded By Id"
+          },
           "synced_at": {
             "anyOf": [
               {
@@ -3899,7 +3947,7 @@
       },
       "MaterialUpdateRequest": {
         "additionalProperties": false,
-        "description": "Что прислано, то и меняется: название (с переиндексацией) и папка\n(null — общие документы; только у загруженных).",
+        "description": "Что прислано, то и меняется: название (с переиндексацией), папка\n(null — общие документы; только у загруженных) и пометка «заменён».",
         "properties": {
           "folder_id": {
             "anyOf": [
@@ -3912,6 +3960,17 @@
               }
             ],
             "title": "Folder Id"
+          },
+          "superseded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superseded"
           },
           "title": {
             "anyOf": [
@@ -7540,12 +7599,13 @@
         "type": "object"
       },
       "StreamStage": {
-        "description": "searching — ищем в документах; writing — модель пишет ответ.",
+        "description": "searching — ищем в документах; writing — модель пишет ответ;\nsearching_more — модель попросила дополнительный поиск, ищем в других\nдокументах (BH-43), дальше снова writing.",
         "properties": {
           "stage": {
             "enum": [
               "searching",
-              "writing"
+              "writing",
+              "searching_more"
             ],
             "title": "Stage",
             "type": "string"
@@ -13878,7 +13938,7 @@
         ]
       },
       "patch": {
-        "description": "Переименовать (материал встаёт в очередь на переиндексацию) или\nперенести в папку.",
+        "description": "Переименовать (материал встаёт в очередь на переиндексацию),\nперенести в папку или пометить заменённой редакцией (BH-41).",
         "operationId": "update_material_api_v1_materials__material_id__patch",
         "parameters": [
           {
@@ -13930,6 +13990,65 @@
           }
         ],
         "summary": "Update Material",
+        "tags": [
+          "materials"
+        ]
+      }
+    },
+    "/api/v1/materials/{material_id}/edition-hint": {
+      "post": {
+        "description": "Ответ на подсказку «Этот документ заменяет «…»?» (BH-41): accept —\nдокументы из подсказки помечаются заменёнными этим и уходят из поиска;\nнет — ничего не меняется. Подсказка снимается в обоих случаях.",
+        "operationId": "answer_edition_hint_api_v1_materials__material_id__edition_hint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditionHintAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Answer Edition Hint",
         "tags": [
           "materials"
         ]

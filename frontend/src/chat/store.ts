@@ -19,7 +19,7 @@ export interface LiveAnswer {
   regenerate: boolean;
   answerId: string | null;
   text: string;
-  stage: "searching" | "writing";
+  stage: "searching" | "writing" | "searching_more";
   origin: Origin | null;
   stopping: boolean;
 }

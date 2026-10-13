@@ -287,6 +287,31 @@ async def test_model_refusal_is_not_shown_while_streaming(
     assert final(events)["answer"]["origin"] == "general_knowledge"
 
 
+async def test_search_request_is_hidden_and_its_stage_is_shown(
+    api: httpx.AsyncClient,
+    employee: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+    fake_llm: FakeAdapter,
+) -> None:
+    # BH-43: модель просит дополнительный поиск — строку сотрудник не видит,
+    # этап «Ищу в других документах» видит. Тестовая модель просит поиск и
+    # во втором вызове, а нового поиск не находит: ответа по документам нет.
+    tenant_ctx.not_found_mode = NotFoundMode.STRICT.value
+    await session.commit()
+    await _document(session, tenant_ctx)
+    fake_llm.content = "Дополнительный поиск: финансовый директор ФИО"
+    fake_llm.pieces = ["Дополнительный ", "поиск: финансовый ", "директор ФИО"]
+
+    events = await _ask(api, employee, "Кто согласует закупку?")
+
+    assert {"type": "stage", "stage": "searching_more"} in events
+    assert [e for e in events if e["type"] == "delta"] == []
+    done = final(events)
+    assert done["answer"]["origin"] == "none"
+    assert "Дополнительный поиск" not in done["answer"]["content"]
+
+
 async def test_strict_mode_refusal(
     api: httpx.AsyncClient,
     employee: User,
