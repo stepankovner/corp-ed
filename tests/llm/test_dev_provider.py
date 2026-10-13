@@ -67,7 +67,18 @@ async def test_dev_answer_quotes_the_first_excerpt_with_a_citation() -> None:
     assert completion.content.endswith("[1]")
     assert "28 календарных дней" in completion.content
     assert "Не то" not in completion.content
+    # faq-v2.7 (BH-42): служебная строка выдержки в ответ не попадает
+    assert "конец выдержки" not in completion.content
+    assert "---" not in completion.content
     assert completion.usage.input_tokens > 0
+
+    only = await DevAdapter().generate(
+        build_faq_messages("Сколько дней отпуска?", [chunk])
+    )
+    assert only.content == (
+        "Режим разработки, ответ без модели. По документам: "
+        "Ежегодный отпуск — 28 календарных дней. Делится на части. [1]"
+    )
 
     general = await DevAdapter().generate(build_general_messages("Погода?"))
     assert "[1]" not in general.content
