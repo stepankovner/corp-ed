@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
+  ArchiveRestore,
   FileUp,
   Folder as FolderIcon,
   FolderInput,
@@ -46,7 +48,7 @@ import {
 import { FolderBar, FolderDialog, MoveDialog, type FolderCounts } from "./folders";
 
 type Material = Schemas["MaterialResponse"];
-type Filter = "all" | "ready" | "processing" | "failed";
+type Filter = "all" | "ready" | "processing" | "failed" | "superseded";
 
 // Что принимает сервер при всех включённых форматах Р-5 (INGEST_EXTRA_FORMATS);
 // выключенный формат сервер отклонит сам — с советом, как сохранить файл.
@@ -73,9 +75,17 @@ function inProgress(material: Material): boolean {
   return material.status === "pending" || material.status === "processing";
 }
 
+/** Заменённая редакция (BH-41): хранится и видна здесь, но не в ответах. */
+function superseded(material: Material): boolean {
+  return Boolean(material.superseded_at);
+}
+
 function matches(material: Material, filter: Filter): boolean {
   if (filter === "all") return true;
+  if (filter === "superseded") return superseded(material);
   if (filter === "processing") return inProgress(material);
+  // «Готовы» — те, по которым kronto отвечает.
+  if (filter === "ready") return material.status === "ready" && !superseded(material);
   return material.status === filter;
 }
 
@@ -149,6 +159,7 @@ export function DocumentsPage() {
   const [renaming, setRenaming] = useState<Material | null>(null);
   const [moving, setMoving] = useState<Material | null>(null);
   const [deleting, setDeleting] = useState<Material | null>(null);
+  const [superseding, setSuperseding] = useState<Material | null>(null);
   const [editingFolder, setEditingFolder] = useState<Folder | "new" | null>(null);
   const [deletingFolder, setDeletingFolder] = useState<Folder | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -163,6 +174,9 @@ export function DocumentsPage() {
   const target = folderById.get(place) ?? null;
 
   const list = useMemo(() => materials.data ?? [], [materials.data]);
+  const materialById = useMemo(() => new Map(list.map((m) => [m.id, m])), [list]);
+  // Подсказки «новая редакция» ждут ответа, в какой бы папке ни лежал документ.
+  const hinted = useMemo(() => list.filter((m) => m.edition_hint?.length), [list]);
   const here = useMemo(() => list.filter((m) => inPlace(m, place)), [list, place]);
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -201,6 +215,11 @@ export function DocumentsPage() {
         }),
       ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["materials"] }),
+  });
+
+  const restore = useMutation({
+    mutationFn: (id: string) => markSuperseded(id, false),
+    onSettled: refresh,
   });
 
   async function upload(files: File[]) {
@@ -272,9 +291,10 @@ export function DocumentsPage() {
 
   const counts = {
     all: here.length,
-    ready: here.filter((m) => m.status === "ready").length,
+    ready: here.filter((m) => matches(m, "ready")).length,
     processing: here.filter(inProgress).length,
     failed: here.filter((m) => m.status === "failed").length,
+    superseded: here.filter(superseded).length,
   };
   const folderCounts: FolderCounts | null = materials.data
     ? {
@@ -375,6 +395,19 @@ export function DocumentsPage() {
         </ul>
       ) : null}
 
+      {hinted.map((material) => (
+        <EditionHint
+          key={material.id}
+          material={material}
+          replaces={(material.edition_hint ?? []).flatMap((id) => materialById.get(id) ?? [])}
+        />
+      ))}
+      {restore.isError ? (
+        <div className={styles.block}>
+          <Notice kind="error">{errorMessage(restore.error)}</Notice>
+        </div>
+      ) : null}
+
       {materials.isPending ? (
         <SkeletonList label="Загрузка документов" />
       ) : materials.isError ? (
@@ -407,6 +440,9 @@ export function DocumentsPage() {
                 { value: "ready", label: "Готовы", count: counts.ready },
                 { value: "processing", label: "В работе", count: counts.processing },
                 { value: "failed", label: "Ошибки", count: counts.failed },
+                ...(counts.superseded || filter === "superseded"
+                  ? [{ value: "superseded" as const, label: "Заменены", count: counts.superseded }]
+                  : []),
               ]}
             />
             <span className={styles.searchWrap}>
@@ -435,6 +471,9 @@ export function DocumentsPage() {
             <tbody>
               {visible.map((material) => {
                 const status = STATUS[material.status];
+                const replacedBy = material.superseded_by_id
+                  ? materialById.get(material.superseded_by_id)
+                  : undefined;
                 const fromConnector = Boolean(material.connector_id);
                 const folder = material.folder_id ? folderById.get(material.folder_id) : undefined;
                 return (
@@ -473,13 +512,28 @@ export function DocumentsPage() {
                     </td>
                     <td>
                       <div className={styles.statusCell}>
-                        <Badge tone={status.tone}>{status.label}</Badge>
+                        {material.superseded_at ? (
+                          <>
+                            <Badge tone="warn">заменён</Badge>
+                            <span
+                              className={tableStyles.sub}
+                              title={formatDateTime(material.superseded_at)}
+                            >
+                              не участвует в ответах
+                              {replacedBy ? ` · новая редакция — «${replacedBy.title}»` : ""}
+                            </span>
+                          </>
+                        ) : (
+                          <Badge tone={status.tone}>{status.label}</Badge>
+                        )}
                         {material.status_error ? (
                           <span className={styles.errorText}>
                             {describeCode(material.status_error)}
                           </span>
                         ) : null}
-                        {material.status === "ready" && material.indexed_at ? (
+                        {material.status === "ready" &&
+                        material.indexed_at &&
+                        !material.superseded_at ? (
                           <span
                             className={tableStyles.sub}
                             title={formatDateTime(material.indexed_at)}
@@ -505,6 +559,24 @@ export function DocumentsPage() {
                         >
                           <RefreshCw size={16} aria-hidden />
                         </IconButton>
+                        {material.superseded_at ? (
+                          <IconButton
+                            size="sm"
+                            label="Вернуть в ответы"
+                            disabled={restore.isPending}
+                            onClick={() => restore.mutate(material.id)}
+                          >
+                            <ArchiveRestore size={16} aria-hidden />
+                          </IconButton>
+                        ) : (
+                          <IconButton
+                            size="sm"
+                            label="Пометить заменённым"
+                            onClick={() => setSuperseding(material)}
+                          >
+                            <Archive size={16} aria-hidden />
+                          </IconButton>
+                        )}
                         {/* Документы из подключений правят в источнике: здесь только переиндексация. */}
                         {!fromConnector ? (
                           <>
@@ -586,6 +658,23 @@ export function DocumentsPage() {
         }}
       />
       <ConfirmDialog
+        open={superseding !== null}
+        onOpenChange={(open) => !open && setSuperseding(null)}
+        title="Пометить документ заменённым?"
+        description={
+          superseding
+            ? `«${superseding.title}» перестанет участвовать в ответах, но останется здесь с пометкой «заменён». Вернуть в ответы можно в любой момент.`
+            : undefined
+        }
+        confirmLabel="Пометить"
+        danger={false}
+        onConfirm={async () => {
+          if (!superseding) return;
+          await markSuperseded(superseding.id, true);
+          await refresh();
+        }}
+      />
+      <ConfirmDialog
         open={deletingFolder !== null}
         onOpenChange={(open) => !open && setDeletingFolder(null)}
         title="Удалить папку?"
@@ -609,6 +698,72 @@ export function DocumentsPage() {
         }}
       />
     </>
+  );
+}
+
+function markSuperseded(id: string, value: boolean) {
+  return unwrap(
+    api.PATCH("/api/v1/materials/{material_id}", {
+      params: { path: { material_id: id } },
+      body: { superseded: value },
+    }),
+  );
+}
+
+function quoted(materials: Material[]): string {
+  return materials.map((m) => `«${m.title}»`).join(", ");
+}
+
+/**
+ * Подсказка при загрузке (BH-41): новый документ, похоже, заменяет прежнюю
+ * редакцию. Без ответа «Да» из ответов ничего не уходит.
+ */
+function EditionHint({ material, replaces }: { material: Material; replaces: Material[] }) {
+  const queryClient = useQueryClient();
+  const answer = useMutation({
+    mutationFn: (accept: boolean) =>
+      unwrap(
+        api.POST("/api/v1/materials/{material_id}/edition-hint", {
+          params: { path: { material_id: material.id } },
+          body: { accept },
+        }),
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["materials"] }),
+  });
+  if (!replaces.length) return null;
+  const many = replaces.length > 1;
+  return (
+    <div className={styles.block}>
+      <Notice kind="warn" title={`«${material.title}» заменяет ${quoted(replaces)}?`}>
+        <p>
+          Похоже, это новая редакция.{" "}
+          {many
+            ? "Если да, прежние перестанут участвовать в ответах, но останутся в списке"
+            : "Если да, прежняя перестанет участвовать в ответах, но останется в списке"}{" "}
+          с пометкой «заменён».
+        </p>
+        {answer.isError ? <p className={styles.errorText}>{errorMessage(answer.error)}</p> : null}
+        <div className={pageStyles.row} style={{ marginTop: 8 }}>
+          <Button
+            size="sm"
+            busy={answer.isPending && answer.variables}
+            disabled={answer.isPending}
+            onClick={() => answer.mutate(true)}
+          >
+            Да, пометить
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            busy={answer.isPending && !answer.variables}
+            disabled={answer.isPending}
+            onClick={() => answer.mutate(false)}
+          >
+            Нет
+          </Button>
+        </div>
+      </Notice>
+    </div>
   );
 }
 

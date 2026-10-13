@@ -75,6 +75,16 @@ def visible_to(viewer: UUID, tenant_id: UUID) -> ColumnElement[bool]:
     )
 
 
+def in_search() -> ColumnElement[bool]:
+    """Документ участвует в поиске и ответах.
+
+    Заменённая редакция (BH-41) — как удалённая для поиска, но остаётся в
+    «Источниках» и в источниках прошлых ответов: поэтому условие отдельное
+    от visible_to, которое решает «виден ли документ сотруднику».
+    """
+    return Material.superseded_at.is_(None)
+
+
 class ChunkRepository:
     """Доступ к данным чанков в БД."""
 
@@ -172,6 +182,7 @@ class ChunkRepository:
                 Chunk.tenant_id == tenant_id,
                 Material.tenant_id == tenant_id,
                 visible_to(viewer, tenant_id),
+                in_search(),
             )
             .order_by(distance)
             .limit(limit)
@@ -235,6 +246,7 @@ class ChunkRepository:
                 Material.tenant_id == tenant_id,
                 Chunk.fts.op("@@")(ts_query),
                 visible_to(viewer, tenant_id),
+                in_search(),
             )
             # id — второй ключ: при равном ранге порядок детерминирован.
             .order_by(rank.desc(), Chunk.id)

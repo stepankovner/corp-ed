@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import Folder, Material, MaterialStatus, User
 from corp_ed.domain.types import ConnectorMode, ConnectorStatus
-from corp_ed.repositories.chunk_repository import visible_to
+from corp_ed.repositories.chunk_repository import in_search, visible_to
 from corp_ed.repositories.connector_repository import (
     ConnectorRepository,
     GrantRepository,
@@ -61,6 +61,7 @@ class SourcesService:
                 Material.connector_id.is_(None),
                 Material.status == MaterialStatus.READY,
                 visible_to(member.id, tenant_id),
+                in_search(),
             )
             .group_by(Material.folder_id)
         )
