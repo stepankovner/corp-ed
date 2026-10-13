@@ -60,6 +60,8 @@ const ACTIONS: Record<string, string> = {
   "material.created": "Документ добавлен",
   "material.updated": "Документ изменён",
   "material.deleted": "Документ удалён",
+  "material.superseded": "Документ помечен заменённым",
+  "material.restored": "Документ возвращён в ответы",
   "glossary.created": "Термин добавлен",
   "glossary.updated": "Термин изменён",
   "glossary.deleted": "Термин удалён",

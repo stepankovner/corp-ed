@@ -955,6 +955,20 @@ class Material(TenantMixin, Base):
     folder_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("folders.id", ondelete="RESTRICT"), index=True
     )
+    # Заменённая редакция (BH-41, решение Артёма 06.10): документ хранится
+    # и виден в «Источниках», но не участвует в поиске и ответах. Ставит и
+    # снимает администратор. superseded_by — новая редакция, если пометка
+    # пришла из подсказки; удалят её — пометка остаётся, решение за админом.
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_by_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("materials.id", ondelete="SET NULL")
+    )
+    # Подсказка при загрузке (domain.editions): какие документы этот, похоже,
+    # заменяет. Ждёт ответа администратора «Да, пометить» / «Нет» — после
+    # ответа пусто. Сама ничего из поиска не убирает.
+    edition_hint: Mapped[list[UUID]] = mapped_column(
+        ARRAY(Uuid), default=list, server_default="{}"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

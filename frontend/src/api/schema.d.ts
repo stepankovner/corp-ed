@@ -2094,10 +2094,32 @@ export interface paths {
         head?: never;
         /**
          * Update Material
-         * @description Переименовать (материал встаёт в очередь на переиндексацию) или
-         *     перенести в папку.
+         * @description Переименовать (материал встаёт в очередь на переиндексацию),
+         *     перенести в папку или пометить заменённой редакцией (BH-41).
          */
         patch: operations["update_material_api_v1_materials__material_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/materials/{material_id}/edition-hint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Edition Hint
+         * @description Ответ на подсказку «Этот документ заменяет «…»?» (BH-41): accept —
+         *     документы из подсказки помечаются заменёнными этим и уходят из поиска;
+         *     нет — ничего не меняется. Подсказка снимается в обоих случаях.
+         */
+        post: operations["answer_edition_hint_api_v1_materials__material_id__edition_hint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/materials/{material_id}/ingest": {
@@ -3870,6 +3892,14 @@ export interface components {
             /** Unconfirmed */
             unconfirmed: number;
         };
+        /**
+         * EditionHintAnswer
+         * @description Ответ на подсказку «Этот документ заменяет «…»?» (BH-41).
+         */
+        EditionHintAnswer: {
+            /** Accept */
+            accept: boolean;
+        };
         /** EmailChangeRequest */
         EmailChangeRequest: {
             /** Code */
@@ -4513,6 +4543,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Edition Hint */
+            edition_hint?: string[];
             /** Folder Id */
             folder_id?: string | null;
             /**
@@ -4533,6 +4565,10 @@ export interface components {
             status: components["schemas"]["MaterialStatus"];
             /** Status Error */
             status_error: string | null;
+            /** Superseded At */
+            superseded_at?: string | null;
+            /** Superseded By Id */
+            superseded_by_id?: string | null;
             /** Synced At */
             synced_at?: string | null;
             /** Title */
@@ -4555,12 +4591,14 @@ export interface components {
         MaterialStatus: "pending" | "processing" | "ready" | "failed";
         /**
          * MaterialUpdateRequest
-         * @description Что прислано, то и меняется: название (с переиндексацией) и папка
-         *     (null — общие документы; только у загруженных).
+         * @description Что прислано, то и меняется: название (с переиндексацией), папка
+         *     (null — общие документы; только у загруженных) и пометка «заменён».
          */
         MaterialUpdateRequest: {
             /** Folder Id */
             folder_id?: string | null;
+            /** Superseded */
+            superseded?: boolean | null;
             /** Title */
             title?: string | null;
         };
@@ -9957,6 +9995,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MaterialUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_edition_hint_api_v1_materials__material_id__edition_hint_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                material_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditionHintAnswer"];
             };
         };
         responses: {

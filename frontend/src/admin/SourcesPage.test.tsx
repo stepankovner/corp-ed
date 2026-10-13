@@ -450,6 +450,91 @@ describe("источники", () => {
     expect(tile(/^Все файлы/)).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("новая редакция: вопрос при загрузке, «Да» помечает прежнюю заменённой", async () => {
+    const user = userEvent.setup();
+    const { state } = mockSources({
+      materials: [
+        material({ id: "m-old", title: "Положение о командировках 2025" }),
+        material({
+          id: "m-new",
+          title: "Положение о командировках 2026",
+          edition_hint: ["m-old"],
+        }),
+      ],
+    });
+    const answers: unknown[] = [];
+    server.use(
+      http.post("/api/v1/materials/:id/edition-hint", async ({ request, params }) => {
+        const body = (await request.json()) as { accept: boolean };
+        answers.push(body);
+        state.materials = state.materials.map((m) => {
+          if (m.id === params.id) return { ...m, edition_hint: [] };
+          if (body.accept && m.id === "m-old") {
+            return {
+              ...m,
+              superseded_at: "2026-10-13T10:00:00Z",
+              superseded_by_id: String(params.id),
+            };
+          }
+          return m;
+        });
+        return HttpResponse.json(state.materials.find((m) => m.id === params.id));
+      }),
+    );
+    renderApp("/admin/sources/files");
+
+    const question = await screen.findByText(
+      "«Положение о командировках 2026» заменяет «Положение о командировках 2025»?",
+    );
+    const hint = question.closest('[role="status"]') as HTMLElement;
+    const table = screen.getByRole("table", { name: "Документы" });
+    // Без ответа ничего не помечено.
+    expect(within(table).queryByText("заменён")).not.toBeInTheDocument();
+
+    await user.click(within(hint).getByRole("button", { name: "Да, пометить" }));
+    await waitFor(() => expect(question).not.toBeInTheDocument());
+    expect(answers).toEqual([{ accept: true }]);
+    const old = row(table, "Положение о командировках 2025");
+    expect(await old.findByText("заменён")).toBeInTheDocument();
+    expect(old.getByText(/новая редакция — «Положение о командировках 2026»/)).toBeInTheDocument();
+    // Заменённые — отдельным фильтром и не среди «Готовых».
+    const filter = within(screen.getByRole("group", { name: "Статус" }));
+    expect(filter.getByRole("button", { name: /^Заменены/ })).toHaveTextContent("Заменены 1");
+    expect(filter.getByRole("button", { name: /^Готовы/ })).toHaveTextContent("Готовы 1");
+  });
+
+  it("помечает документ заменённым вручную и возвращает в ответы", async () => {
+    const user = userEvent.setup();
+    const { state, bodies } = mockSources({
+      materials: [material({ id: "m-old", title: "Положение об оплате 2024" })],
+    });
+    server.use(
+      http.patch("/api/v1/materials/:id", async ({ request, params }) => {
+        const body = (await request.json()) as { superseded: boolean };
+        bodies.push({ method: "PATCH", path: `/materials/${String(params.id)}`, body });
+        state.materials = state.materials.map((m) =>
+          m.id === params.id
+            ? { ...m, superseded_at: body.superseded ? "2026-10-13T10:00:00Z" : null }
+            : m,
+        );
+        return HttpResponse.json(state.materials.find((m) => m.id === params.id));
+      }),
+    );
+    renderApp("/admin/sources/files");
+
+    const table = await screen.findByRole("table", { name: "Документы" });
+    const doc = row(table, "Положение об оплате 2024");
+    await user.click(doc.getByRole("button", { name: "Пометить заменённым" }));
+    const confirm = await screen.findByRole("dialog", { name: "Пометить документ заменённым?" });
+    await user.click(within(confirm).getByRole("button", { name: "Пометить" }));
+    expect(await doc.findByText("заменён")).toBeInTheDocument();
+    expect(doc.getByText("не участвует в ответах")).toBeInTheDocument();
+
+    await user.click(doc.getByRole("button", { name: "Вернуть в ответы" }));
+    expect(await doc.findByText("готов")).toBeInTheDocument();
+    expect(bodies.map((b) => b.body)).toEqual([{ superseded: true }, { superseded: false }]);
+  });
+
   it("подключения: сколько сотрудников подключились сами", async () => {
     mockSources();
     mockConnectors([
