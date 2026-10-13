@@ -3827,14 +3827,15 @@ export interface components {
         };
         /**
          * DemoStreamStage
-         * @description searching — ищем в документах; writing — модель пишет ответ.
+         * @description searching — ищем в документах; writing — модель пишет ответ;
+         *     searching_more — ищем в других документах (BH-43).
          */
         DemoStreamStage: {
             /**
              * Stage
              * @enum {string}
              */
-            stage: "searching" | "writing";
+            stage: "searching" | "writing" | "searching_more";
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -5954,14 +5955,16 @@ export interface components {
         };
         /**
          * StreamStage
-         * @description searching — ищем в документах; writing — модель пишет ответ.
+         * @description searching — ищем в документах; writing — модель пишет ответ;
+         *     searching_more — модель попросила дополнительный поиск, ищем в других
+         *     документах (BH-43), дальше снова writing.
          */
         StreamStage: {
             /**
              * Stage
              * @enum {string}
              */
-            stage: "searching" | "writing";
+            stage: "searching" | "writing" | "searching_more";
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}

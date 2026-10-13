@@ -42,10 +42,11 @@ class DemoAnswerResponse(BaseModel):
 
 
 class DemoStreamStage(BaseModel):
-    """searching — ищем в документах; writing — модель пишет ответ."""
+    """searching — ищем в документах; writing — модель пишет ответ;
+    searching_more — ищем в других документах (BH-43)."""
 
     type: Literal["stage"] = "stage"
-    stage: Literal["searching", "writing"]
+    stage: Literal["searching", "writing", "searching_more"]
 
 
 class DemoStreamDelta(BaseModel):

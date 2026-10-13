@@ -476,6 +476,48 @@ describe("открытый диалог", () => {
     expect(screen.getByRole("button", { name: "Отправить вопрос" })).toBeInTheDocument();
   });
 
+  it("второй шаг поиска: «Ищу в других документах», потом ответ", async () => {
+    signedIn();
+    const flow = controlledStream();
+    const answer = reply({
+      id: "a-2",
+      parent_id: "q-2",
+      content: "Согласует финансовый директор Петров.",
+      sources: [],
+      siblings: ["a-2"],
+    });
+    server.use(
+      http.get("/api/v1/conversations/c-1", () => HttpResponse.json(conversation())),
+      http.post("/api/v1/conversations/c-1/messages", () => {
+        flow.push(
+          {
+            type: "start",
+            conversation: summary(),
+            question: question({ id: "q-2", parent_id: "a-1", content: "Кто согласует?" }),
+            answer: { ...answer, status: "generating", content: "" },
+          },
+          { type: "stage", stage: "searching" },
+          { type: "stage", stage: "writing" },
+          { type: "stage", stage: "searching_more" },
+        );
+        return eventStream(flow.stream);
+      }),
+    );
+    renderApp("/c/c-1");
+    await screen.findByText(/Суточные по России/);
+    await ask("Кто согласует?");
+    expect(await screen.findByText("Ищу в других документах")).toBeInTheDocument();
+
+    flow.push(
+      { type: "stage", stage: "writing" },
+      { type: "delta", text: answer.content },
+      { type: "done", answer: { ...answer, siblings: [] }, diagnostics: null },
+    );
+    flow.close();
+    expect(await screen.findByText(answer.content)).toBeInTheDocument();
+    expect(screen.queryByText("Ищу в других документах")).not.toBeInTheDocument();
+  });
+
   it("«Остановить» до первого события сервера — ответ всё равно останавливается", async () => {
     signedIn();
     const flow = controlledStream();

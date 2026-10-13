@@ -270,10 +270,12 @@ class StreamStart(BaseModel):
 
 
 class StreamStage(BaseModel):
-    """searching — ищем в документах; writing — модель пишет ответ."""
+    """searching — ищем в документах; writing — модель пишет ответ;
+    searching_more — модель попросила дополнительный поиск, ищем в других
+    документах (BH-43), дальше снова writing."""
 
     type: Literal["stage"] = "stage"
-    stage: Literal["searching", "writing"]
+    stage: Literal["searching", "writing", "searching_more"]
 
 
 class StreamOrigin(BaseModel):

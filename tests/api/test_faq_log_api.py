@@ -12,7 +12,7 @@ from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import AuditEvent, Chunk, Material, QaLog, Tenant, User
 from corp_ed.llm.fake import FakeAdapter
 from corp_ed.llm.types import FinishReason
-from corp_ed.prompts.faq import PROMPT_VERSION
+from corp_ed.prompts.faq import SEARCH_PROMPT_VERSION
 from corp_ed.services.retention_service import RetentionService
 from tests.api.conftest import bearer
 
@@ -70,7 +70,9 @@ async def test_answer_is_logged_with_masked_question(
     [entry] = await _log(session, account.tenant_id)
     assert str(entry.id) == response.json()["answer_id"]
     assert entry.user_id == account.id
-    assert entry.prompt_version == PROMPT_VERSION
+    # Стенд — со вторым шагом поиска (BH-43, RAG_FAQ_SEARCH_STEP).
+    assert entry.prompt_version == SEARCH_PROMPT_VERSION
+    assert entry.search_query is None
     assert entry.origin == "documents"
     assert entry.answer_given is True
     assert entry.credits >= 1
@@ -142,7 +144,7 @@ async def test_diagnostics_only_for_admin(
 
     assert employee_answer.json()["diagnostics"] is None
     diagnostics = admin_answer.json()["diagnostics"]
-    assert diagnostics["prompt_version"] == PROMPT_VERSION
+    assert diagnostics["prompt_version"] == SEARCH_PROMPT_VERSION
     assert diagnostics["model"] == "fake"
 
 

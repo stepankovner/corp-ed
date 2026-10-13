@@ -116,7 +116,9 @@ export function AnswerBody({
               ? "В документах ответа нет, пишу общий ответ"
               : live.stage === "writing"
                 ? "Пишу ответ"
-                : "Ищу в документах"}
+                : live.stage === "searching_more"
+                  ? "Ищу в других документах"
+                  : "Ищу в документах"}
         </span>
       </div>
     );
