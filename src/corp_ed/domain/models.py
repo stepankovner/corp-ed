@@ -1190,6 +1190,10 @@ class QaLog(TenantMixin, Base):
     # вовремя). rerank_ms — сколько ждали реранкер, и при сбое тоже.
     rerank_model: Mapped[str | None] = mapped_column(String(128))
     rerank_ms: Mapped[int | None] = mapped_column()
+    # Второй шаг поиска (BH-43): что модель попросила найти — после
+    # mask_pii, как question; NULL — второго шага не было. Для отчёта о
+    # пробелах и разбора ответов «из двух документов».
+    search_query: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
