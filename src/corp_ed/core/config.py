@@ -631,12 +631,18 @@ def get_demo_settings() -> DemoSettings:
 
 
 class TeamNotifySettings(BaseSettings):
-    """Бот в Telegram для нашей команды (решение 28.09, П-5).
+    """Уведомления нашей команде (решение 28.09, П-5): почта и/или бот в
+    Telegram.
 
-    Без токена и чата уведомлений нет. Сообщения — без персональных
-    данных (services/team_notify.py). Токен — секрет: в логи не пишется.
+    Почта (TEAM_NOTIFY_EMAIL) — через наш почтовый сервис (MAIL_BACKEND),
+    туда же — тревоги мониторинга (deploy/monitoring, alert-mail). С
+    сервера в России Telegram может быть недоступен (RISKS №50, на стенде
+    — недоступен с 14.10), поэтому почта — основной канал. Ничего не
+    задано — уведомлений нет. Сообщения — без персональных данных
+    (services/team_notify.py). Токен — секрет: в логи не пишется.
     """
 
+    email: str = Field(default="", max_length=254)
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = Field(default=None, max_length=64)
 
@@ -646,6 +652,16 @@ class TeamNotifySettings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        value = value.strip()
+        if value and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", value):
+            raise ValueError(
+                "TEAM_NOTIFY_EMAIL: адрес почты, например info@krontoai.ru"
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_pair(self) -> Self:

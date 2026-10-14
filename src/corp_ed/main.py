@@ -54,7 +54,7 @@ from corp_ed.core.config import (
     get_team_notify_settings,
     get_tochka_settings,
 )
-from corp_ed.core.database import get_engine
+from corp_ed.core.database import get_engine, get_session_maker
 from corp_ed.core.dialogue_store import InMemoryDialogueStore, RedisDialogueStore
 from corp_ed.core.exception_handlers import (
     conflict_error_handler,
@@ -209,7 +209,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         via_proxy=get_connector_settings().outbound_via_proxy
     )
     app.state.team_notifier = build_team_notifier(
-        app.state.outbound_http_client, get_team_notify_settings()
+        app.state.outbound_http_client,
+        get_team_notify_settings(),
+        get_session_maker(),
     )
     # Банк (решения владельца 09.10) — только с PAYMENTS_PROVIDER=tochka:
     # нет ключа или сертификата Минцифры — ошибка старта, а не первого счёта.

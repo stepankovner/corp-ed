@@ -478,7 +478,9 @@ async def main(install_signals: Callable[[asyncio.Event], None] | None = None) -
             llm,
             document_throttle=_ingest_throttle(redis, llm.embedding_ingest_rps),
         )
-        notifier = build_team_notifier(outside, get_team_notify_settings())
+        notifier = build_team_notifier(
+            outside, get_team_notify_settings(), get_session_maker()
+        )
         sync_service = ConnectorSyncService(
             get_session_maker(),
             OutboundClient(

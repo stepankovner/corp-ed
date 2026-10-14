@@ -485,3 +485,20 @@ def lead_received(
         ],
     )
     return RenderedEmail("lead_received", subject, text, html)
+
+
+def team_notice(text: str) -> RenderedEmail:
+    """Уведомление нашей команде (TEAM_NOTIFY_EMAIL, services/team_notify.py):
+    тот же короткий текст без персональных данных, что ушёл бы в Telegram.
+    Тема — его начало: в списке писем видно, о чём речь."""
+    subject = f"{BRAND}: {_clip(text, 90)}"
+    html = _layout(subject, [_p(escape(text))])
+    return RenderedEmail("team_notice", subject, text, html)
+
+
+def _clip(text: str, limit: int) -> str:
+    """Первая строка, не длиннее limit, обрезанная по слову."""
+    line = text.split("\n", 1)[0].strip()
+    if len(line) <= limit:
+        return line
+    return line[: limit - 1].rsplit(" ", 1)[0].rstrip(",.:;—- ") + "…"

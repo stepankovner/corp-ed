@@ -77,6 +77,7 @@ from corp_ed.core.config import (
     get_mail_settings,
     get_payment_settings,
     get_settings,
+    get_team_notify_settings,
     get_tochka_settings,
 )
 from corp_ed.core.database import get_session_maker
@@ -114,6 +115,8 @@ from corp_ed.services.payments.tochka import TochkaProvider, tochka_http_client
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.services.retention_service import RetentionService
 from corp_ed.services.seats import seats_check
+from corp_ed.services.team_notify import build_team_notifier
+from corp_ed.services.team_notify import drain as drain_team_notifier
 from corp_ed.services.tenant_deletion_service import TenantDeletionService
 from corp_ed.services.tenant_service import TenantService
 
@@ -330,6 +333,12 @@ def _parser() -> argparse.ArgumentParser:
         help="ещё и отправить тестовое письмо на этот адрес — сразу, мимо очереди",
     )
 
+    commands.add_parser(
+        "team-notify-test",
+        help="проверочное уведомление команде: письмо на TEAM_NOTIFY_EMAIL "
+        "(через очередь, отправит воркер) и/или Telegram",
+    )
+
     webhook = commands.add_parser(
         "payments-webhook",
         help="подписать ключ Точки на вебхуки входящих платежей и оплаты по "
@@ -457,6 +466,8 @@ async def _run(args: argparse.Namespace) -> int:
     if args.command == "mail-check":
         return await _mail_check(args.days, args.send_to)
 
+    if args.command == "team-notify-test":
+        return await _team_notify_test()
     if args.command == "payments-webhook":
         return await _payments_webhook(args.url)
 
@@ -980,6 +991,32 @@ async def _payments_webhook(url: str) -> int:
             print(f"Банк отказал: {exc.code}", file=sys.stderr)
             return 1
     print(f"Вебхук Точки: {url}")
+    return 0
+
+
+async def _team_notify_test() -> int:
+    settings = get_team_notify_settings()
+    channels = [
+        name
+        for name, on in (
+            ("почта", bool(settings.email)),
+            ("Telegram", settings.telegram_bot_token is not None),
+        )
+        if on
+    ]
+    if not channels:
+        print("уведомления команде не настроены: TEAM_NOTIFY_EMAIL пуст")
+        return 1
+    via_proxy = get_connector_settings().outbound_via_proxy
+    async with outbound_http_client(via_proxy=via_proxy) as client:
+        notifier = build_team_notifier(client, settings, get_session_maker())
+        notifier.notify("Проверка уведомлений команде. Пришло — канал работает.")
+        await drain_team_notifier(notifier)
+    print(
+        f"отправлено: {', '.join(channels)}. Письмо уходит через очередь — "
+        "воркер отправит за секунды; ошибки — mail-check и лог воркера "
+        "(team_notify_failed)"
+    )
     return 0
 
 

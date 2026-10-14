@@ -5,8 +5,9 @@
 # Поднимает deploy/stage/deploy.sh после каждой выкатки:
 #   docker compose -f deploy/monitoring/compose.yaml \
 #     --env-file .env --env-file /etc/kronto/monitoring.env up -d
-# Из .env приложения берутся только TEAM_NOTIFY_TELEGRAM_* (тревоги в тот
-# же чат, что заявки); из monitoring.env — домен и пароль Grafana.
+# Из .env приложения берутся только каналы уведомлений команде:
+# TEAM_NOTIFY_EMAIL с настройками почты (MAIL_*) и TEAM_NOTIFY_TELEGRAM_*;
+# из monitoring.env — домен и пароль Grafana.
 #
 # Наружу открыта только Grafana — через nginx (https://ДОМЕН/grafana/,
 # вход по паролю). Prometheus, Alertmanager и Loki слушают только сеть
@@ -37,10 +38,12 @@ services:
   alertmanager:
     <<: *restart
     image: prom/alertmanager:v0.34.1
-    # Конфиг собирается при старте: без токена Telegram тревоги видны
+    # Конфиг собирается при старте: без почты и Telegram тревоги видны
     # только в Grafana и Alertmanager, контейнер не падает.
     entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
     environment:
+      # Почта — только если задан адрес команды (сервис alert-mail ниже).
+      ALERT_EMAIL_URL: ${TEAM_NOTIFY_EMAIL:+http://alert-mail:9099/alerts}
       TELEGRAM_BOT_TOKEN: ${TEAM_NOTIFY_TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TEAM_NOTIFY_TELEGRAM_CHAT_ID:-}
     volumes:
@@ -48,6 +51,51 @@ services:
       - alertmanager_data:/alertmanager
     networks: [monitoring]
     mem_limit: 128m
+
+  # Тревоги — письмом через Postbox (corp_ed/alert_mail.py): Selectel
+  # закрывает исходящий SMTP (RISKS №57), а Telegram с сервера может быть
+  # недоступен (RISKS №50). Без базы и без API приложения — тревоги нужнее
+  # всего, когда они лежат. Образ — приложения (его собирает и тегирует
+  # выкатка до подъёма мониторинга); переменные — только почтовые, а не
+  # весь .env: ключи базы, подключений и банка этому сервису не нужны.
+  alert-mail:
+    <<: *restart
+    image: kronto-api:local
+    pull_policy: never
+    command:
+      - uvicorn
+      - corp_ed.alert_mail:app
+      - --host=0.0.0.0
+      - --port=9099
+      - --no-access-log
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-}
+      TEAM_NOTIFY_EMAIL: ${TEAM_NOTIFY_EMAIL:-}
+      MAIL_BACKEND: ${MAIL_BACKEND:-}
+      MAIL_POSTBOX_KEY_ID: ${MAIL_POSTBOX_KEY_ID:-}
+      MAIL_POSTBOX_SECRET_KEY: ${MAIL_POSTBOX_SECRET_KEY:-}
+      MAIL_POSTBOX_URL: ${MAIL_POSTBOX_URL:-}
+      MAIL_POSTBOX_REGION: ${MAIL_POSTBOX_REGION:-}
+      MAIL_SMTP_HOST: ${MAIL_SMTP_HOST:-}
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-}
+      MAIL_SMTP_SECURITY: ${MAIL_SMTP_SECURITY:-}
+      MAIL_SMTP_USERNAME: ${MAIL_SMTP_USERNAME:-}
+      MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
+      MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+      CONNECTOR_OUTBOUND_VIA_PROXY: ${CONNECTOR_OUTBOUND_VIA_PROXY:-}
+    # Проверка из образа (Dockerfile) смотрит на порт API — здесь своя.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9099/health', timeout=2).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [monitoring]
+    mem_limit: 160m
 
   grafana:
     <<: *restart

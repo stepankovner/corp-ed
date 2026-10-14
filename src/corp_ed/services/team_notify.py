@@ -1,31 +1,40 @@
 """Уведомления нашей команде (решение владельца продукта 28.09, П-5).
 
-Бот в Telegram: новая заявка на созвон, у компании кончились кредиты,
-заказ пакета кредитов, у компании остановилось подключение. **Без
-персональных данных**: ни имён, ни телефонов, ни почты, ни названий
-подключений, которые пишет клиент, ни кода компании (он повторяет
-название, а у клиента-ИП это фамилия) — только короткий id компании
+Новая заявка на созвон, у компании кончились кредиты, заказ пакета
+кредитов, у компании остановилось подключение. **Без персональных
+данных**: ни имён, ни телефонов, ни почты, ни названий подключений,
+которые пишет клиент, ни кода компании (он повторяет название, а у
+клиента-ИП это фамилия) — только короткий id компании
 (domain/company_ref.py; тот же показывает наша панель), вид системы,
-числа и коды ошибок.
-Подробности команда смотрит в CLI (`leads list`) и в журнале. Так
-сообщения не становятся передачей персональных данных в иностранный
-сервис.
+числа и коды ошибок. Подробности команда смотрит в CLI (`leads list`) и
+в журнале. Так сообщения не становятся передачей персональных данных в
+иностранный сервис.
 
-Отправка — в фоне, с коротким таймаутом: недоступный Telegram не должен
-задерживать ответ сотруднику или синхронизацию. Токен бота — в адресе
-запроса, поэтому в журнал ошибок пишется только тип ошибки и код ответа.
+Каналы (TeamNotifySettings), можно оба:
+- почта (TEAM_NOTIFY_EMAIL) — письмо в очередь outbox_emails, отправляет
+  воркер с повторами (services/mail_worker.py). Основной канал: с сервера
+  в России Telegram может быть недоступен (RISKS №50);
+- бот в Telegram — запрос с коротким таймаутом. Токен бота — в адресе
+  запроса, поэтому в журнал ошибок пишется только тип ошибки и код ответа.
+
+Отправка — в фоне: недоступная почта или Telegram не должны задерживать
+ответ сотруднику или синхронизацию.
 """
 
 import asyncio
+from collections.abc import Coroutine
 from datetime import date, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 import httpx
 import structlog
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import TeamNotifySettings
 from corp_ed.domain.company_ref import company_ref
+from corp_ed.services.email_service import EmailService
+from corp_ed.services.email_templates import team_notice
 
 logger = structlog.get_logger()
 
@@ -48,23 +57,14 @@ class NullNotifier:
 NULL_NOTIFIER = NullNotifier()
 
 
-class TelegramNotifier:
-    def __init__(
-        self,
-        client: httpx.AsyncClient,
-        token: str,
-        chat_id: str,
-        *,
-        timeout: float = 5.0,
-    ) -> None:
-        self._client = client
-        self._url = f"{TELEGRAM_API}/bot{token}/sendMessage"
-        self._chat_id = chat_id
-        self._timeout = timeout
+class _Background:
+    """Отправка фоновой задачей процесса; drain — дождаться всех."""
+
+    def __init__(self) -> None:
         self._pending: set[asyncio.Task[None]] = set()
 
-    def notify(self, text: str) -> None:
-        task = asyncio.get_running_loop().create_task(self._send(text))
+    def _spawn(self, send: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.get_running_loop().create_task(send)
         # Ссылка держит задачу до конца: иначе сборщик мусора может
         # прервать её на полпути.
         self._pending.add(task)
@@ -74,6 +74,25 @@ class TelegramNotifier:
         """Дождаться отправки (остановка процесса, тесты)."""
         if self._pending:
             await asyncio.gather(*self._pending, return_exceptions=True)
+
+
+class TelegramNotifier(_Background):
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        token: str,
+        chat_id: str,
+        *,
+        timeout: float = 5.0,
+    ) -> None:
+        super().__init__()
+        self._client = client
+        self._url = f"{TELEGRAM_API}/bot{token}/sendMessage"
+        self._chat_id = chat_id
+        self._timeout = timeout
+
+    def notify(self, text: str) -> None:
+        self._spawn(self._send(text))
 
     async def _send(self, text: str) -> None:
         try:
@@ -88,27 +107,83 @@ class TelegramNotifier:
             )
         except httpx.HTTPError as exc:
             # Не str(exc): в тексте ошибки httpx — адрес с токеном бота.
-            logger.warning("team_notify_failed", error=type(exc).__name__)
+            logger.warning(
+                "team_notify_failed", channel="telegram", error=type(exc).__name__
+            )
             return
         if response.status_code >= 400:
-            logger.warning("team_notify_failed", status=response.status_code)
+            logger.warning(
+                "team_notify_failed", channel="telegram", status=response.status_code
+            )
+
+
+class EmailNotifier(_Background):
+    """Письмо в очередь — своей транзакцией: уведомление о событии, которое
+    уже произошло, не должно зависеть от транзакции вызывающего."""
+
+    def __init__(
+        self, session_maker: async_sessionmaker[AsyncSession], to: str
+    ) -> None:
+        super().__init__()
+        self._session_maker = session_maker
+        self._to = to
+
+    def notify(self, text: str) -> None:
+        self._spawn(self._enqueue(text))
+
+    async def _enqueue(self, text: str) -> None:
+        try:
+            async with self._session_maker() as session:
+                EmailService(session).enqueue(self._to, team_notice(text))
+                await session.commit()
+        except Exception as exc:
+            logger.warning(
+                "team_notify_failed", channel="email", error=type(exc).__name__
+            )
+
+
+class FanoutNotifier:
+    """Несколько каналов сразу: почта и Telegram."""
+
+    def __init__(self, channels: list[TeamNotifier]) -> None:
+        self.channels = channels
+
+    def notify(self, text: str) -> None:
+        for channel in self.channels:
+            channel.notify(text)
 
 
 def build_team_notifier(
-    client: httpx.AsyncClient, settings: TeamNotifySettings
+    client: httpx.AsyncClient,
+    settings: TeamNotifySettings,
+    session_maker: async_sessionmaker[AsyncSession] | None = None,
 ) -> TeamNotifier:
-    if settings.telegram_bot_token is None or settings.telegram_chat_id is None:
+    """session_maker нужен почте — сессии процесса (API, воркер, CLI)."""
+    channels: list[TeamNotifier] = []
+    if settings.email:
+        if session_maker is None:
+            raise ValueError("TEAM_NOTIFY_EMAIL needs a database session maker")
+        channels.append(EmailNotifier(session_maker, settings.email))
+    if settings.telegram_bot_token is not None and settings.telegram_chat_id:
+        channels.append(
+            TelegramNotifier(
+                client,
+                settings.telegram_bot_token.get_secret_value(),
+                settings.telegram_chat_id,
+            )
+        )
+    if not channels:
         return NULL_NOTIFIER
-    return TelegramNotifier(
-        client,
-        settings.telegram_bot_token.get_secret_value(),
-        settings.telegram_chat_id,
-    )
+    if len(channels) == 1:
+        return channels[0]
+    return FanoutNotifier(channels)
 
 
 async def drain(notifier: TeamNotifier) -> None:
-    if isinstance(notifier, TelegramNotifier):
-        await notifier.drain()
+    channels = notifier.channels if isinstance(notifier, FanoutNotifier) else [notifier]
+    for channel in channels:
+        if isinstance(channel, _Background):
+            await channel.drain()
 
 
 # --- тексты: только то, что можно отправить в чужой мессенджер ------------------------
