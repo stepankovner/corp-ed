@@ -1006,5 +1006,6 @@ Yandex Cloud — `open`. Хоть одна строка `FAIL` — снять п
 - API Selectel: токен сервисного пользователя, статус прерванного
   сервера, `unshelve`; сохраняется ли IP после прерывания;
 - доступ к Docker Hub, GHCR, Hugging Face (модель реранкера), Yandex
-  Cloud и Telegram из сети Selectel;
+  Cloud и Telegram из сети Selectel (14.10: Telegram — недоступен,
+  RISKS №50; уведомления с сервера — почтой, §4.5);
 - Ping-Admin.
