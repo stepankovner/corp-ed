@@ -66,8 +66,9 @@ DNS домена ведётся в Яндекс 360 для бизнеса (NS: `
 - При каждом прерывании теряется память Redis: лимиты, история диалогов
   (уточняющий вопрос после прерывания разбирается как самостоятельный).
   База не страдает.
-- Ночных звонков со стенда нет — только сообщения в Telegram (решение
-  30.09). Звонки — с боевого сервера.
+- Ночных звонков со стенда нет — только сообщения: «стенд упал /
+  поднялся» в Telegram из GitHub (§4.8), тревоги мониторинга — почтой
+  (§4.5; решения 30.09 и 14.10). Звонки — с боевого сервера.
 
 Боевой сервер — не прерываемый; выбор — `RESILIENCE-RESEARCH.md` §3.
 
@@ -368,11 +369,32 @@ ssh-keygen -t ed25519 -N "" -C kronto-stage-deploy -f kronto-stage-deploy
 Остальное в файле менять не нужно. Права файла — 600, владелец
 `deploy`.
 
-**Тревоги в Telegram** (по желанию, можно позже): в тот же файл —
-`TEAM_NOTIFY_TELEGRAM_BOT_TOKEN` и `TEAM_NOTIFY_TELEGRAM_CHAT_ID` (бот и
-чат команды). Их берут и приложение (заявки, исчерпанный лимит), и
-мониторинг (тревоги). Сначала проверьте, что Telegram доступен с сервера
-(RISKS №50): `curl -m 10 -sS https://api.telegram.org -o /dev/null && echo ok`.
+**Уведомления команде — почтой** (после §4.5а, когда письма уходят): в
+тот же файл — `TEAM_NOTIFY_EMAIL=ящик@команды`. На этот адрес приходят и
+сообщения приложения (заявка, исчерпанный пул, остановленное
+подключение, оплата), и тревоги мониторинга (сервис `alert-mail`,
+§7). Применить — выкатка или
+`docker compose -f compose.yaml up -d` и
+`docker compose -f deploy/monitoring/compose.yaml --env-file .env --env-file /etc/kronto/monitoring.env up -d`.
+Проверка:
+```bash
+cd /opt/kronto
+sudo -u deploy docker compose -f compose.yaml exec -T worker python -m corp_ed.cli team-notify-test
+sudo docker exec kronto-monitoring-alert-mail-1 python -m corp_ed.alert_mail test
+```
+Два письма за минуту. Тревога целиком (Alertmanager → письмо) —
+пробная, приходит через ~30 секунд:
+```bash
+sudo docker exec kronto-monitoring-alertmanager-1 \
+  wget -qO- --header 'Content-Type: application/json' \
+  --post-data '[{"labels":{"alertname":"Test","severity":"warning","stand":"stage"},"annotations":{"summary":"Проверка тревог","description":"Пробная тревога, ничего делать не нужно."}}]' \
+  http://127.0.0.1:9093/api/v2/alerts
+```
+
+Бот в Telegram (`TEAM_NOTIFY_TELEGRAM_*`) в `.env` сервера **не
+задавать**: с сервера стенда Telegram недоступен (проверено 14.10, RISKS
+№50), сообщения ждали бы таймаута и терялись. Бот живёт в секретах
+GitHub — для сообщений «стенд упал / поднялся» (§4.8).
 
 ### 4.5а. Письма: Yandex Cloud Postbox (ТЗ §3)
 
@@ -562,8 +584,9 @@ Workflow **Stage resume** раз в 10 минут (`deploy/stage/resume.py`):
 
 **Настройка.**
 
-1. **Бот и чат Telegram** — те же, что у приложения
-   (`TEAM_NOTIFY_TELEGRAM_*`, §4.5). Если их ещё нет: в Telegram
+1. **Бот и чат Telegram** — только для этого workflow: он идёт с машин
+   GitHub, откуда Telegram доступен, а с сервера стенда — нет (RISKS
+   №50; на сервере уведомления — почтой, §4.5). Создать: в Telegram
    `@BotFather` → `/newbot` → имя → он пришлёт токен. Создать группу
    команды, добавить в неё бота, написать в группе `/start`, затем
    открыть в браузере `https://api.telegram.org/bot<токен>/getUpdates` —
@@ -868,8 +891,9 @@ Yandex Cloud — `open`. Хоть одна строка `FAIL` — снять п
 - **Мониторинг:** `https://stage.krontoai.ru/grafana/` — дашборд
   «Kronto — стенд»: доступность и SLO, время ответа, ответы по источнику,
   деградации, очереди воркера, процессор, память, диск, ночные задачи,
-  ошибки из логов. Тревоги — в Telegram (если заданы
-  `TEAM_NOTIFY_TELEGRAM_*`), правила — `deploy/monitoring/prometheus/rules/`.
+  ошибки из логов. Тревоги — письмом на `TEAM_NOTIFY_EMAIL` (сервис
+  `alert-mail`, §4.5) и/или в Telegram, если заданы
+  `TEAM_NOTIFY_TELEGRAM_*`; правила — `deploy/monitoring/prometheus/rules/`.
   SLO — одно число в `deploy/monitoring/prometheus/rules/slo.yml`.
 - **Логи:**
   - сервисы: `cd /opt/kronto && docker compose -f compose.yaml logs -f
@@ -912,12 +936,12 @@ Yandex Cloud — `open`. Хоть одна строка `FAIL` — снять п
   затем выкатка (или `docker compose up -d api`). Версия политики — та,
   что указана на странице политики лендинга: сменили текст — новая версия
   в обоих местах. Проверка: `curl -s https://stage.krontoai.ru/api/v1/leads/form`
-  отдаёт `"enabled":true`. Письмо уходит через Postbox (`MAIL_BACKEND`),
-  в Telegram — без контактов (`TEAM_NOTIFY_TELEGRAM_*`).
-- **Telegram.** Стенд — то место, где стоит проверить
-  `curl -m 10 https://api.telegram.org` с российского сервера (RISKS №50)
-  до того, как включать `TEAM_NOTIFY_TELEGRAM_*` (заявки и тревоги
-  мониторинга).
+  отдаёт `"enabled":true`. Письмо с контактами уходит через Postbox
+  (`MAIL_BACKEND`), короткое уведомление без контактов — на
+  `TEAM_NOTIFY_EMAIL`.
+- **Telegram.** С сервера стенда недоступен (14.10: адрес находится,
+  соединение не устанавливается; RISKS №50). Уведомления с сервера —
+  почтой (§4.5), Telegram — только из GitHub (§4.8).
 - **SSH.** Вход — только по ключам. Когда свой ключ проверен, пароль
   для SSH лучше выключить (`PasswordAuthentication no` в
   `/etc/ssh/sshd_config`, затем `systemctl reload ssh`).

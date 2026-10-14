@@ -1,5 +1,5 @@
-"""Уведомления команде в Telegram (П-5): отправка в фоне, сбои не ломают
-работу, токен не попадает в логи, тексты без персональных данных."""
+"""Уведомления команде (П-5): почта и Telegram, отправка в фоне, сбои не
+ломают работу, токен не попадает в логи, тексты без персональных данных."""
 
 import json
 from datetime import date, datetime
@@ -9,18 +9,23 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from structlog.testing import capture_logs
 
 from corp_ed.core.config import TeamNotifySettings
-from corp_ed.domain.models import Tenant, User
+from corp_ed.domain.models import OutboxEmail, Tenant, User
+from corp_ed.services.email_templates import team_notice
 from corp_ed.services.team_notify import (
     NULL_NOTIFIER,
+    EmailNotifier,
+    FanoutNotifier,
     TelegramNotifier,
     billing_overdue_message,
     build_team_notifier,
     connector_stopped_message,
     credit_order_message,
+    drain,
     lead_message,
     payment_review_message,
     pool_exhausted_message,
@@ -79,7 +84,15 @@ def test_settings_need_both_token_and_chat() -> None:
         TeamNotifySettings(telegram_chat_id="-100500")
 
 
-async def test_not_configured_means_no_notifications() -> None:
+def test_settings_check_the_email() -> None:
+    assert TeamNotifySettings(email=" ops@krontoai.ru ").email == "ops@krontoai.ru"
+    with pytest.raises(ValidationError, match="TEAM_NOTIFY_EMAIL"):
+        TeamNotifySettings(email="ops")
+
+
+async def test_not_configured_means_no_notifications(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
     async with httpx.AsyncClient() as client:
         assert build_team_notifier(client, TeamNotifySettings()) is NULL_NOTIFIER
         configured = TeamNotifySettings(
@@ -87,6 +100,91 @@ async def test_not_configured_means_no_notifications() -> None:
             telegram_chat_id="-100500",
         )
         assert isinstance(build_team_notifier(client, configured), TelegramNotifier)
+        mail = TeamNotifySettings(email="ops@krontoai.ru")
+        assert isinstance(
+            build_team_notifier(client, mail, session_maker), EmailNotifier
+        )
+        both = TeamNotifySettings(
+            email="ops@krontoai.ru",
+            telegram_bot_token=TOKEN,  # type: ignore[arg-type]
+            telegram_chat_id="-100500",
+        )
+        fanout = build_team_notifier(client, both, session_maker)
+        assert isinstance(fanout, FanoutNotifier)
+        assert [type(c) for c in fanout.channels] == [EmailNotifier, TelegramNotifier]
+        # Почта без фабрики сессий — ошибка старта, а не тишина.
+        with pytest.raises(ValueError, match="TEAM_NOTIFY_EMAIL"):
+            build_team_notifier(client, mail)
+
+
+async def test_email_goes_to_the_mail_queue(
+    session: AsyncSession, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    notifier = EmailNotifier(session_maker, "ops@krontoai.ru")
+    notifier.notify("Компания 1a2b3c4d: подключение yandex360 остановлено.")
+    await drain(notifier)
+
+    [email] = (await session.scalars(select(OutboxEmail))).all()
+    assert email.to_email == "ops@krontoai.ru"
+    assert email.kind == "team_notice"
+    assert email.subject == (
+        "kronto: Компания 1a2b3c4d: подключение yandex360 остановлено."
+    )
+    assert email.text_body == "Компания 1a2b3c4d: подключение yandex360 остановлено."
+
+
+async def test_email_and_telegram_both_get_the_message(
+    session: AsyncSession, session_maker: async_sessionmaker[AsyncSession]
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        notifier = FanoutNotifier(
+            [
+                EmailNotifier(session_maker, "ops@krontoai.ru"),
+                TelegramNotifier(client, TOKEN, "-100500"),
+            ]
+        )
+        notifier.notify("Новая заявка")
+        await drain(notifier)
+
+    assert len(requests) == 1
+    assert len((await session.scalars(select(OutboxEmail))).all()) == 1
+
+
+async def test_email_failure_is_logged_not_raised() -> None:
+    def broken() -> None:
+        raise ConnectionError("database is down")
+
+    notifier = EmailNotifier(broken, "ops@krontoai.ru")  # type: ignore[arg-type]
+    with capture_logs() as logs:
+        notifier.notify("текст")
+        await drain(notifier)
+
+    [entry] = [log for log in logs if log["event"] == "team_notify_failed"]
+    assert entry == {
+        "event": "team_notify_failed",
+        "channel": "email",
+        "error": "ConnectionError",
+        "log_level": "warning",
+    }
+
+
+def test_long_notice_subject_is_clipped_by_word() -> None:
+    text = (
+        "Компания 1a2b3c4d исчерпала пул: 12600 из 12600 кредитов, купленных нет. "
+        "Вопросы остановлены до 01.10; пакет кредитов — заказом администратора."
+    )
+    email = team_notice(text)
+    assert email.subject.startswith("kronto: Компания 1a2b3c4d исчерпала пул")
+    assert email.subject.endswith("…")
+    assert len(email.subject) <= len("kronto: ") + 90
+    assert email.text == text
+    assert "&lt;" in team_notice("<b>x</b>").html
 
 
 def test_messages_carry_no_personal_data() -> None:

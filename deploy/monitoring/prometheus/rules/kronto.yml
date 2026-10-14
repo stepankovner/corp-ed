@@ -1,5 +1,5 @@
 # Тревоги стенда (MONITORING-RESEARCH.md §1 — сценарии отказов).
-# severity: critical — сразу в Telegram, повтор раз в час; warning — повтор
+# severity: critical — сразу (почта, Telegram), повтор раз в час; warning — повтор
 # раз в 4 часа. Звонки ночью — только с боевого сервера (Ping-Admin), на
 # прерываемом стенде — нет (решение 30.09).
 groups:
