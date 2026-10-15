@@ -172,6 +172,10 @@ class R7OfficeAdapter:
         roots = self._folders or [COMMON_ROOT]
         seen: set[str] = set()
         for root in roots:
+            # Папка из настройки внутри другой из настройки — один обход.
+            if root in seen:
+                continue
+            seen.add(root)
             async for document in self._walk(root, [], 0, seen):
                 yield document
 

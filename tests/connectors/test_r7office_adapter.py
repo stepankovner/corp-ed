@@ -301,6 +301,15 @@ async def test_configured_folders_narrow_the_walk(server: FakeR7) -> None:
     documents = await listed(make_adapter(server, folders=("21",)))
     assert set(documents) == {"file:200"}
     assert documents["file:200"].path == "Бюджет"
+    for order in (("20", "21"), ("21", "20")):
+        server.calls.clear()
+        nested = [d async for d in make_adapter(server, folders=order).list(["common"])]
+        assert sorted(d.external_id for d in nested) == [
+            "file:200",
+            "file:201",
+            "file:202",
+        ]
+        assert [r for _, r, _ in server.calls].count("files/21") == 1
 
 
 async def test_configured_folder_outside_common_or_missing_is_a_config_error(
