@@ -140,6 +140,30 @@ async def test_grouping_by_namespace_matches_per_item_checks() -> None:
         )
 
 
+async def test_namespaces_narrow_the_walk() -> None:
+    with local_stand(URL):
+        async with stand_http() as raw:
+            adapter = build_adapter(
+                SPEC,
+                {"base_url": URL, "users": USER_LIST, "namespaces": "hr"},
+                {"token": TOKEN},
+                outbound.OutboundClient(raw),
+                _settings(),
+            )
+            documents = {
+                d.external_id: d async for d in adapter.list(["pages", "media"])
+            }
+    assert set(documents) == {
+        "page:hr:onboarding",
+        "page:hr:salaries",
+        "media:hr:otpuska.docx",
+    }
+    for external_id, document in documents.items():
+        assert document.allowed_emails == {_email(u) for u in EXPECTED[external_id]}, (
+            external_id
+        )
+
+
 async def test_login_and_password_work_too() -> None:
     documents = await _listing({"login": "admin", "password": PASSWORD})
     _assert_expected(documents)

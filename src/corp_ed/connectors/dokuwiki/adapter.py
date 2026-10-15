@@ -25,7 +25,8 @@
 остальные — один раз на пространство и логин (медиафайлы пространства
 делят результат с его страницами). Без плагина acl — поштучно. Больше
 ACL_CHECK_LIMIT вызовов за запуск — остановка с кодом
-`acl_checks_limit`, а не частичный индекс.
+`acl_checks_limit`, а не частичный индекс: сузить обход полем
+«Пространства» или список сотрудников.
 
 Ограничения (в сторону, которую нельзя проверить по API):
 
@@ -45,7 +46,8 @@ ACL_CHECK_LIMIT вызовов за запуск — остановка с ко�
 
 Обход: `core.listPages` с глубиной вместо 0 (0 в корне — поисковый
 индекс, где нет ещё не проиндексированных страниц) и `core.listMedia`
-по всей вики; удалённые страницы и файлы исчезают из листинга и
+по всей вики или по пространствам из настройки (с вложенными);
+удалённые страницы и файлы исчезают из листинга и
 удаляются ядром. Версия — `revision` (время изменения). Страница —
 `core.getPageHTML` (HTML без шапки и меню), файл — `core.getMedia`
 (base64) поддерживаемых форматов.
@@ -117,6 +119,11 @@ SPEC = KindSpec(
             "Сотрудники: «логин почта» по одному на строку (или через ;)",
             max_length=USERS_FIELD_LENGTH,
         ),
+        FieldSpec(
+            "namespaces",
+            "Пространства через запятую, с вложенными (пусто — вся вики)",
+            required=False,
+        ),
     ),
     credential_fields=(
         FieldSpec(
@@ -126,7 +133,12 @@ SPEC = KindSpec(
             secret=True,
         ),
         FieldSpec("login", "Логин суперпользователя (вместо токена)", required=False),
-        FieldSpec("password", "Пароль суперпользователя", required=False, secret=True),
+        FieldSpec(
+            "password",
+            "Пароль суперпользователя (без «:» — иначе нужен токен)",
+            required=False,
+            secret=True,
+        ),
     ),
     url_field="base_url",
     config_check=lambda config: _users_error(config.get("users", "")),
@@ -175,6 +187,17 @@ def parse_users(text: str) -> dict[str, str]:
     return users
 
 
+def parse_namespaces(text: str) -> list[str]:
+    """«hr, wiki:docs:*» → ["hr", "wiki:docs"]: двоеточия и звёздочка по
+    краям не нужны, повторы убираются."""
+    found: list[str] = []
+    for raw in text.split(","):
+        namespace = raw.strip().strip(":*").strip()
+        if namespace and namespace not in found:
+            found.append(namespace)
+    return found
+
+
 def _users_error(text: str) -> str | None:
     try:
         parse_users(text)
@@ -190,10 +213,13 @@ class DokuWikiAdapter:
         *,
         users: Mapping[str, str],
         max_bytes: int,
+        namespaces: Sequence[str] = (),
         acl_check_limit: int = ACL_CHECK_LIMIT,
     ) -> None:
         self._client = client
         self._users = dict(users)
+        # Пусто — корень (вся вики).
+        self._namespaces = list(namespaces) or [""]
         self._max_bytes = max_bytes
         self._acl_check_limit = acl_check_limit
         self._checked = False
@@ -230,22 +256,29 @@ class DokuWikiAdapter:
         self._exact = await self._exact_scopes()
         self._readers = {}
         self._acl_checks = 0
+        # Вложенные пространства из настройки дали бы документ дважды.
+        seen: set[str] = set()
         if MODULE_PAGES in wanted:
-            pages = await self._client.call(
-                "core.listPages", {"namespace": "", "depth": LIST_DEPTH}
-            )
-            for page in _items(pages):
-                document = await self._page(page)
-                if document is not None:
-                    yield document
+            for namespace in self._namespaces:
+                pages = await self._client.call(
+                    "core.listPages", {"namespace": namespace, "depth": LIST_DEPTH}
+                )
+                for page in _items(pages):
+                    if _once(seen, PAGE_PREFIX, page):
+                        document = await self._page(page)
+                        if document is not None:
+                            yield document
         if MODULE_MEDIA in wanted:
-            files = await self._client.call(
-                "core.listMedia", {"namespace": "", "pattern": "", "depth": 0}
-            )
-            for item in _items(files):
-                document = await self._media(item)
-                if document is not None:
-                    yield document
+            for namespace in self._namespaces:
+                files = await self._client.call(
+                    "core.listMedia",
+                    {"namespace": namespace, "pattern": "", "depth": 0},
+                )
+                for item in _items(files):
+                    if _once(seen, MEDIA_PREFIX, item):
+                        document = await self._media(item)
+                        if document is not None:
+                            yield document
 
     async def fetch(
         self, document: RemoteDocument, *, max_bytes: int
@@ -399,6 +432,14 @@ def _items(value: Any) -> list[Mapping[str, Any]]:
     return [item for item in value if isinstance(item, dict)]
 
 
+def _once(seen: set[str], prefix: str, item: Mapping[str, Any]) -> bool:
+    key = f"{prefix}{item.get('id')}"
+    if key in seen:
+        return False
+    seen.add(key)
+    return True
+
+
 def _basename(item_id: str) -> str:
     return item_id.rpartition(":")[2] or item_id
 
@@ -447,6 +488,7 @@ def build_adapter(
         DokuWikiClient(http, base_url=base_url, auth=auth, recorder=recorder),
         users=users,
         max_bytes=settings.download_limit_bytes,
+        namespaces=parse_namespaces(config.get("namespaces", "")),
     )
 
 

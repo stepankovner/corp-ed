@@ -22,6 +22,7 @@ from corp_ed.connectors.dokuwiki.adapter import (
     SPEC,
     DokuWikiAdapter,
     build_adapter,
+    parse_namespaces,
     parse_users,
     register,
 )
@@ -115,6 +116,7 @@ def test_spec_is_hidden_organization_kind() -> None:
     assert [(f.name, f.required) for f in SPEC.config_fields] == [
         ("base_url", True),
         ("users", True),
+        ("namespaces", False),
     ]
     assert [(f.name, f.secret) for f in SPEC.credential_fields] == [
         ("token", True),
@@ -465,6 +467,46 @@ async def test_unknown_login_gets_only_public_rights(server: FakeDokuWiki) -> No
     )
     assert documents["page:public:vacation"].allowed_emails == {"ghost@example.com"}
     assert documents["page:start"].allowed_emails == frozenset()
+
+
+def test_namespaces_setting_is_parsed() -> None:
+    assert parse_namespaces(" hr, :sales:*, hr ,, wiki:docs ") == [
+        "hr",
+        "sales",
+        "wiki:docs",
+    ]
+    assert parse_namespaces("") == []
+
+
+async def test_namespaces_narrow_the_walk(server: FakeDokuWiki) -> None:
+    server.add_page("hr:team:roles", "<p>Роли</p>")
+    client = DokuWikiClient(
+        server.client(), base_url=server.base, auth=TokenAuth(ADMIN_TOKEN)
+    )
+    adapter = DokuWikiAdapter(
+        client, users=USERS, max_bytes=MAX_BYTES, namespaces=["hr", "hr:team"]
+    )
+    documents = await listed(adapter)
+    # Вложенное пространство из настройки не даёт документ дважды.
+    assert sorted(documents) == [
+        "media:hr:policy.pdf",
+        "page:hr:onboarding",
+        "page:hr:salaries",
+        "page:hr:team:roles",
+    ]
+    walked = [p["namespace"] for m, p in server.calls if m == "core.listPages"]
+    assert walked == ["hr", "hr:team"]
+
+
+def test_build_passes_namespaces(server: FakeDokuWiki) -> None:
+    adapter = build_adapter(
+        SPEC,
+        {"base_url": server.base, "users": USERS_TEXT, "namespaces": "hr,sales"},
+        {"token": ADMIN_TOKEN},
+        server.client(),
+        settings(),
+    )
+    assert adapter._namespaces == ["hr", "sales"]
 
 
 async def test_acl_check_limit_stops_the_run(server: FakeDokuWiki) -> None:

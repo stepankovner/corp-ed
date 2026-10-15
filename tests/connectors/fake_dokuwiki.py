@@ -257,6 +257,7 @@ class FakeDokuWiki:
                 raise _FailError(403, -32604, "forbidden to call core.getPageHTML")
             return self.pages[page_id]["html"]
         if method == "core.listMedia":
+            prefix = f"{params['namespace']}:" if params.get("namespace") else ""
             return [
                 {
                     "id": media_id,
@@ -268,7 +269,8 @@ class FakeDokuWiki:
                     "author": "",
                 }
                 for media_id, item in sorted(self.media.items())
-                if self.permission(media_id, login, groups) >= 1
+                if media_id.startswith(prefix)
+                and self.permission(media_id, login, groups) >= 1
             ]
         if method == "core.getMedia":
             media_id = str(params.get("media", ""))
