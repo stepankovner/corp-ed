@@ -48,6 +48,9 @@ class Stand:
     двух); пусто — все."""
     files: tuple[str, ...] = ()
     """Дополнительные compose-файлы поверх основного (пути от корня)."""
+    env_files: tuple[tuple[str, str], ...] = ()
+    """Переменная compose → файл, из которого берётся её значение (тестовая
+    лицензия Atlassian лежит вне репозитория)."""
 
     @property
     def project(self) -> str:
@@ -136,6 +139,7 @@ STANDS: dict[str, Stand] = {
             "CONFLUENCE_PORT",
             8543,
             "/status",
+            env_files=(("CONFLUENCE_LICENSE", "~/.kronto-acc/confluence.key"),),
             scheme="http",
             wait_seconds=600,
         ),
@@ -191,8 +195,14 @@ def compose_args(stand: Stand, *args: str) -> list[str]:
 
 
 def compose_env(stand: Stand) -> dict[str, str]:
+    from_files = {}
+    for name, path in stand.env_files:
+        file = Path(path).expanduser()
+        if name not in os.environ and file.exists():
+            from_files[name] = file.read_text(encoding="utf-8").strip()
     return {
         **os.environ,
+        **from_files,
         **{key: os.path.expanduser(value) for key, value in stand.env.items()},
         stand.port_env: str(stand.port),
         "DAV_TLS_DIR": str(ensure_tls()),

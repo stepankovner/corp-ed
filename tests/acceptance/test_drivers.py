@@ -76,3 +76,37 @@ def test_seafile_groups_are_named_by_zone() -> None:
     from tests.acceptance.systems.seafile import group_name
 
     assert group_name("payroll") == "acc-payroll"
+
+
+def test_confluence_storage_format_and_names() -> None:
+    from tests.acceptance.systems.confluence_dc import (
+        group_name,
+        space_key,
+        to_storage,
+    )
+
+    text = to_storage(
+        "# Заголовок\n\n- пункт <1>\n- пункт 2\n1. шаг\n\n**Жирный** & текст\n\n"
+        "| a | b |\n|---|---|\n| 1 | 2 |\n"
+    )
+
+    assert "<h1>Заголовок</h1>" in text
+    assert "<ul>\n<li>пункт &lt;1&gt;</li>\n<li>пункт 2</li>\n</ul>" in text
+    assert "<ol>\n<li>шаг</li>\n</ol>" in text
+    assert "<p><strong>Жирный</strong> &amp; текст</p>" in text
+    assert "<tr><th>a</th><th>b</th></tr>" in text
+    assert "<tr><td>1</td><td>2</td></tr>" in text
+    assert space_key("payroll") == "PAYROLL"
+    assert group_name("payroll") == "acc-payroll"
+
+
+def test_atlassian_systems_fit_the_ten_user_license() -> None:
+    """Тестовая лицензия — 10 пользователей: администратор плюс сотрудники."""
+    for name in ("confluence_dc", "jira_dc"):
+        accounts = MANIFEST.systems[name].accounts
+        assert len(accounts) <= 9, name
+        # У каждой закрытой зоны есть и читатели, и не читатели.
+        for zone in MANIFEST.zones.values():
+            if zone.closed:
+                readers = MANIFEST.readers_of(zone.id) & set(accounts)
+                assert readers and set(accounts) - readers, (name, zone.id)

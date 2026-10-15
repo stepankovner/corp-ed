@@ -15,6 +15,7 @@ from tests.acceptance.systems.base import (
     read_credentials,
 )
 from tests.acceptance.systems.bookstack import BookStackDriver
+from tests.acceptance.systems.confluence_dc import ConfluenceDriver
 from tests.acceptance.systems.dokuwiki import DokuWikiDriver
 from tests.acceptance.systems.mediawiki import MediaWikiDriver
 from tests.acceptance.systems.nextcloud import NextcloudDriver, OwnCloudDriver
@@ -33,6 +34,7 @@ DRIVERS: dict[str, type[Driver]] = {
     "mediawiki": MediaWikiDriver,
     "seafile": SeafileDriver,
     "outline": OutlineDriver,
+    "confluence_dc": ConfluenceDriver,
 }
 
 # Поля токенов OAuth-сотрудника (то, что ядро кладёт в грант после обмена

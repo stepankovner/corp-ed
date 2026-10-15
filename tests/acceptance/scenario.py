@@ -182,10 +182,43 @@ class Setup:
 
 
 @contextmanager
+def plain_http_stand(url: str) -> Iterator[None]:
+    """Пропустить проверку адреса для стенда по http (Confluence и Jira
+    слушают сами, без TLS-прокси): в бою адаптер ходит только на публичные
+    https-адреса (core/outbound.py), всё остальное идёт как в бою."""
+    import httpx
+    import pytest
+
+    stand = httpx.URL(url)
+    original = outbound.validate_outbound_url
+
+    async def validate(
+        target_url: str, *, resolver: outbound.Resolver | None = None
+    ) -> outbound.OutboundTarget:
+        target = httpx.URL(target_url)
+        if (target.host, target.port) == (stand.host, stand.port):
+            return outbound.OutboundTarget(
+                url=target_url,
+                host=target.host,
+                port=target.port or 80,
+                address=target.host,
+            )
+        return await original(target_url, resolver=resolver)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(outbound, "validate_outbound_url", validate)
+        yield
+
+
+@contextmanager
 def _stand_trust(driver: Driver, ca: str) -> Iterator[None]:
     url = driver.stand_url()
     if url is None:
         yield
+        return
+    if url.startswith("http://"):
+        with plain_http_stand(url):
+            yield
         return
     from tests.live.dav_stand import local_stand
 
