@@ -234,14 +234,22 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     settings — лимит размера документа и адрес сервера авторизации:
     адаптеры получают их отсюда, а не читают окружение сами.
     """
+    from corp_ed.connectors.amocrm import register as register_amocrm
     from corp_ed.connectors.bitrix24 import register as register_bitrix24
+    from corp_ed.connectors.bookstack import register as register_bookstack
     from corp_ed.connectors.confluence import register as register_confluence
+    from corp_ed.connectors.dokuwiki import register as register_dokuwiki
+    from corp_ed.connectors.elma365 import register as register_elma365
     from corp_ed.connectors.gdrive import register as register_gdrive
     from corp_ed.connectors.kaiten import register as register_kaiten
+    from corp_ed.connectors.m365 import register as register_m365
+    from corp_ed.connectors.mediawiki import register as register_mediawiki
     from corp_ed.connectors.outline import register as register_outline
+    from corp_ed.connectors.r7office import register as register_r7office
     from corp_ed.connectors.smb_agent import register as register_smb_agent
     from corp_ed.connectors.webdav import register as register_webdav
     from corp_ed.connectors.website import register as register_website
+    from corp_ed.connectors.wikijs import register as register_wikijs
     from corp_ed.connectors.yandex import register as register_yandex
 
     registry = AdapterRegistry(
@@ -258,6 +266,14 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     register_kaiten(registry, settings)
     register_outline(registry, settings)
     register_smb_agent(registry, settings)
+    register_bookstack(registry, settings)
+    register_wikijs(registry, settings)
+    register_m365(registry, settings)
+    register_amocrm(registry, settings)
+    register_elma365(registry, settings)
+    register_mediawiki(registry, settings)
+    register_dokuwiki(registry, settings)
+    register_r7office(registry, settings)
     if unknown := registry.unknown_hidden():
         # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
         # все ручки подключений: реестр собирается при первом запросе.

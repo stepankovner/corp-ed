@@ -108,7 +108,9 @@ ERROR_CREDENTIALS_MISSING = "credentials_missing"
 ERROR_CREDENTIALS_UNREADABLE = "credentials_unreadable"
 ERROR_KIND_UNKNOWN = "kind_unknown"
 ERROR_SOURCE_UNAVAILABLE = "source_unavailable"
-ACTIONABLE_SOURCE_CODES = frozenset({"tree_too_large", "tree_too_deep"})
+ACTIONABLE_SOURCE_CODES = frozenset(
+    {"tree_too_large", "tree_too_deep", "too_many_entities"}
+)
 """Ошибки адаптера, которые администратор исправляет сам (сузить папки в
 настройках), — запуск падает с ними, а не с общим source_unavailable."""
 
