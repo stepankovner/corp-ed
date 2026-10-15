@@ -30,7 +30,7 @@ Flash через OpenAI-совместимый API, text-embeddings-v2 с раз
    его секция целиком или окно соседей. Колонки context_kinds,
    context_tokens и evidence_in_context (цитата эталона попала в
    контекст) считаются и без LLM: --dry-run — бесплатный замер;
-4. build_faq_messages (промпт PROMPT_VERSION) → LLM →
+4. build_faq_messages (промпт SEARCH_PROMPT_VERSION, второй шаг поиска) → LLM →
    normalize_citations ([4.2] → номер выдержки), как должен делать бэкенд;
 5. general: модель по выдержкам ответила отказом (is_not_found) — второй
    вызов, общий ответ с пометкой (колонка general_after_refusal).
@@ -65,7 +65,7 @@ from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import (
     NOT_FOUND_ANSWER,
-    PROMPT_VERSION,
+    SEARCH_PROMPT_VERSION,
     build_faq_messages,
     build_general_messages,
     ensure_general_prefix,
@@ -426,6 +426,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL)
     parser.add_argument(
+        "--llm-provider",
+        choices=("yandex", "mws", "cloudru"),
+        default="yandex",
+        help="поставщик модели ответа (план резерва 15.10): mws, cloudru — "
+        "OpenAI-совместимый API, ключ и адрес из .env; --model — имя у поставщика",
+    )
+    parser.add_argument(
         "--embedding-dim", type=int, default=None, help="по умолчанию 768 для v2"
     )
     parser.add_argument("--limit", type=int, default=5, help="faq_limit (E4)")
@@ -503,6 +510,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    from eval.providers import OpenAICompatibleClient
     from eval.yandex import YandexClient
 
     llm_extra = json.loads(args.llm_extra) if args.llm_extra else None
@@ -625,7 +633,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{reranker.scoring_ms / 1000:.1f} с (остальное из кэша)"
         )
     # --dry-run: LLM не вызывается — поиск и контекст замеряются бесплатно.
-    client = None if args.dry_run else YandexClient.from_env()
+    client: YandexClient | OpenAICompatibleClient | None = None
+    if not args.dry_run:
+        client = (
+            YandexClient.from_env()
+            if args.llm_provider == "yandex"
+            else OpenAICompatibleClient.from_env(args.llm_provider)
+        )
 
     def ask(messages: list[Message]) -> Completion:
         assert client is not None
@@ -840,7 +854,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "dataset": args.dataset.name + (f":{args.split}" if args.split else ""),
             "results_file": path.name,
             "notes": args.notes
-            or f"{PROMPT_VERSION}; {chunking.name}; ctx={args.context_tokens}; "
+            or f"{SEARCH_PROMPT_VERSION}; {args.llm_provider}:{args.model}; "
+            f"{chunking.name}; ctx={args.context_tokens}; "
             f"context={context_name.lstrip('-') or 'chunks'}",
         },
     )
