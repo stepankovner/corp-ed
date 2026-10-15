@@ -6,3 +6,10 @@
 e22105751ea08d3ff90927fb30c7031fb0e1a402:tests/blackbox/test_harness_smoke.py:generic-api-key:14
 e22105751ea08d3ff90927fb30c7031fb0e1a402:tests/blackbox/test_harness_smoke.py:generic-api-key:23
 e22105751ea08d3ff90927fb30c7031fb0e1a402:tests/blackbox/test_harness_smoke.py:generic-api-key:45
+
+# Коннекторы 15.10: пароль локального стенда DokuWiki в README, случайные
+# UUID поддельного сервера ELMA365, выдуманный deltaLink поддельного Graph.
+c9e207986e73f21f1f61b318da93be711a255fe2:tests/live/dokuwiki/README.md:curl-auth-user:42
+e8a74c3a8e971db4d2a6c79971b6a635491dbd1a:tests/connectors/fake_elma365.py:generic-api-key:42
+e8a74c3a8e971db4d2a6c79971b6a635491dbd1a:tests/connectors/fake_elma365.py:generic-api-key:43
+e1c16d8dbad5a4d903a788561b267312f0205064:tests/connectors/fake_m365.py:generic-api-key:835

@@ -241,6 +241,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.dokuwiki import register as register_dokuwiki
     from corp_ed.connectors.elma365 import register as register_elma365
     from corp_ed.connectors.gdrive import register as register_gdrive
+    from corp_ed.connectors.jira_dc import register as register_jira_dc
     from corp_ed.connectors.kaiten import register as register_kaiten
     from corp_ed.connectors.m365 import register as register_m365
     from corp_ed.connectors.mediawiki import register as register_mediawiki
@@ -274,6 +275,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     register_mediawiki(registry, settings)
     register_dokuwiki(registry, settings)
     register_r7office(registry, settings)
+    register_jira_dc(registry, settings)
     if unknown := registry.unknown_hidden():
         # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
         # все ручки подключений: реестр собирается при первом запросе.
