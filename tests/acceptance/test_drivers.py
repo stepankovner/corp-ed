@@ -55,3 +55,24 @@ def test_mediawiki_takes_only_the_open_zone() -> None:
 
     assert system.synced_zones == ("public",)
     assert {MANIFEST.documents[d].zone for d in system.docs} - {"public"}
+
+
+def test_outline_dex_config_matches_the_manifest() -> None:
+    from tests.acceptance.systems.outline import DEX_FILE, body_of, dex_config
+
+    config = dex_config(MANIFEST)
+
+    assert DEX_FILE.read_text(encoding="utf-8") == config
+    for employee in MANIFEST.employees.values():
+        assert f"email: {employee.email}" in config
+    assert "https://127.0.0.1:8542/auth/oidc.callback" in config
+    # Заголовок страницы Outline берёт из title, а не из текста.
+    assert body_of("# Название\n\nШифр документа: SV-X-001\n") == (
+        "Шифр документа: SV-X-001\n"
+    )
+
+
+def test_seafile_groups_are_named_by_zone() -> None:
+    from tests.acceptance.systems.seafile import group_name
+
+    assert group_name("payroll") == "acc-payroll"

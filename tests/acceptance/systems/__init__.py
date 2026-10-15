@@ -18,6 +18,7 @@ from tests.acceptance.systems.bookstack import BookStackDriver
 from tests.acceptance.systems.dokuwiki import DokuWikiDriver
 from tests.acceptance.systems.mediawiki import MediaWikiDriver
 from tests.acceptance.systems.nextcloud import NextcloudDriver, OwnCloudDriver
+from tests.acceptance.systems.outline import OutlineDriver
 from tests.acceptance.systems.seafile import SeafileDriver
 from tests.acceptance.systems.webdav import WebDavDriver
 from tests.acceptance.systems.wikijs import WikiJsDriver
@@ -31,6 +32,7 @@ DRIVERS: dict[str, type[Driver]] = {
     "wikijs": WikiJsDriver,
     "mediawiki": MediaWikiDriver,
     "seafile": SeafileDriver,
+    "outline": OutlineDriver,
 }
 
 # Поля токенов OAuth-сотрудника (то, что ядро кладёт в грант после обмена

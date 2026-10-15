@@ -1,0 +1,6 @@
+# Поверх tests/live/outline/compose.yaml для стенда приёмки: dex со своим
+# конфигом (сотрудники манифеста, адрес возврата на порт приёмки).
+services:
+  dex:
+    volumes:
+      - ../../acceptance/stands/outline-dex.yaml:/etc/dex/config.yaml:ro

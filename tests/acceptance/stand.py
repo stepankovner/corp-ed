@@ -126,6 +126,7 @@ STANDS: dict[str, Stand] = {
             "OUTLINE_PORT",
             8542,
             "/_health",
+            {"POSTGRES_VERSION": "15-alpine"},
             files=("tests/acceptance/stands/outline.yaml",),
             wait_seconds=420,
         ),
