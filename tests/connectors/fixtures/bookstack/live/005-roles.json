@@ -1,0 +1,109 @@
+{
+  "method": "roles",
+  "params": {
+    "count": 100,
+    "offset": 0,
+    "sort": "id"
+  },
+  "response": {
+    "data": [
+      {
+        "id": 1,
+        "display_name": "Admin",
+        "description": "Administrator of the whole application",
+        "created_at": "2026-10-15T10:28:16.000000Z",
+        "updated_at": "2026-10-15T10:28:16.000000Z",
+        "system_name": "admin",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 1,
+        "permissions_count": 62
+      },
+      {
+        "id": 2,
+        "display_name": "Editor",
+        "description": "User can edit Books, Chapters & Pages",
+        "created_at": "2026-10-15T10:28:16.000000Z",
+        "updated_at": "2026-10-15T10:28:16.000000Z",
+        "system_name": "",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 0,
+        "permissions_count": 40
+      },
+      {
+        "id": 4,
+        "display_name": "Public",
+        "description": "The role given to public visitors if allowed",
+        "created_at": "2026-10-15T10:28:16.000000Z",
+        "updated_at": "2026-10-15T10:28:16.000000Z",
+        "system_name": "public",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 1,
+        "permissions_count": 10
+      },
+      {
+        "id": 3,
+        "display_name": "Viewer",
+        "description": "User can view books & their content behind authentication",
+        "created_at": "2026-10-15T10:28:16.000000Z",
+        "updated_at": "2026-10-15T10:28:16.000000Z",
+        "system_name": "",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 0,
+        "permissions_count": 10
+      },
+      {
+        "id": 8,
+        "display_name": "Авторы",
+        "description": null,
+        "created_at": "2026-10-15T10:32:52.000000Z",
+        "updated_at": "2026-10-15T10:32:52.000000Z",
+        "system_name": "",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 1,
+        "permissions_count": 3
+      },
+      {
+        "id": 7,
+        "display_name": "Кадры",
+        "description": null,
+        "created_at": "2026-10-15T10:32:52.000000Z",
+        "updated_at": "2026-10-15T10:32:52.000000Z",
+        "system_name": "",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 1,
+        "permissions_count": 1
+      },
+      {
+        "id": 6,
+        "display_name": "Редакторы",
+        "description": null,
+        "created_at": "2026-10-15T10:32:52.000000Z",
+        "updated_at": "2026-10-15T10:32:52.000000Z",
+        "system_name": "",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 1,
+        "permissions_count": 4
+      },
+      {
+        "id": 5,
+        "display_name": "Сотрудники",
+        "description": null,
+        "created_at": "2026-10-15T10:32:51.000000Z",
+        "updated_at": "2026-10-15T10:32:51.000000Z",
+        "system_name": "",
+        "external_auth_id": "",
+        "mfa_enforced": false,
+        "users_count": 5,
+        "permissions_count": 1
+      }
+    ],
+    "total": 8
+  }
+}

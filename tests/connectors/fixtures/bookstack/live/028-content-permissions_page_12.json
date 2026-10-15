@@ -1,0 +1,19 @@
+{
+  "method": "content-permissions/page/12",
+  "params": {},
+  "response": {
+    "owner": {
+      "id": 6,
+      "name": "Olga",
+      "slug": "olga"
+    },
+    "role_permissions": [],
+    "fallback_permissions": {
+      "inheriting": true,
+      "view": null,
+      "create": null,
+      "update": null,
+      "delete": null
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "method": "attachments/2",
+  "params": {},
+  "response": {
+    "id": 2,
+    "name": "ведомость.txt",
+    "extension": "txt",
+    "uploaded_to": 8,
+    "external": false,
+    "order": 1,
+    "created_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "updated_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "created_at": "2026-10-15T10:33:05.000000Z",
+    "updated_at": "2026-10-15T10:33:05.000000Z",
+    "links": {
+      "html": "<a target=\"_blank\" href=\"https://127.0.0.1:8460/attachments/2\">ведомость.txt</a>",
+      "markdown": "[ведомость.txt](https://127.0.0.1:8460/attachments/2)"
+    },
+    "content": "0JLQtdC00L7QvNC+0YHRgtGMINC30LAg0YHQtdC90YLRj9Cx0YDRjC4="
+  }
+}

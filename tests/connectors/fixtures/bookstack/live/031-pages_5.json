@@ -1,0 +1,43 @@
+{
+  "method": "pages/5",
+  "params": {},
+  "response": {
+    "id": 5,
+    "type": "page",
+    "name": "Отпуск",
+    "slug": "otpusk",
+    "book_id": 1,
+    "chapter_id": null,
+    "priority": 3,
+    "created_at": "2026-10-15T10:32:59.000000Z",
+    "updated_at": "2026-10-15T10:32:59.000000Z",
+    "created_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "updated_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "owned_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "page_id": 5,
+    "draft": false,
+    "template": false,
+    "revision_count": 1,
+    "editor": "wysiwyg",
+    "html": "<p id=\"bkmrk-%D0%9E%D1%82%D0%BF%D1%83%D1%81%D0%BA-%E2%80%94-28-%D0%BA%D0%B0%D0%BB%D0%B5%D0%BD%D0%B4%D0%B0%D1%80\">Отпуск — 28 календарных дней.</p>",
+    "markdown": "",
+    "raw_html": "<p id=\"bkmrk-%D0%9E%D1%82%D0%BF%D1%83%D1%81%D0%BA-%E2%80%94-28-%D0%BA%D0%B0%D0%BB%D0%B5%D0%BD%D0%B4%D0%B0%D1%80\">Отпуск — 28 календарных дней.</p>",
+    "comments": {
+      "active": [],
+      "archived": []
+    },
+    "tags": []
+  }
+}

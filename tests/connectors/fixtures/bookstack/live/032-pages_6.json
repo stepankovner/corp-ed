@@ -1,0 +1,43 @@
+{
+  "method": "pages/6",
+  "params": {},
+  "response": {
+    "id": 6,
+    "type": "page",
+    "name": "Суточные",
+    "slug": "sutocnye",
+    "book_id": 1,
+    "chapter_id": 4,
+    "priority": 1,
+    "created_at": "2026-10-15T10:32:59.000000Z",
+    "updated_at": "2026-10-15T10:32:59.000000Z",
+    "created_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "updated_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "owned_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "page_id": 6,
+    "draft": false,
+    "template": false,
+    "revision_count": 1,
+    "editor": "wysiwyg",
+    "html": "<p id=\"bkmrk-%D0%A1%D1%83%D1%82%D0%BE%D1%87%D0%BD%D1%8B%D0%B5-%E2%80%94-700-%D1%80%D1%83%D0%B1%D0%BB%D0%B5\">Суточные — 700 рублей.</p>",
+    "markdown": "",
+    "raw_html": "<p id=\"bkmrk-%D0%A1%D1%83%D1%82%D0%BE%D1%87%D0%BD%D1%8B%D0%B5-%E2%80%94-700-%D1%80%D1%83%D0%B1%D0%BB%D0%B5\">Суточные — 700 рублей.</p>",
+    "comments": {
+      "active": [],
+      "archived": []
+    },
+    "tags": []
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "method": "content-permissions/book/2",
+  "params": {},
+  "response": {
+    "owner": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "role_permissions": [
+      {
+        "role_id": 7,
+        "view": true,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "role": {
+          "id": 7,
+          "display_name": "Кадры"
+        }
+      }
+    ],
+    "fallback_permissions": {
+      "inheriting": false,
+      "view": false,
+      "create": false,
+      "update": false,
+      "delete": false
+    }
+  }
+}

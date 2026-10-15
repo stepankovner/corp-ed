@@ -1,0 +1,91 @@
+{
+  "method": "users",
+  "params": {
+    "count": 100,
+    "offset": 0,
+    "sort": "id"
+  },
+  "response": {
+    "data": [
+      {
+        "id": 1,
+        "name": "Admin",
+        "email": "admin@example.com",
+        "created_at": "2026-10-15T10:28:16.000000Z",
+        "updated_at": "2026-10-15T10:32:51.000000Z",
+        "external_auth_id": "",
+        "slug": "admin",
+        "last_activity_at": "2026-10-15T10:41:54.000000Z",
+        "profile_url": "https://127.0.0.1:8460/user/admin",
+        "edit_url": "https://127.0.0.1:8460/settings/users/1",
+        "avatar_url": "https://127.0.0.1:8460/user_avatar.png"
+      },
+      {
+        "id": 2,
+        "name": "Guest",
+        "email": "guest@example.com",
+        "created_at": "2026-10-15T10:28:16.000000Z",
+        "updated_at": "2026-10-15T10:28:16.000000Z",
+        "external_auth_id": "",
+        "slug": "guest",
+        "last_activity_at": null,
+        "profile_url": "https://127.0.0.1:8460/user/guest",
+        "edit_url": "https://127.0.0.1:8460/settings/users/2",
+        "avatar_url": "https://127.0.0.1:8460/user_avatar.png"
+      },
+      {
+        "id": 3,
+        "name": "Ivan",
+        "email": "ivan@example.com",
+        "created_at": "2026-10-15T10:32:53.000000Z",
+        "updated_at": "2026-10-15T10:32:53.000000Z",
+        "external_auth_id": "",
+        "slug": "ivan",
+        "last_activity_at": null,
+        "profile_url": "https://127.0.0.1:8460/user/ivan",
+        "edit_url": "https://127.0.0.1:8460/settings/users/3",
+        "avatar_url": "https://127.0.0.1:8460/user_avatar.png"
+      },
+      {
+        "id": 4,
+        "name": "Maria",
+        "email": "maria@example.com",
+        "created_at": "2026-10-15T10:32:54.000000Z",
+        "updated_at": "2026-10-15T10:32:54.000000Z",
+        "external_auth_id": "",
+        "slug": "maria",
+        "last_activity_at": null,
+        "profile_url": "https://127.0.0.1:8460/user/maria",
+        "edit_url": "https://127.0.0.1:8460/settings/users/4",
+        "avatar_url": "https://127.0.0.1:8460/user_avatar.png"
+      },
+      {
+        "id": 5,
+        "name": "Petr",
+        "email": "petr@example.com",
+        "created_at": "2026-10-15T10:32:55.000000Z",
+        "updated_at": "2026-10-15T10:32:55.000000Z",
+        "external_auth_id": "",
+        "slug": "petr",
+        "last_activity_at": null,
+        "profile_url": "https://127.0.0.1:8460/user/petr",
+        "edit_url": "https://127.0.0.1:8460/settings/users/5",
+        "avatar_url": "https://127.0.0.1:8460/user_avatar.png"
+      },
+      {
+        "id": 6,
+        "name": "Olga",
+        "email": "olga@example.com",
+        "created_at": "2026-10-15T10:32:55.000000Z",
+        "updated_at": "2026-10-15T10:32:55.000000Z",
+        "external_auth_id": "",
+        "slug": "olga",
+        "last_activity_at": null,
+        "profile_url": "https://127.0.0.1:8460/user/olga",
+        "edit_url": "https://127.0.0.1:8460/settings/users/6",
+        "avatar_url": "https://127.0.0.1:8460/user_avatar.png"
+      }
+    ],
+    "total": 6
+  }
+}
