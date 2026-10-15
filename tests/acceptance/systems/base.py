@@ -218,6 +218,8 @@ class Driver:
     seedable = False
     """Может разложить корпус по системе (Docker-стенд)."""
     default_port: int | None = None
+    config_required = True
+    """У вида есть обязательные поля config (адрес и т. п.)."""
 
     def __init__(self, system: System, manifest: Manifest, creds: Creds | None) -> None:
         self.system = system
@@ -242,7 +244,7 @@ class Driver:
         данных), или None."""
         if self.creds is None:
             return "нет учётных данных (файл ACC_CREDENTIALS или переменные ACC_…)"
-        if not self.creds.config:
+        if self.config_required and not self.creds.config:
             return "в учётных данных нет config подключения"
         if self.mode is ConnectorMode.ORGANIZATION and not self.creds.organization:
             return "нет учётных данных организации"

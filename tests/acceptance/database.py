@@ -152,3 +152,65 @@ async def create_employees(
             users[login] = user
         await session.commit()
     return users
+
+
+async def purge_previous_runs(url: str | None = None) -> int:
+    """Убрать компании прошлых запусков приёмки (код `acc-…`) вместе с их
+    сотрудниками и учётками.
+
+    Учётка — запись всей системы с уникальной почтой, и почты сотрудников
+    приёмки одни и те же в каждом запуске; без уборки второй запуск
+    упёрся бы в «почта уже есть». Работает под владельцем базы и временно
+    отключает проверку внешних ключей (session_replication_role), поэтому
+    — только для тестовой базы, адрес которой вы сами указали.
+    """
+    engine = create_async_engine(url or database_url())
+    removed = 0
+    try:
+        async with engine.begin() as conn:
+            ids = [
+                row[0]
+                for row in await conn.execute(
+                    text("SELECT id FROM tenants WHERE company_code LIKE 'acc-%'")
+                )
+            ]
+            if not ids:
+                return 0
+            await conn.execute(text("SET LOCAL session_replication_role = replica"))
+            accounts = [
+                row[0]
+                for row in await conn.execute(
+                    text("SELECT account_id FROM users WHERE tenant_id = ANY(:ids)"),
+                    {"ids": ids},
+                )
+            ]
+            tables = [
+                row[0]
+                for row in await conn.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.columns "
+                        "WHERE table_schema = 'public' AND column_name = 'tenant_id' "
+                        "AND table_name <> 'audit_events'"
+                    )
+                )
+            ]
+            for table in tables:
+                await conn.execute(
+                    text(f'DELETE FROM "{table}" WHERE tenant_id = ANY(:ids)'),
+                    {"ids": ids},
+                )
+            await conn.execute(
+                text("DELETE FROM tenants WHERE id = ANY(:ids)"), {"ids": ids}
+            )
+            if accounts:
+                await conn.execute(
+                    text(
+                        "DELETE FROM accounts WHERE id = ANY(:accounts) AND NOT EXISTS "
+                        "(SELECT 1 FROM users WHERE users.account_id = accounts.id)"
+                    ),
+                    {"accounts": accounts},
+                )
+            removed = len(ids)
+    finally:
+        await engine.dispose()
+    return removed

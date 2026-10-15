@@ -122,6 +122,15 @@ def compare(expected: Expected, obs: Observation, logins: list[str]) -> list[str
     return problems
 
 
+def coverage(expected: Expected, logins: list[str]) -> dict[str, int]:
+    """Сколько пар «сотрудник — документ» проверено: должен видеть и не
+    должен. Нули здесь означали бы, что сверка ничего не доказывает."""
+    return {
+        "checked_visible": sum(len(expected.visible_to(x)) for x in logins),
+        "checked_hidden": sum(len(expected.hidden_from(x)) for x in logins),
+    }
+
+
 async def observe(
     session_maker: async_sessionmaker[AsyncSession],
     tenant: Tenant,
@@ -224,8 +233,12 @@ async def build_setup(
     logins = effective_logins(system, driver)
     async with session_maker() as session:
         tenant = await create_tenant(session, system.id)
+        # В облаке письма-приглашения должны доходить, поэтому учётные записи
+        # заведены на реальном домене владельца (extra.email_domain), а не на
+        # вымышленном: почты сотрудников kronto берутся с того же домена.
+        domain = driver.creds.extra.get("email_domain") or manifest.domain
         people = {
-            login: (manifest.employees[login].email, manifest.employees[login].name)
+            login: (f"{login}@{domain}", manifest.employees[login].name)
             for login in logins
         }
         users = await create_employees(session, tenant, people)
@@ -396,6 +409,7 @@ async def run_step(
         setup.service.session_maker, setup.tenant, setup.connector.id, setup.users
     )
     problems += compare(expected, obs, setup.logins)
+    result.stats |= coverage(expected, setup.logins)
     result.details = problems + [f"пропущено: {s}" for s in skipped]
     result.status = FAIL if problems else OK
     return result
@@ -418,6 +432,7 @@ async def run_initial(
         setup.service.session_maker, setup.tenant, setup.connector.id, setup.users
     )
     problems += compare(expected, obs, setup.logins)
+    first.stats |= coverage(expected, setup.logins)
     if obs.without_code:
         first.stats["without_code"] = obs.without_code
     first.details = problems
@@ -437,6 +452,7 @@ async def run_initial(
         setup.service.session_maker, setup.tenant, setup.connector.id, setup.users
     )
     problems += compare(expected, obs, setup.logins)
+    second.stats |= coverage(expected, setup.logins)
     second.details = problems
     second.status = FAIL if problems else OK
     return [first, second]

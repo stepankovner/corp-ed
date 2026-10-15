@@ -31,7 +31,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tests.acceptance.database import open_database
+from tests.acceptance.database import open_database, purge_previous_runs
 from tests.acceptance.model import Manifest, System, load_manifest
 from tests.acceptance.scenario import (
     FAIL,
@@ -164,6 +164,8 @@ async def _amain(args: argparse.Namespace) -> int:
                     ]
                     continue
                 driver = make_driver(system, manifest, creds)
+            # Учётки сотрудников уникальны по почте: прошлые запуски убираются.
+            await purge_previous_runs(args.database_url)
             print(f"== {system.id} ({system.title})", flush=True)
             results += await run_system(
                 manifest,
@@ -223,7 +225,18 @@ async def _seed(
     return seeded
 
 
+def prepare_environment() -> None:
+    """Настройки приложения нужны разбору файлов в песочнице (режим сети).
+    Ключи — только для проверки, как в tests/conftest.py."""
+    os.environ.setdefault("SECRET_KEY", "acceptance-only-secret-key-" + "x" * 32)
+    for name in ("ACCEPTANCE_DATABASE_URL", "TEST_DATABASE_URL"):
+        if os.environ.get(name):
+            os.environ.setdefault("DATABASE_URL", os.environ[name])
+            break
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    prepare_environment()
     parser = argparse.ArgumentParser(
         prog="python -m tests.acceptance.run",
         description="Приёмка коннекторов kronto на вымышленной компании.",

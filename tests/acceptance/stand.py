@@ -148,8 +148,15 @@ def down(stand: Stand) -> None:
     )
 
 
-def exec_in(stand: Stand, service: str, *command: str, user: str | None = None) -> str:
-    """Выполнить команду в контейнере стенда (`docker compose exec`)."""
+def exec_in(
+    stand: Stand,
+    service: str,
+    *command: str,
+    user: str | None = None,
+    input_text: str | None = None,
+) -> str:
+    """Выполнить команду в контейнере стенда (`docker compose exec`);
+    input_text — на стандартный ввод команды."""
     args = ["exec", "-T"]
     if user:
         args += ["-u", user]
@@ -160,6 +167,7 @@ def exec_in(stand: Stand, service: str, *command: str, user: str | None = None) 
         cwd=ROOT,
         capture_output=True,
         text=True,
+        input=input_text,
     )
     return result.stdout
 

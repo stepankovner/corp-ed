@@ -15,12 +15,14 @@ from tests.acceptance.systems.base import (
     read_credentials,
 )
 from tests.acceptance.systems.bookstack import BookStackDriver
+from tests.acceptance.systems.dokuwiki import DokuWikiDriver
 from tests.acceptance.systems.nextcloud import NextcloudDriver, OwnCloudDriver
 
 DRIVERS: dict[str, type[Driver]] = {
     "bookstack": BookStackDriver,
     "nextcloud": NextcloudDriver,
     "owncloud": OwnCloudDriver,
+    "dokuwiki": DokuWikiDriver,
 }
 
 # Поля токенов OAuth-сотрудника (то, что ядро кладёт в грант после обмена
@@ -43,6 +45,7 @@ class GenericDriver(Driver):
         spec = kind_specs()[system.kind]
         self.mode = spec.mode
         self.modules = tuple(system.modules) or (spec.modules[0].name,)
+        self.config_required = any(f.required for f in spec.config_fields)
 
 
 def make_driver(system: System, manifest: Manifest, creds: Creds | None) -> Driver:
