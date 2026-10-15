@@ -312,6 +312,31 @@ async def test_search_request_is_hidden_and_its_stage_is_shown(
     assert "Дополнительный поиск" not in done["answer"]["content"]
 
 
+async def test_search_request_after_the_answer_is_not_shown(
+    api: httpx.AsyncClient,
+    employee: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+    fake_llm: FakeAdapter,
+) -> None:
+    # BH-44: модель ответила и в конце всё равно попросила поиск — строку
+    # сотрудник не видит ни в потоке, ни в сохранённом ответе; второго
+    # поиска нет.
+    await _document(session, tenant_ctx)
+    fake_llm.content = "Отпуск — 28 дней [1].\nДополнительный поиск: приказ"
+    fake_llm.pieces = ["Отпуск — 28 дней [1].\nДопол", "нительный поиск: приказ"]
+
+    events = await _ask(api, employee, "Сколько дней отпуска?")
+
+    shown = "".join(e["text"] for e in events if e["type"] == "delta")
+    assert shown.rstrip() == "Отпуск — 28 дней [1]."
+    assert {"type": "stage", "stage": "searching_more"} not in events
+    done = final(events)
+    assert done["answer"]["origin"] == "documents"
+    assert done["answer"]["content"] == "Отпуск — 28 дней [1]."
+    assert len(fake_llm.calls) == 1
+
+
 async def test_strict_mode_refusal(
     api: httpx.AsyncClient,
     employee: User,
