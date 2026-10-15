@@ -31,7 +31,7 @@ from corp_ed.connectors.base import (
     FetchedContent,
     RemoteDocument,
 )
-from corp_ed.connectors.common import Recorder
+from corp_ed.connectors.common import Recorder, split_list
 from corp_ed.connectors.elma365 import files as files_module
 from corp_ed.connectors.elma365.client import Elma365Client
 from corp_ed.connectors.registry import (
@@ -50,9 +50,7 @@ _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 
 def _folders(config: Mapping[str, str]) -> list[str]:
-    return [
-        f.strip().lower() for f in config.get("folders", "").split(",") if f.strip()
-    ]
+    return [folder.lower() for folder in split_list(config.get("folders", ""))]
 
 
 def _check_config(config: Mapping[str, str]) -> str | None:
@@ -76,8 +74,10 @@ SPEC = KindSpec(
         FieldSpec("base_url", "Адрес компании ELMA365 (https://компания.elma365.ru)"),
         FieldSpec(
             "folders",
-            "ID папок раздела «Файлы» через запятую (пусто — все доступные)",
+            "ID папок раздела «Файлы» по одному на строку или через запятую "
+            "(пусто — все доступные)",
             required=False,
+            multiline=True,
         ),
     ),
     credential_fields=(

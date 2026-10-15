@@ -74,6 +74,7 @@ const ACTIONS: Record<string, string> = {
   "connector.deleted": "Подключение удалено",
   "connector.credentials_set": "Ключи подключения заданы",
   "connector.sync_requested": "Запрошена синхронизация",
+  "connector.agent_token_issued": "Выпущен ключ агента сетевых папок",
   "connector.stopped": "Подключение остановлено",
   "connector.grant_set": "Сотрудник подключил источник",
   "connector.grant_expired": "Доступ сотрудника к источнику истёк",

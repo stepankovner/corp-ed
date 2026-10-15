@@ -39,6 +39,7 @@ from corp_ed.connectors.common import (
     OAUTH_CALLBACK_PATH,
     Recorder,
     TokenSet,
+    split_list,
     to_int,
 )
 from corp_ed.connectors.registry import (
@@ -56,7 +57,7 @@ KIND = "amocrm"
 
 
 def _pipelines(config: Mapping[str, str]) -> list[str]:
-    return [p.strip() for p in config.get("pipelines", "").split(",") if p.strip()]
+    return split_list(config.get("pipelines", ""))
 
 
 def _check_config(config: Mapping[str, str]) -> str | None:
@@ -85,8 +86,9 @@ SPEC = KindSpec(
         FieldSpec("client_id", "ID интеграции (client_id)"),
         FieldSpec(
             "pipelines",
-            "ID воронок сделок через запятую (пусто — все)",
+            "ID воронок сделок по одному на строку или через запятую (пусто — все)",
             required=False,
+            multiline=True,
         ),
     ),
     app_credential_fields=(

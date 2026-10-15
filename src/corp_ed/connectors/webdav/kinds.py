@@ -45,7 +45,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from corp_ed.connectors.common import OAUTH_CALLBACK_PATH
+from corp_ed.connectors.common import OAUTH_CALLBACK_PATH, split_list
 from corp_ed.connectors.registry import FieldSpec, KindSpec, ModuleSpec, UserAuth
 from corp_ed.domain.types import ConnectorMode
 
@@ -79,7 +79,7 @@ def parse_folders(value: str) -> list[tuple[str, ...]]:
     принимаются (папки только внутри дерева), больше MAX_FOLDERS — тоже.
     """
     folders: list[tuple[str, ...]] = []
-    for raw in value.split(","):
+    for raw in split_list(value):
         parts = tuple(part.strip() for part in raw.strip().strip("/").split("/"))
         if parts == ("",):
             continue
@@ -109,7 +109,10 @@ def _check_credentials(credentials: Mapping[str, str]) -> str | None:
 
 
 _FOLDERS = FieldSpec(
-    "folders", "Папки: пути через запятую, пусто — все", required=False
+    "folders",
+    "Папки: пути по одному на строку (или через запятую), пусто — все",
+    required=False,
+    multiline=True,
 )
 _MODULES = (ModuleSpec(MODULE_FILES, "Файлы и папки сотрудника, включая общие"),)
 

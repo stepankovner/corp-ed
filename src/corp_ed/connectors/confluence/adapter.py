@@ -45,6 +45,7 @@ from corp_ed.connectors.common import (
     note_too_large,
     note_unsupported,
     path_segment,
+    split_list,
     to_int,
 )
 from corp_ed.connectors.confluence.client import (
@@ -98,7 +99,12 @@ SPEC = KindSpec(
     ),
     config_fields=(
         FieldSpec("base_url", "Адрес Confluence (https://wiki.company.ru/)"),
-        FieldSpec("spaces", "Ключи пространств через запятую (пусто — все)", False),
+        FieldSpec(
+            "spaces",
+            "Ключи пространств по одному на строку или через запятую (пусто — все)",
+            False,
+            multiline=True,
+        ),
         FieldSpec(
             "email_template",
             "Почта из логина: {username}@company.ru (пусто — логин и есть почта)",
@@ -495,7 +501,7 @@ def build_adapter(
         raise AdapterConfigError("email_template_invalid")
     return ConfluenceAdapter(
         ConfluenceClient(http, base_url=base_url, auth=auth, recorder=recorder),
-        spaces=config.get("spaces", "").split(","),
+        spaces=split_list(config.get("spaces", "")),
         email_template=template,
         max_bytes=settings.download_limit_bytes,
     )

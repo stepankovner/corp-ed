@@ -81,6 +81,7 @@ from corp_ed.repositories.connector_sync_job_repository import (
 )
 from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.agent_ingest_service import issue_token
 
 logger = structlog.get_logger()
 
@@ -269,8 +270,14 @@ class ConnectorService:
         clean_config = await _validate_config(spec, config, self.resolver)
         # Публичный источник (сайт): ключей нет и не будет. Пустой набор
         # учётных данных — чтобы планировщик, проверка и синхронизация не
-        # ждали шага «задать ключи», которого у вида нет.
-        keyless = spec.mode is ConnectorMode.ORGANIZATION and not spec.credential_fields
+        # ждали шага «задать ключи», которого у вида нет. Агент сетевых
+        # папок (push) — не такой: ключ ему выпускает админ
+        # (issue_agent_token), до того «ключ не задан».
+        keyless = (
+            spec.mode is ConnectorMode.ORGANIZATION
+            and not spec.credential_fields
+            and not spec.push
+        )
         connector = await self.connectors.create(
             Connector(
                 kind=spec.kind,
@@ -405,6 +412,33 @@ class ConnectorService:
         await self.session.commit()
         await self.session.refresh(connector)
         return connector
+
+    async def issue_agent_token(self, actor: User, connector_id: UUID) -> str:
+        """Ключ агента сетевых папок (виды push); прежний перестаёт
+        действовать. В аудит — только вид подключения, без ключа.
+
+        Синхронизацию не ставим: у такого вида нет адаптера, документы
+        присылает сам агент. Остановку по ошибке снимаем, как при новых
+        учётных данных: агент принимает ключ только у активного
+        подключения."""
+        connector = await self.connectors.get_with_credentials(connector_id)
+        if connector is None:
+            raise NotFoundError("Подключение не найдено")
+        if connector.kind not in self.registry.push_kinds():
+            raise ConnectorStateError("Этому подключению ключ агента не нужен")
+        token = issue_token(connector, self.secrets, _now())
+        if connector.status == ConnectorStatus.ERROR.value:
+            connector.status = ConnectorStatus.ACTIVE.value
+            connector.last_error_code = None
+        self._record(
+            AuditAction.CONNECTOR_AGENT_TOKEN_ISSUED,
+            actor,
+            connector,
+            {"kind": connector.kind},
+        )
+        await self.session.commit()
+        logger.info("connector_agent_token_issued", connector_id=str(connector.id))
+        return token
 
     async def check(self, actor: User, connector_id: UUID) -> CheckResult:
         """Проверить учётные данные без загрузки документов.

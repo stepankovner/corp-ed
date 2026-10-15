@@ -127,6 +127,7 @@ async def test_admin_connects_google_drive(
             "title": "JSON-ключ сервисного аккаунта с делегированием на домен",
             "required": True,
             "secret": True,
+            "multiline": False,
         }
     ]
     assert GROUPS_SCOPE in spec["extra"]["scopes"]

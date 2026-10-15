@@ -18,7 +18,7 @@ from corp_ed.api.v1.dependencies import (
     get_connector_service,
     get_session,
 )
-from corp_ed.connectors.registry import FieldSpec, KindSpec
+from corp_ed.connectors.registry import FieldSpec, KindSpec, ModuleSpec
 from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.exceptions import InvalidConnectorConfigError
 from corp_ed.core.outbound import OutboundClient
@@ -34,6 +34,7 @@ from corp_ed.domain.models import (
     Tenant,
     User,
 )
+from corp_ed.domain.types import ConnectorMode
 from corp_ed.main import app
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.connector_repository import (
@@ -45,6 +46,7 @@ from corp_ed.repositories.connector_sync_job_repository import (
     ConnectorSyncJobRepository,
 )
 from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.services.agent_ingest_service import TOKEN_FIELD, parse_token
 from corp_ed.services.connector_service import (
     ConnectorService,
     _provider_code,
@@ -175,8 +177,15 @@ async def test_kinds_describe_the_form(
         "root": False,
     }
     assert spec["credential_fields"] == [
-        {"name": "token", "title": "Токен", "required": True, "secret": True}
+        {
+            "name": "token",
+            "title": "Токен",
+            "required": True,
+            "secret": True,
+            "multiline": False,
+        }
     ]
+    assert spec["push"] is False
 
 
 @pytest.mark.parametrize("hidden_kinds", [frozenset({FAKE_KIND})])
@@ -222,6 +231,7 @@ async def test_hidden_kind_is_not_offered_but_existing_ones_work(
         ("DELETE", f"/{uuid4()}"),
         ("PUT", f"/{uuid4()}/credentials"),
         ("POST", f"/{uuid4()}/test"),
+        ("POST", f"/{uuid4()}/agent-token"),
         ("POST", f"/{uuid4()}/sync"),
         ("GET", f"/{uuid4()}/runs"),
     ],
@@ -637,7 +647,13 @@ async def test_employee_connects_and_disconnects_own_account(
             "oauth": False,
             # Форма сотрудника: что вводить; значения не возвращаются.
             "credential_fields": [
-                {"name": "token", "title": "Токен", "required": True, "secret": True}
+                {
+                    "name": "token",
+                    "title": "Токен",
+                    "required": True,
+                    "secret": True,
+                    "multiline": False,
+                }
             ],
         }
     ]
@@ -873,3 +889,161 @@ async def test_kind_without_keys_is_ready_on_create(
     # Обычный вид режима organization по-прежнему ждёт ключей.
     plain = (await _create(connectors_api, admin_account)).json()
     assert plain["credentials_set_at"] is None
+
+
+# --- многострочные поля и ключ агента ---------------------------------------------
+
+LIST_KIND = "fake_list"
+LIST_SPEC = KindSpec(
+    kind=LIST_KIND,
+    title="Список по строкам",
+    mode=ConnectorMode.ORGANIZATION,
+    modules=(ModuleSpec("docs", "Документы"),),
+    config_fields=(
+        FieldSpec("users", "Сотрудники", multiline=True),
+        FieldSpec("root", "Корень", required=False),
+    ),
+    credential_fields=(FieldSpec("token", "Токен", secret=True),),
+)
+AGENT_KIND = "fake_agent"
+AGENT_SPEC = KindSpec(
+    kind=AGENT_KIND,
+    title="Агент в сети",
+    mode=ConnectorMode.ORGANIZATION,
+    modules=(ModuleSpec("files", "Файлы"),),
+    push=True,
+)
+
+
+@pytest.mark.parametrize("extra_kinds", [(LIST_SPEC, AGENT_SPEC)])
+async def test_kinds_expose_multiline_and_push(
+    connectors_api: httpx.AsyncClient, admin_account: User
+) -> None:
+    response = await connectors_api.get(f"{URL}/kinds", headers=bearer(admin_account))
+    by_kind = {k["kind"]: k for k in response.json()}
+    fields = {f["name"]: f["multiline"] for f in by_kind[LIST_KIND]["config_fields"]}
+    assert fields == {"users": True, "root": False}
+    assert [by_kind[k]["push"] for k in (LIST_KIND, AGENT_KIND, FAKE_KIND)] == [
+        False,
+        True,
+        False,
+    ]
+
+
+@pytest.mark.parametrize("extra_kinds", [(LIST_SPEC,)])
+async def test_multiline_value_is_stored_with_line_breaks(
+    connectors_api: httpx.AsyncClient, admin_account: User
+) -> None:
+    users = "ivanov ivanov@example.com\npetrov petrov@example.com"
+    created = await _create(
+        connectors_api,
+        admin_account,
+        {
+            "kind": LIST_KIND,
+            "name": "Список",
+            "modules": ["docs"],
+            "config": {"users": users},
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["config"]["users"] == users
+
+
+async def _agent_connector(api: httpx.AsyncClient, admin: User) -> str:
+    created = await _create(
+        api,
+        admin,
+        {"kind": AGENT_KIND, "name": "Файловый сервер", "modules": ["files"]},
+    )
+    assert created.status_code == 201, created.text
+    return str(created.json()["id"])
+
+
+@pytest.mark.parametrize("extra_kinds", [(AGENT_SPEC,)])
+async def test_admin_issues_agent_token_once_and_audit_has_no_key(
+    connectors_api: httpx.AsyncClient, admin_account: User, session: AsyncSession
+) -> None:
+    connector_id = await _agent_connector(connectors_api, admin_account)
+    # До выпуска ключ «не задан» и синхронизация не ставится: документы
+    # присылает агент.
+    fresh = await connectors_api.get(
+        f"{URL}/{connector_id}", headers=bearer(admin_account)
+    )
+    assert fresh.json()["credentials_set_at"] is None
+    assert await _jobs(session) == []
+
+    response = await connectors_api.post(
+        f"{URL}/{connector_id}/agent-token", headers=bearer(admin_account)
+    )
+    assert response.status_code == 200, response.text
+    token = response.json()["token"]
+    parsed = parse_token(token)
+    assert str(parsed.connector_id) == connector_id
+    assert parsed.tenant_id == admin_account.tenant_id
+
+    # В базе — только хеш; ключа нет ни в ответах подключения, ни в аудите.
+    with tenant_scope(admin_account.tenant_id):
+        raw = await session.scalar(
+            text("SELECT credentials FROM connectors WHERE id = :id"),
+            {"id": connector_id},
+        )
+    assert raw and token not in raw and parsed.secret not in raw
+    assert list(SecretBox([KEY]).decrypt(raw)) == [TOKEN_FIELD]
+    single = await connectors_api.get(
+        f"{URL}/{connector_id}", headers=bearer(admin_account)
+    )
+    assert single.json()["credentials_set_at"] is not None
+    assert parsed.secret not in single.text
+    [event] = (
+        await session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.action == AuditAction.CONNECTOR_AGENT_TOKEN_ISSUED.value
+            )
+        )
+    ).all()
+    assert event.target_id == connector_id and event.actor_user_id == admin_account.id
+    assert parsed.secret not in str(event.details) and "kag_" not in str(event.details)
+    assert await _jobs(session) == []
+
+    # Повторный выпуск — другой ключ, прежний больше не подходит.
+    again = await connectors_api.post(
+        f"{URL}/{connector_id}/agent-token", headers=bearer(admin_account)
+    )
+    assert again.status_code == 200
+    assert again.json()["token"] != token
+
+
+@pytest.mark.parametrize("extra_kinds", [(AGENT_SPEC,)])
+async def test_agent_token_is_closed_to_employees(
+    connectors_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    session: AsyncSession,
+) -> None:
+    connector_id = await _agent_connector(connectors_api, admin_account)
+    response = await connectors_api.post(
+        f"{URL}/{connector_id}/agent-token", headers=bearer(account)
+    )
+    assert response.status_code == 403
+    events = (
+        await session.scalars(
+            select(AuditEvent).where(
+                AuditEvent.action == AuditAction.CONNECTOR_AGENT_TOKEN_ISSUED.value
+            )
+        )
+    ).all()
+    assert events == []
+
+
+async def test_agent_token_is_refused_for_pull_kinds(
+    connectors_api: httpx.AsyncClient, admin_account: User
+) -> None:
+    connector_id = (await _create(connectors_api, admin_account)).json()["id"]
+    response = await connectors_api.post(
+        f"{URL}/{connector_id}/agent-token", headers=bearer(admin_account)
+    )
+    assert response.status_code == 409
+    missing = await connectors_api.post(
+        f"{URL}/{uuid4()}/agent-token", headers=bearer(admin_account)
+    )
+    assert missing.status_code == 404

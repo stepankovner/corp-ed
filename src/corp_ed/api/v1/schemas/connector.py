@@ -24,6 +24,8 @@ class FieldSpecResponse(BaseModel):
     title: str
     required: bool
     secret: bool
+    multiline: bool = False
+    """Список по строке на запись: форма рисует многострочное поле."""
 
 
 class ModuleSpecResponse(BaseModel):
@@ -53,6 +55,9 @@ class ConnectorKindResponse(BaseModel):
     extra: dict[str, str] = Field(default_factory=dict)
     # Базовая система — во всех тарифах; нет — только «Корпоративный».
     base: bool = True
+    push: bool = False
+    """Документы присылает агент в сети клиента: вместо учётных данных —
+    ключ агента (POST /connectors/{id}/agent-token)."""
     available: bool = True
     """Можно ли подключить в тарифе компании."""
     limit_reached: bool = False
@@ -125,6 +130,13 @@ class ConnectorResponse(BaseModel):
     """per_user: сколько сотрудников подключились сами («5 из 12», ТЗ §5)."""
     members_active: int | None = None
     """Сколько людей работает в компании — второе число в «5 из 12»."""
+
+
+class AgentTokenResponse(BaseModel):
+    """Ключ агента сетевых папок. Виден один раз: в kronto остаётся
+    только его хеш, повторно ключ получить нельзя — только выпустить новый."""
+
+    token: str
 
 
 class ConnectorTestResponse(BaseModel):

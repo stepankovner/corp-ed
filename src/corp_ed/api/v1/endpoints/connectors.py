@@ -21,6 +21,7 @@ from corp_ed.api.v1.rate_limits import (
     limit_by_user,
 )
 from corp_ed.api.v1.schemas.connector import (
+    AgentTokenResponse,
     ConnectorCreateRequest,
     ConnectorKindResponse,
     ConnectorResponse,
@@ -57,7 +58,11 @@ Service = Annotated[ConnectorService, Depends(get_connector_service)]
 def _fields(specs: tuple[FieldSpec, ...]) -> list[FieldSpecResponse]:
     return [
         FieldSpecResponse(
-            name=f.name, title=f.title, required=f.required, secret=f.secret
+            name=f.name,
+            title=f.title,
+            required=f.required,
+            secret=f.secret,
+            multiline=f.multiline,
         )
         for f in specs
     ]
@@ -82,6 +87,7 @@ def _kind(
         oauth_callback_url=callback_url if spec.oauth else None,
         extra=dict(spec.extra),
         base=spec.base,
+        push=spec.push,
         available=available,
         limit_reached=limit_reached,
     )
@@ -405,6 +411,22 @@ async def set_credentials(
         current_user, connector_id, data.credentials
     )
     return await _one(service, connector)
+
+
+@router.post(
+    "/{connector_id}/agent-token",
+    response_model=AgentTokenResponse,
+    dependencies=[Depends(limit_by_tenant(CONNECTOR_WRITE_PER_TENANT))],
+)
+async def issue_agent_token(
+    connector_id: UUID, service: Service, current_user: AdminUser
+) -> AgentTokenResponse:
+    """Выпустить ключ агента сетевых папок (виды с KindSpec.push).
+
+    Ключ в ответе виден один раз; прежний ключ этого подключения сразу
+    перестаёт действовать. Другие виды — 409."""
+    token = await service.issue_agent_token(current_user, connector_id)
+    return AgentTokenResponse(token=token)
 
 
 @router.post(

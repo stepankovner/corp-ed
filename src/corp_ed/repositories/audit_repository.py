@@ -111,6 +111,8 @@ class AuditAction(StrEnum):
     CONNECTOR_DELETED = "connector.deleted"
     CONNECTOR_CREDENTIALS_SET = "connector.credentials_set"  # noqa: S105 — имя события
     CONNECTOR_SYNC_REQUESTED = "connector.sync_requested"
+    # Ключ агента сетевых папок выпущен из интерфейса; значения в записи нет.
+    CONNECTOR_AGENT_TOKEN_ISSUED = "connector.agent_token_issued"  # noqa: S105 — имя события
     # Остановлен системой: источник отверг учётные данные.
     CONNECTOR_STOPPED = "connector.stopped"
     CONNECTOR_GRANT_SET = "connector.grant_set"

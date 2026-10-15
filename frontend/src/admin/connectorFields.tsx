@@ -1,7 +1,62 @@
-import { Checkbox, SelectField, TextField } from "../ui/Field";
+import { Checkbox, SelectField, TextAreaField, TextField } from "../ui/Field";
 import styles from "./Admin.module.css";
 import { CopyButton } from "./common";
 import { INTERVALS, intervalLabel, type FieldSpec, type Kind } from "./connectorModel";
+
+/** Строк в многострочном поле: на пару-тройку записей хватает, длинный список прокручивается. */
+const MULTILINE_ROWS = 4;
+
+/**
+ * Поле формы по спецификации вида. Список «по строке на запись»
+ * (multiline) — textarea: переводы строк уходят на сервер как есть.
+ */
+function SpecField({
+  field,
+  value,
+  onChange,
+  optional,
+  required,
+  secret = false,
+  placeholder,
+}: {
+  field: FieldSpec;
+  value: string;
+  onChange: (value: string) => void;
+  optional: boolean;
+  required: boolean;
+  secret?: boolean;
+  placeholder?: string;
+}) {
+  if (field.multiline && !secret) {
+    return (
+      <TextAreaField
+        label={field.title}
+        name={field.name}
+        required={required}
+        optional={optional}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={MULTILINE_ROWS}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder={placeholder}
+      />
+    );
+  }
+  return (
+    <TextField
+      label={field.title}
+      name={field.name}
+      type={secret ? "password" : "text"}
+      autoComplete={secret ? "new-password" : "off"}
+      required={required}
+      optional={optional}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+    />
+  );
+}
 
 export function ConfigFields({
   kind,
@@ -15,15 +70,13 @@ export function ConfigFields({
   return (
     <>
       {kind.config_fields.map((field) => (
-        <TextField
+        <SpecField
           key={field.name}
-          label={field.title}
-          name={field.name}
+          field={field}
+          value={values[field.name] ?? ""}
+          onChange={(value) => onChange(field.name, value)}
           required={field.required}
           optional={!field.required}
-          value={values[field.name] ?? ""}
-          onChange={(e) => onChange(field.name, e.target.value)}
-          autoComplete="off"
         />
       ))}
     </>
@@ -44,16 +97,14 @@ export function SecretInputs({
   return (
     <>
       {fields.map((field) => (
-        <TextField
+        <SpecField
           key={field.name}
-          label={field.title}
-          name={field.name}
-          type={field.secret ? "password" : "text"}
-          autoComplete={field.secret ? "new-password" : "off"}
+          field={field}
+          value={values[field.name] ?? ""}
+          onChange={(value) => onChange(field.name, value)}
+          secret={field.secret}
           required={field.required && !replacing}
           optional={!field.required}
-          value={values[field.name] ?? ""}
-          onChange={(e) => onChange(field.name, e.target.value)}
           placeholder={
             replacing && field.secret ? "••••••••  (задан; впишите, чтобы заменить)" : undefined
           }

@@ -130,6 +130,17 @@ def safe_code(value: object, *, prefix: str = "") -> str:
     return f"{prefix}{clean}"[:MAX_CODE_LENGTH]
 
 
+_LIST_SEPARATORS = re.compile(r"[,\r\n]+")
+
+
+def split_list(value: str | None) -> list[str]:
+    """Список из поля формы: записи по строкам или через запятую (так
+    писали раньше), пробелы по краям и пустые записи отбрасываются."""
+    return [
+        item.strip() for item in _LIST_SEPARATORS.split(value or "") if item.strip()
+    ]
+
+
 def to_int(value: Any) -> int | None:
     try:
         return int(value)

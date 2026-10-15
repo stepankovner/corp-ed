@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Pause, Play, PlugZap, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, KeyRound, Pause, Play, PlugZap, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type SubmitEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 
@@ -17,7 +17,7 @@ import pageStyles from "../ui/Page.module.css";
 import { PageSpinner } from "../ui/Spinner";
 import { Table } from "../ui/Table";
 import tableStyles from "../ui/Table.module.css";
-import { ConfirmDialog } from "./common";
+import { ConfirmDialog, SecretValue } from "./common";
 import {
   ConfigFields,
   IntervalField,
@@ -44,6 +44,11 @@ const RUN_STATUS: Record<string, { label: string; tone: Tone }> = {
   succeeded: { label: "успешно", tone: "ok" },
   partial: { label: "частично", tone: "warn" },
   failed: { label: "ошибка", tone: "error" },
+};
+
+const RUN_TRIGGER: Record<string, string> = {
+  manual: "вручную",
+  agent: "агентом",
 };
 
 const STAT_LABELS: [string, string][] = [
@@ -195,25 +200,29 @@ function ConnectorView({
         }
         description={[
           MODE_LABEL[connector.mode],
-          intervalLabel(connector.sync_interval_minutes),
+          kind.push ? null : intervalLabel(connector.sync_interval_minutes),
           grantsLabel(connector)?.toLowerCase(),
         ]
           .filter(Boolean)
           .join(" · ")}
         actions={
-          <>
-            <Button variant="ghost" size="sm" busy={test.isPending} onClick={() => test.mutate()}>
-              <PlugZap size={16} aria-hidden /> Проверить
-            </Button>
-            <Button
-              size="sm"
-              busy={sync.isPending}
-              disabled={connector.status !== "active"}
-              onClick={() => sync.mutate()}
-            >
-              <RefreshCw size={16} aria-hidden /> Синхронизировать
-            </Button>
-          </>
+          // Документы такого вида присылает агент: kronto ни проверять, ни
+          // синхронизировать его нечем.
+          kind.push ? undefined : (
+            <>
+              <Button variant="ghost" size="sm" busy={test.isPending} onClick={() => test.mutate()}>
+                <PlugZap size={16} aria-hidden /> Проверить
+              </Button>
+              <Button
+                size="sm"
+                busy={sync.isPending}
+                disabled={connector.status !== "active"}
+                onClick={() => sync.mutate()}
+              >
+                <RefreshCw size={16} aria-hidden /> Синхронизировать
+              </Button>
+            </>
+          )
         }
       />
 
@@ -308,7 +317,7 @@ function ConnectorView({
                           <span className={tableStyles.sub}>{runSkips(run.stats)}</span>
                         ) : null}
                       </td>
-                      <td>{run.trigger === "manual" ? "вручную" : "по расписанию"}</td>
+                      <td>{RUN_TRIGGER[run.trigger] ?? "по расписанию"}</td>
                     </tr>
                   );
                 })}
@@ -325,9 +334,17 @@ function ConnectorView({
 
       <section className={pageStyles.section}>
         <h2 className={pageStyles.sectionTitle}>
-          {connector.mode === "organization" ? "Учётная запись" : "Ключи приложения"}
+          {kind.push
+            ? "Ключ агента"
+            : connector.mode === "organization"
+              ? "Учётная запись"
+              : "Ключи приложения"}
         </h2>
-        <CredentialsForm connector={connector} kind={kind} />
+        {kind.push ? (
+          <AgentKeySection connector={connector} />
+        ) : (
+          <CredentialsForm connector={connector} kind={kind} />
+        )}
       </section>
 
       <section className={pageStyles.section}>
@@ -417,7 +434,7 @@ function SettingsForm({ connector, kind }: { connector: Connector; kind: Kind })
         onChange={(key, value) => setConfig((c) => ({ ...c, [key]: value }))}
       />
       <ModulesField kind={kind} selected={modules} onChange={setModules} />
-      <IntervalField value={syncInterval} onChange={setSyncInterval} />
+      {kind.push ? null : <IntervalField value={syncInterval} onChange={setSyncInterval} />}
       <div>
         <Button
           type="submit"
@@ -488,5 +505,68 @@ function CredentialsForm({ connector, kind }: { connector: Connector; kind: Kind
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Ключ агента сетевых папок: выпускается кнопкой, виден один раз. Прежний
+ * ключ перестаёт действовать сразу, поэтому — с подтверждением.
+ */
+function AgentKeySection({ connector }: { connector: Connector }) {
+  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
+  const issue = useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.POST("/api/v1/connectors/{connector_id}/agent-token", {
+          params: { path: { connector_id: connector.id } },
+        }),
+      ),
+    onSuccess: async (data) => {
+      setToken(data.token);
+      await queryClient.invalidateQueries({ queryKey: ["connectors"] });
+    },
+  });
+
+  return (
+    <div className={`${pageStyles.card} ${pageStyles.form}`}>
+      <p className="muted" style={{ fontSize: "var(--fs-small)" }}>
+        Документы с файлового сервера присылает агент kronto, установленный в сети компании. Он
+        входит в kronto по ключу.{" "}
+        {connector.credentials_set_at
+          ? `Ключ выпущен ${formatDateTime(connector.credentials_set_at)}; сохранённый ключ не показывается — можно выпустить новый.`
+          : "Ключ ещё не выпускался — без него агент не подключится."}
+      </p>
+      {token ? (
+        <Notice kind="ok" title="Ключ выпущен — сохраните его сейчас">
+          <p>
+            Ключ показан один раз: потом его не посмотреть, можно только выпустить новый. Передайте
+            его тому, кто устанавливает агента, отдельным защищённым каналом. Инструкция по
+            установке — у команды kronto.
+          </p>
+          <SecretValue value={token} copyLabel="Скопировать ключ" testId="agent-token" />
+          <div>
+            <Button variant="ghost" size="sm" onClick={() => setToken(null)}>
+              Я сохранил ключ
+            </Button>
+          </div>
+        </Notice>
+      ) : null}
+      <div>
+        <Button size="sm" onClick={() => setConfirming(true)}>
+          <KeyRound size={16} aria-hidden /> Выпустить ключ агента
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="Выпустить ключ агента?"
+        description="Прежний ключ перестанет действовать: агент с ним больше не сможет присылать документы, пока вы не вставите в него новый ключ."
+        confirmLabel="Выпустить ключ"
+        danger={false}
+        onConfirm={() => issue.mutateAsync()}
+      />
+    </div>
   );
 }

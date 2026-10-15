@@ -5,7 +5,8 @@
 `/api/v1/agent/...` (api/v1/endpoints/agent.py,
 services/agent_ingest_service.py). Расписание сервера этот вид не
 запускает (KindSpec.push). Учётные данные подключения — хеш ключа агента;
-выпускает ключ `cli agent-token`.
+администратор выпускает ключ в карточке подключения
+(`POST /connectors/{id}/agent-token`) или командой `cli agent-token`.
 """
 
 from collections.abc import Mapping
@@ -25,7 +26,7 @@ SMB_AGENT_SPEC = KindSpec(
     modules=(ModuleSpec("files", "Файлы и права NTFS"),),
     extra={
         "agent": "Документы присылает агент kronto, установленный в сети "
-        "компании; ключ агента выпускает команда kronto"
+        "компании; ключ агента администратор выпускает в карточке подключения"
     },
     base=False,
     preview=True,

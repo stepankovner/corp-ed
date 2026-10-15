@@ -42,6 +42,7 @@ from corp_ed.connectors.common import (
     path_segment,
     redact,
     safe_code,
+    split_list,
 )
 from corp_ed.connectors.yandex.oauth import YandexAuth
 from corp_ed.core.outbound import OutboundClient, OutboundTooLargeError
@@ -254,8 +255,7 @@ def parse_roots(value: str) -> tuple[str, ...]:
     """Разделы Вики из настройки: slug через запятую или перенос строки;
     вставленные целиком адреса wiki.yandex.ru тоже принимаются."""
     roots: list[str] = []
-    for raw in re.split(r"[,\n]", value or ""):
-        slug = raw.strip()
+    for slug in split_list(value):
         for prefix in ("https://wiki.yandex.ru/", "http://wiki.yandex.ru/"):
             slug = slug.removeprefix(prefix)
         slug = slug.strip("/")
