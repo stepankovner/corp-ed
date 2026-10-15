@@ -18,9 +18,9 @@
 (видны только автору) и шаблоны страниц пропускаются; удалённое (в
 корзине) API не отдаёт — оно исчезает из листинга и удаляется ядром.
 
-Права. Роль Admin видит всё. Документ «вся компания» — только если есть
-роль, в которой состоят все пользователи, и страницу видит каждый
-(Directory.everyone); иначе — RESTRICTED со списком почт тех, у кого
+Права. Роль Admin видит всё. Документ «вся компания» — только если право
+на просмотр есть у роли, в которой состоят все пользователи, и страницу
+видит каждый (Directory.everyone); иначе — RESTRICTED со списком почт тех, у кого
 право доказано. Гость (пользователь роли Public) не учитывается. Права
 уровня, которые API не отдал однозначно (незнакомая форма ответа,
 книга или глава недоступна токену), — страница только для роли Admin.
@@ -324,10 +324,11 @@ class BookStackAdapter:
         known = [rules for rules in chain if isinstance(rules, Rules)]
         if len(known) != len(chain):
             logger.info("bookstack_rules_unknown", page=page_id)
-            readers = directory.admins
-        else:
-            readers = directory.readers(known, to_int(page.get("owned_by")))
-        if directory.everyone(readers):
+            return _Access(
+                MaterialVisibility.RESTRICTED, directory.emails_of(directory.admins)
+            )
+        readers = directory.readers(known, to_int(page.get("owned_by")))
+        if directory.everyone(readers, known):
             return _Access(MaterialVisibility.TENANT, frozenset())
         return _Access(MaterialVisibility.RESTRICTED, directory.emails_of(readers))
 

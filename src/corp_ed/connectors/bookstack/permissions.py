@@ -139,11 +139,17 @@ class Directory:
         )
 
     @property
-    def universal(self) -> bool:
-        """Есть роль, в которой состоят все пользователи (кроме гостя)."""
+    def universal(self) -> tuple[Role, ...]:
+        """Роли, в которых состоят все пользователи (кроме гостя). Admin
+        не в счёт, даже если в ней все: её «право» — не право на
+        содержимое, новый пользователь его не получит."""
         people = self.people
-        return bool(people) and any(
-            people <= role.users for role in self.roles.values()
+        if not people:
+            return ()
+        return tuple(
+            role
+            for role in self.roles.values()
+            if not role.admin and people <= role.users
         )
 
     def readers(self, chain: Iterable[Rules], owner: int | None) -> frozenset[int]:
@@ -169,9 +175,9 @@ class Directory:
                 allowed.add(owner)
         return frozenset(allowed)
 
-    def everyone(self, readers: frozenset[int]) -> bool:
-        """«Видно всем» — только если есть роль, в которой состоят все
-        пользователи, и страницу видит каждый.
+    def everyone(self, readers: frozenset[int], chain: Iterable[Rules]) -> bool:
+        """«Видно всем» — только если право на просмотр есть у роли, в
+        которой состоят все пользователи, и страницу видит каждый.
 
         Почему так. «Вся компания» в kronto открывает документ и тем, кого
         в BookStack нет (новым сотрудникам, тем, кто ещё не заведён), —
@@ -185,9 +191,17 @@ class Directory:
         Одной такой роли с правом недостаточно: право «по умолчанию»
         (IMPLICIT_ALLOW) у неё перевешивает явный запрет другой роли того
         же пользователя (max статусов), гарантия была бы лишь при
-        EXPLICIT_ALLOW. Поэтому проверяется и итог по каждому.
+        EXPLICIT_ALLOW. Поэтому проверяется и итог по каждому. И наоборот:
+        итог «видят все» без права у общей роли (каждый — через свою)
+        тоже не «всем».
         """
-        return self.universal and readers >= self.people
+        if not readers >= self.people:
+            return False
+        levels = list(chain)
+        return any(
+            role_status(role, levels)[0] in (IMPLICIT_ALLOW, EXPLICIT_ALLOW)
+            for role in self.universal
+        )
 
     def emails_of(self, users: Iterable[int]) -> frozenset[str]:
         return frozenset(self.emails[u] for u in users if u in self.emails)

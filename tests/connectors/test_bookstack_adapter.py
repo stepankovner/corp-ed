@@ -39,7 +39,10 @@ from corp_ed.core.config import ConnectorSettings
 from corp_ed.core.outbound import OutboundClient
 from corp_ed.domain.types import ConnectorMode, MaterialVisibility, RemoteDocumentKind
 from tests.connectors.fake_bookstack import (
+    ADMIN_ROLE,
     ADMIN_TOKEN,
+    AUTHOR_ROLE,
+    EDITOR_ROLE,
     EDITOR_TOKEN,
     HR_ROLE,
     NO_API_TOKEN,
@@ -401,6 +404,34 @@ async def test_universal_role_with_a_veto_is_not_company_wide(
     assert found.visibility is MaterialVisibility.RESTRICTED
     assert MARIA not in found.allowed_emails
     assert {ADMIN, IVAN, OLGA} <= found.allowed_emails
+
+
+async def test_everyone_seeing_through_own_roles_is_not_company_wide(
+    server: FakeBookStack,
+) -> None:
+    """Каждый видит страницу, но через свою роль; у общей роли
+    «Сотрудники» права нет («Все остальные» — нет): новый пользователь
+    BookStack её бы не увидел — значит, не «вся компания»."""
+    server.role_users[HR_ROLE].append(5)
+    plan = next(p["id"] for p in server.pages.values() if p["name"] == "План")
+    server.grant(
+        "page", plan, {HR_ROLE: True, EDITOR_ROLE: True, AUTHOR_ROLE: True}, False
+    )
+    documents = await listed(make_adapter(server))
+    found = documents["План"]
+    assert found.visibility is MaterialVisibility.RESTRICTED
+    assert found.allowed_emails == {ADMIN, IVAN, MARIA, "petr@example.com", OLGA}
+
+
+async def test_admin_role_holding_everyone_is_not_company_wide(
+    server: FakeBookStack,
+) -> None:
+    for user in (3, 4, 5, 6):
+        server.role_users[ADMIN_ROLE].append(user)
+    documents = await listed(make_adapter(server))
+    estimate = documents["Смета"]
+    assert estimate.visibility is MaterialVisibility.RESTRICTED
+    assert estimate.allowed_emails == {ADMIN, IVAN, MARIA, "petr@example.com", OLGA}
 
 
 async def test_rules_that_cannot_be_read_leave_only_admins(
