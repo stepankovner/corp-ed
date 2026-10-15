@@ -217,6 +217,10 @@ class ConnectorSyncService:
         if connector is None or connector.status != ConnectorStatus.ACTIVE.value:
             logger.info("sync_skipped", connector_id=str(connector_id))
             return None
+        if self._pushed(connector.kind):
+            # Документы присылает агент (docs/SMB-AGENT.md): забирать нечего.
+            logger.info("sync_skipped_push", connector_id=str(connector_id))
+            return None
 
         started = self.now()
         row = await SyncRunRepository(session).create(
@@ -469,81 +473,21 @@ class ConnectorSyncService:
         content = await adapter.fetch(
             document, max_bytes=self.settings.download_limit_bytes
         )
-        markdown, meta = await self._to_markdown(document, content)
-        # Страница сайта из карты: заголовок известен только из её HTML.
-        title = (
-            content.title
-            if isinstance(content, FetchedPage) and content.title
-            else document.title
+        material, change = await store_document(
+            session,
+            connector_id=run.connector_id,
+            existing=material,
+            document=document,
+            content=content,
+            settings=self.settings,
+            extractor=self.extractor,
+            now=self.now(),
         )
-        if material is None:
-            material = Material(
-                title=title[:200] or document.external_id[:200],
-                content=markdown,
-                connector_id=run.connector_id,
-                external_id=document.external_id,
-                source_url=document.url[:2048],
-                external_version=document.version[:128],
-                synced_at=self.now(),
-                visibility=MaterialVisibility.RESTRICTED.value,
-                **meta,
-            )
-            await materials.create(material)
+        if change == "added":
             run.stats.added += 1
-        else:
-            if material.source_sha256 == meta["source_sha256"]:
-                # Версия сменилась, содержимое — нет: переиндексация не нужна.
-                material.external_version = document.version[:128]
-                material.synced_at = self.now()
-                return material
-            material.title = title[:200] or material.title
-            material.content = markdown
-            material.source_url = document.url[:2048]
-            material.external_version = document.version[:128]
-            material.synced_at = self.now()
-            material.status = MaterialStatus.PENDING
-            material.status_error = None
-            for key, value in meta.items():
-                setattr(material, key, value)
+        elif change == "updated":
             run.stats.updated += 1
         return material
-
-    async def _to_markdown(
-        self, document: RemoteDocument, content: FetchedContent
-    ) -> tuple[str, dict[str, str | int | None]]:
-        if isinstance(content, FetchedFile):
-            limit = max_file_bytes(
-                content.filename,
-                large=self.settings.max_large_document_bytes,
-                other=self.settings.max_document_bytes,
-            )
-            if len(content.data) > limit:
-                raise ExtractionError("document_too_large")
-            detected = detect_format(content.filename, content.data)
-            markdown = await self.extractor(detected.format, content.data)
-            return markdown, {
-                "source_filename": detected.filename,
-                "source_format": detected.format.value,
-                "source_sha256": hashlib.sha256(content.data).hexdigest(),
-                "source_size": len(content.data),
-            }
-        if isinstance(content, FetchedPage):
-            markdown = html_to_markdown(content.html)
-            return markdown, {
-                "source_filename": None,
-                "source_format": SOURCE_FORMAT_HTML,
-                "source_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
-                "source_size": len(content.html.encode("utf-8")),
-            }
-        if isinstance(content, FetchedMarkdown):
-            markdown = markdown_as_is(content.markdown)
-            return markdown, {
-                "source_filename": None,
-                "source_format": SOURCE_FORMAT_MARKDOWN,
-                "source_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
-                "source_size": len(content.markdown.encode("utf-8")),
-            }
-        raise ExtractionError("unsupported_format")
 
     async def _apply_access(
         self,
@@ -565,6 +509,12 @@ class ConnectorSyncService:
             await materials.replace_access(material.id, ())
 
     # --- вспомогательное --------------------------------------------------------------
+
+    def _pushed(self, kind: str) -> bool:
+        try:
+            return self.registry.spec(kind).push
+        except UnknownKindError:
+            return False
 
     def _decrypt(self, token: str) -> Mapping[str, str] | None:
         try:
@@ -701,6 +651,104 @@ class ConnectorSyncService:
             connector.last_error_code = run.error_code
         session.add_all([row, connector])
         await session.commit()
+
+
+DocumentChange = Literal["added", "updated", "unchanged"]
+
+
+async def store_document(
+    session: AsyncSession,
+    *,
+    connector_id: UUID,
+    existing: Material | None,
+    document: RemoteDocument,
+    content: FetchedContent,
+    settings: ConnectorSettings,
+    extractor: Extractor,
+    now: datetime,
+) -> tuple[Material, DocumentChange]:
+    """Содержимое документа источника → материал (новый или обновлённый).
+
+    Общий для синхронизации и агента сетевых папок
+    (services/agent_ingest_service.py): тот же разбор, те же лимиты.
+    Права здесь не трогаются. Новый или изменившийся материал — в статусе
+    pending: задачу ингеста ставит вызывающий.
+    """
+    markdown, meta = await content_to_markdown(content, settings, extractor)
+    # Страница сайта из карты: заголовок известен только из её HTML.
+    title = (
+        content.title
+        if isinstance(content, FetchedPage) and content.title
+        else document.title
+    )
+    if existing is None:
+        material = Material(
+            title=title[:200] or document.external_id[:200],
+            content=markdown,
+            connector_id=connector_id,
+            external_id=document.external_id,
+            source_url=document.url[:2048],
+            external_version=document.version[:128],
+            synced_at=now,
+            visibility=MaterialVisibility.RESTRICTED.value,
+            **meta,
+        )
+        await MaterialRepository(session).create(material)
+        return material, "added"
+    material = existing
+    if material.source_sha256 == meta["source_sha256"]:
+        # Версия сменилась, содержимое — нет: переиндексация не нужна.
+        material.external_version = document.version[:128]
+        material.synced_at = now
+        return material, "unchanged"
+    material.title = title[:200] or material.title
+    material.content = markdown
+    material.source_url = document.url[:2048]
+    material.external_version = document.version[:128]
+    material.synced_at = now
+    material.status = MaterialStatus.PENDING
+    material.status_error = None
+    for key, value in meta.items():
+        setattr(material, key, value)
+    return material, "updated"
+
+
+async def content_to_markdown(
+    content: FetchedContent, settings: ConnectorSettings, extractor: Extractor
+) -> tuple[str, dict[str, str | int | None]]:
+    if isinstance(content, FetchedFile):
+        limit = max_file_bytes(
+            content.filename,
+            large=settings.max_large_document_bytes,
+            other=settings.max_document_bytes,
+        )
+        if len(content.data) > limit:
+            raise ExtractionError("document_too_large")
+        detected = detect_format(content.filename, content.data)
+        markdown = await extractor(detected.format, content.data)
+        return markdown, {
+            "source_filename": detected.filename,
+            "source_format": detected.format.value,
+            "source_sha256": hashlib.sha256(content.data).hexdigest(),
+            "source_size": len(content.data),
+        }
+    if isinstance(content, FetchedPage):
+        markdown = html_to_markdown(content.html)
+        return markdown, {
+            "source_filename": None,
+            "source_format": SOURCE_FORMAT_HTML,
+            "source_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            "source_size": len(content.html.encode("utf-8")),
+        }
+    if isinstance(content, FetchedMarkdown):
+        markdown = markdown_as_is(content.markdown)
+        return markdown, {
+            "source_filename": None,
+            "source_format": SOURCE_FORMAT_MARKDOWN,
+            "source_sha256": hashlib.sha256(markdown.encode("utf-8")).hexdigest(),
+            "source_size": len(content.markdown.encode("utf-8")),
+        }
+    raise ExtractionError("unsupported_format")
 
 
 def markdown_as_is(markdown: str) -> str:

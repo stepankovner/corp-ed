@@ -16,6 +16,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from corp_ed.api.v1.endpoints import (
     account,
+    agent,
     analytics,
     attachments,
     audit,
@@ -135,13 +136,16 @@ logger = structlog.get_logger()
 # Пути, где тело — файл, а не JSON: у них свой лимит размера.
 UPLOAD_PATH_SUFFIXES = (
     "/materials/upload",
+    "/agent/documents",
+    # Права пачкой до 500 документов со списками почт.
+    "/agent/access",
     "/attachments",
     "/account/avatar",
     "/company/logo",
 )
 # Загрузка документов: pdf, docx и pptx — до MAX_LARGE_UPLOAD_BYTES, точный
 # лимит по формату — в ручке (ingest.extract.max_file_bytes).
-LARGE_UPLOAD_PATH_SUFFIXES = ("/materials/upload",)
+LARGE_UPLOAD_PATH_SUFFIXES = ("/materials/upload", "/agent/documents")
 
 
 @asynccontextmanager
@@ -337,6 +341,7 @@ app.include_router(billing.payments_router, prefix="/api/v1")
 app.include_router(glossary.router, prefix="/api/v1")
 app.include_router(gaps.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
+app.include_router(agent.router, prefix="/api/v1")
 
 
 @app.get("/")

@@ -91,6 +91,7 @@ from corp_ed.core.outbound import (
     validate_outbound_url,
 )
 from corp_ed.core.secrets import SecretBox
+from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
 from corp_ed.domain.models import Account, Passkey, StaffMember
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
@@ -98,9 +99,11 @@ from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
+from corp_ed.repositories.connector_repository import ConnectorRepository
 from corp_ed.repositories.lead_repository import LeadRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
+from corp_ed.services.agent_ingest_service import issue_token
 from corp_ed.services.company_request_service import CompanyRequestService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
@@ -333,6 +336,16 @@ def _parser() -> argparse.ArgumentParser:
         help="ещё и отправить тестовое письмо на этот адрес — сразу, мимо очереди",
     )
 
+    agent_token = commands.add_parser(
+        "agent-token",
+        help="выпустить ключ агента сетевых папок (docs/SMB-AGENT.md); "
+        "прежний ключ перестаёт действовать",
+    )
+    agent_token.add_argument("--code", required=True, help="код компании")
+    agent_token.add_argument(
+        "--connector", required=True, type=UUID, help="id подключения smb_agent"
+    )
+
     commands.add_parser(
         "team-notify-test",
         help="проверочное уведомление команде: письмо на TEAM_NOTIFY_EMAIL "
@@ -466,6 +479,8 @@ async def _run(args: argparse.Namespace) -> int:
     if args.command == "mail-check":
         return await _mail_check(args.days, args.send_to)
 
+    if args.command == "agent-token":
+        return await _agent_token(args.code, args.connector)
     if args.command == "team-notify-test":
         return await _team_notify_test()
     if args.command == "payments-webhook":
@@ -991,6 +1006,36 @@ async def _payments_webhook(url: str) -> int:
             print(f"Банк отказал: {exc.code}", file=sys.stderr)
             return 1
     print(f"Вебхук Точки: {url}")
+    return 0
+
+
+async def _agent_token(code: str, connector_id: UUID) -> int:
+    """Ключ печатается один раз: в базе — только его хеш."""
+    settings = get_connector_settings()
+    registry = default_registry(settings)
+    async with get_session_maker()() as session:
+        tenant = await TenantRepository(session).get_by_company_code(code)
+        if tenant is None:
+            print(f"Ошибка: компании с кодом {code} нет", file=sys.stderr)
+            return 1
+        with tenant_scope(tenant.id):
+            connector = await ConnectorRepository(session).get_with_credentials(
+                connector_id
+            )
+            if connector is None or connector.kind not in registry.push_kinds():
+                print(
+                    "Ошибка: у компании нет такого подключения агента",
+                    file=sys.stderr,
+                )
+                return 1
+            token = issue_token(connector, SecretBox(settings.keys), datetime.now(UTC))
+            await session.commit()
+    print(token)
+    print(
+        "Ключ показан один раз. Передайте его администратору клиента "
+        "отдельным каналом; прежний ключ этого подключения больше не действует.",
+        file=sys.stderr,
+    )
     return 0
 
 

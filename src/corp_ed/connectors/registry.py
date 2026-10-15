@@ -95,6 +95,9 @@ class KindSpec:
     # перечислен в CONNECTOR_PREVIEW_KINDS. `cli connector-check` видит его
     # и без флага — для той самой живой проверки.
     preview: bool = False
+    # Документы присылает агент в сети клиента (docs/SMB-AGENT.md), а не
+    # забирает kronto: расписание такой вид не запускает, адаптера нет.
+    push: bool = False
 
     @property
     def module_names(self) -> frozenset[str]:
@@ -182,6 +185,11 @@ class AdapterRegistry:
             return False
         return not spec.preview or kind in self._enabled_preview_kinds
 
+    def push_kinds(self) -> frozenset[str]:
+        """Виды, чьи документы присылает агент (KindSpec.push), — все,
+        включая скрытые: уже заведённое подключение продолжает работать."""
+        return frozenset(kind for kind, spec in self._specs.items() if spec.push)
+
     def unknown_hidden(self) -> frozenset[str]:
         """Скрытые настройкой имена, которых нет среди видов, — опечатка."""
         return self._hidden_kinds - self._specs.keys()
@@ -231,6 +239,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     from corp_ed.connectors.gdrive import register as register_gdrive
     from corp_ed.connectors.kaiten import register as register_kaiten
     from corp_ed.connectors.outline import register as register_outline
+    from corp_ed.connectors.smb_agent import register as register_smb_agent
     from corp_ed.connectors.webdav import register as register_webdav
     from corp_ed.connectors.website import register as register_website
     from corp_ed.connectors.yandex import register as register_yandex
@@ -248,6 +257,7 @@ def default_registry(settings: ConnectorSettings) -> AdapterRegistry:
     register_gdrive(registry, settings)
     register_kaiten(registry, settings)
     register_outline(registry, settings)
+    register_smb_agent(registry, settings)
     if unknown := registry.unknown_hidden():
         # Опечатка не должна ни молча оставить вид в каталоге, ни уронить
         # все ручки подключений: реестр собирается при первом запросе.

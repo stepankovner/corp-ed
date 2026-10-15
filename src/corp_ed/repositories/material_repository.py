@@ -1,7 +1,8 @@
 from collections.abc import Collection, Iterable
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -86,6 +87,41 @@ class MaterialRepository:
             stmt = stmt.where(Material.external_id.not_in(list(keep_external_ids)))
         result = await self.session.execute(stmt)
         return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+    async def delete_by_connector_synced_before(
+        self, connector_id: UUID, before: datetime
+    ) -> int:
+        """Удалить документы коннектора, которых не коснулся завершённый
+        обход агента (synced_at раньше его начала, docs/SMB-AGENT.md §3.5).
+        Чанки, задачи и права уходят каскадом."""
+        result = await self.session.execute(
+            delete(Material).where(
+                Material.tenant_id == require_tenant(),
+                Material.connector_id == connector_id,
+                or_(Material.synced_at.is_(None), Material.synced_at < before),
+            )
+        )
+        return int(result.rowcount or 0)  # type: ignore[attr-defined]
+
+    async def external_versions(
+        self, connector_id: UUID, *, after: str | None, limit: int
+    ) -> list[tuple[str, str]]:
+        """(external_id, external_version) документов коннектора по порядку
+        external_id, начиная после after: что уже есть в kronto."""
+        stmt = (
+            select(Material.external_id, Material.external_version)
+            .where(
+                Material.tenant_id == require_tenant(),
+                Material.connector_id == connector_id,
+                Material.external_id.is_not(None),
+            )
+            .order_by(Material.external_id)
+            .limit(limit)
+        )
+        if after is not None:
+            stmt = stmt.where(Material.external_id > after)
+        rows = await self.session.execute(stmt)
+        return [(str(eid), str(version or "")) for eid, version in rows]
 
     # --- material_access: кто видит документ с visibility = restricted ---
 
