@@ -12,6 +12,7 @@ EXPECTED; засев — tests/live/smb/seed.sh. Запуск — в сети с
 """
 
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -196,3 +197,15 @@ def test_wrong_smb_password(make_cfg) -> None:  # type: ignore[no-untyped-def]
     cfg = make_cfg(smb_password_env="WRONG_PASSWORD")
     with pytest.raises(SmbError), SmbResource(cfg.resources[0]):
         pass
+
+
+def test_ldap_start_tls(make_cfg) -> None:  # type: ignore[no-untyped-def]
+    ldaps = make_cfg().ldap
+    cfg = replace(ldaps, port=389, use_ssl=False, start_tls=True)
+    search, close = ldap3_search(cfg)
+    try:
+        assert AdDirectory(search, cfg.base_dn).users
+    finally:
+        close()
+    with pytest.raises(DirectoryError):
+        ldap3_search(replace(cfg, host="dc"))

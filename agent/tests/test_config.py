@@ -139,3 +139,12 @@ def test_parse_unc(path: str, parts: tuple[str, str, str]) -> None:
 def test_parse_unc_without_share() -> None:
     with pytest.raises(ConfigError):
         parse_unc(r"\\fs01")
+
+
+def test_cli_rejects_bad_config(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from kronto_agent.cli import main
+
+    assert main(["check", "--config", str(tmp_path / "missing.toml")]) == 2
+    assert "настройки" in capsys.readouterr().err

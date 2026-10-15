@@ -46,8 +46,13 @@ def open_directory(cfg: AgentConfig) -> Iterator[AdDirectory]:
         close()
 
 
-def kronto_client(cfg: AgentConfig) -> KrontoClient:
-    return KrontoClient(cfg.kronto.url, cfg.kronto.key, ca_file=cfg.kronto.ca_file)
+def kronto_client(cfg: AgentConfig, max_attempts: int = 6) -> KrontoClient:
+    return KrontoClient(
+        cfg.kronto.url,
+        cfg.kronto.key,
+        ca_file=cfg.kronto.ca_file,
+        max_attempts=max_attempts,
+    )
 
 
 def run_once(cfg: AgentConfig, stop: threading.Event) -> bool:
@@ -116,7 +121,7 @@ def cmd_check(cfg: AgentConfig) -> int:
         except Exception as exc:
             print(f"SMB {res.unc}: ошибка: {exc}")
             ok = False
-    kronto = kronto_client(cfg)
+    kronto = kronto_client(cfg, max_attempts=2)
     try:
         kronto.state()
         print(f"kronto {cfg.kronto.url}: ok")
