@@ -901,13 +901,26 @@ modules = ["documents"]
 accounts = "all"
 docs = ["@small", "SV-HR-005", "SV-LEG-005", "SV-SAL-004"]
 
+# Тестовая лицензия Atlassian (Confluence и Jira) — на 10 пользователей, из
+# них два заняты служебными учётками (admin, svc-kronto): остаются восемь
+# сотрудников. По одному из каждого отдела и из каждой закрытой зоны нельзя —
+# берутся те, кто нужен шагам (petrenko, lebedeva) и обе стороны закрытых зон.
 [systems.confluence_dc]
 kind = "confluence"
 title = "Confluence Data Center"
 stand = "docker"
 storage = "pages"
 modules = ["pages"]
-accounts = "all"
+accounts = ["vetrov", "belova", "petrenko", "kuznetsova", "volkov", "lebedeva", "ershov", "nikitina"]
+docs = ["@small", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
+
+[systems.jira_dc]
+kind = "jira_dc"
+title = "Jira Software Data Center"
+stand = "docker"
+storage = "pages"
+modules = ["issues"]
+accounts = ["vetrov", "belova", "petrenko", "kuznetsova", "volkov", "lebedeva", "ershov", "nikitina"]
 docs = ["@small", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
 
 [systems.wikijs]
@@ -919,6 +932,10 @@ modules = ["pages"]
 accounts = "all"
 docs = ["@small", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
 
+# MediaWiki: право чтения одно на всю вики, а Lockdown закрывает пространства
+# имён, и API этого не показывает. Подключение поэтому забирает только
+# пространство открытой зоны; остальные зоны лежат в вики (каждая — своё
+# пространство под Lockdown), но в kronto попадать не должны.
 [systems.mediawiki]
 kind = "mediawiki"
 title = "MediaWiki"
@@ -926,6 +943,7 @@ stand = "docker"
 storage = "pages"
 modules = ["pages"]
 accounts = "all"
+synced_zones = ["public"]
 docs = ["@small", "SV-HR-005", "SV-SAL-004"]
 
 [systems.dokuwiki]

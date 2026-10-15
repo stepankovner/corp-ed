@@ -7,7 +7,9 @@
 и непрошедший отзыв доступа.
 
 `leak_zones` — зоны, документы которых драйвер ошибочно отдаёт «всем»;
-`ignore_revoke` — драйвер делает вид, что доступ отозвал.
+`ignore_revoke` — драйвер делает вид, что доступ отозвал;
+`ignore_synced` — драйвер отдаёт и зоны, которые подключение не забирает
+(`synced_zones` системы), как MediaWiki, чьи пространства перечислили все.
 """
 
 from collections.abc import Iterable
@@ -36,6 +38,7 @@ class FakeDriver(Driver):
         *,
         leak_zones: Iterable[str] = (),
         ignore_revoke: bool = False,
+        ignore_synced: bool = False,
     ) -> None:
         super().__init__(
             system,
@@ -48,6 +51,7 @@ class FakeDriver(Driver):
         self.source = source
         self.leak_zones = set(leak_zones)
         self.ignore_revoke = ignore_revoke
+        self.ignore_synced = ignore_synced
         self._members: dict[str, set[str]] = {}
         self._docs: dict[str, Placement] = {}
 
@@ -60,7 +64,11 @@ class FakeDriver(Driver):
 
     def _publish(self) -> None:
         self.source.documents.clear()
+        synced = self.system.synced_zones
         for doc_id, placement in self._docs.items():
+            outside = synced is not None and placement.zone not in synced
+            if outside and not self.ignore_synced:
+                continue
             members = self._members[placement.zone]
             # «Виден всем» — только если зона открыта всем учёткам системы:
             # так отдают общие документы и BookStack, и группа Nextcloud.

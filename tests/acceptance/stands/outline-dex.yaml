@@ -1,0 +1,94 @@
+# dex для стенда приёмки Outline: сотрудники манифеста (почта и общий
+# пароль стенда Kronto-Test-1). Собирается из манифеста: см.
+# tests/acceptance/systems/outline.py (dex_config), файл сверяет тест.
+issuer: http://127.0.0.1:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+oauth2:
+  skipApprovalScreen: true
+staticClients:
+  - id: outline
+    secret: outline-stand-client-secret
+    name: Outline
+    redirectURIs:
+      - https://127.0.0.1:8542/auth/oidc.callback
+enablePasswordDB: true
+staticPasswords:
+  - email: admin@severny-veter.test
+    username: admin
+    userID: "00000000-0000-0000-0000-000000000001"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: vetrov@severny-veter.test
+    username: vetrov
+    userID: "00000000-0000-0000-0000-000000000002"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: snegova@severny-veter.test
+    username: snegova
+    userID: "00000000-0000-0000-0000-000000000003"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: lednev@severny-veter.test
+    username: lednev
+    userID: "00000000-0000-0000-0000-000000000004"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: belova@severny-veter.test
+    username: belova
+    userID: "00000000-0000-0000-0000-000000000005"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: orlov@severny-veter.test
+    username: orlov
+    userID: "00000000-0000-0000-0000-000000000006"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: zimina@severny-veter.test
+    username: zimina
+    userID: "00000000-0000-0000-0000-000000000007"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: gromova@severny-veter.test
+    username: gromova
+    userID: "00000000-0000-0000-0000-000000000008"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: petrenko@severny-veter.test
+    username: petrenko
+    userID: "00000000-0000-0000-0000-000000000009"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: kuznetsova@severny-veter.test
+    username: kuznetsova
+    userID: "00000000-0000-0000-0000-000000000010"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: volkov@severny-veter.test
+    username: volkov
+    userID: "00000000-0000-0000-0000-000000000011"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: solovyov@severny-veter.test
+    username: solovyov
+    userID: "00000000-0000-0000-0000-000000000012"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: lebedeva@severny-veter.test
+    username: lebedeva
+    userID: "00000000-0000-0000-0000-000000000013"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: fomin@severny-veter.test
+    username: fomin
+    userID: "00000000-0000-0000-0000-000000000014"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: tikhonov@severny-veter.test
+    username: tikhonov
+    userID: "00000000-0000-0000-0000-000000000015"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: ershov@severny-veter.test
+    username: ershov
+    userID: "00000000-0000-0000-0000-000000000016"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: makarova@severny-veter.test
+    username: makarova
+    userID: "00000000-0000-0000-0000-000000000017"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: savelyev@severny-veter.test
+    username: savelyev
+    userID: "00000000-0000-0000-0000-000000000018"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
+  - email: nikitina@severny-veter.test
+    username: nikitina
+    userID: "00000000-0000-0000-0000-000000000019"
+    hash: "$2a$10$G9Ykml3or6/faJOGCwyFQ.7eCR7ZHYZ4O/2NLAUYR79GlX/KBk5qi"
