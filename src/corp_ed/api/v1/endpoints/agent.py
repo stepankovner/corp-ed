@@ -34,7 +34,8 @@ from corp_ed.services.agent_ingest_service import (
     parse_token,
 )
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+# Протокол агента описан в docs/SMB-AGENT.md; в схему API фронта не входит.
+router = APIRouter(prefix="/agent", tags=["agent"], include_in_schema=False)
 
 Emails = Annotated[
     list[Annotated[str, Field(max_length=254)]],
