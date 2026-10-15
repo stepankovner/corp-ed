@@ -207,6 +207,43 @@ jobs:
       - name: Build
         run: npm run build
 
+  # Агент сетевых папок (agent/, docs/SMB-AGENT.md) — отдельный пакет со
+  # своими зависимостями: свой venv, свои проверки. Живой стенд с Samba
+  # (agent/tests/live) в CI не идёт.
+  agent:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    name: SMB agent lint, types, tests
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || fromJSON(vars.RUNS_ON || '"ubuntu-24.04"') }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: agent
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv python install 3.12
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv -e '.[dev]'
+
+      - name: Ruff
+        run: .venv/bin/ruff check . && .venv/bin/ruff format --check .
+
+      - name: Mypy
+        run: .venv/bin/mypy
+
+      - name: Pytest
+        run: .venv/bin/pytest -q --ignore=tests/live
+
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
