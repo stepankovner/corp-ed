@@ -283,6 +283,11 @@ async def test_common_tree_is_walked_with_paths(server: FakeR7) -> None:
     assert not [r for _, r, _ in server.calls if "sbox" in r or r == "files/30"]
 
 
+async def test_unknown_module_lists_nothing(server: FakeR7) -> None:
+    assert [d async for d in make_adapter(server).list(["other"])] == []
+    assert server.calls == []
+
+
 async def test_folders_and_people_are_paged(
     server: FakeR7, monkeypatch: pytest.MonkeyPatch
 ) -> None:
