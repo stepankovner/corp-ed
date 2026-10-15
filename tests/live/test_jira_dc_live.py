@@ -130,6 +130,20 @@ async def test_listing_mirrors_jira_permissions(stand_address: None) -> None:
     assert attachments["Заявление.docx"].path.startswith("Кадры/HR-")
 
 
+async def test_without_project_list_all_visible_projects_are_walked(
+    stand_address: None,
+) -> None:
+    async with httpx.AsyncClient() as raw:
+        adapter = build_adapter(
+            {"base_url": URL, "jql": "updated >= -30d"},
+            {"token": TOKEN},
+            outbound.OutboundClient(raw),
+            _settings(),
+        )
+        titles = {d.title.split(": ", 1)[1] async for d in adapter.list(["issues"])}
+    assert titles == set(EXPECTED_READERS)
+
+
 async def test_issue_and_attachment_reach_the_extractor(stand_address: None) -> None:
     async with httpx.AsyncClient() as raw:
         adapter = _adapter(raw)
@@ -150,7 +164,7 @@ async def test_issue_and_attachment_reach_the_extractor(stand_address: None) -> 
     assert RESTRICTED_COMMENT not in markdown
     assert isinstance(file, FetchedFile)
     detected = detect_format(file.filename, file.data)
-    text = await extract(detected.format, file.data)
+    text = extract(detected.format, file.data)
     assert "Заявление на отпуск подаётся за две недели." in text
 
 
@@ -162,6 +176,36 @@ async def test_token_of_plain_user_is_refused(stand_address: None) -> None:
         await adapter.check()
         with pytest.raises(AdapterConfigError, match="admin_required"):
             [d async for d in adapter.list(["issues"])]
+
+
+async def test_project_admin_token_covers_only_its_projects(
+    stand_address: None,
+) -> None:
+    """Администратор одного проекта (не Jira): читателей Jira называет
+    только в его проекте — остальные пропускаются, а не открываются."""
+    if not (MEMBER_TOKEN and ADMIN_TOKEN):
+        pytest.skip("нужны JIRA_DC_MEMBER_TOKEN и JIRA_DC_ADMIN_TOKEN")
+    seeder = Seeder(URL, ADMIN_TOKEN)
+    scheme = seeder.http.get("/project/OPEN/permissionscheme").json()["id"]
+    grant = seeder.http.post(
+        f"/permissionscheme/{scheme}/permission",
+        json={
+            "holder": {"type": "user", "parameter": "bob"},
+            "permission": "ADMINISTER_PROJECTS",
+        },
+    )
+    grant.raise_for_status()
+    try:
+        async with httpx.AsyncClient() as raw:
+            documents = [d async for d in _adapter(raw, MEMBER_TOKEN).list(["issues"])]
+        # bob видит и ENG-1 (роль Developers), но читателей ENG ему Jira не
+        # называет (403): задачи ENG не индексируются.
+        assert {d.title.split(": ", 1)[1] for d in documents} == {"Регламент"}
+        assert documents[0].allowed_emails == _emails(EXPECTED_READERS["Регламент"])
+    finally:
+        seeder.http.delete(
+            f"/permissionscheme/{scheme}/permission/{grant.json()['id']}"
+        ).raise_for_status()
 
 
 async def _people(session: AsyncSession) -> dict[str, User]:

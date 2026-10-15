@@ -100,11 +100,12 @@ console.log(`состояние: ${await state()}`);
 // из страницы (защита от XSRF сверяет Origin с адресом Jira).
 await page.goto(`${base}/secure/Dashboard.jspa`, { waitUntil: "domcontentloaded" });
 if (page.url().includes("login")) {
-  await page.locator("#login-form-username, input[name=os_username]").first().fill("admin");
-  await page.locator("#login-form-password, input[name=os_password]").first().fill(password);
+  // Форма входа: в 10.x — #username-field, раньше — #login-form-username.
+  await page.locator("#username-field, #login-form-username").first().fill("admin");
+  await page.locator("#password-field, #login-form-password").first().fill(password);
   await Promise.all([
     page.waitForURL((url) => !url.pathname.includes("login")),
-    page.locator("#login-form-submit, #login").first().click(),
+    page.locator("#login-button, #login-form-submit").first().click(),
   ]);
 }
 const result = await page.evaluate(async (name) => {

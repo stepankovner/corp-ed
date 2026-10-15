@@ -34,13 +34,18 @@ async function open(path) {
     ]);
   }
   await page.waitForLoadState("networkidle");
-  await page.locator(".aui-page-panel-content").first().waitFor();
+  const content = page.locator(".aui-page-panel-content").first();
+  await content.waitFor().catch(async (error) => {
+    const text = (await page.locator("body").innerText()).slice(0, 400);
+    throw new Error(`${page.url()} | ${await page.title()} | ${text} | ${error}`);
+  });
 }
 
 async function submit(selector) {
+  // Каждая форма здесь уводит на другой адрес (редирект после POST).
+  const before = page.url();
   await Promise.all([
-    page.waitForLoadState("domcontentloaded"),
-    page.waitForEvent("framenavigated"),
+    page.waitForURL((url) => url.href !== before, { waitUntil: "domcontentloaded" }),
     page.locator(selector).first().click(),
   ]);
   await page.waitForLoadState("networkidle");
@@ -55,21 +60,12 @@ await Promise.all([
   page.locator("#login-button, #login-form-submit").first().click(),
 ]);
 
-async function dump() {
-  console.log(`${page.url()}`);
-  console.log((await page.locator(".aui-page-panel-content").first().innerText()).slice(0, 1500));
-  const links = await page
-    .locator(".aui-page-panel-content a, .aui-page-panel-content input, .aui-page-panel-content form, .aui-page-panel-content select")
-    .evaluateAll((els) =>
-      els.map((e) => `${e.tagName} id=${e.id} name=${e.getAttribute("name") || ""} type=${e.getAttribute("type") || ""} href=${e.getAttribute("href") || e.getAttribute("action") || ""} text=${(e.innerText || e.value || "").trim().slice(0, 30)}`),
-    );
-  console.log(links.join("\n"));
-}
-
 await open("/secure/admin/ViewIssueSecuritySchemes.jspa");
 let scheme = page.locator(".aui-page-panel-content a", { hasText: SCHEME }).first();
 if (!(await scheme.count())) {
-  await open("/secure/admin/AddIssueSecurityScheme!default.jspa");
+  // Ссылка со страницы списка — с atl_token: прямой переход без него Jira
+  // 10.3 уводит на вход («permissionViolation»).
+  await submit("#add_securityscheme");
   await page.locator("input[name=name]").fill(SCHEME);
   await submit("#add_submit");
   scheme = page.locator(".aui-page-panel-content a", { hasText: SCHEME }).first();
@@ -85,8 +81,9 @@ for (const [level, users] of Object.entries(LEVELS)) {
   }
   const row = page.locator(".aui-page-panel-content tr", { hasText: level }).first();
   for (const user of users) {
-    // Участник уже есть — повторный запуск его не дублирует.
-    if ((await row.innerText()).includes(`(${user})`)) continue;
+    // Участник уже есть (в строке — его отображаемое имя; у тестовых
+    // учёток оно совпадает с логином) — повторный запуск его не дублирует.
+    if ((await row.innerText()).toLowerCase().includes(`(${user})`)) continue;
     await open(`/secure/admin/${await page.locator(`a[id="add_${level}"]`).getAttribute("href")}`);
     await page.locator("#user_id").check();
     await page.locator("#user").fill(user);
@@ -94,7 +91,10 @@ for (const [level, users] of Object.entries(LEVELS)) {
     await open(levels);
   }
 }
-console.log((await page.locator(".aui-page-panel-content table").first().innerText()).trim());
+for (const level of Object.keys(LEVELS)) {
+  const row = page.locator(".aui-page-panel-content tr", { hasText: level }).first();
+  console.log((await row.innerText()).replace(/\s+/g, " ").trim());
+}
 
 // Привязка к проекту — уже REST (PUT /project/{key} принимает id схемы).
 const response = await page.request.put(`${base}/rest/api/2/project/ENG`, {

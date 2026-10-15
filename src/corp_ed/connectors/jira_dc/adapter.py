@@ -20,8 +20,17 @@
 прочиталась — тоже на задачу: дороже, но верно.
 
 Поиск пользователей с правом Jira отдаёт только администратору (Jira
-или проекта): проект, где токену ответили 403, пропускается целиком;
-пропущены все — AdapterConfigError("admin_required").
+или проекта; живой стенд 10.3.26, 15.10): проект, где токену ответили
+403, пропускается целиком; ни одного ответа и хотя бы один пропуск —
+AdapterConfigError("admin_required"). Почему не схема прав, роли и
+группы по отдельности: состав уровней безопасности REST DC не отдаёт
+вовсе, а `/group/member` и схема прав — тоже только администратору;
+ответ Jira о задаче учитывает всё сразу.
+
+Содержимое (fetch): задача с `expand=renderedFields` — HTML описания и
+комментариев от самой Jira; комментарии с ограничением видимости
+(роль, группа) отбрасываются: администратор их видит, а читатели
+задачи — не все.
 
 Вложения — `fields.attachment` из того же поиска: читатели задачи,
 скачивание по `content` только с хоста Jira.
@@ -168,7 +177,10 @@ class JiraAdapter:
         self._projects = [p for p in projects if p]
         self._jql = jql.strip()
         self._max_bytes = max_bytes
-        self._no_email = 0
+        self._no_email: set[str] = set()
+        """Логины пользователей без почты: им не выдаётся ничего."""
+        self._answered = 0
+        """Сколько раз Jira ответила, кто читает задачу, за этот обход."""
 
     @property
     def root(self) -> str:
@@ -185,10 +197,10 @@ class JiraAdapter:
         wanted = set(modules) & {MODULE_ISSUES, MODULE_ATTACHMENTS}
         if not wanted:
             return
-        seen = skipped = 0
-        self._no_email = 0
+        skipped = 0
+        self._no_email = set()
+        self._answered = 0
         async for raw in self._iter_projects():
-            seen += 1
             project = _Project(
                 key=str(raw["key"]),
                 name=str(raw.get("name") or raw["key"]),
@@ -203,10 +215,11 @@ class JiraAdapter:
                     "jira_project_skipped", project=project.key, code="admin_required"
                 )
         if self._no_email:
-            logger.info("jira_users_without_email", count=self._no_email)
-        if seen and skipped == seen:
-            # Ни в одном проекте токен не может узнать читателей задач:
-            # без этого не выдать прав никому — это настройка, а не сбой.
+            logger.info("jira_users_without_email", count=len(self._no_email))
+        if skipped and not self._answered:
+            # Ни в одном проекте токен не может узнать читателей задач (а
+            # где ответов не понадобилось, задач ему не видно): без этого
+            # прав не выдать никому — это настройка, а не сбой.
             raise AdapterConfigError("admin_required")
 
     async def fetch(
@@ -421,6 +434,7 @@ class JiraAdapter:
                 if exc.code == "forbidden":
                     raise _ProjectSkippedError from exc
                 raise
+            self._answered += 1
             users = (
                 [u for u in page if isinstance(u, dict)]
                 if isinstance(page, list)
@@ -435,7 +449,7 @@ class JiraAdapter:
                 if isinstance(email, str) and "@" in email:
                     emails.add(email.strip().lower())
                 else:
-                    self._no_email += 1
+                    self._no_email.add(str(user.get("name") or user.get("key")))
             # Конец — пустая страница: в части версий Jira страница режется
             # до проверки прав и бывает короче maxResults посреди списка.
             start += len(users)
