@@ -17,12 +17,16 @@ from tests.acceptance.systems.base import (
 from tests.acceptance.systems.bookstack import BookStackDriver
 from tests.acceptance.systems.dokuwiki import DokuWikiDriver
 from tests.acceptance.systems.nextcloud import NextcloudDriver, OwnCloudDriver
+from tests.acceptance.systems.webdav import WebDavDriver
+from tests.acceptance.systems.wikijs import WikiJsDriver
 
 DRIVERS: dict[str, type[Driver]] = {
     "bookstack": BookStackDriver,
     "nextcloud": NextcloudDriver,
     "owncloud": OwnCloudDriver,
     "dokuwiki": DokuWikiDriver,
+    "webdav": WebDavDriver,
+    "wikijs": WikiJsDriver,
 }
 
 # Поля токенов OAuth-сотрудника (то, что ядро кладёт в грант после обмена

@@ -40,6 +40,7 @@ class Stand:
     ready_path: str = "/"
     env: dict[str, str] = field(default_factory=dict)
     wait_seconds: int = 300
+    ready_codes: tuple[int, ...] = (200,)
 
     @property
     def project(self) -> str:
@@ -74,6 +75,22 @@ STANDS: dict[str, Stand] = {
             "OWNCLOUD_PORT",
             8522,
             "/status.php",
+            {"POSTGRES_VERSION": "15-alpine"},
+        ),
+        Stand(
+            "webdav",
+            "tests/live/webdav/compose.yaml",
+            "WEBDAV_PORT",
+            8523,
+            "/dav/",
+            ready_codes=(401,),
+        ),
+        Stand(
+            "wikijs",
+            "tests/live/wikijs/compose.yaml",
+            "WIKIJS_PORT",
+            8527,
+            "/healthz",
             {"POSTGRES_VERSION": "15-alpine"},
         ),
         Stand(
@@ -182,7 +199,9 @@ def wait_ready(stand: Stand) -> None:
                 stand.url.rstrip("/") + stand.ready_path, verify=cert, timeout=10
             )
             last = f"HTTP {response.status_code}"
-            if response.status_code == 200 and _installed(stand, response):
+            if response.status_code in stand.ready_codes and _installed(
+                stand, response
+            ):
                 return
         except httpx.HTTPError as exc:
             last = type(exc).__name__
@@ -193,7 +212,7 @@ def wait_ready(stand: Stand) -> None:
 
 
 def _installed(stand: Stand, response: httpx.Response) -> bool:
-    if stand.system in ("nextcloud", "owncloud"):
+    if stand.system in ("nextcloud", "owncloud") and response.status_code == 200:
         return bool(response.json().get("installed"))
     return True
 
