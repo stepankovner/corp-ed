@@ -16,6 +16,7 @@
 отзываются через /access с пустым списком.
 """
 
+import hashlib
 import logging
 import threading
 from collections import Counter
@@ -74,8 +75,18 @@ class _Pending:
     emails: list[str]
 
 
+MAX_EXTERNAL_ID = 512
+"""Длина id документа в kronto (materials.external_id)."""
+
+
 def external_id(entry: FileEntry) -> str:
-    return entry.unc.lower()
+    """Путь UNC в нижнем регистре; длиннее MAX_EXTERNAL_ID — его SHA-256:
+    у глубоко вложенных файлов путь не помещается, а id должен быть
+    стабильным между обходами."""
+    unc = entry.unc.lower()
+    if len(unc) <= MAX_EXTERNAL_ID:
+        return unc
+    return "sha256:" + hashlib.sha256(unc.encode("utf-8")).hexdigest()
 
 
 class Syncer:

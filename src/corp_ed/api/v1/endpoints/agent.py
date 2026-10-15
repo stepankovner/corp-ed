@@ -45,17 +45,20 @@ Emails = Annotated[
 
 class DocumentMeta(BaseModel):
     run_id: UUID
-    external_id: str = Field(min_length=1, max_length=1024)
+    # Как materials.external_id; длинный путь агент заменяет хешем.
+    external_id: str = Field(min_length=1, max_length=512)
     version: str = Field(min_length=1, max_length=128)
-    title: str = Field(min_length=1, max_length=200)
-    path: str = Field(max_length=2048)
+    # Имя файла без расширения бывает длиннее заголовка материала (200) —
+    # обрезается при сохранении, а не отвергается.
+    title: str = Field(min_length=1, max_length=1024)
+    path: str = Field(max_length=32768)
     filename: str = Field(min_length=1, max_length=255)
     modified_at: datetime | None = None
     allowed_emails: Emails
 
 
 class AccessItem(BaseModel):
-    external_id: str = Field(min_length=1, max_length=1024)
+    external_id: str = Field(min_length=1, max_length=512)
     allowed_emails: Emails
 
 
