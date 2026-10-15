@@ -59,6 +59,11 @@ class System:
     accounts: tuple[str, ...]  # логины с учётной записью в системе
     docs: tuple[str, ...]  # id документов, лежащих в системе
     modules: tuple[str, ...] = ()  # модули подключения; пусто — первый у вида
+    synced_zones: tuple[str, ...] | None = None
+    """Зоны, которые подключение вообще забирает; None — все. Нужно виду,
+    который не умеет разные права у разных зон одного подключения
+    (MediaWiki: права на вики, а не на пространство имён): остальные зоны в
+    системе лежат, но в kronto их быть не должно."""
 
     @property
     def cloud(self) -> bool:
@@ -168,6 +173,9 @@ def load_manifest(path: Path = MANIFEST) -> Manifest:
             stand=item["stand"],
             storage=item["storage"],
             modules=tuple(item.get("modules", ())),
+            synced_zones=(
+                tuple(item["synced_zones"]) if "synced_zones" in item else None
+            ),
             accounts=(
                 tuple(employees)
                 if accounts == "all"
@@ -224,6 +232,9 @@ def validate(manifest: Manifest) -> None:
         for login in system.accounts:
             if login not in manifest.employees:
                 raise ManifestError(f"{system.id}: нет сотрудника {login}")
+        for zone in system.synced_zones or ():
+            if zone not in manifest.zones:
+                raise ManifestError(f"{system.id}: нет зоны {zone}")
     for conflict in manifest.conflicts:
         for fact in conflict["facts"]:  # type: ignore[attr-defined]
             if fact["doc"] not in manifest.documents:
@@ -303,11 +314,21 @@ class Expected:
         return True
 
     def present_docs(self) -> list[DocState]:
-        return [state for state in self.docs.values() if state.present]
+        """Документы, которые должны быть в kronto: лежат в системе и в
+        зоне, которую подключение забирает."""
+        return [state for state in self.docs.values() if self._in_kronto(state)]
+
+    def _in_kronto(self, state: DocState) -> bool:
+        synced = self.system.synced_zones
+        return state.present and (synced is None or state.zone in synced)
 
     def readers(self, doc_id: str) -> frozenset[str]:
         state = self.docs[doc_id]
-        return frozenset(self.members[state.zone]) if state.present else frozenset()
+        return (
+            frozenset(self.members[state.zone])
+            if self._in_kronto(state)
+            else frozenset()
+        )
 
     def visible_to(self, login: str) -> frozenset[str]:
         """Документы, которые login ДОЛЖЕН видеть."""

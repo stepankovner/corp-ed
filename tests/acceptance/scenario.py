@@ -100,12 +100,18 @@ def compare(expected: Expected, obs: Observation, logins: list[str]) -> list[str
         title = expected.docs[doc_id].document.title
         problems.append(f"нет документа {doc_id} «{title}»")
     for doc_id in sorted(obs.contents.keys() - wanted):
-        gone = doc_id in expected.docs
-        problems.append(
-            f"документ {doc_id} должен был исчезнуть, но остался"
-            if gone
-            else f"лишний документ {doc_id}"
-        )
+        state = expected.docs.get(doc_id)
+        if state is None:
+            problems.append(f"лишний документ {doc_id}")
+        elif state.present:
+            # Лежит в системе, но подключение не должно его забирать (зона
+            # не из synced_zones): попадание в kronto — утечка.
+            problems.append(
+                f"УТЕЧКА: документ {doc_id} из зоны {state.zone} не должен "
+                "попадать в kronto"
+            )
+        else:
+            problems.append(f"документ {doc_id} должен был исчезнуть, но остался")
     for state in expected.present_docs():
         texts = obs.contents.get(state.document.id)
         for edit in state.edits:
@@ -376,7 +382,11 @@ async def run_step(
     result = StepResult(system.id, step.id, OK)
     skipped: list[str] = []
     applied = {"edit": 0, "delete": 0, "revoke": 0, "move": 0}
+    # Сколько правок и удалений должно дойти до kronto: документ из зоны,
+    # которую подключение не забирает (synced_zones), в kronto не лежит.
+    expect_in_kronto = {"edit": 0, "delete": 0}
     for op in step.ops:
+        in_kronto = op.doc in {s.document.id for s in expected.present_docs()}
         try:
             reason = apply_op(driver, expected, op)
         except NotSupportedError as exc:
@@ -392,6 +402,8 @@ async def run_step(
             skipped.append(f"{op.op} {op.doc or op.login}: {reason}")
         else:
             applied[op.op] += 1
+            if in_kronto and op.op in expect_in_kronto:
+                expect_in_kronto[op.op] += 1
     if not any(applied.values()):
         result.status = SKIP
         result.details = skipped or ["нечего применять"]
@@ -399,11 +411,13 @@ async def run_step(
     outcome = await sync_once(setup)
     result.stats = _stats(outcome) | {"applied": applied}
     problems = _outcome_problems(outcome)
-    if applied["edit"] and outcome.stats.updated < applied["edit"]:
-        problems.append(f"обновлено {outcome.stats.updated} < правок {applied['edit']}")
-    if applied["delete"] and outcome.stats.removed < applied["delete"]:
+    if outcome.stats.updated < expect_in_kronto["edit"]:
         problems.append(
-            f"удалено {outcome.stats.removed} < удалений {applied['delete']}"
+            f"обновлено {outcome.stats.updated} < правок {expect_in_kronto['edit']}"
+        )
+    if outcome.stats.removed < expect_in_kronto["delete"]:
+        problems.append(
+            f"удалено {outcome.stats.removed} < удалений {expect_in_kronto['delete']}"
         )
     obs = await observe(
         setup.service.session_maker, setup.tenant, setup.connector.id, setup.users
@@ -439,6 +453,11 @@ async def run_initial(
     first.status = FAIL if problems else OK
 
     second = StepResult(system.id, RESYNC, OK)
+    if outcome.status is not SyncRunStatus.SUCCEEDED:
+        # Ядро останавливает подключение после отказа (ошибка входа и т. п.).
+        second.status = SKIP
+        second.details = ["начальная синхронизация не прошла"]
+        return [first, second]
     outcome = await sync_once(setup)
     second.stats = _stats(outcome)
     problems = _outcome_problems(outcome)

@@ -5,6 +5,7 @@
 """
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -33,11 +34,18 @@ async def run_fake(
     *,
     leak_zones: Iterable[str] = (),
     ignore_revoke: bool = False,
+    synced_zones: tuple[str, ...] | None = None,
+    ignore_synced: bool = False,
 ) -> list[StepResult]:
-    system = fake_system(manifest)
+    system = replace(fake_system(manifest), synced_zones=synced_zones)
     source = FakeSource()
     driver = FakeDriver(
-        system, manifest, source, leak_zones=leak_zones, ignore_revoke=ignore_revoke
+        system,
+        manifest,
+        source,
+        leak_zones=leak_zones,
+        ignore_revoke=ignore_revoke,
+        ignore_synced=ignore_synced,
     )
     from tests.acceptance.model import Expected
 
@@ -126,3 +134,43 @@ async def test_system_without_credentials_is_skipped(
 
     assert {r.status for r in results} == {"skip"}
     assert "нет учётных данных" in results[0].details[0]
+
+
+async def test_only_synced_zones_reach_kronto(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    manifest: Manifest,
+) -> None:
+    """Подключение забирает не все зоны (MediaWiki): остальные лежат в
+    системе, в kronto их нет, и перенос в чужую зону — это исчезновение."""
+    results = await run_fake(manifest, session_maker, synced_zones=("public",))
+
+    for result in results:
+        assert result.status == OK, (result.step, result.details)
+    public = [
+        d
+        for d in manifest.systems["bookstack"].docs
+        if manifest.documents[d].zone == "public"
+    ]
+    assert results[0].stats["added"] == len(public)
+    # Правка закрытого документа до kronto не доходит: обновлён один.
+    assert results[2].stats["updated"] == 1
+    # Перенос памятки в зону кадров убрал её из kronto.
+    assert results[5].stats["removed"] == 1
+
+
+async def test_closed_zone_pulled_into_kronto_is_a_leak(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    manifest: Manifest,
+) -> None:
+    results = await run_fake(
+        manifest, session_maker, synced_zones=("public",), ignore_synced=True
+    )
+
+    first = results[0]
+    assert first.status == FAIL
+    assert any(
+        d.startswith("УТЕЧКА: документ SV-PAY-001 из зоны payroll")
+        for d in first.details
+    )

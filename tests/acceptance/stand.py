@@ -41,6 +41,13 @@ class Stand:
     env: dict[str, str] = field(default_factory=dict)
     wait_seconds: int = 300
     ready_codes: tuple[int, ...] = (200,)
+    scheme: str = "https"
+    """Confluence и Jira слушают сами, по http: TLS-прокси в их стендах нет."""
+    services: tuple[str, ...] = ()
+    """Поднять только эти сервисы compose (у MediaWiki — закрытая вики из
+    двух); пусто — все."""
+    files: tuple[str, ...] = ()
+    """Дополнительные compose-файлы поверх основного (пути от корня)."""
 
     @property
     def project(self) -> str:
@@ -48,7 +55,7 @@ class Stand:
 
     @property
     def url(self) -> str:
-        return f"https://127.0.0.1:{self.port}/"
+        return f"{self.scheme}://127.0.0.1:{self.port}/"
 
 
 STANDS: dict[str, Stand] = {
@@ -96,6 +103,50 @@ STANDS: dict[str, Stand] = {
         Stand(
             "dokuwiki", "tests/live/dokuwiki/compose.yaml", "DOKUWIKI_PORT", 8529, "/"
         ),
+        Stand(
+            "seafile",
+            "tests/live/seafile/compose.yaml",
+            "SEAFILE_PORT",
+            8540,
+            "/api2/ping/",
+            wait_seconds=420,
+        ),
+        Stand(
+            "mediawiki",
+            "tests/live/mediawiki/compose.yaml",
+            "MEDIAWIKI_PRIVATE_PORT",
+            8541,
+            "/api.php?action=query&meta=siteinfo&format=json",
+            {"MEDIAWIKI_LOCKDOWN_DIR": "~/.kronto-acc/Lockdown"},
+            services=("wiki_private", "tls_private"),
+        ),
+        Stand(
+            "outline",
+            "tests/live/outline/compose.yaml",
+            "OUTLINE_PORT",
+            8542,
+            "/_health",
+            files=("tests/acceptance/stands/outline.yaml",),
+            wait_seconds=420,
+        ),
+        Stand(
+            "confluence_dc",
+            "tests/live/confluence_dc/compose.yaml",
+            "CONFLUENCE_PORT",
+            8543,
+            "/status",
+            scheme="http",
+            wait_seconds=600,
+        ),
+        Stand(
+            "jira_dc",
+            "tests/live/jira_dc/compose.yaml",
+            "JIRA_PORT",
+            8544,
+            "/status",
+            scheme="http",
+            wait_seconds=600,
+        ),
     )
 }
 
@@ -132,21 +183,16 @@ def _docker() -> str:
 
 
 def compose_args(stand: Stand, *args: str) -> list[str]:
-    return [
-        _docker(),
-        "compose",
-        "-p",
-        stand.project,
-        "-f",
-        str(ROOT / stand.compose),
-        *args,
-    ]
+    command = [_docker(), "compose", "-p", stand.project]
+    for name in (stand.compose, *stand.files):
+        command += ["-f", str(ROOT / name)]
+    return [*command, *args]
 
 
 def compose_env(stand: Stand) -> dict[str, str]:
     return {
         **os.environ,
-        **stand.env,
+        **{key: os.path.expanduser(value) for key, value in stand.env.items()},
         stand.port_env: str(stand.port),
         "DAV_TLS_DIR": str(ensure_tls()),
     }
@@ -154,9 +200,22 @@ def compose_env(stand: Stand) -> dict[str, str]:
 
 def up(stand: Stand) -> None:
     subprocess.run(
-        compose_args(stand, "up", "-d"), env=compose_env(stand), check=True, cwd=ROOT
+        compose_args(stand, "up", "-d", *stand.services),
+        env=compose_env(stand),
+        check=True,
+        cwd=ROOT,
     )
     wait_ready(stand)
+
+
+def restart(stand: Stand, service: str) -> None:
+    subprocess.run(
+        compose_args(stand, "restart", service),
+        env=compose_env(stand),
+        check=True,
+        cwd=ROOT,
+        capture_output=True,
+    )
 
 
 def down(stand: Stand) -> None:
@@ -191,7 +250,7 @@ def exec_in(
 
 def wait_ready(stand: Stand) -> None:
     deadline = time.monotonic() + stand.wait_seconds
-    cert = str(tls_dir() / "cert.pem")
+    cert: str | bool = str(tls_dir() / "cert.pem") if stand.scheme == "https" else False
     last = ""
     while time.monotonic() < deadline:
         try:
