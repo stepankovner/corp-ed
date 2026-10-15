@@ -266,7 +266,8 @@ def parse_acl(data: bytes, offset: int = 0) -> tuple[Ace, ...]:
     if len(data) < offset + 8:
         raise SecurityDescriptorError("ACL обрезан")
     revision, _sbz1, acl_size, count, _sbz2 = struct.unpack_from("<BBHHH", data, offset)
-    if revision not in (2, 4):
+    # [MS-DTYP]: 2 или 4; Samba пишет и 3 (ACL_REVISION3 из winnt.h).
+    if revision not in (2, 3, 4):
         raise SecurityDescriptorError(f"неверная ревизия ACL: {revision}")
     if acl_size < 8 or len(data) < offset + acl_size:
         raise SecurityDescriptorError("ACL обрезан")

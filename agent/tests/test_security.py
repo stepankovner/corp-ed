@@ -177,3 +177,29 @@ def test_samba_descriptor_explicit_allow_first() -> None:
         (AceType.ACCESS_ALLOWED, False, f"{STAND}-1105"),
         (AceType.ACCESS_DENIED, True, f"{STAND}-1105"),
     ]
+
+
+def test_samba_protected_descriptor_acl_revision_3() -> None:
+    """Общая\\Секрет директора.txt: наследование отключено через smbcacls —
+    флаг P (DACL_PROTECTED), только явные ACE, ревизия ACL 3 (так пишет
+    Samba; Windows — 2 или 4)."""
+    raw = (FIXTURES / "samba-public-director-secret.sd").read_bytes()
+    assert raw[struct.unpack_from("<I", raw, 16)[0]] == 3
+    parsed = parse_security_descriptor(raw)
+    assert parsed.protected
+    assert parsed.dacl is not None
+    assert [(a.sid, a.inherited) for a in parsed.dacl] == [
+        (f"{STAND}-512", False),
+        (f"{STAND}-1106", False),
+        (f"{STAND}-1112", False),
+    ]
+
+
+def test_samba_two_level_inheritance() -> None:
+    """Кадры\\Оценка\\Итоги.txt: все ACE унаследованы через две папки."""
+    parsed = parse_security_descriptor(
+        (FIXTURES / "samba-hr-review-results.sd").read_bytes()
+    )
+    assert parsed.dacl is not None
+    assert all(a.inherited for a in parsed.dacl)
+    assert parsed.dacl[0].sid == f"{STAND}-1110"  # группа hr

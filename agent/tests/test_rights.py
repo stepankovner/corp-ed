@@ -183,6 +183,7 @@ def test_samba_fixtures() -> None:
     users = {
         f"{STAND}-{rid}": f"u{rid}@example.com" for rid in (1103, 1104, 1105, 1106)
     }
+    hr = f"{STAND}-1110"
     users[vera] = "vera@example.com"
 
     class StandDirectory(FakeDirectory):
@@ -191,11 +192,18 @@ def test_samba_fixtures() -> None:
                 return self.all_users()
             if sid in self.emails:
                 return frozenset({sid})
+            if sid in self.groups:
+                return self.groups[sid]
             # Domain Admins, группа агента — без пользователей с почтой.
             return frozenset() if sid.startswith(STAND) else None
 
     directory = StandDirectory(groups={}, emails=dict(users))
+    directory.groups[hr] = frozenset({f"{STAND}-1103", f"{STAND}-1104"})
     plan = (FIXTURES / "samba-projects-plan.sd").read_bytes()
     assert readers(plan, directory) == set(users) - {vera}
     for_vera = (FIXTURES / "samba-projects-for-vera.sd").read_bytes()
     assert readers(for_vera, directory) == set(users)
+    secret = (FIXTURES / "samba-public-director-secret.sd").read_bytes()
+    assert readers(secret, directory) == {f"{STAND}-1106"}
+    review = (FIXTURES / "samba-hr-review-results.sd").read_bytes()
+    assert readers(review, directory) == {f"{STAND}-1103", f"{STAND}-1104"}
