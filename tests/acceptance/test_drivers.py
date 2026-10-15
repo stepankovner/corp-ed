@@ -110,3 +110,28 @@ def test_atlassian_systems_fit_the_ten_user_license() -> None:
             if zone.closed:
                 readers = MANIFEST.readers_of(zone.id) & set(accounts)
                 assert readers and set(accounts) - readers, (name, zone.id)
+
+
+def test_jira_markup_and_project_keys() -> None:
+    from tests.acceptance.systems.jira_dc import (
+        group_name,
+        project_key,
+        to_jira_markup,
+    )
+
+    text = to_jira_markup(
+        "# Заголовок\n\n## Раздел\n\n- пункт\n1. шаг\n\n**Жирный** текст\n\n"
+        "| a | b |\n|---|---|\n| 1 | 2 |\n"
+    )
+
+    assert "h1. Заголовок" in text and "h2. Раздел" in text
+    assert "* пункт" in text and "# шаг" in text
+    assert "*Жирный* текст" in text
+    assert "||a||b||" in text and "|1|2|" in text
+    assert group_name("payroll") == "acc-payroll"
+    # Ключи проектов не совпадают с буквами шифров документов: Jira
+    # превращает «HR-001» в ссылку на задачу и шифр пропадает из текста.
+    codes = {d.id.split("-")[1] for d in MANIFEST.documents.values()}
+    keys = {project_key(zone) for zone in MANIFEST.zones}
+    assert not keys & codes
+    assert all(2 <= len(key) <= 10 for key in keys)
