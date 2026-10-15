@@ -1,0 +1,44 @@
+{
+  "method": "roles/5",
+  "params": {},
+  "response": {
+    "id": 5,
+    "display_name": "Сотрудники",
+    "description": null,
+    "created_at": "2026-10-15T10:32:51.000000Z",
+    "updated_at": "2026-10-15T10:32:51.000000Z",
+    "system_name": "",
+    "external_auth_id": "",
+    "mfa_enforced": false,
+    "permissions": [
+      "access-api"
+    ],
+    "users": [
+      {
+        "id": 1,
+        "name": "Admin",
+        "slug": "admin"
+      },
+      {
+        "id": 3,
+        "name": "Ivan",
+        "slug": "ivan"
+      },
+      {
+        "id": 4,
+        "name": "Maria",
+        "slug": "maria"
+      },
+      {
+        "id": 6,
+        "name": "Olga",
+        "slug": "olga"
+      },
+      {
+        "id": 5,
+        "name": "Petr",
+        "slug": "petr"
+      }
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+# Живой стенд агента сетевых папок: Samba 4 в роли контроллера домена AD
+# (KRONTO.TEST) с общим ресурсом docs, права NTFS — в xattr
+# (vfs_acl_xattr). Наружу ничего не публикуется: тесты агента идут в той же
+# сети docker (сервис tester). Пароли выдуманные, только для стенда.
+#
+#   docker compose -f tests/live/smb/compose.yaml up -d --build dc
+#   docker compose -f tests/live/smb/compose.yaml exec dc seed.sh
+#   docker compose -f tests/live/smb/compose.yaml run --rm tester
+#
+# Подробности и итоги проверки — README.md рядом.
+name: kronto-live-smb
+
+services:
+  dc:
+    build:
+      context: .
+      # За HTTPS-прокси (песочница): SMB_APT_PROXY и SMB_BUILD_CA
+      # (сертификат прокси); без них — обычный apt.
+      network: host
+      args:
+        APT_PROXY: ${SMB_APT_PROXY:-}
+      secrets:
+        - build_ca
+    image: kronto-live-smb-dc:dev
+    hostname: dc1
+    domainname: kronto.test
+    # security.NTACL (xattr с дескриптором безопасности) пишется только с
+    # CAP_SYS_ADMIN; privileged не нужен.
+    cap_add: [SYS_ADMIN]
+    environment:
+      SMB_ADMIN_PASSWORD: Kronto-Stand-Admin-1
+    volumes:
+      - samba:/var/lib/samba
+      - samba-etc:/etc/samba
+      - docs:/srv/docs
+      - export:/export
+    networks:
+      stand:
+        aliases: [dc1.kronto.test]
+    healthcheck:
+      test: ["CMD", "smbclient", "-N", "-L", "//localhost", "-m", "SMB3"]
+      interval: 5s
+      retries: 30
+
+  # Тесты агента внутри сети стенда: образ агента (agent/Dockerfile, цель
+  # test) с pytest, файловая система только для чтения.
+  tester:
+    profiles: [test]
+    build:
+      context: ../../../agent
+      target: test
+      network: host
+      secrets:
+        - build_ca
+    image: kronto-agent:test
+    read_only: true
+    tmpfs: [/tmp]
+    depends_on:
+      dc:
+        condition: service_healthy
+    environment:
+      SMB_STAND: "1"
+      SMB_STAND_SERVER: dc1.kronto.test
+      SMB_STAND_CA: /export/ca.pem
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - export:/export:ro
+      - ../../../agent/tests:/app/tests:ro
+    command: ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/app/tests/live"]
+    networks: [stand]
+
+networks:
+  stand: {}
+
+volumes:
+  samba:
+  samba-etc:
+  docs:
+  export:
+
+secrets:
+  build_ca:
+    file: ${SMB_BUILD_CA:-/dev/null}

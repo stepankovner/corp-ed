@@ -1,0 +1,68 @@
+# MediaWiki для живой проверки вида `mediawiki`: официальный образ
+# mediawiki (LTS 1.43) на SQLite, две вики — открытая для чтения без входа
+# (порт 8500) и закрытая (8501: чтение только группе staff, пространство
+# «Кадры» закрыто расширением Lockdown группе hr) — и TLS-прокси на
+# 127.0.0.1. Только для тестов на своей машине или в песочнице: пароли
+# ниже выдуманные, только для стенда.
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls MEDIAWIKI_LOCKDOWN_DIR=~/Lockdown \
+#     docker compose -f tests/live/mediawiki/compose.yaml up -d
+#   дальше — seed.sh и тесты: README.md рядом.
+name: kronto-live-mediawiki
+
+x-wiki: &wiki
+  image: mediawiki:${MEDIAWIKI_VERSION:-1.43.11}
+  entrypoint: ["bash", "/stand/install.sh"]
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/api.php?action=query&meta=siteinfo&format=json"]
+    interval: 5s
+    retries: 40
+
+services:
+  wiki:
+    <<: *wiki
+    environment:
+      WIKI_SERVER: "https://127.0.0.1:${MEDIAWIKI_PORT:-8500}"
+      WIKI_PRIVATE: "0"
+      WIKI_ADMIN_PASSWORD: Kronto-Test-1-wiki
+    volumes:
+      - ./stand:/stand:ro
+      - wiki:/var/www/data
+
+  wiki_private:
+    <<: *wiki
+    environment:
+      WIKI_SERVER: "https://127.0.0.1:${MEDIAWIKI_PRIVATE_PORT:-8501}"
+      WIKI_PRIVATE: "1"
+      WIKI_ADMIN_PASSWORD: Kronto-Test-1-wiki
+    volumes:
+      - ./stand:/stand:ro
+      - wiki_private:/var/www/data
+      - ${MEDIAWIKI_LOCKDOWN_DIR:?расширение Lockdown — см. README}:/var/www/html/extensions/Lockdown:ro
+
+  tls:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [wiki]
+    environment:
+      UPSTREAM: http://wiki:80
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${MEDIAWIKI_PORT:-8500}:443"
+
+  tls_private:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [wiki_private]
+    environment:
+      UPSTREAM: http://wiki_private:80
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${MEDIAWIKI_PRIVATE_PORT:-8501}:443"
+
+volumes:
+  wiki:
+  wiki_private:

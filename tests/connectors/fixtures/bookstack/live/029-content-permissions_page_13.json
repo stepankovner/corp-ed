@@ -1,0 +1,31 @@
+{
+  "method": "content-permissions/page/13",
+  "params": {},
+  "response": {
+    "owner": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "role_permissions": [
+      {
+        "role_id": 5,
+        "view": false,
+        "create": false,
+        "update": false,
+        "delete": false,
+        "role": {
+          "id": 5,
+          "display_name": "Сотрудники"
+        }
+      }
+    ],
+    "fallback_permissions": {
+      "inheriting": true,
+      "view": null,
+      "create": null,
+      "update": null,
+      "delete": null
+    }
+  }
+}

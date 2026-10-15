@@ -171,13 +171,22 @@ def parse_datetime(value: Any) -> datetime | None:
 
 
 _SECRET_KEYS = frozenset(
-    {"auth", "access_token", "refresh_token", "client_secret", "token", "password"}
+    {
+        "auth",
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "token",
+        "password",
+        "token_id",
+        "token_secret",
+    }
 )
 # В параметрах запроса code — одноразовый код авторизации; в ответах
 # CODE — символьный код сайта или страницы, а code — код ошибки REST 3.0.
 _SECRET_REQUEST_KEYS = _SECRET_KEYS | {"code"}
 _SECRET_QUERY = frozenset({"auth", "token", "client_secret", "code"})
-_SECRET_HEADER = re.compile(r"^(Bearer|OAuth|Basic)\s+\S+", re.IGNORECASE)
+_SECRET_HEADER = re.compile(r"^(Bearer|OAuth|Basic|Token)\s+\S+", re.IGNORECASE)
 
 
 # Код входящего вебхука Битрикс24 живёт в пути: /rest/{user}/{code}/…

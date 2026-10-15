@@ -1,0 +1,33 @@
+{
+  "method": "roles/4",
+  "params": {},
+  "response": {
+    "id": 4,
+    "display_name": "Public",
+    "description": "The role given to public visitors if allowed",
+    "created_at": "2026-10-15T10:28:16.000000Z",
+    "updated_at": "2026-10-15T10:28:16.000000Z",
+    "system_name": "public",
+    "external_auth_id": "",
+    "mfa_enforced": false,
+    "permissions": [
+      "book-view-all",
+      "book-view-own",
+      "bookshelf-view-all",
+      "bookshelf-view-own",
+      "chapter-view-all",
+      "chapter-view-own",
+      "content-export",
+      "page-view-all",
+      "page-view-own",
+      "revision-view-all"
+    ],
+    "users": [
+      {
+        "id": 2,
+        "name": "Guest",
+        "slug": "guest"
+      }
+    ]
+  }
+}

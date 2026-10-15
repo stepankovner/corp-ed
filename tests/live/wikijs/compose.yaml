@@ -1,0 +1,45 @@
+# Wiki.js 2.x для живой проверки вида `wikijs`: официальный образ
+# ghcr.io/requarks/wiki:2, Postgres и TLS-прокси на 127.0.0.1. Только для
+# тестов на своей машине или в песочнице: пароли ниже выдуманные.
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls docker compose -f tests/live/wikijs/compose.yaml up -d
+#   дальше — seed.py (установка, пользователи, группы, страницы, ключ) и
+#   тесты: README.md рядом.
+name: kronto-live-wikijs
+
+services:
+  db:
+    image: postgres:${POSTGRES_VERSION:-16.15-alpine}
+    environment:
+      POSTGRES_USER: wikijs
+      POSTGRES_PASSWORD: wikijs-stand
+      POSTGRES_DB: wiki
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "wikijs"]
+      interval: 5s
+      retries: 20
+
+  wiki:
+    image: ghcr.io/requarks/wiki:${WIKIJS_VERSION:-2}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgres
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: wikijs
+      DB_PASS: wikijs-stand
+      DB_NAME: wiki
+
+  tls:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [wiki]
+    environment:
+      UPSTREAM: http://wiki:3000
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${WIKIJS_PORT:-8470}:443"

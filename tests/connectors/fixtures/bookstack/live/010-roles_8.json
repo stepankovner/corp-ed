@@ -1,0 +1,26 @@
+{
+  "method": "roles/8",
+  "params": {},
+  "response": {
+    "id": 8,
+    "display_name": "Авторы",
+    "description": null,
+    "created_at": "2026-10-15T10:32:52.000000Z",
+    "updated_at": "2026-10-15T10:32:52.000000Z",
+    "system_name": "",
+    "external_auth_id": "",
+    "mfa_enforced": false,
+    "permissions": [
+      "access-api",
+      "book-view-all",
+      "page-view-own"
+    ],
+    "users": [
+      {
+        "id": 6,
+        "name": "Olga",
+        "slug": "olga"
+      }
+    ]
+  }
+}

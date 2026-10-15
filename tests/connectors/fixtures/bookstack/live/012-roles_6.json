@@ -1,0 +1,27 @@
+{
+  "method": "roles/6",
+  "params": {},
+  "response": {
+    "id": 6,
+    "display_name": "Редакторы",
+    "description": null,
+    "created_at": "2026-10-15T10:32:52.000000Z",
+    "updated_at": "2026-10-15T10:32:52.000000Z",
+    "system_name": "",
+    "external_auth_id": "",
+    "mfa_enforced": false,
+    "permissions": [
+      "access-api",
+      "book-view-all",
+      "chapter-view-all",
+      "page-view-all"
+    ],
+    "users": [
+      {
+        "id": 3,
+        "name": "Ivan",
+        "slug": "ivan"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "method": "content-permissions/page/8",
+  "params": {},
+  "response": {
+    "owner": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "role_permissions": [],
+    "fallback_permissions": {
+      "inheriting": true,
+      "view": null,
+      "create": null,
+      "update": null,
+      "delete": null
+    }
+  }
+}

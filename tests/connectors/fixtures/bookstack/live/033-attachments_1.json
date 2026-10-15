@@ -1,0 +1,29 @@
+{
+  "method": "attachments/1",
+  "params": {},
+  "response": {
+    "id": 1,
+    "name": "памятка.txt",
+    "extension": "txt",
+    "uploaded_to": 5,
+    "external": false,
+    "order": 1,
+    "created_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "updated_by": {
+      "id": 1,
+      "name": "Admin",
+      "slug": "admin"
+    },
+    "created_at": "2026-10-15T10:33:05.000000Z",
+    "updated_at": "2026-10-15T10:33:05.000000Z",
+    "links": {
+      "html": "<a target=\"_blank\" href=\"https://127.0.0.1:8460/attachments/1\">памятка.txt</a>",
+      "markdown": "[памятка.txt](https://127.0.0.1:8460/attachments/1)"
+    },
+    "content": "0J/QsNC80Y/RgtC60LA6INC30LDRj9Cy0LvQtdC90LjQtSDQt9CwINC00LLQtSDQvdC10LTQtdC70Lgu"
+  }
+}
