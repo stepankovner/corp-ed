@@ -137,11 +137,12 @@ def test_kind_is_offered_only_when_enabled() -> None:
 def test_users_list_is_parsed_and_validated() -> None:
     assert parse_users(
         "# логин почта\nivan Ivan@Example.com\n\nmaria=maria@example.com\n"
-        "petr@example.com, petr\n"
+        "petr@example.com, petr; olga olga@example.com\n"
     ) == {
         "ivan": "ivan@example.com",
         "maria": "maria@example.com",
         "petr": "petr@example.com",
+        "olga": "olga@example.com",
     }
     assert SPEC.config_check is not None
     assert SPEC.config_check({"users": USERS_TEXT}) is None

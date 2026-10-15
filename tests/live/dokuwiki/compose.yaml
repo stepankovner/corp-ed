@@ -1,0 +1,37 @@
+# DokuWiki для живой проверки вида `dokuwiki`: официальный образ
+# dokuwiki/dokuwiki и TLS-прокси на 127.0.0.1 (адаптер ходит только по
+# https). Настройки, пользователи и ACL — из conf/ (копируются в том при
+# первом старте). Только для тестов на своей машине или в песочнице:
+# пароли выдуманные.
+#
+#   python -m tests.live.dav_stand tls ~/dav-tls
+#   DAV_TLS_DIR=~/dav-tls docker compose -f tests/live/dokuwiki/compose.yaml up -d
+#   дальше — токены, seed.py и тесты: README.md рядом.
+name: kronto-live-dokuwiki
+
+services:
+  dokuwiki:
+    image: dokuwiki/dokuwiki:${DOKUWIKI_VERSION:-2026-07-14c}
+    # Свои conf/*.php — до штатной подготовки тома; -n: перезапуск не
+    # затирает того, что тесты поменяли через API.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - mkdir -p /storage/conf && cp -n /stand-conf/*.php /storage/conf/ && exec /dokuwiki-entrypoint.sh
+    volumes:
+      - ./conf:/stand-conf:ro
+      - storage:/storage
+
+  tls:
+    image: nginx:${NGINX_VERSION:-1.31.6-alpine}
+    depends_on: [dokuwiki]
+    environment:
+      UPSTREAM: http://dokuwiki:8080
+    volumes:
+      - ../tls-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${DAV_TLS_DIR:?сертификат стенда — см. README}:/tls:ro
+    ports:
+      - "127.0.0.1:${DOKUWIKI_PORT:-8490}:443"
+
+volumes:
+  storage:

@@ -99,7 +99,8 @@ LIST_DEPTH = 64
 ACL_CHECK_LIMIT = 20_000
 USERS_FIELD_LENGTH = 64 * 1024
 BASE64_SLACK = 64 * 1024
-_SEPARATORS = re.compile(r"[\s,;=]+")
+_RECORDS = re.compile(r"[\r\n;]+")
+_SEPARATORS = re.compile(r"[\s,=]+")
 
 SPEC = KindSpec(
     kind=KIND,
@@ -113,7 +114,7 @@ SPEC = KindSpec(
         FieldSpec("base_url", "Адрес DokuWiki (https://wiki.company.ru/)"),
         FieldSpec(
             "users",
-            "Сотрудники: логин DokuWiki и почта через пробел, по одному на строку",
+            "Сотрудники: «логин почта» по одному на строку (или через ;)",
             max_length=USERS_FIELD_LENGTH,
         ),
     ),
@@ -144,12 +145,13 @@ SPEC = KindSpec(
 
 
 def parse_users(text: str) -> dict[str, str]:
-    """Строки «логин почта» → {логин: почта}. Разделитель — пробелы,
-    запятая, точка с запятой или «=»; строки с # — комментарии.
+    """Записи «логин почта» → {логин: почта}. Записи — по строкам или
+    через «;» (так удобнее в командной строке), внутри — пробелы, запятая
+    или «=»; записи с # — комментарии.
     ValueError(код) — пусто, строка не из логина и почты, повтор логина."""
     users: dict[str, str] = {}
     seen: set[str] = set()
-    for raw in text.splitlines():
+    for raw in _RECORDS.split(text):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue

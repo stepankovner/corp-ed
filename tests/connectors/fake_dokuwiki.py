@@ -22,7 +22,8 @@
   группы без параметра — из бэкенда), `core.getPageHTML` (121 — нет
   страницы), `core.getMedia` (base64, 221 — нет файла);
 - lib/plugins/acl/remote.php — `plugin.acl.listAcls` (только
-  суперпользователю): `{scope: {subject: level}}`, пустая таблица — `[]`.
+  суперпользователю): `{scope: {subject: "level"}}` — уровень строкой,
+  как на стенде 15.10; пустая таблица — `[]`.
 
 Права — порт auth_aclcheck_cb (inc/auth.php): суперпользователь — 255;
 точные правила на id, затем пространства вверх до `*`; среди
@@ -279,9 +280,9 @@ class FakeDokuWiki:
         if method == "plugin.acl.listAcls" and self.acl_plugin:
             if not admin:
                 raise _FailError(403, -32604, "forbidden to call plugin.acl.listAcls")
-            table: dict[str, dict[str, int]] = {}
+            table: dict[str, dict[str, str]] = {}
             for scope, subject, level in self.acl:
-                table.setdefault(scope, {})[subject] = level
+                table.setdefault(scope, {})[subject] = str(level)
             return table or []
         raise _FailError(400, -32603, "Method does not exist")
 
