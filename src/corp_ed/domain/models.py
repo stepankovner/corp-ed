@@ -1849,7 +1849,8 @@ class ConnectorSyncRun(TenantMixin, Base):
             name="ck_sync_runs_status",
         ),
         CheckConstraint(
-            "trigger IN ('schedule', 'manual')", name="ck_sync_runs_trigger"
+            "trigger IN ('schedule', 'manual', 'agent')",
+            name="ck_sync_runs_trigger",
         ),
     )
 

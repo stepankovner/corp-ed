@@ -191,6 +191,8 @@ class SyncRunStatus(StrEnum):
 class SyncTrigger(StrEnum):
     SCHEDULE = "schedule"
     MANUAL = "manual"
+    # Обход агента сетевых папок (docs/SMB-AGENT.md).
+    AGENT = "agent"
 
 
 class MaterialVisibility(StrEnum):
