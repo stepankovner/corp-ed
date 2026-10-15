@@ -175,6 +175,10 @@ def test_only_platform_accounts_are_accepted(address: str, root: str | None) -> 
 
 def test_service_hosts_must_be_on_the_same_platform() -> None:
     assert service_host_allowed("https://drive-b.amocrm.ru", platform="amocrm.ru")
+    assert service_host_allowed("https://a.drive.amocrm.ru", platform="amocrm.ru")
+    assert not service_host_allowed("https://www.amocrm.ru", platform="amocrm.ru")
+    assert not service_host_allowed("https://amocrm.ru", platform="amocrm.ru")
+    assert not service_host_allowed("https://x.amocrm.ru:bad", platform="amocrm.ru")
     assert not service_host_allowed("https://drive-b.kommo.com", platform="amocrm.ru")
     assert not service_host_allowed("http://drive-b.amocrm.ru", platform="amocrm.ru")
     assert not service_host_allowed("https://evil.example.com", platform="amocrm.ru")
@@ -555,15 +559,42 @@ async def test_fetch_limits_and_trash(server: FakeAmo) -> None:
         await adapter.fetch(documents["file:f-offer"], max_bytes=MAX_BYTES)
 
 
-async def test_foreign_download_link_is_refused(server: FakeAmo) -> None:
+@pytest.mark.parametrize(
+    "href",
+    [
+        "https://evil.example.com/steal",
+        "https://drive-b.amocrm.ru:bad/x",
+        "https://company.amocrm.ru/download/x",
+        "http://drive-b.amocrm.ru/download/x",
+    ],
+)
+async def test_foreign_download_link_is_refused(server: FakeAmo, href: str) -> None:
     adapter = make_adapter(server)
     documents = await listed(adapter, "lead_files")
-    server.files["f-offer"]["_links"] = {
-        "download": {"href": "https://evil.example.com/steal"}
-    }
+    server.files["f-offer"]["_links"] = {"download": {"href": href}}
     with pytest.raises(AdapterError, match="download_url_foreign"):
         await adapter.fetch(documents["file:f-offer"], max_bytes=MAX_BYTES)
     assert "evil.example.com" not in {h for h, _, _ in server.calls}
+
+
+async def test_recorded_responses_have_no_tokens_or_download_links(
+    server: FakeAmo,
+) -> None:
+    recorded: list[tuple[str, Any, Any]] = []
+    auth = AmoAuth(TokenSet(ANNA_ACCESS, "", 0), None)
+    client = AmoClient(
+        server.client(),
+        account=ACCOUNT,
+        auth=auth,
+        min_interval=0.0,
+        recorder=lambda *entry: recorded.append(entry),
+    )
+    adapter = AmoCrmAdapter(client, max_bytes=MAX_BYTES)
+    await listed(adapter, "lead_files")
+    text = repr(recorded)
+    assert ANNA_ACCESS not in text
+    assert "/download/" not in text
+    assert any(label == "drive:files" for label, _, _ in recorded)
 
 
 async def test_unknown_document_is_refused(server: FakeAmo) -> None:

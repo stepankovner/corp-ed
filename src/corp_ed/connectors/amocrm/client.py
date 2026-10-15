@@ -165,13 +165,11 @@ class AmoClient:
         """Файл по ссылке из ответа сервиса файлов: только https на его
         хосте. Редирект на хранилище уходит без токена (OutboundClient
         снимает заголовки авторизации при смене хоста)."""
-        parts = urlsplit(url)
         drive_host = urlsplit(self._drive or "").hostname
         if (
-            parts.scheme.lower() != "https"
-            or drive_host is None
-            or (parts.hostname or "").lower() != drive_host
-            or parts.port not in (None, 443)
+            drive_host is None
+            or not service_host_allowed(url, platform=self._platform)
+            or (urlsplit(url).hostname or "").lower() != drive_host
         ):
             raise AdapterError("download_url_foreign")
         await self._pace()
@@ -278,5 +276,25 @@ class AmoClient:
     def _record(self, label: str, params: Mapping[str, Any] | None, data: Any) -> None:
         if self._recorder is not None:
             self._recorder(
-                label, redact(dict(params or {}), request=True), redact(data)
+                label,
+                redact(dict(params or {}), request=True),
+                _without_download_links(redact(data)),
             )
+
+
+def _without_download_links(value: Any) -> Any:
+    """Ссылки на скачивание из ответов сервиса файлов — не в фикстуры:
+    что значит первый сегмент пути /download/{…}/{uuid}/…, документация
+    не говорит, и это может быть подпись."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                "<redacted>"
+                if isinstance(item, str) and "/download/" in item
+                else _without_download_links(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_without_download_links(item) for item in value]
+    return value

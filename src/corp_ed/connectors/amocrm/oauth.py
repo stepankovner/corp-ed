@@ -99,17 +99,23 @@ def account_root(address: str) -> str | None:
 
 def service_host_allowed(url: str, *, platform: str) -> bool:
     """Адрес сервиса из ответа аккаунта (drive_url, ссылка на файл):
-    https на поддомене той же платформы, что и аккаунт."""
+    https на поддомене той же платформы, что и аккаунт. В документации
+    пример — drive-b.amocrm.ru; вложенные поддомены тоже принимаются
+    (форма адреса на живой системе не проверена), www — нет."""
     try:
         parts = urlsplit(url)
         port = parts.port
     except ValueError:
         return False
+    host = (parts.hostname or "").lower()
+    labels = host.removesuffix("." + platform).split(".")
     return (
         parts.scheme.lower() == "https"
         and port in (None, 443)
         and parts.username is None
-        and platform_of(parts.hostname or "") == platform
+        and host.endswith("." + platform)
+        and labels[0] != "www"
+        and all(_LABEL.fullmatch(label) for label in labels)
     )
 
 
