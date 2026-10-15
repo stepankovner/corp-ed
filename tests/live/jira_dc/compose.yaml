@@ -1,0 +1,40 @@
+# Jira Software Data Center для живой проверки адаптера jira_dc.
+# Только для тестов на своей машине или в песочнице: тестовая лицензия
+# Atlassian на 10 пользователей и 3 часа, данные выдуманные.
+#
+#   docker compose -f tests/live/jira_dc/compose.yaml up -d
+#   дальше — мастер (лицензия вводится в нём), seed.py и тесты: README.md.
+#
+# Версия — JIRA_VERSION (по умолчанию LTS 10.3). Стенд тяжёлый: Jira
+# держит до 2 ГБ кучи — не оставляйте его работать дольше проверки.
+name: kronto-live-jira
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: jira
+      POSTGRES_PASSWORD: jira-Test-1
+      POSTGRES_DB: jira
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "jira"]
+      interval: 5s
+      retries: 20
+
+  jira:
+    image: atlassian/jira-software:${JIRA_VERSION:-10.3.26}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ATL_DB_TYPE: postgres72
+      ATL_DB_DRIVER: org.postgresql.Driver
+      ATL_JDBC_URL: jdbc:postgresql://db:5432/jira
+      ATL_JDBC_USER: jira
+      ATL_JDBC_PASSWORD: jira-Test-1
+      JVM_MINIMUM_MEMORY: 1024m
+      JVM_MAXIMUM_MEMORY: 2048m
+    mem_limit: 4g
+    ports:
+      - "127.0.0.1:${JIRA_PORT:-8510}:8080"
