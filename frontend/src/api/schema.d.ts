@@ -1145,6 +1145,29 @@ export interface paths {
         patch: operations["update_connector_api_v1_connectors__connector_id__patch"];
         trace?: never;
     };
+    "/api/v1/connectors/{connector_id}/agent-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue Agent Token
+         * @description Выпустить ключ агента сетевых папок (виды с KindSpec.push).
+         *
+         *     Ключ в ответе виден один раз; прежний ключ этого подключения сразу
+         *     перестаёт действовать. Другие виды — 409.
+         */
+        post: operations["issue_agent_token_api_v1_connectors__connector_id__agent_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/connectors/{connector_id}/credentials": {
         parameters: {
             query?: never;
@@ -3059,6 +3082,15 @@ export interface components {
             number: number;
         };
         /**
+         * AgentTokenResponse
+         * @description Ключ агента сетевых папок. Виден один раз: в kronto остаётся
+         *     только его хеш, повторно ключ получить нельзя — только выпустить новый.
+         */
+        AgentTokenResponse: {
+            /** Token */
+            token: string;
+        };
+        /**
          * AnalyticsResponse
          * @description Обезличенная статистика за период (ТЗ §6–7): ни имён, ни почты.
          *
@@ -3446,6 +3478,11 @@ export interface components {
             oauth: boolean;
             /** Oauth Callback Url */
             oauth_callback_url?: string | null;
+            /**
+             * Push
+             * @default false
+             */
+            push: boolean;
             /** Title */
             title: string;
         };
@@ -4069,6 +4106,11 @@ export interface components {
         };
         /** FieldSpecResponse */
         FieldSpecResponse: {
+            /**
+             * Multiline
+             * @default false
+             */
+            multiline: boolean;
             /** Name */
             name: string;
             /** Required */
@@ -8179,6 +8221,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConnectorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_agent_token_api_v1_connectors__connector_id__agent_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connector_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTokenResponse"];
                 };
             };
             /** @description Validation Error */

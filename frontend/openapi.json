@@ -37,6 +37,20 @@
         "title": "ActResponse",
         "type": "object"
       },
+      "AgentTokenResponse": {
+        "description": "Ключ агента сетевых папок. Виден один раз: в kronto остаётся\nтолько его хеш, повторно ключ получить нельзя — только выпустить новый.",
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "AgentTokenResponse",
+        "type": "object"
+      },
       "AnalyticsResponse": {
         "description": "Обезличенная статистика за период (ТЗ §6–7): ни имён, ни почты.\n\nanswered — ответы по документам; general — общий ответ с пометкой;\nrefused — честный отказ. frequent — вопросы, которые задали не меньше\nтрёх разных людей; comments — последние комментарии к 👎, без автора.",
         "properties": {
@@ -1104,6 +1118,11 @@
               }
             ],
             "title": "Oauth Callback Url"
+          },
+          "push": {
+            "default": false,
+            "title": "Push",
+            "type": "boolean"
           },
           "title": {
             "title": "Title",
@@ -2604,6 +2623,11 @@
       },
       "FieldSpecResponse": {
         "properties": {
+          "multiline": {
+            "default": false,
+            "title": "Multiline",
+            "type": "boolean"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11197,6 +11221,55 @@
           }
         ],
         "summary": "Update Connector",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/api/v1/connectors/{connector_id}/agent-token": {
+      "post": {
+        "description": "Выпустить ключ агента сетевых папок (виды с KindSpec.push).\n\nКлюч в ответе виден один раз; прежний ключ этого подключения сразу\nперестаёт действовать. Другие виды — 409.",
+        "operationId": "issue_agent_token_api_v1_connectors__connector_id__agent_token_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "connector_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connector Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Issue Agent Token",
         "tags": [
           "connectors"
         ]

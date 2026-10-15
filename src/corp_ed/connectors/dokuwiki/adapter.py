@@ -118,6 +118,7 @@ SPEC = KindSpec(
             "users",
             "Сотрудники: «логин почта» по одному на строку (или через ;)",
             max_length=USERS_FIELD_LENGTH,
+            multiline=True,
         ),
         FieldSpec(
             "namespaces",

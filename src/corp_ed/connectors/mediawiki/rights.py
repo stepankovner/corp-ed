@@ -65,7 +65,7 @@ _RESTRICTING_MARKERS = (
 )
 _MAIN_ALIASES = frozenset({"основное", "(основное)", "main", "(main)", "статьи"})
 _EMAIL = re.compile(r"^[^@\s,;=]+@[^@\s,;=]+\.[^@\s,;=]+$")
-_SEPARATORS = re.compile(r"[\n,;]+")
+_SEPARATORS = re.compile(r"[\r\n,;]+")
 
 
 # --- сопоставление «логин = почта» ------------------------------------------------

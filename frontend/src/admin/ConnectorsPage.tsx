@@ -296,8 +296,14 @@ function ConnectorForm({
           Достаточно одного способа: {kind.extra.auth}.
         </p>
       ) : null}
+      {kind.push ? (
+        <p className="muted" style={{ fontSize: "0.875rem", marginTop: -8 }}>
+          Документы присылает агент в сети компании. Ключ агента вы выпустите на странице
+          подключения сразу после создания.
+        </p>
+      ) : null}
       <ModulesField kind={kind} selected={modules} onChange={setModules} />
-      <IntervalField value={syncInterval} onChange={setSyncInterval} />
+      {kind.push ? null : <IntervalField value={syncInterval} onChange={setSyncInterval} />}
       <div className={pageStyles.row} style={{ justifyContent: "space-between" }}>
         {onBack ? (
           <Button variant="link" size="sm" onClick={onBack}>

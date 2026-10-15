@@ -27,7 +27,7 @@ from corp_ed.connectors.base import (
     FetchedContent,
     RemoteDocument,
 )
-from corp_ed.connectors.common import Recorder
+from corp_ed.connectors.common import Recorder, split_list
 from corp_ed.connectors.kaiten import card_files as card_files_module
 from corp_ed.connectors.kaiten import documents as documents_module
 from corp_ed.connectors.kaiten.client import KaitenClient
@@ -46,7 +46,7 @@ KIND = "kaiten"
 
 
 def _check_config(config: Mapping[str, str]) -> str | None:
-    spaces = [s.strip() for s in config.get("spaces", "").split(",") if s.strip()]
+    spaces = split_list(config.get("spaces", ""))
     if any(not space.isdigit() for space in spaces):
         return "spaces_invalid"
     return None
@@ -68,8 +68,10 @@ SPEC = KindSpec(
         FieldSpec("base_url", "Адрес Kaiten (https://компания.kaiten.ru)"),
         FieldSpec(
             "spaces",
-            "ID пространств для вложений карточек через запятую (пусто — все)",
+            "ID пространств для вложений карточек по одному на строку или "
+            "через запятую (пусто — все)",
             required=False,
+            multiline=True,
         ),
     ),
     credential_fields=(
@@ -149,7 +151,7 @@ def build_adapter(
     return KaitenAdapter(
         KaitenClient(http, base_url=base_url, token=token, recorder=recorder),
         max_bytes=settings.download_limit_bytes,
-        spaces=config.get("spaces", "").split(","),
+        spaces=split_list(config.get("spaces", "")),
     )
 
 

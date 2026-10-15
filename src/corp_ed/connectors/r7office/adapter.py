@@ -61,6 +61,7 @@ from corp_ed.connectors.common import (
     note_unsupported,
     parse_datetime,
     path_segment,
+    split_list,
     to_int,
 )
 from corp_ed.connectors.r7office.client import R7Client
@@ -104,7 +105,7 @@ _Aces = list[Ace]
 
 
 def _folder_ids(config: Mapping[str, str]) -> list[str]:
-    return [f.strip() for f in config.get("folders", "").split(",") if f.strip()]
+    return split_list(config.get("folders", ""))
 
 
 def _check_config(config: Mapping[str, str]) -> str | None:
@@ -122,8 +123,10 @@ SPEC = KindSpec(
         FieldSpec("base_url", "Адрес портала Р7 (https://office.company.ru)"),
         FieldSpec(
             "folders",
-            "ID папок в «Общих документах» через запятую (пусто — весь раздел)",
+            "ID папок в «Общих документах» по одному на строку или через запятую "
+            "(пусто — весь раздел)",
             required=False,
+            multiline=True,
         ),
     ),
     credential_fields=(

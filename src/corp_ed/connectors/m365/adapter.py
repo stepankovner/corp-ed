@@ -193,9 +193,10 @@ SPEC = KindSpec(
         FieldSpec("client_id", "ID приложения (client) из регистрации в Entra ID"),
         FieldSpec(
             "sites",
-            "Адреса сайтов SharePoint через запятую: пусто — все сайты; "
-            "обязательно, если приложению выдан Sites.Selected",
+            "Адреса сайтов SharePoint по одному на строку или через запятую: "
+            "пусто — все сайты; обязательно, если приложению выдан Sites.Selected",
             required=False,
+            multiline=True,
         ),
     ),
     credential_fields=(

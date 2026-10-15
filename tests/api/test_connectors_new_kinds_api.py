@@ -148,6 +148,7 @@ async def test_kaiten_form_and_employee_token(
             "title": "Ваш API-токен Kaiten (профиль → API-ключ)",
             "required": True,
             "secret": True,
+            "multiline": False,
         }
     ]
 
@@ -221,6 +222,7 @@ async def test_outline_and_yonote_forms_and_admin_key(
                 "title": spec["config_fields"][0]["title"],  # type: ignore[index]
                 "required": False,
                 "secret": False,
+                "multiline": False,
             }
         ]
     # Облако по умолчанию: адрес не обязателен.

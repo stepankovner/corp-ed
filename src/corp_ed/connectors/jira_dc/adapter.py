@@ -60,6 +60,7 @@ from corp_ed.connectors.common import (
     note_unsupported,
     parse_datetime,
     path_segment,
+    split_list,
     to_int,
 )
 from corp_ed.connectors.jira_dc.client import JiraClient
@@ -127,7 +128,11 @@ SPEC = KindSpec(
     config_fields=(
         FieldSpec("base_url", "Адрес Jira (https://jira.company.ru/)"),
         FieldSpec(
-            "projects", "Ключи проектов через запятую (пусто — все доступные)", False
+            "projects",
+            "Ключи проектов по одному на строку или через запятую "
+            "(пусто — все доступные)",
+            False,
+            multiline=True,
         ),
         FieldSpec(
             "jql",
@@ -508,7 +513,7 @@ class JiraAdapter:
 
 
 def _project_keys(config: Mapping[str, str]) -> list[str]:
-    return [p.strip() for p in config.get("projects", "").split(",") if p.strip()]
+    return split_list(config.get("projects", ""))
 
 
 def _reraise_unless(exc: AdapterError, codes: frozenset[str]) -> None:

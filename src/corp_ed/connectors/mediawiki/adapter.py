@@ -135,6 +135,7 @@ SPEC = KindSpec(
             "user_emails",
             "Сотрудники: «логин в вики = почта» через запятую или по строкам",
             max_length=USER_EMAILS_LENGTH,
+            multiline=True,
         ),
         FieldSpec(
             "namespaces",
@@ -150,12 +151,9 @@ SPEC = KindSpec(
     url_field="api_url",
     config_check=_check_config,
     credentials_check=_check_credentials,
-    # multiline — поле, которому нужна многострочная форма (сопоставление
-    # на сотни сотрудников); однострочное тоже работает — через запятую.
     extra={
         "bot_grants": "basic",
         "bot_page": "Special:BotPasswords",
-        "multiline": "user_emails",
     },
     preview=True,
 )

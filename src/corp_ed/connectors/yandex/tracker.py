@@ -53,6 +53,7 @@ from corp_ed.connectors.common import (
     redact,
     retry_after,
     safe_code,
+    split_list,
     to_int,
 )
 from corp_ed.connectors.yandex.oauth import YandexAuth
@@ -447,8 +448,8 @@ def render_issue(
 def parse_queues(value: str) -> tuple[str, ...]:
     """Ключи очередей из настройки: через запятую или перенос строки."""
     keys: list[str] = []
-    for raw in value.replace("\n", ",").split(","):
-        key = raw.strip().upper()
+    for raw in split_list(value):
+        key = raw.upper()
         if key and key not in keys:
             keys.append(key)
     return tuple(keys)
