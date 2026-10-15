@@ -1,0 +1,1079 @@
+# Манифест набора для глобальной проверки коннекторов kronto.
+#
+# Одна вымышленная компания — ООО «Северный ветер» — и её документы лежат
+# во всех системах. Здесь записано: кто работает, какие документы где
+# лежат и кто ДОЛЖЕН их видеть. Сценарий (`python -m tests.acceptance.run`)
+# заводит эту компанию в базе kronto, синхронизирует систему через ядро и
+# сверяет с манифестом, кто из сотрудников что видит (правило видимости
+# ядра — `chunk_repository.visible_to`, то же, что у поиска ассистента).
+# Кто НЕ должен видеть документ, сценарий выводит сам: все, кого нет в
+# readers его зоны.
+#
+# Всё вымышленное: имена, почты (@severny-veter.test), реквизиты.
+# Формат и правила — README.md рядом.
+
+[company]
+name = "ООО «Северный ветер»"
+code = "severny-veter"
+domain = "severny-veter.test"
+headcount = 120
+# Сотрудников в справочнике corpus/staff.xlsx — все 120 (генератор
+# build.py); в манифесте — те, у кого есть учётные записи в системах.
+
+# --- отделы ---------------------------------------------------------------
+
+[departments]
+hr = "Кадры"
+accounting = "Бухгалтерия"
+sales = "Продажи"
+it = "ИТ"
+legal = "Юристы"
+management = "Руководство"
+
+# --- сотрудники с учётными записями ----------------------------------------
+# groups: managers — руководители отделов и директор; payroll — расчётная
+# группа (видит зарплаты). Отдел сам по себе — тоже основание для доступа.
+
+[[employees]]
+login = "vetrov"
+email = "vetrov@severny-veter.test"
+name = "Ветров Андрей Павлович"
+dept = "management"
+title = "Директор"
+groups = ["managers", "payroll"]
+
+[[employees]]
+login = "snegova"
+email = "snegova@severny-veter.test"
+name = "Снегова Ирина Олеговна"
+dept = "management"
+title = "Заместитель директора по развитию"
+groups = ["managers"]
+
+[[employees]]
+login = "lednev"
+email = "lednev@severny-veter.test"
+name = "Леднёв Артём Викторович"
+dept = "management"
+title = "Помощник руководителя"
+groups = []
+
+[[employees]]
+login = "belova"
+email = "belova@severny-veter.test"
+name = "Белова Татьяна Игоревна"
+dept = "hr"
+title = "Начальник отдела кадров"
+groups = ["managers", "payroll"]
+
+[[employees]]
+login = "orlov"
+email = "orlov@severny-veter.test"
+name = "Орлов Павел Сергеевич"
+dept = "hr"
+title = "Специалист по кадрам"
+groups = []
+
+[[employees]]
+login = "zimina"
+email = "zimina@severny-veter.test"
+name = "Зимина Алёна Владимировна"
+dept = "hr"
+title = "Рекрутер"
+groups = []
+
+[[employees]]
+login = "gromova"
+email = "gromova@severny-veter.test"
+name = "Громова Лариса Викторовна"
+dept = "accounting"
+title = "Главный бухгалтер"
+groups = ["managers", "payroll"]
+
+[[employees]]
+login = "petrenko"
+email = "petrenko@severny-veter.test"
+name = "Петренко Юлия Андреевна"
+dept = "accounting"
+title = "Бухгалтер по расчёту зарплаты"
+groups = ["payroll"]
+
+[[employees]]
+login = "kuznetsova"
+email = "kuznetsova@severny-veter.test"
+name = "Кузнецова Наталья Сергеевна"
+dept = "accounting"
+title = "Бухгалтер"
+groups = []
+
+[[employees]]
+login = "volkov"
+email = "volkov@severny-veter.test"
+name = "Волков Дмитрий Александрович"
+dept = "sales"
+title = "Начальник отдела продаж"
+groups = ["managers"]
+
+[[employees]]
+login = "solovyov"
+email = "solovyov@severny-veter.test"
+name = "Соловьёв Игорь Константинович"
+dept = "sales"
+title = "Менеджер по продажам"
+groups = []
+
+[[employees]]
+login = "lebedeva"
+email = "lebedeva@severny-veter.test"
+name = "Лебедева Ольга Николаевна"
+dept = "sales"
+title = "Менеджер по продажам"
+groups = []
+
+[[employees]]
+login = "fomin"
+email = "fomin@severny-veter.test"
+name = "Фомин Артур Романович"
+dept = "sales"
+title = "Менеджер по продажам"
+groups = []
+
+[[employees]]
+login = "tikhonov"
+email = "tikhonov@severny-veter.test"
+name = "Тихонов Роман Эдуардович"
+dept = "it"
+title = "Начальник ИТ"
+groups = ["managers"]
+
+[[employees]]
+login = "ershov"
+email = "ershov@severny-veter.test"
+name = "Ершов Кирилл Матвеевич"
+dept = "it"
+title = "Системный администратор"
+groups = []
+
+[[employees]]
+login = "makarova"
+email = "makarova@severny-veter.test"
+name = "Макарова Вера Львовна"
+dept = "it"
+title = "Специалист поддержки"
+groups = []
+
+[[employees]]
+login = "savelyev"
+email = "savelyev@severny-veter.test"
+name = "Савельев Михаил Ильич"
+dept = "legal"
+title = "Начальник юридического отдела"
+groups = ["managers"]
+
+[[employees]]
+login = "nikitina"
+email = "nikitina@severny-veter.test"
+name = "Никитина Екатерина Дмитриевна"
+dept = "legal"
+title = "Юрист"
+groups = []
+
+# Облачные кабинеты бесплатные или пробные и ограничены по числу
+# пользователей: в них заводятся только эти шестеро — по одному из
+# отделов, так что у каждой закрытой зоны есть и читатели, и не читатели.
+[cloud]
+accounts = ["vetrov", "belova", "petrenko", "lebedeva", "ershov", "nikitina"]
+
+# --- зоны: кто читает -------------------------------------------------------
+# Селекторы readers: all | dept:<отдел> | group:<группа> | login:<логин>.
+# Зона в системе — это папка (книга, пространство, коллекция) со своими
+# правами; документ наследует права зоны, где лежит.
+
+[zones.public]
+title = "Общие"
+readers = ["all"]
+
+[zones.hr]
+title = "Кадры"
+readers = ["dept:hr"]
+
+[zones.accounting]
+title = "Бухгалтерия"
+readers = ["dept:accounting"]
+
+[zones.sales]
+title = "Продажи"
+readers = ["dept:sales"]
+
+[zones.it]
+title = "ИТ"
+readers = ["dept:it"]
+
+[zones.legal]
+title = "Юристы"
+readers = ["dept:legal"]
+
+[zones.management]
+title = "Руководство"
+readers = ["dept:management"]
+
+[zones.payroll]
+title = "Зарплаты (закрыто)"
+readers = ["group:payroll"]
+closed = true
+
+[zones.awards]
+title = "Приказы о премиях (закрыто)"
+readers = ["group:managers", "group:payroll"]
+closed = true
+
+[zones.disputes]
+title = "Юридические споры (закрыто)"
+readers = ["dept:legal", "login:vetrov"]
+closed = true
+
+# --- документы ------------------------------------------------------------
+# file — исходник в corpus/; format — в каком виде файл лежит в системах,
+# которые хранят файлы (в вики — всегда Markdown); folder — подпапка в зоне.
+
+[[documents]]
+id = "SV-GEN-001"
+file = "general/o-kompanii.md"
+title = "О компании «Северный ветер»"
+zone = "public"
+format = "md"
+folder = "Компания"
+
+[[documents]]
+id = "SV-GEN-002"
+file = "general/pvtr-2025.md"
+title = "Правила внутреннего трудового распорядка"
+zone = "public"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-GEN-003"
+file = "general/pvtr-2023.md"
+title = "Правила внутреннего трудового распорядка (редакция 2023, архив)"
+zone = "public"
+format = "docx"
+folder = "Архив"
+
+[[documents]]
+id = "SV-GEN-004"
+file = "general/otpuska-2025.md"
+title = "Положение об отпусках"
+zone = "public"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-GEN-005"
+file = "general/otpuska-2022.md"
+title = "Положение об отпусках (редакция 2022, архив)"
+zone = "public"
+format = "docx"
+folder = "Архив"
+
+[[documents]]
+id = "SV-GEN-006"
+file = "general/gost-propusk.md"
+title = "Как заказать пропуск гостю"
+zone = "public"
+format = "md"
+folder = "Инструкции"
+
+[[documents]]
+id = "SV-GEN-007"
+file = "general/spravochnik.md"
+title = "Справочник телефонов отделов"
+zone = "public"
+format = "xlsx"
+folder = "Компания"
+
+[[documents]]
+id = "SV-GEN-008"
+file = "general/etika.md"
+title = "Кодекс деловой этики"
+zone = "public"
+format = "pdf"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-GEN-009"
+file = "general/pozhar.md"
+title = "Инструкция по пожарной безопасности"
+zone = "public"
+format = "txt"
+folder = "Инструкции"
+
+[[documents]]
+id = "SV-GEN-010"
+file = "general/komandirovki-2025.md"
+title = "Порядок командировок"
+zone = "public"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-GEN-011"
+file = "general/komandirovki-2024.md"
+title = "Порядок командировок (редакция 2024, архив)"
+zone = "public"
+format = "pdf"
+folder = "Архив"
+
+[[documents]]
+id = "SV-GEN-012"
+file = "general/faq-novichku.md"
+title = "Вопросы и ответы для новых сотрудников"
+zone = "public"
+format = "md"
+folder = "Вопросы и ответы"
+
+[[documents]]
+id = "SV-GEN-013"
+file = "general/kalendar-2026.md"
+title = "Календарь корпоративных событий на 2026 год"
+zone = "public"
+format = "xlsx"
+folder = "Компания"
+
+[[documents]]
+id = "SV-GEN-014"
+file = "general/infosec-obshchaya.md"
+title = "Политика информационной безопасности (общая)"
+zone = "public"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-GEN-015"
+file = "general/privetstvie.md"
+title = "Добро пожаловать в «Северный ветер»"
+zone = "public"
+format = "pptx"
+folder = "Компания"
+
+[[documents]]
+id = "SV-GEN-016"
+file = "general/peregovornye.md"
+title = "Правила пользования переговорными"
+zone = "public"
+format = "md"
+folder = "Инструкции"
+
+[[documents]]
+id = "SV-GEN-017"
+file = "general/obuchenie.md"
+title = "Порядок компенсации обучения"
+zone = "public"
+format = "md"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-GEN-018"
+file = "general/dms.md"
+title = "Памятка о добровольном медицинском страховании"
+zone = "public"
+format = "pdf"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-HR-001"
+file = "hr/priem-uvolnenie.md"
+title = "Положение о приёме и увольнении"
+zone = "hr"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-HR-002"
+file = "hr/onboarding.md"
+title = "Инструкция по адаптации нового сотрудника"
+zone = "hr"
+format = "md"
+folder = "Инструкции"
+
+[[documents]]
+id = "SV-HR-003"
+file = "hr/faq-kadry.md"
+title = "Вопросы и ответы отдела кадров"
+zone = "hr"
+format = "md"
+folder = "Вопросы и ответы"
+
+[[documents]]
+id = "SV-HR-004"
+file = "hr/zayavlenie-otpusk.md"
+title = "Шаблон заявления на отпуск"
+zone = "hr"
+format = "txt"
+folder = "Шаблоны"
+
+[[documents]]
+id = "SV-HR-005"
+file = "hr/ispytatelnyi.md"
+title = "Положение об испытательном сроке"
+zone = "hr"
+format = "md"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-HR-006"
+file = "hr/protokol-komissii.md"
+title = "Протокол заседания кадровой комиссии от 12.03.2026"
+zone = "hr"
+format = "pdf"
+folder = "Протоколы"
+
+[[documents]]
+id = "SV-HR-007"
+file = "hr/shtatnoe.md"
+title = "Штатное расписание: численность по подразделениям"
+zone = "hr"
+format = "xlsx"
+folder = "Штатное расписание"
+
+[[documents]]
+id = "SV-PAY-001"
+file = "payroll/vedomost-sentyabr.md"
+title = "Ведомость заработной платы за сентябрь 2026"
+zone = "payroll"
+format = "xlsx"
+folder = "Ведомости"
+
+[[documents]]
+id = "SV-PAY-002"
+file = "payroll/oplata-truda.md"
+title = "Положение об оплате труда и премировании"
+zone = "payroll"
+format = "docx"
+folder = "Положения"
+
+[[documents]]
+id = "SV-PAY-003"
+file = "payroll/prikaz-41p.md"
+title = "Приказ о премировании № 41-П от 01.10.2026"
+zone = "awards"
+format = "pdf"
+folder = "Приказы"
+
+[[documents]]
+id = "SV-PAY-004"
+file = "payroll/prikaz-42p.md"
+title = "Приказ о премировании № 42-П от 02.10.2026"
+zone = "awards"
+format = "pdf"
+folder = "Приказы"
+
+[[documents]]
+id = "SV-PAY-005"
+file = "payroll/protokol-okladov.md"
+title = "Протокол комиссии по пересмотру окладов от 20.08.2026"
+zone = "payroll"
+format = "md"
+folder = "Протоколы"
+
+[[documents]]
+id = "SV-ACC-001"
+file = "accounting/uchetnaya-politika.md"
+title = "Учётная политика на 2026 год"
+zone = "accounting"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-ACC-002"
+file = "accounting/avansovye-otchety.md"
+title = "Регламент авансовых отчётов"
+zone = "accounting"
+format = "md"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-ACC-003"
+file = "accounting/zakrytie-mesyatsa.md"
+title = "График закрытия месяца"
+zone = "accounting"
+format = "xlsx"
+folder = "Графики"
+
+[[documents]]
+id = "SV-ACC-004"
+file = "accounting/edo.md"
+title = "Инструкция по электронному документообороту"
+zone = "accounting"
+format = "md"
+folder = "Инструкции"
+
+[[documents]]
+id = "SV-ACC-005"
+file = "accounting/faq-buh.md"
+title = "Вопросы и ответы бухгалтерии"
+zone = "accounting"
+format = "md"
+folder = "Вопросы и ответы"
+
+[[documents]]
+id = "SV-ACC-006"
+file = "accounting/inventarizatsiya.md"
+title = "Протокол инвентаризации склада от 30.06.2026"
+zone = "accounting"
+format = "pdf"
+folder = "Протоколы"
+
+[[documents]]
+id = "SV-SAL-001"
+file = "sales/prajs-2026.md"
+title = "Прайс-лист 2026 (версия 3)"
+zone = "sales"
+format = "xlsx"
+folder = "Прайсы"
+
+[[documents]]
+id = "SV-SAL-002"
+file = "sales/prajs-2025.md"
+title = "Прайс-лист 2025 (архив)"
+zone = "sales"
+format = "xlsx"
+folder = "Прайсы"
+
+[[documents]]
+id = "SV-SAL-003"
+file = "sales/dogovor-postavki.md"
+title = "Типовой договор поставки"
+zone = "sales"
+format = "docx"
+folder = "Договоры"
+
+[[documents]]
+id = "SV-SAL-004"
+file = "sales/regulament-crm.md"
+title = "Регламент работы с клиентами в CRM"
+zone = "sales"
+format = "md"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-SAL-005"
+file = "sales/prezentatsiya-vg.md"
+title = "Презентация линейки ветрогенераторов"
+zone = "sales"
+format = "pptx"
+folder = "Презентации"
+
+[[documents]]
+id = "SV-SAL-006"
+file = "sales/skidki.md"
+title = "Скидки и условия оплаты"
+zone = "sales"
+format = "md"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-SAL-007"
+file = "sales/faq-prodazhi.md"
+title = "Вопросы и ответы отдела продаж"
+zone = "sales"
+format = "md"
+folder = "Вопросы и ответы"
+
+[[documents]]
+id = "SV-SAL-008"
+file = "sales/planerka-03-10.md"
+title = "Протокол планёрки отдела продаж от 03.10.2026"
+zone = "sales"
+format = "md"
+folder = "Протоколы"
+
+[[documents]]
+id = "SV-IT-001"
+file = "it/dostupy.md"
+title = "Регламент предоставления доступов"
+zone = "it"
+format = "md"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-IT-002"
+file = "it/vpn.md"
+title = "Инструкция по настройке VPN"
+zone = "it"
+format = "md"
+folder = "Инструкции"
+
+[[documents]]
+id = "SV-IT-003"
+file = "it/parol.md"
+title = "Политика паролей"
+zone = "it"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-IT-004"
+file = "it/sla.md"
+title = "Дежурства и сроки реакции ИТ-поддержки"
+zone = "it"
+format = "xlsx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-IT-005"
+file = "it/faq-it.md"
+title = "Вопросы и ответы ИТ"
+zone = "it"
+format = "md"
+folder = "Вопросы и ответы"
+
+[[documents]]
+id = "SV-IT-006"
+file = "it/incident-17.md"
+title = "Протокол разбора инцидента № 17 от 22.08.2026"
+zone = "it"
+format = "md"
+folder = "Протоколы"
+
+[[documents]]
+id = "SV-IT-007"
+file = "it/perechen-po.md"
+title = "Перечень разрешённого программного обеспечения"
+zone = "it"
+format = "xlsx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-LEG-001"
+file = "legal/dogovornaya-rabota.md"
+title = "Положение о договорной работе"
+zone = "legal"
+format = "docx"
+folder = "Регламенты"
+
+[[documents]]
+id = "SV-LEG-002"
+file = "legal/reestr-dogovorov.md"
+title = "Реестр договоров на 01.10.2026"
+zone = "legal"
+format = "xlsx"
+folder = "Реестры"
+
+[[documents]]
+id = "SV-LEG-003"
+file = "legal/faq-yuristy.md"
+title = "Вопросы и ответы юридического отдела"
+zone = "legal"
+format = "md"
+folder = "Вопросы и ответы"
+
+[[documents]]
+id = "SV-LEG-004"
+file = "legal/zaklyuchenie-pretenziya.md"
+title = "Заключение по претензии ООО «Ледокол-Снаб»"
+zone = "disputes"
+format = "docx"
+folder = "Дело Ледокол-Снаб"
+
+[[documents]]
+id = "SV-LEG-005"
+file = "legal/isk-a00.md"
+title = "Исковое заявление по делу № А00-1234/2026 (проект)"
+zone = "disputes"
+format = "pdf"
+folder = "Дело Ледокол-Снаб"
+
+[[documents]]
+id = "SV-LEG-006"
+file = "legal/protokol-peregovorov.md"
+title = "Протокол переговоров по мировому соглашению от 05.10.2026"
+zone = "disputes"
+format = "md"
+folder = "Дело Ледокол-Снаб"
+
+[[documents]]
+id = "SV-MGT-001"
+file = "management/strategiya.md"
+title = "Стратегия 2026–2028"
+zone = "management"
+format = "pptx"
+folder = "Стратегия"
+
+[[documents]]
+id = "SV-MGT-002"
+file = "management/sovet-07-10.md"
+title = "Протокол совещания руководителей от 07.10.2026"
+zone = "management"
+format = "md"
+folder = "Протоколы"
+
+[[documents]]
+id = "SV-MGT-003"
+file = "management/byudzhet-2027.md"
+title = "Бюджет 2027 (проект)"
+zone = "management"
+format = "xlsx"
+folder = "Бюджет"
+
+[[documents]]
+id = "SV-MGT-004"
+file = "management/prikaz-reorg.md"
+title = "Приказ № 55 о реорганизации отдела продаж от 06.10.2026"
+zone = "management"
+format = "pdf"
+folder = "Приказы"
+
+# --- противоречия в корпусе (для проверки ответов — зона ML) -----------------
+# Сценарий приёмки их не проверяет, но держит в манифесте: тест
+# test_manifest.py убеждается, что оба значения действительно есть в
+# исходниках, и документ не «исправят» нечаянно.
+
+[[conflicts]]
+topic = "Срок подачи заявления на отпуск"
+note = "Положение 2025: 14 дней; архив 2022: 7 дней; вопросы и ответы кадров: 10 дней"
+facts = [
+  { doc = "SV-GEN-004", text = "не позднее чем за 14 календарных дней" },
+  { doc = "SV-GEN-005", text = "не позднее чем за 7 календарных дней" },
+  { doc = "SV-HR-003", text = "За 10 календарных дней" },
+]
+
+[[conflicts]]
+topic = "Режим работы"
+note = "Правила 2025: 9:00–18:00; архив 2023: 8:30–17:30"
+facts = [
+  { doc = "SV-GEN-002", text = "с 9:00 до 18:00" },
+  { doc = "SV-GEN-003", text = "с 8:30 до 17:30" },
+]
+
+[[conflicts]]
+topic = "Суточные в командировке и срок авансового отчёта"
+note = "Порядок 2025: 1 500 руб. и 5 дней; архив 2024: 1 200 руб. и 7 дней; регламент бухгалтерии: 3 дня; решение 07.10 о 1 800 руб. с 2027"
+facts = [
+  { doc = "SV-GEN-010", text = "Суточные — 1 500 рублей" },
+  { doc = "SV-GEN-011", text = "Суточные — 1 200 рублей" },
+  { doc = "SV-ACC-002", text = "не позднее трёх рабочих дней" },
+  { doc = "SV-MGT-002", text = "1 800 рублей" },
+]
+
+[[conflicts]]
+topic = "С какого месяца действует ДМС"
+note = "Памятка: после трёх месяцев; вопросы и ответы кадров: после шести"
+facts = [
+  { doc = "SV-GEN-018", text = "после трёх месяцев" },
+  { doc = "SV-HR-003", text = "После шести месяцев" },
+]
+
+[[conflicts]]
+topic = "Цена ВГ-1500"
+note = "Прайс 2026: 189 000; архив 2025: 172 000; презентация: 185 000"
+facts = [
+  { doc = "SV-SAL-001", text = "189 000" },
+  { doc = "SV-SAL-002", text = "172 000" },
+  { doc = "SV-SAL-005", text = "185 000" },
+]
+
+[[conflicts]]
+topic = "Срок оплаты по договору поставки"
+note = "Типовой договор: 30 дней; правила скидок: 45 дней для операторов связи"
+facts = [
+  { doc = "SV-SAL-003", text = "в течение 30 календарных дней" },
+  { doc = "SV-SAL-006", text = "45 календарных дней" },
+]
+
+[[conflicts]]
+topic = "Требования к паролю"
+note = "Общая политика: 10 символов, смена раз в 180 дней; политика ИТ: 12 символов, раз в 90 дней"
+facts = [
+  { doc = "SV-GEN-014", text = "не короче 10 символов" },
+  { doc = "SV-IT-003", text = "Минимальная длина пароля — 12 символов" },
+]
+
+# --- наборы документов (чтобы не повторять списки в системах) ----------------
+
+[bundles]
+public_core = [
+  "SV-GEN-001", "SV-GEN-002", "SV-GEN-003", "SV-GEN-004", "SV-GEN-005",
+  "SV-GEN-006", "SV-GEN-007", "SV-GEN-008", "SV-GEN-010", "SV-GEN-011",
+  "SV-GEN-012", "SV-GEN-014", "SV-GEN-018",
+]
+public_extra = ["SV-GEN-009", "SV-GEN-013", "SV-GEN-015", "SV-GEN-016", "SV-GEN-017"]
+hr_all = [
+  "SV-HR-001", "SV-HR-002", "SV-HR-003", "SV-HR-004", "SV-HR-005",
+  "SV-HR-006", "SV-HR-007",
+]
+payroll_all = ["SV-PAY-001", "SV-PAY-002", "SV-PAY-003", "SV-PAY-004", "SV-PAY-005"]
+accounting_all = [
+  "SV-ACC-001", "SV-ACC-002", "SV-ACC-003", "SV-ACC-004", "SV-ACC-005",
+  "SV-ACC-006",
+]
+sales_all = [
+  "SV-SAL-001", "SV-SAL-002", "SV-SAL-003", "SV-SAL-004", "SV-SAL-005",
+  "SV-SAL-006", "SV-SAL-007", "SV-SAL-008",
+]
+it_all = [
+  "SV-IT-001", "SV-IT-002", "SV-IT-003", "SV-IT-004", "SV-IT-005",
+  "SV-IT-006", "SV-IT-007",
+]
+legal_all = [
+  "SV-LEG-001", "SV-LEG-002", "SV-LEG-003", "SV-LEG-004", "SV-LEG-005",
+  "SV-LEG-006",
+]
+management_all = ["SV-MGT-001", "SV-MGT-002", "SV-MGT-003", "SV-MGT-004"]
+# Меньший набор для систем с лимитом запросов (BookStack — 180 в минуту) и
+# для облаков с малым свободным местом: по документу-два из каждой зоны,
+# обязательно закрытые, спорные и те, что меняют шаги.
+small = [
+  "SV-GEN-001", "SV-GEN-003", "SV-GEN-004", "SV-GEN-005", "SV-GEN-010",
+  "SV-GEN-011", "SV-GEN-012", "SV-GEN-018",
+  "SV-HR-001", "SV-HR-003",
+  "SV-PAY-001", "SV-PAY-002", "SV-PAY-003",
+  "SV-ACC-001", "SV-ACC-002",
+  "SV-SAL-001", "SV-SAL-002", "SV-SAL-003", "SV-SAL-006",
+  "SV-IT-001", "SV-IT-003",
+  "SV-LEG-001", "SV-LEG-004",
+  "SV-MGT-002", "SV-MGT-004",
+]
+
+# --- системы -------------------------------------------------------------------
+# kind — вид подключения в kronto; stand — docker (свой стенд, сценарий
+# засевает его сам) или cloud (кабинет заводит владелец продукта —
+# OWNER-CHECKLIST.md; сценарий читает учётные данные и сверяет).
+# storage — как система хранит документы: "files" (файлы как есть, любой
+# формат) или "pages" (страницы Markdown, файлы — вложениями не кладём).
+# accounts — у кого в системе есть учётная запись: "all" или [cloud].accounts.
+# Шаги (ниже) применяются к тем документам, которые в системе лежат.
+
+[systems.bookstack]
+kind = "bookstack"
+title = "BookStack"
+stand = "docker"
+storage = "pages"
+modules = ["pages"]
+accounts = "all"
+docs = ["@small", "SV-HR-005", "SV-LEG-005", "SV-SAL-004", "SV-IT-002", "SV-PAY-004"]
+
+[systems.nextcloud]
+kind = "nextcloud"
+title = "Nextcloud"
+stand = "docker"
+storage = "files"
+modules = ["files"]
+accounts = "all"
+docs = [
+  "@public_core", "@public_extra", "@hr_all", "@payroll_all", "@accounting_all",
+  "@sales_all", "@it_all", "@legal_all", "@management_all",
+]
+
+[systems.owncloud]
+kind = "owncloud"
+title = "ownCloud"
+stand = "docker"
+storage = "files"
+modules = ["files"]
+accounts = "all"
+docs = ["@small", "SV-GEN-006", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
+
+[systems.seafile]
+kind = "seafile"
+title = "Seafile"
+stand = "docker"
+storage = "files"
+modules = ["files"]
+accounts = "all"
+docs = ["@small", "SV-SAL-005", "SV-GEN-013"]
+
+[systems.webdav]
+kind = "webdav"
+title = "WebDAV (NAS, Apache mod_dav)"
+stand = "docker"
+storage = "files"
+modules = ["files"]
+accounts = "all"
+docs = ["@small"]
+
+[systems.outline]
+kind = "outline"
+title = "Outline (своя установка)"
+stand = "docker"
+storage = "pages"
+modules = ["documents"]
+accounts = "all"
+docs = ["@small", "SV-HR-005", "SV-LEG-005", "SV-SAL-004"]
+
+[systems.confluence_dc]
+kind = "confluence"
+title = "Confluence Data Center"
+stand = "docker"
+storage = "pages"
+modules = ["pages"]
+accounts = "all"
+docs = ["@small", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
+
+[systems.wikijs]
+kind = "wikijs"
+title = "Wiki.js"
+stand = "docker"
+storage = "pages"
+modules = ["pages"]
+accounts = "all"
+docs = ["@small", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
+
+[systems.mediawiki]
+kind = "mediawiki"
+title = "MediaWiki"
+stand = "docker"
+storage = "pages"
+modules = ["pages"]
+accounts = "all"
+docs = ["@small", "SV-HR-005", "SV-SAL-004"]
+
+[systems.dokuwiki]
+kind = "dokuwiki"
+title = "DokuWiki"
+stand = "docker"
+storage = "pages"
+modules = ["pages"]
+accounts = "all"
+docs = ["@small", "SV-HR-005", "SV-SAL-004", "SV-IT-002"]
+
+[systems.bitrix24]
+kind = "bitrix24"
+title = "Битрикс24"
+stand = "cloud"
+storage = "files"
+modules = ["disk"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.yandex360]
+kind = "yandex360"
+title = "Яндекс 360"
+stand = "cloud"
+storage = "files"
+modules = ["disk"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.gdrive]
+kind = "gdrive"
+title = "Google Workspace (Диск)"
+stand = "cloud"
+storage = "files"
+modules = ["shared_drives"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.vk_workspace_disk]
+kind = "vk_workspace_disk"
+title = "VK WorkSpace (Диск)"
+stand = "cloud"
+storage = "files"
+modules = ["files"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.mailru_cloud]
+kind = "mailru_cloud"
+title = "Облако Mail.ru"
+stand = "cloud"
+storage = "files"
+modules = ["files"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.kaiten]
+kind = "kaiten"
+title = "Kaiten"
+stand = "cloud"
+storage = "pages"
+modules = ["documents"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.yonote]
+kind = "yonote"
+title = "Yonote"
+stand = "cloud"
+storage = "pages"
+modules = ["documents"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.outline_cloud]
+kind = "outline"
+title = "Outline (облако)"
+stand = "cloud"
+storage = "pages"
+modules = ["documents"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.amocrm]
+kind = "amocrm"
+title = "amoCRM"
+stand = "cloud"
+storage = "files"
+modules = ["lead_files"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.elma365]
+kind = "elma365"
+title = "ELMA365"
+stand = "cloud"
+storage = "files"
+modules = ["files"]
+accounts = "cloud"
+docs = ["@small"]
+
+[systems.m365]
+kind = "m365"
+title = "Microsoft 365 (SharePoint, OneDrive)"
+stand = "cloud"
+storage = "files"
+modules = ["sharepoint"]
+accounts = "cloud"
+docs = ["@small"]
+
+# --- шаги изменений -------------------------------------------------------
+# Порядок важен: каждый шаг идёт после предыдущего и повторной
+# синхронизации. op:
+#   edit   — править документ: в конец добавляется абзац с меткой (text);
+#   delete — удалить документ из системы;
+#   revoke — отозвать доступ сотрудника: к зоне (zone) или ко всему (без zone);
+#   move   — перенести документ в другую зону (в закрытую папку).
+# Если документа в системе нет, операция для неё пропускается.
+
+[[steps]]
+id = "edit"
+title = "Правка документов"
+ops = [
+  { op = "edit", doc = "SV-SAL-001", text = "ПРАВКА-1: цена ВГ-1500 с 1 ноября — 195 000 рублей." },
+  { op = "edit", doc = "SV-GEN-004", text = "ПРАВКА-2: с 1 ноября заявление на отпуск подаётся за 21 календарный день." },
+  { op = "edit", doc = "SV-PAY-002", text = "ПРАВКА-3: квартальная премия — до 45 процентов оклада." },
+]
+
+[[steps]]
+id = "delete"
+title = "Удаление документов"
+ops = [
+  { op = "delete", doc = "SV-GEN-005" },
+  { op = "delete", doc = "SV-LEG-004" },
+]
+
+[[steps]]
+id = "revoke"
+title = "Отзыв доступа у сотрудников"
+ops = [
+  { op = "revoke", login = "petrenko", zone = "payroll" },
+  { op = "revoke", login = "lebedeva" },
+]
+
+[[steps]]
+id = "move"
+title = "Перенос в закрытую папку"
+ops = [
+  { op = "move", doc = "SV-SAL-002", zone = "management" },
+  { op = "move", doc = "SV-GEN-018", zone = "hr" },
+]
