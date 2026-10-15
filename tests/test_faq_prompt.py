@@ -248,6 +248,24 @@ def test_search_request_reads_the_first_line() -> None:
     assert search_request("Закупку согласует финансовый директор [1].") is None
 
 
+def test_search_request_after_the_answer_is_cut() -> None:
+    # Стенд 15.10: модель ответила и в конце всё равно попросила поиск —
+    # той же строкой или следующей (BH-44).
+    from corp_ed.prompts.faq import strip_search_request
+
+    same_line = (
+        "Наставника назначает директор по персоналу [1]. "
+        "Дополнительный поиск: ФИО директора по персоналу"
+    )
+    assert strip_search_request(same_line) == (
+        "Наставника назначает директор по персоналу [1]."
+    )
+    next_line = "Согласует финансовый директор [1].\n**Дополнительный поиск:** ФИО"
+    assert strip_search_request(next_line) == "Согласует финансовый директор [1]."
+    plain = "Отпуск — 28 дней [1].\nПоиск по базе знаний — в разделе «Помощь»."
+    assert strip_search_request(plain) == plain
+
+
 def test_second_call_does_not_ask_for_another_search() -> None:
     first = build_faq_messages("Кто согласует?", [VACATION], search="allowed")
     second = build_faq_messages("Кто согласует?", [VACATION], search="done")

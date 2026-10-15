@@ -374,6 +374,24 @@ def search_request(answer: str) -> str | None:
     return " ".join(words) or None
 
 
+_SEARCH_REQUEST_AFTER = re.compile(
+    r"[ \t]*\n?[ \t«\"*]*дополнительный\s+поиск\s*:.*\Z", re.IGNORECASE | re.DOTALL
+)
+
+
+def strip_search_request(answer: str) -> str:
+    """Ответ без строки «Дополнительный поиск: …», дописанной после него.
+
+    Бывает, что модель отвечает и в конце — той же строкой или следующей —
+    всё равно просит поиск (стенд 15.10: у Flash 3 ответа из 270, у
+    gpt-oss 1 из 59). Такую строку сотруднику не показывать, второй поиск
+    по ней не делать: ответ уже показан (BH-44). Срезается от строки
+    запроса до конца. Ответ, который начинается с неё, — дело
+    search_request.
+    """
+    return _SEARCH_REQUEST_AFTER.sub("", answer).rstrip()
+
+
 _NUMBER_CITATION = re.compile(r"\[(\d+(?:\.\d+)*)\.?\]")
 
 
