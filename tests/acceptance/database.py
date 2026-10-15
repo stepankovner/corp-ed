@@ -17,6 +17,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import event, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -154,6 +155,18 @@ async def create_employees(
     return users
 
 
+def _require_scratch_database(url: str) -> None:
+    """Уборка отключает проверку внешних ключей и удаляет данные: только в
+    базе, имя которой явно говорит, что она для тестов (test или acc в
+    имени). Иначе — отказ: перепутанный адрес не должен задеть рабочую базу."""
+    name = make_url(url).database or ""
+    if "test" not in name and "acc" not in name:
+        raise RuntimeError(
+            f"база {name!r} не похожа на тестовую: уборка приёмки работает "
+            "только с базой, в имени которой есть test или acc"
+        )
+
+
 async def purge_previous_runs(url: str | None = None) -> int:
     """Убрать компании прошлых запусков приёмки (код `acc-…`) вместе с их
     сотрудниками и учётками.
@@ -164,7 +177,9 @@ async def purge_previous_runs(url: str | None = None) -> int:
     отключает проверку внешних ключей (session_replication_role), поэтому
     — только для тестовой базы, адрес которой вы сами указали.
     """
-    engine = create_async_engine(url or database_url())
+    target = url or database_url()
+    _require_scratch_database(target)
+    engine = create_async_engine(target)
     removed = 0
     try:
         async with engine.begin() as conn:

@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from tests.acceptance.model import load_manifest
 from tests.acceptance.oauth_login import extract_code
 from tests.acceptance.run import format_table
@@ -126,3 +128,12 @@ def test_table_has_a_column_per_step() -> None:
     assert head == ["система", "sync", "resync", "edit", "delete", "revoke", "move"]
     assert table.splitlines()[2].split()[:2] == ["bookstack", "ok"]
     assert table.splitlines()[3].split()[:3] == ["kaiten", "skip", "-"]
+
+
+def test_purge_refuses_a_database_that_is_not_for_tests() -> None:
+    from tests.acceptance.database import _require_scratch_database
+
+    _require_scratch_database("postgresql+asyncpg://u:p@h/corp_ed_test")
+    _require_scratch_database("postgresql+asyncpg://u:p@h/kronto_acc")
+    with pytest.raises(RuntimeError, match="не похожа на тестовую"):
+        _require_scratch_database("postgresql+asyncpg://u:p@h/corp_ed")
