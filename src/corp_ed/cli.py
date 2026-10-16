@@ -28,6 +28,9 @@
     python -m corp_ed.cli rotate-connector-secrets     # после смены ключа
     python -m corp_ed.cli mail-check [--days 7] [--send-to you@example.ru]
                                        # уходят ли письма (check.sh после выкатки)
+    python -m corp_ed.cli connector-visibility --code acme [--connector <uuid>] \\
+        [--code-pattern '<регулярное выражение, группа 1 — шифр>']
+                                       # кто какие документы подключений видит (JSON)
     python -m corp_ed.cli connector-check --kind bitrix24 \\
         --config portal=https://b24-xxx.bitrix24.ru/ \\
         --credential webhook="$BITRIX24_TEST_WEBHOOK" \\
@@ -122,6 +125,11 @@ from corp_ed.services.team_notify import build_team_notifier
 from corp_ed.services.team_notify import drain as drain_team_notifier
 from corp_ed.services.tenant_deletion_service import TenantDeletionService
 from corp_ed.services.tenant_service import TenantService
+from corp_ed.services.visibility_report import (
+    DEFAULT_CODE_PATTERN,
+    VisibilityReportError,
+    connector_visibility,
+)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -346,6 +354,25 @@ def _parser() -> argparse.ArgumentParser:
         "--connector", required=True, type=UUID, help="id подключения smb_agent"
     )
 
+    visibility = commands.add_parser(
+        "connector-visibility",
+        help="кто какие документы подключений видит: шифры документов и "
+        "видимость для каждого активного участника компании, JSON в stdout",
+    )
+    visibility.add_argument("--code", required=True, help="код компании")
+    visibility.add_argument(
+        "--connector",
+        type=UUID,
+        default=None,
+        help="id подключения; без него — все подключения компании",
+    )
+    visibility.add_argument(
+        "--code-pattern",
+        default=DEFAULT_CODE_PATTERN,
+        help="регулярное выражение шифра документа в тексте материала "
+        "(группа 1 — шифр); по умолчанию — как в проверке приёмки",
+    )
+
     commands.add_parser(
         "team-notify-test",
         help="проверочное уведомление команде: письмо на TEAM_NOTIFY_EMAIL "
@@ -481,6 +508,8 @@ async def _run(args: argparse.Namespace) -> int:
 
     if args.command == "agent-token":
         return await _agent_token(args.code, args.connector)
+    if args.command == "connector-visibility":
+        return await _connector_visibility(args.code, args.connector, args.code_pattern)
     if args.command == "team-notify-test":
         return await _team_notify_test()
     if args.command == "payments-webhook":
@@ -1036,6 +1065,26 @@ async def _agent_token(code: str, connector_id: UUID) -> int:
         "отдельным каналом; прежний ключ этого подключения больше не действует.",
         file=sys.stderr,
     )
+    return 0
+
+
+async def _connector_visibility(
+    code: str, connector_id: UUID | None, code_pattern: str
+) -> int:
+    """Отчёт без секретов: шифры, почты участников и счётчики."""
+    async with get_session_maker()() as session:
+        tenant = await TenantRepository(session).get_by_company_code(code)
+        if tenant is None:
+            print(f"Ошибка: компании с кодом {code} нет", file=sys.stderr)
+            return 1
+        try:
+            report = await connector_visibility(
+                session, tenant, connector_id=connector_id, code_pattern=code_pattern
+            )
+        except VisibilityReportError as exc:
+            print(f"Ошибка: {exc}", file=sys.stderr)
+            return 1
+    print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
 
