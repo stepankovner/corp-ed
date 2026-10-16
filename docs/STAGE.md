@@ -550,6 +550,12 @@ sudo -u deploy docker compose -f compose.yaml run --rm --no-deps api \
 Затем в своей учётке: Настройки → Безопасность → приложение-аутентификатор
 или ключ доступа; после этого в боковой панели появится «Панель kronto».
 
+**Кто какие документы подключений видит** (проверка прав на стенде):
+`… run --rm --no-deps -T api python -m corp_ed.cli connector-visibility
+--code <код компании> > visibility.json` — JSON без секретов; сверка с
+манифестом — `tests/acceptance/README.md`, «Проверка облачной системы на
+стенде».
+
 ### 4.8. Автовозобновление и сообщения в Telegram (GitHub Actions)
 
 Workflow **Stage resume** раз в 10 минут (`deploy/stage/resume.py`):
