@@ -26,7 +26,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import httpx
 
@@ -371,8 +371,17 @@ class EmbeddingCache:
         self._db.close()
 
 
+class EmbeddingClient(Protocol):
+    """Что нужно embed_many: YandexClient, eval.providers (MWS, Cloud.ru,
+    своя модель на процессоре)."""
+
+    def cache_uri(self, kind: EmbeddingKind) -> str: ...
+
+    def embed(self, text: str, kind: EmbeddingKind) -> Embedding: ...
+
+
 def embed_many(
-    client: YandexClient,
+    client: EmbeddingClient,
     texts: Sequence[str],
     kind: EmbeddingKind,
     cache: EmbeddingCache | None = None,
@@ -393,6 +402,23 @@ def embed_many(
     ]
     missing = [i for i, result in enumerate(results) if result is None]
     done = len(texts) - len(missing)
+
+    embed_batch = getattr(client, "embed_batch", None)
+    if embed_batch is not None:
+        # Своя модель на процессоре (eval.providers.LocalEmbedder): пачками,
+        # потоки ей не помогают.
+        for start in range(0, len(missing), 32):
+            batch = missing[start : start + 32]
+            for i, embedding in zip(
+                batch, embed_batch([texts[i] for i in batch], kind), strict=True
+            ):
+                results[i] = embedding
+                if cache:
+                    cache.put(model_uri, texts[i], embedding)
+            done += len(batch)
+            if progress:
+                progress(done, len(texts))
+        return [result for result in results if result is not None]
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = {i: pool.submit(client.embed, texts[i], kind) for i in missing}

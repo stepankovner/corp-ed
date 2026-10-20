@@ -95,11 +95,11 @@ def vector_rankings(
     """Индексы чанков по близости и косинусные расстояния (1 − косинус)."""
     import numpy as np
 
-    from eval.yandex import EmbeddingCache, YandexClient, embed_many
+    from eval.providers import embedding_client
+    from eval.yandex import EmbeddingCache, embed_many
 
-    client = YandexClient.from_env(
-        embedding_model=embedding_model, embedding_dim=embedding_dim
-    )
+    # «mws:bge-m3», «cloudru:bge-m3», «local:BAAI/bge-m3» или семейство Яндекса.
+    client = embedding_client(embedding_model, embedding_dim)
     cache = EmbeddingCache(CACHE_PATH)
 
     def progress(done: int, total: int) -> None:
@@ -237,7 +237,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--embedding-model",
         default=DEFAULT_EMBEDDING_MODEL,
-        help="семейство эмбеддингов: text-embeddings-v2 (решение 25.09), text-search",
+        help="семейство эмбеддингов: text-embeddings-v2 (решение 25.09), text-search; "
+        "другие поставщики — mws:bge-m3, cloudru:bge-m3; свои веса — local:BAAI/bge-m3",
     )
     parser.add_argument(
         "--embedding-dim",
