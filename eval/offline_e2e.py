@@ -578,6 +578,13 @@ def _parser() -> argparse.ArgumentParser:
         '{"reasoning_effort": "low"}',
     )
     parser.add_argument(
+        "--decision-fast-extra",
+        default="",
+        help="§7.4 п. 2: JSON полей быстрого вызова решения, например "
+        '{"reasoning_effort": "low"}; при отказе («ничего», «про другое», '
+        "sufficiency none) решение переспрашивается с --decision-extra",
+    )
+    parser.add_argument(
         "--decision-rule",
         action="store_true",
         help="попытка 3: реплики и вопросы об ассистенте — правилом в коде, без модели",
@@ -666,6 +673,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.decision_only and args.decision == "off":
         print("--decision-only: только с --decision")
+        return 2
+    if args.decision_fast_extra and (args.decision == "off" or args.decision_only):
+        print("--decision-fast-extra: только с --decision, без --decision-only")
         return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
@@ -850,8 +860,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         reasoning=args.decision_reasoning, answer=args.decision == "merged"
     )
 
-    def decide(messages: list[Message]) -> Completion:
+    def decide(
+        messages: list[Message], extra: dict[str, object] | None = None
+    ) -> Completion:
         assert decision_client is not None
+        extra = extra or decision_extra
         return decision_client.complete(
             messages,
             model=args.decision_model or args.model,
@@ -860,13 +873,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             api="openai",
             response_format=decision_format,
             **(
-                {"extra": decision_extra}
-                if decision_extra
+                {"extra": extra}
+                if extra
                 else {"extra": llm_extra}
                 if llm_extra and decision_provider == args.llm_provider
                 else {}
             ),
         )
+
+    # §7.4 п. 2: быстрый вызов решения (low), отказ — перепроверка decide.
+    fast_extra = (
+        json.loads(args.decision_fast_extra) if args.decision_fast_extra else None
+    )
+
+    def decide_fast(messages: list[Message]) -> Completion:
+        return decide(messages, fast_extra)
 
     rows: list[dict[str, object]] = []
     for number, (item, (found, best)) in enumerate(
@@ -934,6 +955,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 rule=args.decision_rule,
                 speculative=args.decision_speculative,
                 directory=directory_search,
+                decide_fast=decide_fast if fast_extra else None,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1105,6 +1127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if decided
                     else ""
                 ),
+                "decision_rechecked": decided.rechecked > 0 if decided else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1198,6 +1221,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + ("-rule" if args.decision_rule else "")
         + ("-spec" if args.decision_speculative else "")
         + ("-dir" if args.decision_directory else "")
+        + ("-recheck" if args.decision_fast_extra else "")
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"

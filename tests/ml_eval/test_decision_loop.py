@@ -451,3 +451,136 @@ def test_directory_entry_kept_when_excerpts_full() -> None:
     )
     assert run.directory_hits == 1
     assert run.shown[-1].content == "Финансовый директор — Кукушкина."
+
+
+def timed(text: str, ms: float) -> Completion:
+    return Completion(
+        text=text, input_tokens=10, output_tokens=5, latency_ms=ms, model="m"
+    )
+
+
+class Timed(Script):
+    """Подделка с заданным временем каждого ответа."""
+
+    def __init__(self, *items: tuple[str, float]) -> None:
+        super().__init__(*(text for text, _ in items))
+        self.ms = [ms for _, ms in items]
+
+    def __call__(self, messages: list[Message]) -> Completion:
+        self.seen.append(messages)
+        return timed(self.texts.pop(0), self.ms.pop(0))
+
+
+def test_recheck_not_called_when_fast_answers() -> None:
+    # Быстрое решение «хватает» или «не хватает» — по нему, без перепроверки.
+    for fast_text, extra in (
+        (decision(), []),
+        (decision(sufficiency="partial", search_query="ФИО директора"), [decision()]),
+    ):
+        fast, slow = Script(fast_text, *extra), Script()
+        run = run_decided(
+            "Кто?",
+            [Chunk("а")],
+            decide=slow,
+            decide_fast=fast,
+            answer=Script("Директор [1]."),
+            search=lambda q: [Chunk("б")],
+        )
+        assert slow.seen == [] and run.rechecked == 0
+        assert run.route is Route.ANSWER and run.text == "Директор [1]."
+        assert len(run.decision_calls) == len(fast.seen)
+
+
+def test_recheck_on_refusal_takes_slow_route() -> None:
+    fast = Script(decision(sufficiency="none"))
+    slow = Script(decision())
+    run = run_decided(
+        "Кто согласует?",
+        [Chunk("а")],
+        decide=slow,
+        decide_fast=fast,
+        answer=Script("Согласует директор [1]."),
+        search=no_search,
+    )
+    # Перепроверка видит те же сообщения; маршрут — по ней.
+    assert slow.seen == fast.seen
+    assert run.rechecked == 1 and run.route is Route.ANSWER
+    assert run.text == "Согласует директор [1]."
+    assert len(run.decision_calls) == 2 and run.decision.sufficiency == "full"
+    assert run.decisions[0]["fast"] is True and "fast" not in run.decisions[1]
+
+
+def test_recheck_confirms_other_subject_and_none_edition() -> None:
+    other = decision(match="other", subject="Старт-ИИ-2", excerpts_subject="Старт-ИИ-1")
+    run = run_decided(
+        "Грант по Старт-ИИ-2?",
+        [Chunk("а")],
+        decide=Script(other),
+        decide_fast=Script(other),
+        answer=Script(),
+        search=no_search,
+    )
+    assert run.rechecked == 1 and run.route is Route.OTHER_SUBJECT
+    assert run.text == NOT_FOUND_ANSWER
+    # «ничего» при другой редакции — маршрут «ответ», но перепроверка всё равно.
+    edition = decision(sufficiency="none", match="other_edition", subject="2024")
+    slow = Script(edition)
+    run = run_decided(
+        "Сколько в 2024?",
+        [Chunk("а")],
+        decide=slow,
+        decide_fast=Script(edition),
+        answer=Script("Сумма — 5 млн [1]."),
+        search=no_search,
+    )
+    assert run.rechecked == 1 and len(slow.seen) == 1
+
+
+def test_recheck_partial_then_searches() -> None:
+    fast = Script(decision(sufficiency="none"), decision())
+    slow = Script(decision(sufficiency="partial", search_query="ФИО директора"))
+    queries: list[str] = []
+
+    def search(query: str) -> Sequence[Chunk]:
+        queries.append(query)
+        return [Chunk("б")]
+
+    run = run_decided(
+        "Кто (ФИО)?",
+        [Chunk("а")],
+        decide=slow,
+        decide_fast=fast,
+        answer=Script("Кукушкина [2]."),
+        search=search,
+    )
+    # Перепроверка попросила добор; второе решение — снова быстрое, без отказа.
+    assert queries == ["ФИО директора"] and run.rechecked == 1
+    assert len(fast.seen) == 2 and len(slow.seen) == 1
+    assert run.route is Route.ANSWER and run.text == "Кукушкина [2]."
+
+
+def test_recheck_wall_time_with_speculative_answer() -> None:
+    # Цепочка быстрый + перепроверка — последовательно, ответ — параллельно.
+    for spec_ms, wall in ((1000.0, 3500.0), (5000.0, 5000.0)):
+        run = run_decided(
+            "Кто?",
+            [Chunk("а")],
+            decide=Timed((decision(), 2500.0)),
+            decide_fast=Timed((decision(sufficiency="none"), 1000.0)),
+            answer=Timed(("Директор [1].", spec_ms)),
+            search=no_search,
+            speculative=True,
+        )
+        assert run.rechecked == 1 and run.wasted == 0
+        assert run.text == "Директор [1]." and run.wall_ms == wall
+    # Без перепроверки — max(быстрый, ответ).
+    run = run_decided(
+        "Кто?",
+        [Chunk("а")],
+        decide=Script(),
+        decide_fast=Timed((decision(), 1200.0)),
+        answer=Timed(("Директор [1].", 2000.0)),
+        search=no_search,
+        speculative=True,
+    )
+    assert run.rechecked == 0 and run.wall_ms == 2000.0

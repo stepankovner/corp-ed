@@ -8,6 +8,14 @@
 wall_ms: параллельная пара считается как максимум, остальное — суммой.
 Стрима до вердикта нет.
 
+Решение на low с перепроверкой отказов (план §7.4 п. 2, Артём 20.10):
+decide_fast — быстрый вызов решения (reasoning low); если по нему маршрут —
+«ничего» или «про другое» либо sufficiency == "none", то же решение
+переспрашивается обычным вызовом decide (medium), и дальше берётся оно.
+Так — в каждой точке решения цикла (и после добора). Время: быстрый вызов и
+перепроверка — последовательно, спекулятивный ответ — параллельно с этой
+цепочкой: max(быстрый + перепроверка, ответ).
+
 Модель, поиск и ответ подставляются функциями — цикл тестируется на
 подделках, а offline_e2e подключает его к нынешнему поиску, порогам BH-37
 и общему ответу. Маршрут — corp_ed.domain.decision.route: реплика; про
@@ -88,6 +96,9 @@ class DecidedRun:
     записи — выдержкой, и векторный добор, как раньше."""
     wall_ms: float = 0.0
     """Время по стене: параллельная пара — максимум, остальное — сумма."""
+    rechecked: int = 0
+    """Решений, переспрошенных обычным вызовом после отказа быстрого
+    (decide_fast); в decisions — оба, быстрое первым."""
 
     @property
     def needs_general(self) -> bool:
@@ -97,6 +108,51 @@ class DecidedRun:
 
 def _key(block: Any) -> str:
     return str(getattr(block, "content", block))
+
+
+def _refusal(decision: Decision | None, step: Route) -> bool:
+    """Отказ быстрого решения — повод переспросить обычным вызовом."""
+    return step in (Route.NOT_FOUND, Route.OTHER_SUBJECT) or (
+        decision is not None and decision.sufficiency == "none"
+    )
+
+
+@dataclass
+class _Decided:
+    completions: list[Completion]
+    decision: Decision | None
+    step: Route
+    records: list[dict[str, Any]]
+    rechecked: bool = False
+
+
+def _decide_chain(
+    messages: list[Message],
+    *,
+    decide: Ask,
+    decide_fast: Ask | None,
+    can_search: bool,
+    directory: bool,
+) -> _Decided:
+    """Одно решение: быстрый вызов и, при отказе, перепроверка обычным."""
+
+    def once(ask: Ask) -> tuple[Completion, Decision | None, Route, dict[str, Any]]:
+        completion = ask(messages)
+        decision = parse_decision(completion.text)
+        if decision is None:
+            return completion, None, Route.ANSWER, {"invalid": completion.text[:500]}
+        step = route(decision, can_search=can_search, directory=directory)
+        return completion, decision, step, decision.model_dump()
+
+    completion, decision, step, record = once(decide_fast or decide)
+    result = _Decided([completion], decision, step, [record])
+    if decide_fast is not None and _refusal(decision, step):
+        completion, decision, step, record = once(decide)
+        result.completions.append(completion)
+        result.records[0] = {**result.records[0], "fast": True}
+        result.records.append(record)
+        result.decision, result.step, result.rechecked = decision, step, True
+    return result
 
 
 def run_decided(
@@ -111,6 +167,7 @@ def run_decided(
     rule: bool = False,
     speculative: bool = False,
     directory: Callable[[str, str], tuple[Sequence[SourceChunk], bool]] | None = None,
+    decide_fast: Ask | None = None,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -135,31 +192,41 @@ def run_decided(
             answer=merged,
             searched=list(zip(run.queries, run.added, strict=True)),
         )
+
+        def chain(
+            messages: list[Message] = messages, can: bool = can_search
+        ) -> _Decided:
+            return _decide_chain(
+                messages,
+                decide=decide,
+                decide_fast=decide_fast,
+                can_search=can,
+                directory=directory is not None,
+            )
+
         if speculative and not merged and not searches and shown:
-            # Первое решение и ответ по первым выдержкам — одновременно.
+            # Первое решение (с перепроверкой — вся цепочка) и ответ по первым
+            # выдержкам — одновременно.
             with ThreadPoolExecutor(max_workers=2) as pool:
-                decided_f = pool.submit(decide, messages)
+                decided_f = pool.submit(chain)
                 spec_f = pool.submit(answer, build_faq_messages(question, shown))
-                completion, spec = decided_f.result(), spec_f.result()
+                decided, spec = decided_f.result(), spec_f.result()
             run.speculated = True
             run.calls.append(spec)
-            run.wall_ms += max(completion.latency_ms, spec.latency_ms)
+            run.wall_ms += max(
+                sum(c.latency_ms for c in decided.completions), spec.latency_ms
+            )
         else:
-            completion = decide(messages)
-            run.wall_ms += completion.latency_ms
-        run.calls.append(completion)
-        run.decision_calls.append(completion)
-        decision = parse_decision(completion.text)
+            decided = chain()
+            run.wall_ms += sum(c.latency_ms for c in decided.completions)
+        run.calls.extend(decided.completions)
+        run.decision_calls.extend(decided.completions)
+        run.rechecked += decided.rechecked
+        decision, step = decided.decision, decided.step
         run.decision = decision
+        run.decisions.extend(decided.records)
         if decision is None:
             run.invalid += 1
-            run.decisions.append({"invalid": completion.text[:500]})
-            step = Route.ANSWER
-        else:
-            run.decisions.append(decision.model_dump())
-            step = route(
-                decision, can_search=can_search, directory=directory is not None
-            )
         if step is Route.DIRECTORY and decision is not None and directory is not None:
             role = lookup_role(decision)
             assert role is not None
