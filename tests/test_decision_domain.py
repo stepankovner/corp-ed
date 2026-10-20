@@ -65,9 +65,8 @@ def test_route_order() -> None:
         Route.SMALL_TALK
     )
     # Про другое — «ответа нет», даже если модель сочла выдержки достаточными.
-    assert route(make(match="other", sufficiency="full"), can_search=True) == (
-        Route.OTHER_SUBJECT
-    )
+    other = make(match="other", subject="Старт-ИИ-2", sufficiency="full")
+    assert route(other, can_search=True) == (Route.OTHER_SUBJECT)
     assert route(make(sufficiency="none"), can_search=True) == Route.NOT_FOUND
     partial = make(sufficiency="partial", search_query="финансовый директор ФИО")
     assert route(partial, can_search=True) == Route.SEARCH
@@ -100,3 +99,11 @@ def test_mismatch_note() -> None:
     )
     assert mismatch_note(make(subject="Старт-ИИ-2", excerpts_subject="—")) == ""
     assert mismatch_note(make(subject="УМНИК", excerpts_subject="умник")) == ""
+
+
+def test_other_needs_named_subject() -> None:
+    # «Про другое» без названного в вопросе — не с чем сравнивать.
+    assert route(make(match="other", subject="—"), can_search=True) == Route.ANSWER
+    assert route(
+        make(match="other", subject="—", sufficiency="none"), can_search=True
+    ) == (Route.NOT_FOUND)
