@@ -83,6 +83,9 @@ class DecidedRun:
     """Справочник дал записи (decision-v4) — ответ сразу, без второго решения."""
     directory_misses: int = 0
     """Справочник ничего не дал — векторный добор, как раньше."""
+    directory_partial: int = 0
+    """Роль в справочнике есть, но без запрошенного поля (почты, телефона):
+    записи — выдержкой, и векторный добор, как раньше."""
     wall_ms: float = 0.0
     """Время по стене: параллельная пара — максимум, остальное — сумма."""
 
@@ -107,7 +110,7 @@ def run_decided(
     merged: bool = False,
     rule: bool = False,
     speculative: bool = False,
-    directory: Callable[[str], Sequence[SourceChunk]] | None = None,
+    directory: Callable[[str, str], tuple[Sequence[SourceChunk], bool]] | None = None,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -161,18 +164,26 @@ def run_decided(
             role = lookup_role(decision)
             assert role is not None
             seen = {_key(block) for block in shown}
-            found = [b for b in directory(role) if _key(b) not in seen]
+            blocks, complete = directory(role, decision.missing)
+            found = [b for b in blocks if _key(b) not in seen]
             if found:
-                # Записи справочника — выдержкой, и сразу ответ: второе
-                # решение и векторный добор не нужны.
-                run.directory_hits += 1
-                shown.extend(found[: max(0, max_excerpts - len(shown))])
+                # Записи справочника — выдержкой сверх лимита (они короткие,
+                # обрезать их нельзя); спекулятивный ответ их не видел.
+                shown.extend(found)
                 if spec is not None:
                     run.wasted += 1
                     spec = None
+            if found and complete:
+                # Все запрошенные поля есть — сразу ответ: второе решение и
+                # векторный добор не нужны.
+                run.directory_hits += 1
                 step = Route.ANSWER
                 break
-            run.directory_misses += 1
+            if found:
+                run.directory_partial += 1
+            else:
+                run.directory_misses += 1
+            can_search = searches < max_extra and len(shown) <= max_excerpts
             step = route(decision, can_search=can_search)
         if step is Route.SEARCH and decision is not None:
             query = search_query(decision)

@@ -45,7 +45,7 @@ import argparse
 import json
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -59,7 +59,13 @@ from corp_ed.domain.context import (
     select_sections,
 )
 from corp_ed.domain.decision import parse_decision
-from corp_ed.domain.directory import format_entries, lookup, parse_directory
+from corp_ed.domain.directory import (
+    covers,
+    format_entries,
+    lookup,
+    parse_directory,
+    requested_fields,
+)
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
 from corp_ed.domain.rerank import RerankOrder, rerank_allowed
@@ -411,6 +417,37 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
     )
 
 
+def _directory_search(
+    title: str, markdown: str
+) -> Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]]:
+    """Поиск по справочнику оргструктуры (decision-v4): записи — одной
+    выдержкой (как блок контекста, чтобы источники ответа видели документ)."""
+    entries = parse_directory(markdown)
+    print(f"Справочник: «{title}», записей {len(entries)}")
+
+    def search(
+        role: str, missing: str
+    ) -> tuple[list[ContextBlock[OfflineMatch]], bool]:
+        found = lookup(entries, role)
+        if not found:
+            return [], False
+        complete = covers(found, requested_fields(missing))
+        content = format_entries(found)
+        match = OfflineMatch(
+            content=content, title=title, heading_path=["Справочник"], distance=0.0
+        )
+        block = ContextBlock(
+            content=content,
+            title=title,
+            heading_path=["Справочник"],
+            match=match,
+            kind="chunk",
+        )
+        return [block], complete
+
+    return search
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m eval.offline_e2e",
@@ -656,7 +693,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
-    directory_search = None
+    directory_search: (
+        Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]] | None
+    ) = None
     if args.decision_directory:
         # Оргструктура — по названию (у стенда названия — транслит имён файлов)
         # или по заголовку в первой строке; глоссарий и прочие «справочники» —
@@ -671,25 +710,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             None,
         )
+        # Нет справочника (корпус dev) — как в продукте с пустой таблицей:
+        # поле lookup_role есть, но маршрут — обычный векторный добор.
         if source is None:
-            print("--decision-directory: в корпусе нет документа-справочника")
-            return 2
-        entries = parse_directory(source.markdown)
-        print(f"Справочник: «{source.title}», записей {len(entries)}")
-
-        def directory_search(role: str) -> list[OfflineMatch]:
-            found = lookup(entries, role)
-            if not found:
-                return []
-            return [
-                OfflineMatch(
-                    content=format_entries(found),
-                    title=source.title,
-                    heading_path=["Справочник"],
-                    distance=0.0,
-                )
-            ]
-
+            print("--decision-directory: в корпусе нет справочника — добор вектором")
+        else:
+            directory_search = _directory_search(source.title, source.markdown)
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
     # Без --split holdout золотого набора не берём (select_split, задача 2.1).
@@ -1071,6 +1097,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_wasted": decided.wasted if decided else "",
                 "decision_directory": (
                     f"{decided.directory_hits}/{decided.directory_misses}"
+                    f"/{decided.directory_partial}"
                     if decided
                     else ""
                 ),
