@@ -526,6 +526,13 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--decision-model", default="", help="модель решения")
     parser.add_argument(
+        "--decision-max-tokens",
+        type=int,
+        default=2000,
+        help="лимит выхода шага решения (у gpt-oss с рассуждением medium 1000 "
+        "мало: обрезка — M-008, этап 1)",
+    )
+    parser.add_argument(
         "--decision-extra",
         default="",
         help="JSON с полями запроса модели решения, например "
@@ -767,7 +774,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             messages,
             model=args.decision_model or args.model,
             temperature=args.temperature,
-            max_tokens=args.max_tokens,
+            max_tokens=args.decision_max_tokens,
             api="openai",
             response_format=decision_format,
             **(
@@ -812,6 +819,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         hop_query, hop_added = "", 0
         agent_run: AgentRun | None = None
         decided: DecidedRun | None = None
+        decision_calls: list[Completion] = []
         first_decision = ""
         if args.decision_only and not args.dry_run:
             calls.append(
@@ -824,6 +832,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                 )
             )
+            decision_calls.append(calls[-1])
             parsed = parse_decision(calls[-1].text)
             first_decision = (
                 parsed.model_dump_json()
@@ -842,6 +851,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 merged=args.decision == "merged",
             )
             calls.extend(decided.calls)
+            decision_calls.extend(decided.decision_calls)
             raw = decided.text
             selected = decided.shown
             context_text = "\n".join(block.content for block in selected)
@@ -991,6 +1001,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else "",
                 "decision_added": json.dumps(decided.added) if decided else "",
                 "decision_invalid": decided.invalid if decided else "",
+                "decision_calls": len(decision_calls),
+                "decision_input_tokens": sum(c.input_tokens for c in decision_calls),
+                "decision_output_tokens": sum(c.output_tokens for c in decision_calls),
+                "decision_latency_ms": round(sum(c.latency_ms for c in decision_calls)),
                 "decision_exhausted": decided.exhausted if decided else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),

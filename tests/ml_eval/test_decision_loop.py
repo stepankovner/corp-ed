@@ -103,8 +103,9 @@ def test_empty_search_answers_with_what_is_there() -> None:
 
 
 def test_search_limit() -> None:
-    partial = decision(sufficiency="partial", search_query="ещё")
-    decide = Script(partial, partial, partial)
+    decide = Script(
+        *(decision(sufficiency="partial", search_query=f"запрос {i}") for i in range(3))
+    )
     answer = Script("Ответ [1].")
     counter = iter(range(100))
 
@@ -119,7 +120,7 @@ def test_search_limit() -> None:
         search=search,
         max_extra=2,
     )
-    assert run.queries == ["ещё", "ещё"]
+    assert run.queries == ["запрос 0", "запрос 1"]
     assert run.exhausted and run.route is Route.ANSWER
 
 
@@ -206,3 +207,39 @@ def test_invalid_decision_falls_back_to_answer() -> None:
     )
     assert run.invalid == 1 and run.route is Route.ANSWER
     assert run.text == "Ответ по выдержкам [1]."
+
+
+def test_merged_small_talk_with_not_found_is_a_question() -> None:
+    # Как в BH-45: «ответа нет» в ответе перевешивает признак реплики.
+    merged = json.loads(decision(kind="small_talk", sufficiency="none"))
+    merged["answer"] = NOT_FOUND_ANSWER
+    run = run_decided(
+        "Кто изобрёл телефон?",
+        [],
+        decide=Script(json.dumps(merged, ensure_ascii=False)),
+        answer=Script(),
+        search=no_search,
+        merged=True,
+    )
+    assert not run.small_talk and run.route is Route.NOT_FOUND and run.needs_general
+
+
+def test_search_history_shown_and_repeat_not_searched() -> None:
+    partial = decision(sufficiency="partial", search_query="финансовый директор ФИО")
+    decide = Script(partial, partial)
+    answer = Script("Согласует финансовый директор [1].")
+    calls: list[str] = []
+
+    def search(query: str) -> Sequence[Chunk]:
+        calls.append(query)
+        return [Chunk("новая")]
+
+    run = run_decided(
+        "Кто (ФИО)?", [Chunk("а")], decide=decide, answer=answer, search=search
+    )
+    # Второе решение видит, что уже искали, и тот же запрос не повторяется.
+    assert "Уже искали: «финансовый директор ФИО» — новых выдержек: 1" in (
+        decide.seen[1][1].content
+    )
+    assert calls == ["финансовый директор ФИО"]
+    assert run.exhausted and run.route is Route.ANSWER

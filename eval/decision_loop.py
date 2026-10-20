@@ -22,6 +22,7 @@ from corp_ed.prompts.decision import (
     with_edition_note,
 )
 from corp_ed.prompts.faq import (
+    _NOT_FOUND_ANYWHERE,
     NOT_FOUND_ANSWER,
     SourceChunk,
     build_general_messages,
@@ -44,6 +45,9 @@ class DecidedRun:
     """Последнее решение (по нему — оговорки)."""
     decisions: list[dict[str, Any]] = field(default_factory=list)
     calls: list[Completion] = field(default_factory=list)
+    decision_calls: list[Completion] = field(default_factory=list)
+    """Вызовы шага решения (входят и в calls): их цена и время — отдельно,
+    у решения может быть другой поставщик."""
     queries: list[str] = field(default_factory=list)
     added: list[int] = field(default_factory=list)
     invalid: int = 0
@@ -80,9 +84,16 @@ def run_decided(
     while True:
         can_search = searches < max_extra and len(shown) < max_excerpts
         completion = decide(
-            build_decision_messages(question, shown, reasoning=reasoning, answer=merged)
+            build_decision_messages(
+                question,
+                shown,
+                reasoning=reasoning,
+                answer=merged,
+                searched=list(zip(run.queries, run.added, strict=True)),
+            )
         )
         run.calls.append(completion)
+        run.decision_calls.append(completion)
         decision = parse_decision(completion.text)
         run.decision = decision
         if decision is None:
@@ -95,6 +106,11 @@ def run_decided(
         if step is Route.SEARCH and decision is not None:
             query = search_query(decision)
             assert query is not None  # route() ищет только с запросом
+            if query.casefold() in {q.casefold() for q in run.queries}:
+                # Тот же запрос второй раз ничего нового не даст.
+                run.exhausted = True
+                step = route(decision, can_search=False)
+                break
             searches += 1
             run.queries.append(query)
             seen = {_key(block) for block in shown}
@@ -120,8 +136,15 @@ def run_decided(
     run.route = step
     if step is Route.SMALL_TALK:
         run.small_talk = True
-        if merged and decision is not None and decision.answer.strip():
-            run.text = drop_citations(decision.answer.strip())
+        reply_text = decision.answer.strip() if merged and decision else ""
+        if reply_text and _NOT_FOUND_ANYWHERE.search(reply_text):
+            # Как в BH-45 (small_talk_reply): пометка «ответа нет» перевешивает
+            # признак реплики — модель написала обе части, значит, это вопрос.
+            run.small_talk = False
+            run.route = Route.NOT_FOUND
+            run.text = NOT_FOUND_ANSWER
+        elif reply_text:
+            run.text = drop_citations(reply_text)
         else:
             completion = answer(build_general_messages(question, small_talk=True))
             run.calls.append(completion)

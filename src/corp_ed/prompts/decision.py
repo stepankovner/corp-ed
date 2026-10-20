@@ -162,8 +162,18 @@ def build_decision_messages(
     *,
     reasoning: bool = False,
     answer: bool = False,
+    searched: Sequence[tuple[str, int]] = (),
 ) -> list[Message]:
+    """searched — уже сделанные доборы: (запрос, сколько новых выдержек).
+    Без этого шаг решения не знает, что уже искали, и повторяет запрос."""
     excerpts = format_excerpts(matches) if matches else "(выдержек нет)"
+    history = (
+        "\n\nУже искали: "
+        + "; ".join(f"«{query}» — новых выдержек: {added}" for query, added in searched)
+        + ". Эти запросы не повторяй."
+        if searched
+        else ""
+    )
     return [
         Message(
             role=Role.SYSTEM,
@@ -174,7 +184,7 @@ def build_decision_messages(
             content=(
                 "Выдержки из документов компании:\n\n"
                 f"{excerpts}\n\n"
-                f"Сообщение сотрудника: {question.strip()}"
+                f"Сообщение сотрудника: {question.strip()}{history}"
             ),
         ),
     ]
