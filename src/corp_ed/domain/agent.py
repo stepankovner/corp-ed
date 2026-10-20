@@ -94,6 +94,13 @@ def missing_entities(question: str, texts: Iterable[str]) -> list[str]:
 
 
 _CITED = re.compile(r"\[(\d+)\]")
+_CITATION_MARK = re.compile(r"\s*\[\d+\]")
+
+
+def drop_citations(text: str) -> str:
+    """Ответ на реплику — без ссылок [n]: источников у него нет (проба 20.10:
+    на «Привет» агент ответил с [1][2] — модель видела выдержки)."""
+    return _CITATION_MARK.sub("", text).strip()
 
 
 def cited_numbers(answer: str) -> list[int]:

@@ -51,6 +51,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
+from corp_ed.domain.agent import drop_citations
 from corp_ed.domain.context import (
     ContextBlock,
     Section,
@@ -742,7 +743,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             context_text = "\n".join(block.content for block in selected)
             reply = small_talk_reply(raw)
             if reply is not None:
-                small, answer = True, reply
+                small, answer = True, drop_citations(reply)
             elif not is_not_found(raw):
                 answer = normalize_citations(raw, selected)
         elif selected and not args.dry_run:

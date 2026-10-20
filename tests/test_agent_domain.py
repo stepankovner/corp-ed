@@ -4,6 +4,7 @@ import json
 
 from corp_ed.domain.agent import (
     cited_numbers,
+    drop_citations,
     has_raw_tool_call,
     missing_entities,
     named_entities,
@@ -56,3 +57,8 @@ def test_guard_fires_on_a_neighbor_program_only() -> None:
 
 def test_cited_numbers_in_order_without_repeats() -> None:
     assert cited_numbers("Срок — 3 дня [2]. Форма — АО-1 [1][2].") == [2, 1]
+
+
+def test_small_talk_reply_loses_citations() -> None:
+    reply = "Здравствуйте! Если будут вопросы — спрашивайте. [1][2]"
+    assert drop_citations(reply) == "Здравствуйте! Если будут вопросы — спрашивайте."
