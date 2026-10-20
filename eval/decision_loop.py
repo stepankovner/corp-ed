@@ -1,4 +1,12 @@
-"""Цикл «решение до ответа» для eval (попытка 2, decision-v1).
+"""Цикл «решение до ответа» для eval (попытки 2 и 3: правило, параллельный ответ).
+
+Попытка 3 (ml-agent-plan.md §9, протокол в ml-report.md): rule=True —
+реплика целиком и вопрос об ассистенте отвечаются правилом в коде, без
+модели и поиска; speculative=True — ответ Flash по первым выдержкам
+запускается одновременно с решением (гайд OpenAI по задержкам: проверка и
+генерация параллельно, генерацию отбрасывают при отказе). Время цикла —
+wall_ms: параллельная пара считается как максимум, остальное — суммой.
+Стрима до вердикта нет.
 
 Модель, поиск и ответ подставляются функциями — цикл тестируется на
 подделках, а offline_e2e подключает его к нынешнему поиску, порогам BH-37
@@ -10,11 +18,13 @@
 """
 
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
 from corp_ed.domain.agent import MAX_EXCERPTS, MAX_EXTRA_SEARCHES, drop_citations
 from corp_ed.domain.decision import Decision, Route, parse_decision, route, search_query
+from corp_ed.domain.small_talk import rule_reply
 from corp_ed.llm.types import Message
 from corp_ed.prompts.decision import (
     build_answer_messages,
@@ -25,6 +35,7 @@ from corp_ed.prompts.faq import (
     _NOT_FOUND_ANYWHERE,
     NOT_FOUND_ANSWER,
     SourceChunk,
+    build_faq_messages,
     build_general_messages,
     is_not_found,
     small_talk_reply,
@@ -55,6 +66,14 @@ class DecidedRun:
     exhausted: bool = False
     """Хотели добрать, но добор ничего нового не дал или лимит."""
     small_talk: bool = False
+    by_rule: bool = False
+    """Ответ дан правилом в коде, без модели."""
+    speculated: bool = False
+    """Ответ Flash запускался параллельно с решением."""
+    wasted: int = 0
+    """Спекулятивных ответов выброшено (их токены — в calls)."""
+    wall_ms: float = 0.0
+    """Время по стене: параллельная пара — максимум, остальное — сумма."""
 
     @property
     def needs_general(self) -> bool:
@@ -75,23 +94,44 @@ def run_decided(
     search: Callable[[str], Sequence[SourceChunk]],
     reasoning: bool = False,
     merged: bool = False,
+    rule: bool = False,
+    speculative: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
     shown: list[Any] = list(initial)[:max_excerpts]
     run = DecidedRun(text=NOT_FOUND_ANSWER, route=Route.NOT_FOUND, shown=shown)
+    if rule and (fixed := rule_reply(question)) is not None:
+        run.text, run.route, run.small_talk, run.by_rule = (
+            fixed,
+            Route.SMALL_TALK,
+            True,
+            True,
+        )
+        return run
     searches = 0
+    spec: Completion | None = None
     while True:
         can_search = searches < max_extra and len(shown) < max_excerpts
-        completion = decide(
-            build_decision_messages(
-                question,
-                shown,
-                reasoning=reasoning,
-                answer=merged,
-                searched=list(zip(run.queries, run.added, strict=True)),
-            )
+        messages = build_decision_messages(
+            question,
+            shown,
+            reasoning=reasoning,
+            answer=merged,
+            searched=list(zip(run.queries, run.added, strict=True)),
         )
+        if speculative and not merged and not searches and shown:
+            # Первое решение и ответ по первым выдержкам — одновременно.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                decided_f = pool.submit(decide, messages)
+                spec_f = pool.submit(answer, build_faq_messages(question, shown))
+                completion, spec = decided_f.result(), spec_f.result()
+            run.speculated = True
+            run.calls.append(spec)
+            run.wall_ms += max(completion.latency_ms, spec.latency_ms)
+        else:
+            completion = decide(messages)
+            run.wall_ms += completion.latency_ms
         run.calls.append(completion)
         run.decision_calls.append(completion)
         decision = parse_decision(completion.text)
@@ -119,6 +159,9 @@ def run_decided(
             run.added.append(len(new))
             if new:
                 shown.extend(new)
+                if spec is not None:
+                    run.wasted += 1
+                    spec = None
                 continue
             # Добор ничего не дал — решаем по тому, что есть.
             run.exhausted = True
@@ -148,22 +191,40 @@ def run_decided(
         else:
             completion = answer(build_general_messages(question, small_talk=True))
             run.calls.append(completion)
+            run.wall_ms += completion.latency_ms
             reply = small_talk_reply(completion.text.strip())
             if reply is None:  # модель всё же сочла это вопросом
                 run.small_talk = False
                 run.text = NOT_FOUND_ANSWER
             else:
                 run.text = drop_citations(reply)
+        if spec is not None:
+            run.wasted += 1
         return run
     if step in (Route.OTHER_SUBJECT, Route.NOT_FOUND):
         run.text = NOT_FOUND_ANSWER
+        if spec is not None:
+            run.wasted += 1
         return run
-    # Ответ по выдержкам: в варианте одним вызовом — поле ответа, иначе
-    # отдельный вызов (и при откате, и если поле пустое).
+    # Ответ по выдержкам: спекулятивный, если он есть и годится; в варианте
+    # одним вызовом — поле ответа; иначе отдельный вызов (и при откате, и
+    # если поле пустое). Другой год: спекулятивный ответ по обычному промпту
+    # мог отказать (правило 4) — тогда ответ заново с указанием отвечать по
+    # найденной редакции.
     text = decision.answer.strip() if merged and decision is not None else ""
+    if not text and spec is not None:
+        text = spec.text.strip()
+        if (
+            decision is not None
+            and decision.match == "other_edition"
+            and is_not_found(text)
+        ):
+            run.wasted += 1
+            text = ""
     if not text:
         completion = answer(build_answer_messages(question, shown, decision))
         run.calls.append(completion)
+        run.wall_ms += completion.latency_ms
         text = completion.text.strip()
     run.text = text if is_not_found(text) else with_edition_note(text, decision)
     return run

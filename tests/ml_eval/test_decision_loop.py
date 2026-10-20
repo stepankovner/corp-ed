@@ -243,3 +243,83 @@ def test_search_history_shown_and_repeat_not_searched() -> None:
     )
     assert calls == ["финансовый директор ФИО"]
     assert run.exhausted and run.route is Route.ANSWER
+
+
+def test_rule_answers_without_model() -> None:
+    run = run_decided(
+        "Привет!", [], decide=Script(), answer=Script(), search=no_search, rule=True
+    )
+    assert run.by_rule and run.small_talk and not run.calls and run.wall_ms == 0
+    assert run.text.startswith("Здравствуйте")
+    # Вопрос с приветствием — не реплика: идёт к модели.
+    run = run_decided(
+        "Привет! Кто согласует?",
+        [Chunk("а")],
+        decide=Script(decision()),
+        answer=Script("Директор [1]."),
+        search=no_search,
+        rule=True,
+    )
+    assert not run.by_rule and run.text == "Директор [1]."
+
+
+def test_speculative_answer_used_and_timed() -> None:
+    decide = Script(decision())
+    answer = Script("Согласует директор [1].")
+    run = run_decided(
+        "Кто?",
+        [Chunk("а")],
+        decide=decide,
+        answer=answer,
+        search=no_search,
+        speculative=True,
+    )
+    assert run.speculated and run.wasted == 0 and run.text == "Согласует директор [1]."
+    assert len(run.calls) == 2 and len(answer.seen) == 1
+    assert run.wall_ms == 1.0  # max(1, 1), не 2
+
+
+def test_speculative_answer_discarded_on_search_and_refusal() -> None:
+    decide = Script(
+        decision(sufficiency="partial", search_query="ФИО директора"), decision()
+    )
+    answer = Script("черновик [1]", "Директор — Кукушкина [2].")
+    run = run_decided(
+        "Кто (ФИО)?",
+        [Chunk("а")],
+        decide=decide,
+        answer=answer,
+        search=lambda q: [Chunk("б")],
+        speculative=True,
+    )
+    assert run.wasted == 1 and run.text == "Директор — Кукушкина [2]."
+    assert run.wall_ms == 3.0  # max(1, 1) + решение + ответ
+    run = run_decided(
+        "Вопрос?",
+        [Chunk("а")],
+        decide=Script(decision(sufficiency="none")),
+        answer=Script("черновик"),
+        search=no_search,
+        speculative=True,
+    )
+    assert run.wasted == 1 and run.text == NOT_FOUND_ANSWER
+
+
+def test_speculative_other_edition_refusal_reanswers() -> None:
+    other = decision(
+        match="other_edition", subject="ГПБ Тех 2025", excerpts_subject="ГПБ Тех 2026"
+    )
+    answer = Script(NOT_FOUND_ANSWER, "Требования такие [1].")
+    run = run_decided(
+        "Вопрос?",
+        [Chunk("а")],
+        decide=Script(other),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+    )
+    assert run.wasted == 1 and len(answer.seen) == 2
+    assert "не отказывай" in answer.seen[1][-1].content
+    assert run.text.startswith(
+        "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования"
+    )

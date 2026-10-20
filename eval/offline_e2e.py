@@ -539,6 +539,16 @@ def _parser() -> argparse.ArgumentParser:
         '{"reasoning_effort": "low"}',
     )
     parser.add_argument(
+        "--decision-rule",
+        action="store_true",
+        help="попытка 3: реплики и вопросы об ассистенте — правилом в коде, без модели",
+    )
+    parser.add_argument(
+        "--decision-speculative",
+        action="store_true",
+        help="попытка 3: ответ Flash по первым выдержкам параллельно с решением",
+    )
+    parser.add_argument(
         "--decision-only",
         action="store_true",
         help="этап 1: только первое решение по найденным выдержкам — без "
@@ -849,6 +859,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 search=agent_search,
                 reasoning=args.decision_reasoning,
                 merged=args.decision == "merged",
+                rule=args.decision_rule,
+                speculative=args.decision_speculative,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -962,7 +974,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if decided is not None and mode == "strict" and needs_general:
             answer = with_other_subject_note(NOT_FOUND_ANSWER, decided.decision)
-        latency = sum(c.latency_ms for c in calls)
+        # Решение (попытка 3): время по стене — параллельная пара как максимум.
+        latency = (
+            decided.wall_ms if decided is not None else sum(c.latency_ms for c in calls)
+        )
+        if decided is not None and general:
+            latency += calls[-1].latency_ms  # общий ответ — после цикла
         tokens_in = sum(c.input_tokens for c in calls)
         tokens_out = sum(c.output_tokens for c in calls)
         reasoning = sum(c.reasoning_tokens for c in calls)
@@ -1006,6 +1023,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_output_tokens": sum(c.output_tokens for c in decision_calls),
                 "decision_latency_ms": round(sum(c.latency_ms for c in decision_calls)),
                 "decision_exhausted": decided.exhausted if decided else "",
+                "decision_by_rule": decided.by_rule if decided else "",
+                "decision_speculated": decided.speculated if decided else "",
+                "decision_wasted": decided.wasted if decided else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1096,6 +1116,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         DECISION_PROMPT_VERSION
         + f"-{args.decision}"
         + ("-r" if args.decision_reasoning else "")
+        + ("-rule" if args.decision_rule else "")
+        + ("-spec" if args.decision_speculative else "")
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"
