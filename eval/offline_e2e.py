@@ -107,7 +107,7 @@ from eval.corpus import (
     section_corpus,
 )
 from eval.datasets import EvalItem, load_dataset, select_split
-from eval.decision_loop import DecidedRun, run_decided
+from eval.decision_loop import RECHECK_MODES, DecidedRun, run_decided
 from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.metrics import percentile
 from eval.multi_query import Paraphrased, paraphrase_questions
@@ -585,6 +585,13 @@ def _parser() -> argparse.ArgumentParser:
         "sufficiency none) решение переспрашивается с --decision-extra",
     )
     parser.add_argument(
+        "--decision-recheck",
+        choices=RECHECK_MODES,
+        default="refusals",
+        help="что перепроверять при --decision-fast-extra: только отказы "
+        "(вариант R) или ещё «хватает» при названной lookup_role (R2)",
+    )
+    parser.add_argument(
         "--decision-rule",
         action="store_true",
         help="попытка 3: реплики и вопросы об ассистенте — правилом в коде, без модели",
@@ -676,6 +683,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.decision_fast_extra and (args.decision == "off" or args.decision_only):
         print("--decision-fast-extra: только с --decision, без --decision-only")
+        return 2
+    if args.decision_recheck != "refusals" and not args.decision_fast_extra:
+        print("--decision-recheck: только с --decision-fast-extra")
         return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
@@ -956,6 +966,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 speculative=args.decision_speculative,
                 directory=directory_search,
                 decide_fast=decide_fast if fast_extra else None,
+                recheck=args.decision_recheck,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1128,6 +1139,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else ""
                 ),
                 "decision_rechecked": decided.rechecked > 0 if decided else "",
+                "decision_recheck_reason": ",".join(decided.recheck_reasons)
+                if decided
+                else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1222,6 +1236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + ("-spec" if args.decision_speculative else "")
         + ("-dir" if args.decision_directory else "")
         + ("-recheck" if args.decision_fast_extra else "")
+        + ("-role" if args.decision_recheck == "refusals+role" else "")
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"

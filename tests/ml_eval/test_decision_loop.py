@@ -4,6 +4,8 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+import pytest
+
 from corp_ed.domain.decision import Route
 from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import NOT_FOUND_ANSWER, SMALL_TALK_PREFIX
@@ -584,3 +586,80 @@ def test_recheck_wall_time_with_speculative_answer() -> None:
         speculative=True,
     )
     assert run.rechecked == 0 and run.wall_ms == 2000.0
+
+
+def test_recheck_role_full_goes_to_directory() -> None:
+    # R2: low «хватает», но назвал роль — переспрос; medium просит справочник.
+    fast = Script(decision(lookup_role="финансовый директор"))
+    slow = Script(
+        decision(
+            sufficiency="partial", missing="ФИО", lookup_role="финансовый директор"
+        )
+    )
+    asked: list[str] = []
+
+    def directory(role: str, missing: str) -> tuple[Sequence[Chunk], bool]:
+        asked.append(role)
+        return [Chunk("Финансовый директор — Кукушкина.")], True
+
+    run = run_decided(
+        "Кто (ФИО) согласует?",
+        [Chunk("а")],
+        decide=slow,
+        decide_fast=fast,
+        answer=Script("Кукушкина [2]."),
+        search=no_search,
+        directory=directory,
+        recheck="refusals+role",
+    )
+    assert slow.seen == fast.seen and asked == ["финансовый директор"]
+    assert run.rechecked == 1 and run.recheck_reasons == ["role"]
+    assert run.directory_hits == 1 and run.text == "Кукушкина [2]."
+    assert run.decisions[0]["recheck"] == "role"
+
+
+def test_recheck_role_only_in_role_mode_and_with_role() -> None:
+    # Прежний режим R — «хватает + роль» не переспрашивается; в R2 роль «—»
+    # (или пустая) — тоже нет.
+    for mode, role in (
+        ("refusals", "финансовый директор"),
+        ("refusals+role", "—"),
+        ("refusals+role", ""),
+    ):
+        slow = Script()
+        run = run_decided(
+            "Кто?",
+            [Chunk("а")],
+            decide=slow,
+            decide_fast=Script(decision(lookup_role=role)),
+            answer=Script("Директор [1]."),
+            search=no_search,
+            recheck=mode,
+        )
+        assert slow.seen == [] and run.rechecked == 0 and run.recheck_reasons == []
+
+
+def test_recheck_reason_refusal_recorded() -> None:
+    run = run_decided(
+        "Кто согласует?",
+        [Chunk("а")],
+        decide=Script(decision()),
+        decide_fast=Script(decision(sufficiency="none")),
+        answer=Script("Согласует директор [1]."),
+        search=no_search,
+        recheck="refusals+role",
+    )
+    assert run.recheck_reasons == ["refusal"]
+    assert run.decisions[0]["recheck"] == "refusal"
+
+
+def test_recheck_mode_validated() -> None:
+    with pytest.raises(ValueError):
+        run_decided(
+            "Кто?",
+            [Chunk("а")],
+            decide=Script(),
+            answer=Script(),
+            search=no_search,
+            recheck="all",
+        )

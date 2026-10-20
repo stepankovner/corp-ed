@@ -628,6 +628,11 @@ sufficiency none — то же решение переспрашивается �
 Стенд: `offline_e2e --decision-fast-extra '{"reasoning_effort": "low"}'`,
 колонка `decision_rechecked`. Итоги — `ml-report.md`, «Low с перепроверкой
 отказов».
+`decision_loop(recheck="refusals+role")` / `--decision-recheck refusals+role`
+(вариант R2, 20.10): переспрашивается ещё «хватает» при заполненной
+`lookup_role`; причина — колонка `decision_recheck_reason` (`refusal`,
+`role`) и поле `recheck` в записи быстрого решения. Итоги — `ml-report.md`,
+«Перепроверка „хватает“ при названной роли».
 
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов

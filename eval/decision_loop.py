@@ -16,6 +16,12 @@ decide_fast — быстрый вызов решения (reasoning low); есл
 перепроверка — последовательно, спекулятивный ответ — параллельно с этой
 цепочкой: max(быстрый + перепроверка, ответ).
 
+Режим recheck="refusals+role" (вариант R2, Артём 20.10): переспрашивается
+ещё и «хватает» (маршрут — ответ) при заполненной lookup_role — low называл
+роль, но ставил full, и справочник не спрашивался (M-001, T4-06, T3-05).
+recheck="refusals" — прежний вариант R. Причина перепроверки — в записи
+быстрого решения (поле "recheck") и в DecidedRun.recheck_reasons.
+
 Модель, поиск и ответ подставляются функциями — цикл тестируется на
 подделках, а offline_e2e подключает его к нынешнему поиску, порогам BH-37
 и общему ответу. Маршрут — corp_ed.domain.decision.route: реплика; про
@@ -99,6 +105,8 @@ class DecidedRun:
     rechecked: int = 0
     """Решений, переспрошенных обычным вызовом после отказа быстрого
     (decide_fast); в decisions — оба, быстрое первым."""
+    recheck_reasons: list[str] = field(default_factory=list)
+    """Причина каждой перепроверки: "refusal" или "role" (по порядку)."""
 
     @property
     def needs_general(self) -> bool:
@@ -110,11 +118,25 @@ def _key(block: Any) -> str:
     return str(getattr(block, "content", block))
 
 
-def _refusal(decision: Decision | None, step: Route) -> bool:
-    """Отказ быстрого решения — повод переспросить обычным вызовом."""
-    return step in (Route.NOT_FOUND, Route.OTHER_SUBJECT) or (
+RECHECK_MODES = ("refusals", "refusals+role")
+"""Что перепроверять: только отказы (R) или ещё «хватает» при роли (R2)."""
+
+
+def _recheck_reason(decision: Decision | None, step: Route, mode: str) -> str | None:
+    """Почему быстрое решение переспросить обычным вызовом (None — не надо)."""
+    if step in (Route.NOT_FOUND, Route.OTHER_SUBJECT) or (
         decision is not None and decision.sufficiency == "none"
-    )
+    ):
+        return "refusal"
+    if (
+        mode == "refusals+role"
+        and step is Route.ANSWER
+        and decision is not None
+        and decision.sufficiency == "full"
+        and lookup_role(decision)
+    ):
+        return "role"
+    return None
 
 
 @dataclass
@@ -124,6 +146,7 @@ class _Decided:
     step: Route
     records: list[dict[str, Any]]
     rechecked: bool = False
+    reason: str | None = None
 
 
 def _decide_chain(
@@ -133,8 +156,10 @@ def _decide_chain(
     decide_fast: Ask | None,
     can_search: bool,
     directory: bool,
+    recheck: str = "refusals",
 ) -> _Decided:
-    """Одно решение: быстрый вызов и, при отказе, перепроверка обычным."""
+    """Одно решение: быстрый вызов и, при отказе (или «хватает + роль» в
+    режиме refusals+role), перепроверка обычным."""
 
     def once(ask: Ask) -> tuple[Completion, Decision | None, Route, dict[str, Any]]:
         completion = ask(messages)
@@ -146,12 +171,14 @@ def _decide_chain(
 
     completion, decision, step, record = once(decide_fast or decide)
     result = _Decided([completion], decision, step, [record])
-    if decide_fast is not None and _refusal(decision, step):
+    reason = _recheck_reason(decision, step, recheck)
+    if decide_fast is not None and reason is not None:
         completion, decision, step, record = once(decide)
         result.completions.append(completion)
-        result.records[0] = {**result.records[0], "fast": True}
+        result.records[0] = {**result.records[0], "fast": True, "recheck": reason}
         result.records.append(record)
         result.decision, result.step, result.rechecked = decision, step, True
+        result.reason = reason
     return result
 
 
@@ -168,9 +195,12 @@ def run_decided(
     speculative: bool = False,
     directory: Callable[[str, str], tuple[Sequence[SourceChunk], bool]] | None = None,
     decide_fast: Ask | None = None,
+    recheck: str = "refusals",
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
+    if recheck not in RECHECK_MODES:
+        raise ValueError(f"recheck: {recheck!r} не из {RECHECK_MODES}")
     shown: list[Any] = list(initial)[:max_excerpts]
     run = DecidedRun(text=NOT_FOUND_ANSWER, route=Route.NOT_FOUND, shown=shown)
     if rule and (fixed := rule_reply(question)) is not None:
@@ -202,6 +232,7 @@ def run_decided(
                 decide_fast=decide_fast,
                 can_search=can,
                 directory=directory is not None,
+                recheck=recheck,
             )
 
         if speculative and not merged and not searches and shown:
@@ -222,6 +253,8 @@ def run_decided(
         run.calls.extend(decided.completions)
         run.decision_calls.extend(decided.completions)
         run.rechecked += decided.rechecked
+        if decided.reason is not None:
+            run.recheck_reasons.append(decided.reason)
         decision, step = decided.decision, decided.step
         run.decision = decision
         run.decisions.extend(decided.records)
