@@ -7,7 +7,9 @@ import pytest
 from corp_ed.domain.decision import (
     Decision,
     Route,
+    edition_note,
     mismatch_note,
+    note_end,
     parse_decision,
     route,
     search_query,
@@ -74,6 +76,21 @@ def test_route_order() -> None:
     assert route(make(match="other_edition"), can_search=True) == Route.ANSWER
 
 
+def test_other_edition_answers_even_when_none() -> None:
+    # Приёмка 3: «ничего» при другой редакции — оценка по спрошенной
+    # редакции; ответ по найденной откажет сам, если по теме ничего нет.
+    edition = make(match="other_edition", subject="П-ОТП-07, редакция 3")
+    none = edition.model_copy(update={"sufficiency": "none"})
+    assert route(none, can_search=True) == Route.ANSWER
+    partial = edition.model_copy(
+        update={"sufficiency": "partial", "search_query": "П-ОТП-07 отгулы"}
+    )
+    assert route(partial, can_search=True) == Route.SEARCH
+    assert route(make(match="same", sufficiency="none"), can_search=True) == (
+        Route.NOT_FOUND
+    )
+
+
 def test_partial_without_query_answers() -> None:
     assert route(make(sufficiency="partial"), can_search=True) == Route.ANSWER
 
@@ -99,6 +116,18 @@ def test_mismatch_note() -> None:
     )
     assert mismatch_note(make(subject="Старт-ИИ-2", excerpts_subject="—")) == ""
     assert mismatch_note(make(subject="УМНИК", excerpts_subject="умник")) == ""
+
+
+def test_edition_note_and_note_end() -> None:
+    named = make(subject="УМНИК-2025", excerpts_subject="УМНИК-2026")
+    assert edition_note(named) == (
+        "В документах — «УМНИК-2026», а не «УМНИК-2025»; в запрошенной "
+        "редакции условия могли отличаться."
+    )
+    assert edition_note(make()).startswith("В документах — другой год или редакция")
+    text = "В документах — «Sprint 2.0 (24.04.2026)», а не «Спринт 3.0». Ответ."
+    assert text[note_end(text) - 1 :].startswith("». Ответ")
+    assert note_end("В документах — редакция 4, а не 3") is None
 
 
 def test_other_needs_named_subject() -> None:

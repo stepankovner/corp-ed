@@ -96,14 +96,20 @@ def route(decision: Decision, *, can_search: bool, directory: bool = False) -> R
     (decision-v4), иначе добор, если он ещё возможен и есть запрос; иначе —
     ответ по тому, что есть (другой год или редакция — тоже ответ, с
     оговоркой).
+
+    Другой год или редакция — ответ и при «ничего» (решение Артёма 20.10,
+    §7.1 п. 3): приёмка 3 — в 8 из 18 модель решения ставила «ничего»,
+    оценивая выдержки по спрошенной редакции, хотя промпт велит оценивать
+    по найденной. Если по теме в выдержках правда ничего нет, ответ
+    откажет сам (правило 3 промпта ответа).
     """
     if decision.kind == "small_talk":
         return Route.SMALL_TALK
     # «Про другое» — только относительно названного в вопросе: без subject
     # сравнивать не с чем (так и в схеме: match — при subject не «—»).
-    if decision.match == "other" and _quoted(decision.subject):
+    if decision.match == "other" and quoted(decision.subject):
         return Route.OTHER_SUBJECT
-    if decision.sufficiency == "none":
+    if decision.sufficiency == "none" and decision.match != "other_edition":
         return Route.NOT_FOUND
     if decision.sufficiency == "partial" and directory and lookup_role(decision):
         return Route.DIRECTORY
@@ -112,7 +118,12 @@ def route(decision: Decision, *, can_search: bool, directory: bool = False) -> R
     return Route.ANSWER
 
 
-def _quoted(name: str) -> str:
+NOTE_PREFIX = "В документах — "
+"""Начало оговорки «В документах — «X», а не «Y».» (решение Артёма 20.10)."""
+
+
+def quoted(name: str) -> str:
+    """Название в «ёлочках» или пусто, если его нет («—»)."""
     name = name.strip().strip("«»\"' ")
     return f"«{name}»" if name and name != NONE_MARK else ""
 
@@ -123,7 +134,43 @@ def mismatch_note(decision: Decision) -> str:
     Пусто, если модель не назвала, про что выдержки или о чём вопрос:
     оговорку из догадок не строим.
     """
-    present, asked = _quoted(decision.excerpts_subject), _quoted(decision.subject)
+    present, asked = quoted(decision.excerpts_subject), quoted(decision.subject)
     if not present or not asked or present.casefold() == asked.casefold():
         return ""
-    return f"В документах — {present}, а не {asked}."
+    return f"{NOTE_PREFIX}{present}, а не {asked}."
+
+
+EDITION_CAUTION = "в запрошенной редакции условия могли отличаться"
+"""Хвост оговорки при другом годе или редакции (решение Артёма 20.10,
+вариант «в»): ответ — по редакции из документов, а в спрошенной (прошлой
+или будущей) условия могли быть другими. Ставит код, не модель."""
+
+
+def edition_note(decision: Decision) -> str:
+    """«В документах — «X», а не «Y»; в запрошенной редакции условия могли
+    отличаться.» Без названий из решения — общая оговорка, а не пусто: при
+    другой редакции её нужно показать всегда."""
+    note = mismatch_note(decision)
+    if not note:
+        note = f"{NOTE_PREFIX}другой год или редакция, чем в вопросе."
+    return f"{note[:-1]}; {EDITION_CAUTION}."
+
+
+def note_end(text: str) -> int | None:
+    """Позиция точки, которой кончается оговорка «В документах — …, а не
+    ….» в начале ответа: первая точка после «а не» вне «ёлочек» и перед
+    пробелом или концом текста («Sprint 2.0», «01.09.2026», «ч. 1» внутри
+    названий — не конец). None — точки нет."""
+    start = text.find(" а не ")
+    depth = 0
+    for i in range(max(start, len(NOTE_PREFIX)), len(text)):
+        char = text[i]
+        if char == "«":
+            depth += 1
+        elif char == "»":
+            depth = max(0, depth - 1)
+        elif (
+            char == "." and not depth and (i + 1 == len(text) or text[i + 1].isspace())
+        ):
+            return i
+    return None

@@ -152,10 +152,31 @@ def test_edition_note_prepended() -> None:
         "Вопрос?", [Chunk("а")], decide=decide, answer=answer, search=no_search
     )
     assert (
-        run.text
-        == "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования такие [1]."
+        run.text == "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025»; в запрошенной "
+        "редакции условия могли отличаться. Требования такие [1]."
     )
-    assert "не отказывай" in answer.seen[0][-1].content
+    assert "Отвечай по той редакции" in answer.seen[0][0].content
+
+
+def test_other_edition_none_still_answers() -> None:
+    # Приёмка 3: «ничего» при другой редакции — ответ по найденной редакции.
+    decide = Script(
+        decision(
+            match="other_edition",
+            sufficiency="none",
+            subject="П-ОТП-07, редакция 3",
+            excerpts_subject="П-ОТП-07, редакция 4",
+        )
+    )
+    answer = Script("В документах — редакция 4, а не третья. Не более 6 [1].")
+    run = run_decided(
+        "Вопрос?", [Chunk("а")], decide=decide, answer=answer, search=no_search
+    )
+    assert run.route is Route.ANSWER and not run.needs_general
+    assert run.text == (
+        "В документах — редакция 4, а не третья; в запрошенной редакции условия "
+        "могли отличаться. Не более 6 [1]."
+    )
 
 
 def test_small_talk_separate_and_merged() -> None:
@@ -305,24 +326,28 @@ def test_speculative_answer_discarded_on_search_and_refusal() -> None:
     assert run.wasted == 1 and run.text == NOT_FOUND_ANSWER
 
 
-def test_speculative_other_edition_refusal_reanswers() -> None:
+def test_speculative_other_edition_always_reanswers() -> None:
+    # Спекулятивный ответ — по faq-v2.7: при другой редакции выбрасывается,
+    # даже если это не отказ, — ответ промптом edition-v1.
     other = decision(
         match="other_edition", subject="ГПБ Тех 2025", excerpts_subject="ГПБ Тех 2026"
     )
-    answer = Script(NOT_FOUND_ANSWER, "Требования такие [1].")
-    run = run_decided(
-        "Вопрос?",
-        [Chunk("а")],
-        decide=Script(other),
-        answer=answer,
-        search=no_search,
-        speculative=True,
-    )
-    assert run.wasted == 1 and len(answer.seen) == 2
-    assert "не отказывай" in answer.seen[1][-1].content
-    assert run.text.startswith(
-        "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования"
-    )
+    for draft in (NOT_FOUND_ANSWER, "Требования такие [1]."):
+        answer = Script(draft, "Требования такие [1].")
+        run = run_decided(
+            "Вопрос?",
+            [Chunk("а")],
+            decide=Script(other),
+            answer=answer,
+            search=no_search,
+            speculative=True,
+        )
+        assert run.wasted == 1 and len(answer.seen) == 2
+        assert "Отвечай по той редакции" in answer.seen[1][0].content
+        assert run.text.startswith(
+            "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025»; в запрошенной "
+            "редакции условия могли отличаться. Требования"
+        )
 
 
 def test_directory_hit_answers_without_second_decision() -> None:
