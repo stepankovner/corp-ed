@@ -75,8 +75,13 @@ def parse_decision(text: str) -> Decision | None:
 
 
 def lookup_role(decision: Decision) -> str | None:
-    """Кого искать в справочнике (decision-v4) или None."""
-    role = decision.lookup_role.strip(" «»\"'.")
+    """Кого искать в справочнике (decision-v4) или None.
+
+    Прочерк дефисом или коротким тире («-», «–») — тоже «нет роли»: так
+    модель иногда пишет вместо «—» (5 решений «хватает» на прогонах R и A4);
+    иначе R2 переспрашивал бы их как «хватает + роль».
+    """
+    role = decision.lookup_role.strip(" «»\"'.-–—")
     return None if not role or role == NONE_MARK else role
 
 

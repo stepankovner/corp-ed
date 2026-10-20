@@ -624,6 +624,7 @@ def test_recheck_role_only_in_role_mode_and_with_role() -> None:
     for mode, role in (
         ("refusals", "финансовый директор"),
         ("refusals+role", "—"),
+        ("refusals+role", "-"),
         ("refusals+role", ""),
     ):
         slow = Script()
