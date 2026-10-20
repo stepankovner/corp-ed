@@ -23,7 +23,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from corp_ed.domain.agent import MAX_EXCERPTS, MAX_EXTRA_SEARCHES, drop_citations
-from corp_ed.domain.decision import Decision, Route, parse_decision, route, search_query
+from corp_ed.domain.decision import (
+    Decision,
+    Route,
+    lookup_role,
+    parse_decision,
+    route,
+    search_query,
+)
 from corp_ed.domain.small_talk import rule_reply
 from corp_ed.llm.types import Message
 from corp_ed.prompts.decision import (
@@ -72,6 +79,10 @@ class DecidedRun:
     """Ответ Flash запускался параллельно с решением."""
     wasted: int = 0
     """Спекулятивных ответов выброшено (их токены — в calls)."""
+    directory_hits: int = 0
+    """Справочник дал записи (decision-v4) — ответ сразу, без второго решения."""
+    directory_misses: int = 0
+    """Справочник ничего не дал — векторный добор, как раньше."""
     wall_ms: float = 0.0
     """Время по стене: параллельная пара — максимум, остальное — сумма."""
 
@@ -96,6 +107,7 @@ def run_decided(
     merged: bool = False,
     rule: bool = False,
     speculative: bool = False,
+    directory: Callable[[str], Sequence[SourceChunk]] | None = None,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -142,6 +154,25 @@ def run_decided(
             step = Route.ANSWER
         else:
             run.decisions.append(decision.model_dump())
+            step = route(
+                decision, can_search=can_search, directory=directory is not None
+            )
+        if step is Route.DIRECTORY and decision is not None and directory is not None:
+            role = lookup_role(decision)
+            assert role is not None
+            seen = {_key(block) for block in shown}
+            found = [b for b in directory(role) if _key(b) not in seen]
+            if found:
+                # Записи справочника — выдержкой, и сразу ответ: второе
+                # решение и векторный добор не нужны.
+                run.directory_hits += 1
+                shown.extend(found[: max(0, max_excerpts - len(shown))])
+                if spec is not None:
+                    run.wasted += 1
+                    spec = None
+                step = Route.ANSWER
+                break
+            run.directory_misses += 1
             step = route(decision, can_search=can_search)
         if step is Route.SEARCH and decision is not None:
             query = search_query(decision)

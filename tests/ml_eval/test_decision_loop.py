@@ -323,3 +323,56 @@ def test_speculative_other_edition_refusal_reanswers() -> None:
     assert run.text.startswith(
         "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования"
     )
+
+
+def test_directory_hit_answers_without_second_decision() -> None:
+    partial = decision(
+        sufficiency="partial",
+        search_query="финансовый директор ФИО",
+        lookup_role="финансовый директор",
+    )
+    decide = Script(partial)
+    answer = Script("черновик", "Согласует финансовый директор — Кукушкина [2].")
+    calls: list[str] = []
+
+    def directory(role: str) -> Sequence[Chunk]:
+        calls.append(role)
+        return [
+            Chunk(
+                "Финансовый директор — Ярослава Игоревна Кукушкина, кабинет 402.",
+                "Оргструктура",
+            )
+        ]
+
+    run = run_decided(
+        "Кто (ФИО)?",
+        [Chunk("а")],
+        decide=decide,
+        answer=answer,
+        search=no_search,
+        directory=directory,
+        speculative=True,
+    )
+    assert calls == ["финансовый директор"]
+    assert run.directory_hits == 1 and run.directory_misses == 0 and run.queries == []
+    assert len(decide.seen) == 1 and run.wasted == 1
+    assert run.text == "Согласует финансовый директор — Кукушкина [2]."
+    assert [b.content for b in run.shown][-1].startswith("Финансовый директор —")
+
+
+def test_directory_miss_falls_back_to_search() -> None:
+    partial = decision(
+        sufficiency="partial",
+        search_query="ФИО директора",
+        lookup_role="директор по качеству",
+    )
+    run = run_decided(
+        "Кто?",
+        [Chunk("а")],
+        decide=Script(partial, decision()),
+        answer=Script("Ответ [2]."),
+        search=lambda q: [Chunk("б")],
+        directory=lambda role: [],
+    )
+    assert run.directory_misses == 1 and run.queries == ["ФИО директора"]
+    assert run.text == "Ответ [2]."

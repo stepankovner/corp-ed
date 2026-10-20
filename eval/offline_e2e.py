@@ -59,6 +59,7 @@ from corp_ed.domain.context import (
     select_sections,
 )
 from corp_ed.domain.decision import parse_decision
+from corp_ed.domain.directory import format_entries, lookup, parse_directory
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
 from corp_ed.domain.rerank import RerankOrder, rerank_allowed
@@ -549,6 +550,13 @@ def _parser() -> argparse.ArgumentParser:
         help="попытка 3: ответ Flash по первым выдержкам параллельно с решением",
     )
     parser.add_argument(
+        "--decision-directory",
+        action="store_true",
+        help="decision-v4: справочник оргструктуры как таблица — поиск по должности "
+        "кодом вместо векторного добора (документ корпуса с «оргструктур» / "
+        "«контакт» / «справочник» в названии)",
+    )
+    parser.add_argument(
         "--decision-only",
         action="store_true",
         help="этап 1: только первое решение по найденным выдержкам — без "
@@ -648,6 +656,29 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
+    directory_search = None
+    if args.decision_directory:
+        pattern = re.compile(r"оргструктур|контакт|справочник", re.IGNORECASE)
+        source = next((d for d in documents if pattern.search(d.title)), None)
+        if source is None:
+            print("--decision-directory: в корпусе нет документа-справочника")
+            return 2
+        entries = parse_directory(source.markdown)
+        print(f"Справочник: «{source.title}», записей {len(entries)}")
+
+        def directory_search(role: str) -> list[OfflineMatch]:
+            found = lookup(entries, role)
+            if not found:
+                return []
+            return [
+                OfflineMatch(
+                    content=format_entries(found),
+                    title=source.title,
+                    heading_path=["Справочник"],
+                    distance=0.0,
+                )
+            ]
+
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
     # Без --split holdout золотого набора не берём (select_split, задача 2.1).
@@ -861,6 +892,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 merged=args.decision == "merged",
                 rule=args.decision_rule,
                 speculative=args.decision_speculative,
+                directory=directory_search,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1026,6 +1058,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_by_rule": decided.by_rule if decided else "",
                 "decision_speculated": decided.speculated if decided else "",
                 "decision_wasted": decided.wasted if decided else "",
+                "decision_directory": (
+                    f"{decided.directory_hits}/{decided.directory_misses}"
+                    if decided
+                    else ""
+                ),
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1118,6 +1155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + ("-r" if args.decision_reasoning else "")
         + ("-rule" if args.decision_rule else "")
         + ("-spec" if args.decision_speculative else "")
+        + ("-dir" if args.decision_directory else "")
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"

@@ -46,12 +46,16 @@ class Decision(BaseModel):
     sufficiency: Sufficiency
     missing: str
     search_query: str
+    lookup_role: str = NONE_MARK
+    """Должность, подразделение или роль, чьи имя или контакт нужны
+    (decision-v4): поиск по справочнику кодом вместо векторного добора."""
     answer: str = ""
 
 
 class Route(StrEnum):
     SMALL_TALK = "small_talk"
     OTHER_SUBJECT = "other_subject"
+    DIRECTORY = "directory"
     SEARCH = "search"
     NOT_FOUND = "not_found"
     ANSWER = "answer"
@@ -70,6 +74,12 @@ def parse_decision(text: str) -> Decision | None:
         return None
 
 
+def lookup_role(decision: Decision) -> str | None:
+    """Кого искать в справочнике (decision-v4) или None."""
+    role = decision.lookup_role.strip(" «»\"'.")
+    return None if not role or role == NONE_MARK else role
+
+
 def search_query(decision: Decision) -> str | None:
     """Запрос для добора: без «—» и кавычек, не длиннее MAX_QUERY_WORDS слов."""
     words = decision.search_query.strip(" «»\"'.").split()[:MAX_QUERY_WORDS]
@@ -77,13 +87,15 @@ def search_query(decision: Decision) -> str | None:
     return None if not query or query == NONE_MARK else query
 
 
-def route(decision: Decision, *, can_search: bool) -> Route:
+def route(decision: Decision, *, can_search: bool, directory: bool = False) -> Route:
     """Что делать дальше.
 
     Порядок важен: реплика; выдержки про другое (при названном в вопросе) —
     «ответа нет», даже если модель сочла, что их хватает; ничего по теме;
-    не хватает — добор, если он ещё возможен и есть запрос; иначе — ответ
-    по тому, что есть (другой год или редакция — тоже ответ, с оговоркой).
+    не хватает — справочник кодом, если он подключён и названа роль
+    (decision-v4), иначе добор, если он ещё возможен и есть запрос; иначе —
+    ответ по тому, что есть (другой год или редакция — тоже ответ, с
+    оговоркой).
     """
     if decision.kind == "small_talk":
         return Route.SMALL_TALK
@@ -93,6 +105,8 @@ def route(decision: Decision, *, can_search: bool) -> Route:
         return Route.OTHER_SUBJECT
     if decision.sufficiency == "none":
         return Route.NOT_FOUND
+    if decision.sufficiency == "partial" and directory and lookup_role(decision):
+        return Route.DIRECTORY
     if decision.sufficiency == "partial" and can_search and search_query(decision):
         return Route.SEARCH
     return Route.ANSWER
