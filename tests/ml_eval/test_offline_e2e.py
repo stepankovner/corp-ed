@@ -622,3 +622,28 @@ def test_second_search_adds_excerpts_and_asks_again(
     assert rows[0]["n_sources"] == "2"
     assert "[2] Положение > Отпуск" in fake.prompts[-1]
     assert "Дополнительный поиск уже сделан" in fake.prompts[-1]
+
+
+def test_small_talk_flag_answers_without_the_not_found_mark(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    # v2.10 (BH-45): «не вопрос» — первая строка служебная, ответ без пометки.
+    corpus, dataset, fake = setup
+    fake.answers = {
+        "Сообщение сотрудника: Какая": "«Это не вопрос по документам.»\nПривет!",
+        **fake.answers,
+    }
+
+    rows = {
+        row["id"]: row
+        for row in _run(corpus, dataset, tmp_path / "out", "--small-talk")
+    }
+
+    assert rows["q2"]["answer"] == "Привет!"
+    assert (rows["q2"]["small_talk"], rows["q2"]["general_answer"]) == (
+        "True",
+        "False",
+    )
+    assert rows["q1"]["small_talk"] == "False"
+    summary = read_csv(tmp_path / "out" / "summary.csv")
+    assert summary[-1]["notes"].startswith("faq-v2.10")
