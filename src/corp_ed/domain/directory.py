@@ -122,8 +122,20 @@ def _stem(word: str) -> str:
     return word[:5] if len(word) > 5 else word
 
 
+# Дефисы, которые модели ставят вместо обычного («ИТ‑директор» с U+2011), и
+# латинское «IT» — к написанию справочника (приёмка 4, T4-09: «IT‑директор»
+# распадался на «директор» и находил четырёх других директоров).
+_DASHES = str.maketrans({c: "-" for c in "\u2010\u2011\u2012\u2013\u2212"})
+_LATIN_IT = re.compile(r"\bit(?=-|\b)")
+
+
+def _normalize(text: str) -> str:
+    text = text.casefold().replace("ё", "е").translate(_DASHES)
+    return _LATIN_IT.sub("ит", text)
+
+
 def _tokens(text: str) -> set[str]:
-    words = re.findall(r"[\w-]+", text.casefold().replace("ё", "е"))
+    words = re.findall(r"[\w-]+", _normalize(text))
     out = set()
     for word in words:
         if word in _STOP or len(word) <= 2 or word.isdigit():  # предлоги, числа

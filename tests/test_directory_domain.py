@@ -101,3 +101,10 @@ def test_covers_needs_all_requested_fields() -> None:
     assert covers(fin, frozenset({"name", "phone", "email"}))
     assert covers(fin, frozenset())
     assert not covers([], frozenset())
+
+
+def test_lookup_role_with_nonbreaking_hyphen_and_latin_it() -> None:
+    """Приёмка 4, T4-09: решение пишет «IT‑директор» (U+2011, латиница)."""
+    entries = parse_directory(SAMPLE)
+    for query in ("ИТ-директор", "ИТ\u2011директор", "IT\u2011директор", "IT-директор"):
+        assert [e.role for e in lookup(entries, query)] == ["ИТ-директор"], query
