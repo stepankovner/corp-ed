@@ -411,21 +411,29 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
     )
 
 
-def _directory_search(title: str, markdown: str) -> Callable[[str], list[OfflineMatch]]:
-    """Поиск по справочнику оргструктуры (decision-v4): записи — одной выдержкой."""
+def _directory_search(
+    title: str, markdown: str
+) -> Callable[[str], list[ContextBlock[OfflineMatch]]]:
+    """Поиск по справочнику оргструктуры (decision-v4): записи — одной
+    выдержкой (как блок контекста, чтобы источники ответа видели документ)."""
     entries = parse_directory(markdown)
     print(f"Справочник: «{title}», записей {len(entries)}")
 
-    def search(role: str) -> list[OfflineMatch]:
+    def search(role: str) -> list[ContextBlock[OfflineMatch]]:
         found = lookup(entries, role)
         if not found:
             return []
+        content = format_entries(found)
+        match = OfflineMatch(
+            content=content, title=title, heading_path=["Справочник"], distance=0.0
+        )
         return [
-            OfflineMatch(
-                content=format_entries(found),
+            ContextBlock(
+                content=content,
                 title=title,
                 heading_path=["Справочник"],
-                distance=0.0,
+                match=match,
+                kind="chunk",
             )
         ]
 
@@ -677,7 +685,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
-    directory_search: Callable[[str], list[OfflineMatch]] | None = None
+    directory_search: Callable[[str], list[ContextBlock[OfflineMatch]]] | None = None
     if args.decision_directory:
         # Оргструктура — по названию (у стенда названия — транслит имён файлов)
         # или по заголовку в первой строке; глоссарий и прочие «справочники» —
