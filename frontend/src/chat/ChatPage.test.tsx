@@ -368,6 +368,30 @@ describe("открытый диалог", () => {
     expect(screen.getByText("Вопрос попадёт в отчёт о пробелах в документах")).toBeInTheDocument();
   });
 
+  it("«не вопрос» — без плашки «ответа нет» и без совета", async () => {
+    signedIn();
+    server.use(
+      http.get("/api/v1/conversations/c-1", () =>
+        HttpResponse.json(
+          conversation([
+            question({ content: "Привет!" }),
+            reply({
+              origin: "small_talk",
+              sources: [],
+              content: "Привет! Спросите о правилах компании.",
+            }),
+          ]),
+        ),
+      ),
+    );
+    renderApp("/c/c-1");
+    expect(await screen.findByText("Привет! Спросите о правилах компании.")).toBeInTheDocument();
+    expect(screen.queryByText(/В документах компании/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ниже — общая информация/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Уточните у руководителя/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/отчёт о пробелах/)).not.toBeInTheDocument();
+  });
+
   it("ответ остановлен кредитами или дневным лимитом — понятный текст", async () => {
     signedIn();
     server.use(

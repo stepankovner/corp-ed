@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import QaLog
+from corp_ed.domain.types import AnswerOrigin
 
 # id, best_vector_distance, best_fulltext_score, answer_given, feedback, miss_kind
 SignalRow = Row[tuple[UUID, float | None, float | None, bool, int | None, str | None]]
@@ -18,6 +19,13 @@ def question_text() -> ColumnElement[str]:
     """Вопрос для отчёта о пробелах: переписанный с учётом диалога или
     исходный (оба — после mask_pii)."""
     return func.coalesce(QaLog.standalone_question, QaLog.question).label("question")
+
+
+def is_question() -> ColumnElement[bool]:
+    """Строка журнала — вопрос, а не «не вопрос» (BH-45: приветствие,
+    благодарность, вопрос об ассистенте). «Не вопросы» не идут ни в отчёт о
+    пробелах, ни в счёт вопросов аналитики; кредиты за них — как обычно."""
+    return QaLog.origin != AnswerOrigin.SMALL_TALK.value
 
 
 class QaLogRepository:
@@ -68,7 +76,10 @@ class QaLogRepository:
 
     async def signals_since(self, since: datetime) -> Sequence[SignalRow]:
         """Сигналы classify_miss за окно — без векторов: их не нужно
-        грузить для всех строк, только для кандидатов в кластеры."""
+        грузить для всех строк, только для кандидатов в кластеры.
+
+        «Не вопрос» (BH-45: «привет», «спасибо») — не пробел в документах:
+        такие строки не классифицируются и в кластеры не попадают."""
         result = await self.session.execute(
             select(
                 QaLog.id,
@@ -77,7 +88,11 @@ class QaLogRepository:
                 QaLog.answer_given,
                 QaLog.feedback,
                 QaLog.miss_kind,
-            ).where(QaLog.tenant_id == require_tenant(), QaLog.created_at >= since)
+            ).where(
+                QaLog.tenant_id == require_tenant(),
+                QaLog.created_at >= since,
+                is_question(),
+            )
         )
         return result.all()
 
@@ -127,6 +142,7 @@ class QaLogRepository:
                 QaLog.created_at >= since,
                 QaLog.miss_kind.in_(kinds),
                 QaLog.embedding_model == embedding_model,
+                is_question(),
             )
             .order_by(QaLog.created_at.desc())
             .limit(limit)

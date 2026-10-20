@@ -3183,9 +3183,12 @@ export interface components {
          *     NONE — в документах ответа нет, а компания выбрала строгий режим:
          *     честный отказ (REFUSAL_ANSWER: NOT_FOUND_ANSWER и совет уточнить) без
          *     ответа из общих знаний.
+         *     SMALL_TALK — «не вопрос»: приветствие, благодарность, вопрос об
+         *     ассистенте (BH-45). Дружелюбный ответ без пометки «ответа нет» и без
+         *     совета уточнить; в отчёт о пробелах и в аналитику вопросов не идёт.
          * @enum {string}
          */
-        AnswerOrigin: "documents" | "general_knowledge" | "none";
+        AnswerOrigin: "documents" | "general_knowledge" | "none" | "small_talk";
         /** AskRequest */
         AskRequest: {
             /** Attachment Ids */

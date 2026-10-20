@@ -1137,7 +1137,7 @@ class QaLog(TenantMixin, Base):
         Index("ix_qa_log_tenant_created", "tenant_id", "created_at"),
         CheckConstraint("feedback IN (-1, 1)", name="ck_qa_log_feedback"),
         CheckConstraint(
-            "origin IN ('documents', 'general_knowledge', 'none')",
+            "origin IN ('documents', 'general_knowledge', 'none', 'small_talk')",
             name="ck_qa_log_origin",
         ),
     )
@@ -1979,7 +1979,8 @@ class ChatMessage(TenantMixin, Base):
             name="ck_chat_messages_status",
         ),
         CheckConstraint(
-            "origin IS NULL OR origin IN ('documents', 'general_knowledge', 'none')",
+            "origin IS NULL OR origin IN "
+            "('documents', 'general_knowledge', 'none', 'small_talk')",
             name="ck_chat_messages_origin",
         ),
         CheckConstraint("feedback IN (-1, 1)", name="ck_chat_messages_feedback"),

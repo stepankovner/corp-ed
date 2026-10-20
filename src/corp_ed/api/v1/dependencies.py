@@ -682,13 +682,16 @@ def get_faq_builder(
             gate_distance=settings.faq_gate_distance,
             near_margin=settings.faq_near_margin,
             search_step=settings.faq_search_step,
+            small_talk=settings.faq_small_talk,
             context_max_tokens=settings.context_max_tokens,
             temperature=settings.faq_temperature,
             retriever=Retriever(settings.retriever),
             fulltext_weight=settings.fulltext_weight,
             # Поиск в интернете после MVP — другой GeneralAnswerSource здесь.
             general_source=ModelKnowledgeSource(
-                llm_gateway, temperature=settings.faq_temperature
+                llm_gateway,
+                temperature=settings.faq_temperature,
+                small_talk=settings.faq_small_talk,
             ),
             # Память в Redis — только у /faq/ask; чат передаёт историю
             # из своих диалогов сам (ChatService).
