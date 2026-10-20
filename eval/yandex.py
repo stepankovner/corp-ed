@@ -86,6 +86,44 @@ class Completion:
     reasoning_tokens: int = 0
     """Скрытые токены рассуждения (входят в output_tokens)."""
     finish_reason: str = ""
+    tool_calls: tuple["ToolCall", ...] = ()
+    """Вызовы инструментов (агент, chat_with_tools); пусто — обычный ответ."""
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """Вызов инструмента моделью: id для ответа role=tool, имя и аргументы
+    строкой JSON — как прислал поставщик (у gpt-oss кириллица в \\u-экранах)."""
+
+    id: str
+    name: str
+    arguments: str
+
+
+def parse_chat_body(body: dict[str, Any], model: str, latency_ms: float) -> Completion:
+    """Ответ /chat/completions → Completion, с вызовами инструментов."""
+    choice = body["choices"][0]
+    message = choice.get("message") or {}
+    usage = body.get("usage") or {}
+    details = usage.get("completion_tokens_details") or {}
+    calls = tuple(
+        ToolCall(
+            id=str(call.get("id") or ""),
+            name=str((call.get("function") or {}).get("name") or ""),
+            arguments=str((call.get("function") or {}).get("arguments") or ""),
+        )
+        for call in message.get("tool_calls") or []
+    )
+    return Completion(
+        text=str(message.get("content") or "").strip(),
+        input_tokens=int(usage.get("prompt_tokens") or 0),
+        output_tokens=int(usage.get("completion_tokens") or 0),
+        latency_ms=latency_ms,
+        model=model,
+        reasoning_tokens=int(details.get("reasoning_tokens") or 0),
+        finish_reason=str(choice.get("finish_reason") or ""),
+        tool_calls=calls,
+    )
 
 
 class RateLimiter:
@@ -289,6 +327,43 @@ class YandexClient:
             reasoning_tokens=int(details.get("reasoning_tokens") or 0),
             finish_reason=str(choice.get("finish_reason") or ""),
         )
+
+    def chat_with_tools(
+        self,
+        messages: Sequence[dict[str, Any]],
+        *,
+        model: str,
+        tools: Sequence[dict[str, Any]],
+        temperature: float = 0.0,
+        max_tokens: int = 1000,
+        tool_choice: str = "auto",
+        extra: dict[str, Any] | None = None,
+    ) -> Completion:
+        """Вызов с инструментами (агент, вариант 1): сообщения — словари
+        OpenAI API (assistant с tool_calls, role=tool с ответом поиска)."""
+        payload: dict[str, Any] = {
+            "model": self.gpt_uri(model),
+            "messages": list(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        # Пустые инструменты — вызов без них (последний после лимита доборов):
+        # tool_choice="none" у Flash пишет вызов текстом в ответ (20.10).
+        if tools:
+            payload["tools"] = list(tools)
+            payload["tool_choice"] = tool_choice
+        if extra:
+            payload.update(extra)
+        with self._completion_slots:
+            started = time.perf_counter()
+            body = self._post(
+                CHAT_URL,
+                payload,
+                limiter=self._completion_limiter,
+                extra_headers={"OpenAI-Project": self._folder_id},
+            )
+            latency_ms = (time.perf_counter() - started) * 1000
+        return parse_chat_body(body, model, latency_ms)
 
     def _post(
         self,

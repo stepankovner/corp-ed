@@ -45,17 +45,26 @@ import argparse
 import json
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from corp_ed.domain.agent import drop_citations
 from corp_ed.domain.context import (
     ContextBlock,
     Section,
     select_context,
     select_sections,
+)
+from corp_ed.domain.decision import parse_decision
+from corp_ed.domain.directory import (
+    covers,
+    format_entries,
+    lookup,
+    parse_directory,
+    requested_fields,
 )
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
@@ -63,6 +72,12 @@ from corp_ed.domain.rerank import RerankOrder, rerank_allowed
 from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
+from corp_ed.prompts.decision import (
+    DECISION_PROMPT_VERSION,
+    build_decision_messages,
+    decision_response_format,
+    with_other_subject_note,
+)
 from corp_ed.prompts.faq import (
     NOT_FOUND_ANSWER,
     SEARCH_PROMPT_VERSION,
@@ -73,8 +88,10 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
     search_request,
+    small_talk_reply,
     split_general_answer,
 )
+from eval.agent_loop import AgentRun, run_agent
 from eval.bench import (
     FUSION_CANDIDATES,
     add_rerank_arguments,
@@ -90,6 +107,8 @@ from eval.corpus import (
     section_corpus,
 )
 from eval.datasets import EvalItem, load_dataset, select_split
+from eval.decision_loop import RECHECK_MODES, DecidedRun, run_decided
+from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.metrics import percentile
 from eval.multi_query import Paraphrased, paraphrase_questions
 from eval.relevance import EVIDENCE_MIN_COVERAGE, evidence_coverage
@@ -399,6 +418,37 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
     )
 
 
+def _directory_search(
+    title: str, markdown: str
+) -> Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]]:
+    """Поиск по справочнику оргструктуры (decision-v4): записи — одной
+    выдержкой (как блок контекста, чтобы источники ответа видели документ)."""
+    entries = parse_directory(markdown)
+    print(f"Справочник: «{title}», записей {len(entries)}")
+
+    def search(
+        role: str, missing: str
+    ) -> tuple[list[ContextBlock[OfflineMatch]], bool]:
+        found = lookup(entries, role)
+        if not found:
+            return [], False
+        complete = covers(found, requested_fields(missing))
+        content = format_entries(found)
+        match = OfflineMatch(
+            content=content, title=title, heading_path=["Справочник"], distance=0.0
+        )
+        block = ContextBlock(
+            content=content,
+            title=title,
+            heading_path=["Справочник"],
+            match=match,
+            kind="chunk",
+        )
+        return [block], complete
+
+    return search
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m eval.offline_e2e",
@@ -489,6 +539,82 @@ def _parser() -> argparse.ArgumentParser:
         '{"reasoning_effort": "none"}',
     )
     parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="вариант 1 (agent-v1): поиск сначала, модель с инструментом "
+        "search_documents может искать ещё (не больше 2 доборов) и отвечать "
+        "сама на реплики; дальше — общий ответ или отказ, как без флага",
+    )
+    parser.add_argument(
+        "--decision",
+        choices=("off", "separate", "merged"),
+        default="off",
+        help="попытка 2 (decision-v1): шаг решения строгим JSON до ответа; "
+        "separate — решение и ответ разными вызовами, merged — одним",
+    )
+    parser.add_argument(
+        "--decision-reasoning",
+        action="store_true",
+        help="поле рассуждения первым в схеме решения",
+    )
+    parser.add_argument(
+        "--decision-provider",
+        choices=("yandex", "mws", "cloudru"),
+        default="",
+        help="поставщик модели решения (по умолчанию — как --llm-provider)",
+    )
+    parser.add_argument("--decision-model", default="", help="модель решения")
+    parser.add_argument(
+        "--decision-max-tokens",
+        type=int,
+        default=2000,
+        help="лимит выхода шага решения (у gpt-oss с рассуждением medium 1000 "
+        "мало: обрезка — M-008, этап 1)",
+    )
+    parser.add_argument(
+        "--decision-extra",
+        default="",
+        help="JSON с полями запроса модели решения, например "
+        '{"reasoning_effort": "low"}',
+    )
+    parser.add_argument(
+        "--decision-fast-extra",
+        default="",
+        help="§7.4 п. 2: JSON полей быстрого вызова решения, например "
+        '{"reasoning_effort": "low"}; при отказе («ничего», «про другое», '
+        "sufficiency none) решение переспрашивается с --decision-extra",
+    )
+    parser.add_argument(
+        "--decision-recheck",
+        choices=RECHECK_MODES,
+        default="refusals",
+        help="что перепроверять при --decision-fast-extra: только отказы "
+        "(вариант R) или ещё «хватает» при названной lookup_role (R2)",
+    )
+    parser.add_argument(
+        "--decision-rule",
+        action="store_true",
+        help="попытка 3: реплики и вопросы об ассистенте — правилом в коде, без модели",
+    )
+    parser.add_argument(
+        "--decision-speculative",
+        action="store_true",
+        help="попытка 3: ответ Flash по первым выдержкам параллельно с решением",
+    )
+    parser.add_argument(
+        "--decision-directory",
+        action="store_true",
+        help="decision-v4: справочник оргструктуры как таблица — поиск по должности "
+        "кодом вместо векторного добора (документ корпуса с «оргструктур» / "
+        "«контакт» / «справочник» в названии)",
+    )
+    parser.add_argument(
+        "--decision-only",
+        action="store_true",
+        help="этап 1: только первое решение по найденным выдержкам — без "
+        "добора и ответа",
+    )
+    parser.add_argument(
         "--small-talk",
         action="store_true",
         help="v2.10 (BH-45): в общем ответе правило «не вопрос» — приветствие, "
@@ -509,6 +635,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rrf-k", type=int, default=60)
     parser.add_argument("--chunk-tokens", type=int, default=400)
     parser.add_argument("--overlap-tokens", type=int, default=50)
+    add_doc_context_arguments(parser)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--config", default="", help="имя прогона (иначе — из флагов)")
     parser.add_argument("--out", type=Path, default=RESULTS_DIR)
@@ -524,7 +651,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     llm_extra = json.loads(args.llm_extra) if args.llm_extra else None
 
     chunking = ChunkingConfig(
-        chunk_tokens=args.chunk_tokens, overlap_tokens=args.overlap_tokens
+        chunk_tokens=args.chunk_tokens,
+        overlap_tokens=args.overlap_tokens,
+        doc_context=args.doc_context,
     )
     mode: NotFoundMode = args.not_found
     retriever: Retriever = args.retriever
@@ -546,6 +675,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.multi_query
         else ""
     )
+    if args.decision != "off" and args.agent:
+        print("--decision: не вместе с --agent")
+        return 2
+    if args.decision_only and args.decision == "off":
+        print("--decision-only: только с --decision")
+        return 2
+    if args.decision_fast_extra and (args.decision == "off" or args.decision_only):
+        print("--decision-fast-extra: только с --decision, без --decision-only")
+        return 2
+    if args.decision_recheck != "refusals" and not args.decision_fast_extra:
+        print("--decision-recheck: только с --decision-fast-extra")
+        return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
@@ -574,8 +715,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         + ("-dry" if args.dry_run else "")
     )
 
-    documents = load_corpus(args.corpus)
+    documents = with_doc_context(args, load_corpus(args.corpus))
     chunks = chunk_corpus(documents, chunking)
+    directory_search: (
+        Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]] | None
+    ) = None
+    if args.decision_directory:
+        # Оргструктура — по названию (у стенда названия — транслит имён файлов)
+        # или по заголовку в первой строке; глоссарий и прочие «справочники» —
+        # нет.
+        by_title = re.compile(r"orgstruktura|оргструктур|org[_ -]?chart", re.IGNORECASE)
+        by_head = re.compile(r"организационн\w+\s+структур", re.IGNORECASE)
+        source = next(
+            (
+                d
+                for d in documents
+                if by_title.search(d.title) or by_head.search(d.markdown[:200])
+            ),
+            None,
+        )
+        # Нет справочника (корпус dev) — как в продукте с пустой таблицей:
+        # поле lookup_role есть, но маршрут — обычный векторный добор.
+        if source is None:
+            print("--decision-directory: в корпусе нет справочника — добор вектором")
+        else:
+            directory_search = _directory_search(source.title, source.markdown)
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
     # Без --split holdout золотого набора не берём (select_split, задача 2.1).
@@ -660,6 +824,81 @@ def main(argv: Sequence[str] | None = None) -> int:
             **({"extra": llm_extra} if llm_extra else {}),
         )
 
+    def agent_search(query: str) -> list[ContextBlock[OfflineMatch]]:
+        """Добор агента: тот же поиск и порог BH-37, что у вопроса."""
+        more, more_best = search_more(query)
+        gated = relevant_matches(
+            more,
+            args.max_distance,
+            gate_distance=args.gate_distance,
+            near_margin=args.near_margin,
+            nearest=more_best,
+        )
+        return build_context(
+            gated,
+            mode=context_mode,
+            sections=sections,
+            max_tokens=args.context_tokens,
+            neighbours=args.neighbours,
+        )
+
+    def agent_chat(
+        messages: list[dict[str, Any]], tools: Sequence[dict[str, Any]]
+    ) -> Completion:
+        assert client is not None
+        return client.chat_with_tools(
+            messages,
+            model=args.model,
+            tools=tools,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            extra=llm_extra,
+        )
+
+    decision_client: YandexClient | OpenAICompatibleClient | None = None
+    decision_extra = json.loads(args.decision_extra) if args.decision_extra else None
+    decision_provider = args.decision_provider or args.llm_provider
+    if args.decision != "off" and not args.dry_run:
+        decision_client = (
+            client
+            if decision_provider == args.llm_provider
+            else YandexClient.from_env()
+            if decision_provider == "yandex"
+            else OpenAICompatibleClient.from_env(decision_provider)
+        )
+    decision_format = decision_response_format(
+        reasoning=args.decision_reasoning, answer=args.decision == "merged"
+    )
+
+    def decide(
+        messages: list[Message], extra: dict[str, object] | None = None
+    ) -> Completion:
+        assert decision_client is not None
+        extra = extra or decision_extra
+        return decision_client.complete(
+            messages,
+            model=args.decision_model or args.model,
+            temperature=args.temperature,
+            max_tokens=args.decision_max_tokens,
+            api="openai",
+            response_format=decision_format,
+            **(
+                {"extra": extra}
+                if extra
+                else {"extra": llm_extra}
+                if llm_extra and decision_provider == args.llm_provider
+                else {}
+            ),
+        )
+
+    # §7.4 п. 2: быстрый вызов решения (low), отказ — перепроверка decide.
+    fast_extra = (
+        json.loads(args.decision_fast_extra) if args.decision_fast_extra else None
+    )
+
+    def decide_fast(messages: list[Message]) -> Completion:
+        return decide(messages, fast_extra)
+
     rows: list[dict[str, object]] = []
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
@@ -691,7 +930,69 @@ def main(argv: Sequence[str] | None = None) -> int:
         general = False
         small = False
         hop_query, hop_added = "", 0
-        if selected and not args.dry_run:
+        agent_run: AgentRun | None = None
+        decided: DecidedRun | None = None
+        decision_calls: list[Completion] = []
+        first_decision = ""
+        if args.decision_only and not args.dry_run:
+            calls.append(
+                decide(
+                    build_decision_messages(
+                        item.question,
+                        selected,
+                        reasoning=args.decision_reasoning,
+                        answer=args.decision == "merged",
+                    )
+                )
+            )
+            decision_calls.append(calls[-1])
+            parsed = parse_decision(calls[-1].text)
+            first_decision = (
+                parsed.model_dump_json()
+                if parsed
+                else "INVALID " + calls[-1].text[:300]
+            )
+            raw = answer = ""
+        elif args.decision != "off" and not args.dry_run:
+            decided = run_decided(
+                item.question,
+                selected,
+                decide=decide,
+                answer=ask,
+                search=agent_search,
+                reasoning=args.decision_reasoning,
+                merged=args.decision == "merged",
+                rule=args.decision_rule,
+                speculative=args.decision_speculative,
+                directory=directory_search,
+                decide_fast=decide_fast if fast_extra else None,
+                recheck=args.decision_recheck,
+            )
+            calls.extend(decided.calls)
+            decision_calls.extend(decided.decision_calls)
+            raw = decided.text
+            selected = decided.shown
+            context_text = "\n".join(block.content for block in selected)
+            small = decided.small_talk
+            answer = (
+                raw
+                if small or is_not_found(raw)
+                else normalize_citations(raw, selected)
+            )
+        elif args.agent and not args.dry_run:
+            agent_run = run_agent(
+                item.question, selected, chat=agent_chat, search=agent_search
+            )
+            calls.extend(agent_run.calls)
+            raw = agent_run.text or NOT_FOUND_ANSWER
+            selected = agent_run.shown
+            context_text = "\n".join(block.content for block in selected)
+            reply = small_talk_reply(raw)
+            if reply is not None:
+                small, answer = True, drop_citations(reply)
+            elif not is_not_found(raw):
+                answer = normalize_citations(raw, selected)
+        elif selected and not args.dry_run:
             calls.append(
                 ask(build_faq_messages(item.question, selected, search="allowed"))
             )
@@ -738,11 +1039,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Р1 (решено 25.09): ответа в документах нет — ни одна выдержка не
         # прошла порог или модель по выдержкам ответила отказом — общий ответ
         # со строгой пометкой, что он не из документов компании.
-        if (
+        # Агент: общий ответ — только если модель отказала (реплика — уже
+        # ответ); без агента — как раньше.
+        needs_general = (
+            False
+            if args.decision_only
+            else decided.needs_general
+            if decided is not None
+            else not small and is_not_found(raw)
+            if agent_run is not None
+            else not selected or is_not_found(raw)
+        )
+        if decided is not None and decided.small_talk:
+            pass  # реплика — уже ответ (decision-v1)
+        elif (
             mode == "general"
             and not args.dry_run
-            and (not selected or is_not_found(raw))
+            and needs_general
+            and decided is not None
         ):
+            # Решение: ответа по документам нет — общий ответ с пометкой; на
+            # реплики решение отвечает само, поэтому промпт общего ответа
+            # прежний (без правила реплик).
+            calls.append(ask(build_general_messages(item.question)))
+            answer = with_other_subject_note(
+                ensure_general_prefix(calls[-1].text.strip()), decided.decision
+            )
+            general = True
+        elif mode == "general" and not args.dry_run and needs_general:
             calls.append(
                 ask(build_general_messages(item.question, small_talk=args.small_talk))
             )
@@ -754,7 +1078,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 answer = ensure_general_prefix(calls[-1].text.strip())
                 general = True
 
-        latency = sum(c.latency_ms for c in calls)
+        if decided is not None and mode == "strict" and needs_general:
+            answer = with_other_subject_note(NOT_FOUND_ANSWER, decided.decision)
+        # Решение (попытка 3): время по стене — параллельная пара как максимум.
+        latency = (
+            decided.wall_ms if decided is not None else sum(c.latency_ms for c in calls)
+        )
+        if decided is not None and general:
+            latency += calls[-1].latency_ms  # общий ответ — после цикла
         tokens_in = sum(c.input_tokens for c in calls)
         tokens_out = sum(c.output_tokens for c in calls)
         reasoning = sum(c.reasoning_tokens for c in calls)
@@ -776,6 +1107,41 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "answer_given": bool(selected),
                 "general_answer": general,
                 "small_talk": small,
+                "agent_queries": json.dumps(agent_run.queries, ensure_ascii=False)
+                if agent_run
+                else "",
+                "agent_added": json.dumps(agent_run.added) if agent_run else "",
+                "agent_limited": agent_run.refused_by_limit if agent_run else "",
+                "agent_markup": agent_run.raw_markup if agent_run else "",
+                "agent_forced": agent_run.forced_final if agent_run else "",
+                "decision_route": decided.route.value if decided else "",
+                "decision": first_decision
+                or (
+                    json.dumps(decided.decisions, ensure_ascii=False) if decided else ""
+                ),
+                "decision_queries": json.dumps(decided.queries, ensure_ascii=False)
+                if decided
+                else "",
+                "decision_added": json.dumps(decided.added) if decided else "",
+                "decision_invalid": decided.invalid if decided else "",
+                "decision_calls": len(decision_calls),
+                "decision_input_tokens": sum(c.input_tokens for c in decision_calls),
+                "decision_output_tokens": sum(c.output_tokens for c in decision_calls),
+                "decision_latency_ms": round(sum(c.latency_ms for c in decision_calls)),
+                "decision_exhausted": decided.exhausted if decided else "",
+                "decision_by_rule": decided.by_rule if decided else "",
+                "decision_speculated": decided.speculated if decided else "",
+                "decision_wasted": decided.wasted if decided else "",
+                "decision_directory": (
+                    f"{decided.directory_hits}/{decided.directory_misses}"
+                    f"/{decided.directory_partial}"
+                    if decided
+                    else ""
+                ),
+                "decision_rechecked": decided.rechecked > 0 if decided else "",
+                "decision_recheck_reason": ",".join(decided.recheck_reasons)
+                if decided
+                else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -863,7 +1229,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
     prompt_version = (
-        SMALL_TALK_PROMPT_VERSION if args.small_talk else SEARCH_PROMPT_VERSION
+        DECISION_PROMPT_VERSION
+        + f"-{args.decision}"
+        + ("-r" if args.decision_reasoning else "")
+        + ("-rule" if args.decision_rule else "")
+        + ("-spec" if args.decision_speculative else "")
+        + ("-dir" if args.decision_directory else "")
+        + ("-recheck" if args.decision_fast_extra else "")
+        + ("-role" if args.decision_recheck == "refusals+role" else "")
+        + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
+        + ("-only" if args.decision_only else "")
+        if args.decision != "off"
+        else SMALL_TALK_PROMPT_VERSION
+        if args.small_talk
+        else SEARCH_PROMPT_VERSION
     )
     append_summary(
         args.out,

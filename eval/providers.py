@@ -31,6 +31,7 @@ from eval.yandex import (
     EmbeddingKind,
     RateLimiter,
     YandexClient,
+    parse_chat_body,
 )
 
 PROVIDERS = ("mws", "cloudru")
@@ -166,6 +167,37 @@ class OpenAICompatibleClient:
             reasoning_tokens=int(details.get("reasoning_tokens") or 0),
             finish_reason=str(choice.get("finish_reason") or ""),
         )
+
+    def chat_with_tools(
+        self,
+        messages: Sequence[dict[str, Any]],
+        *,
+        model: str,
+        tools: Sequence[dict[str, Any]],
+        temperature: float = 0.0,
+        max_tokens: int = 1000,
+        tool_choice: str = "auto",
+        extra: dict[str, Any] | None = None,
+    ) -> Completion:
+        """Как YandexClient.chat_with_tools — у поставщика по OpenAI API."""
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": list(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        # Пустые инструменты — вызов без них (последний после лимита доборов):
+        # tool_choice="none" у Flash пишет вызов текстом в ответ (20.10).
+        if tools:
+            payload["tools"] = list(tools)
+            payload["tool_choice"] = tool_choice
+        if extra:
+            payload.update(extra)
+        with self._slots:
+            started = time.perf_counter()
+            body = self._post("/chat/completions", payload)
+            latency_ms = (time.perf_counter() - started) * 1000
+        return parse_chat_body(body, model, latency_ms)
 
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self._api_key}"}

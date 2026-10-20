@@ -146,3 +146,50 @@ def test_embedding_client_by_model_name(monkeypatch: pytest.MonkeyPatch) -> None
     assert isinstance(mws, OpenAICompatibleClient) and mws.provider == "mws"
     assert isinstance(local, LocalEmbedder) and local.model_name == "BAAI/bge-m3"
     assert isinstance(yandex, YandexClient)
+
+
+def test_chat_with_tools_returns_tool_calls() -> None:
+    # Агент (вариант 1): модель просит поиск — вызов инструмента, текста нет.
+    seen: list[dict[str, Any]] = []
+    # gpt-oss присылает кириллицу в аргументах экранами (ensure_ascii).
+    arguments = json.dumps({"query": "отпуск"}, ensure_ascii=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search_documents",
+                                        "arguments": arguments,
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 50, "completion_tokens": 12},
+            },
+        )
+
+    tools = [{"type": "function", "function": {"name": "search_documents"}}]
+    completion = _client(httpx.MockTransport(handler)).chat_with_tools(
+        [{"role": "user", "content": "Сколько дней отпуска?"}],
+        model="gpt-oss-120b",
+        tools=tools,
+    )
+
+    assert seen[0]["tools"] == tools and seen[0]["tool_choice"] == "auto"
+    assert completion.text == "" and completion.finish_reason == "tool_calls"
+    (call,) = completion.tool_calls
+    assert (call.id, call.name) == ("call_1", "search_documents")
+    assert json.loads(call.arguments) == {"query": "отпуск"}

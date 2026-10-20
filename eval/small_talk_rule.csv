@@ -1,0 +1,41 @@
+id,question,expected_answer,expected_material,expected_section,in_corpus,type,bucket,note
+SR-01,Привет!!,,,,false,out_of_corpus,small_talk,"приветствие с двойным восклицанием, без вопроса"
+SR-02,спасибо большое),,,,false,out_of_corpus,small_talk,"благодарность со скобкой-смайлом, строчные"
+SR-03,утро доброе,,,,false,out_of_corpus,small_talk,приветствие с инверсией слов
+SR-04,окей,,,,false,out_of_corpus,small_talk,подтверждение одним словом
+SR-05,пока-пока,,,,false,out_of_corpus,small_talk,"прощание, удвоенное через дефис"
+SR-06,thanks,,,,false,out_of_corpus,small_talk,благодарность по-английски
+SR-07,"здравствуйте, коллеги",,,,false,out_of_corpus,small_talk,"приветствие с обращением, без вопроса"
+SR-08,Здраствуйте,,,,false,out_of_corpus,small_talk,приветствие с опечаткой (пропущена буква)
+SR-09,Hi!,,,,false,out_of_corpus,small_talk,короткое английское приветствие
+SR-10,Спасибо за ответ.,,,,false,out_of_corpus,small_talk,"благодарность с точкой, без нового вопроса"
+SR-11,всего доброго,,,,false,out_of_corpus,small_talk,прощание
+SR-12,"Класс, спасибо!!",,,,false,out_of_corpus,small_talk,эмоция + благодарность
+SR-13,Приветик 👋,,,,false,out_of_corpus,small_talk,уменьшительное приветствие с эмодзи
+SR-14,пасиб,,,,false,out_of_corpus,small_talk,разговорное сокращение благодарности
+SR-15,ты кто?,,,,false,out_of_corpus,about_assistant,"вопрос об ассистенте, а не о документах"
+SR-16,ты бот или человек?,,,,false,out_of_corpus,about_assistant,вопрос о природе ассистента
+SR-17,а что ты вообще умеешь?,,,,false,out_of_corpus,about_assistant,вопрос о возможностях ассистента
+SR-18,как тебя зовут,,,,false,out_of_corpus,about_assistant,"вопрос об имени ассистента, без знака вопроса"
+SR-19,ты меня понимаешь?,,,,false,out_of_corpus,about_assistant,проверка связи с ассистентом
+SR-20,на каких документах ты обучен?,,,,false,out_of_corpus,about_assistant,вопрос об источниках ассистента; не запрос факта из документов
+SR-21,ты нейросеть?,,,,false,out_of_corpus,about_assistant,вопрос о природе ассистента
+SR-22,кто тебя сделал?,,,,false,out_of_corpus,about_assistant,вопрос о разработчике ассистента
+SR-23,Привет! Сколько дней отпуска положено?,,,,false,out_of_corpus,small_talk_plus_question,"приветствие + вопрос: hr otpuska i otguly, п. 2.1 (28 календарных дней)"
+SR-24,Спасибо! А ещё: кто согласует отсрочку платежа клиенту?,,,,false,out_of_corpus,small_talk_plus_question,"благодарность + вопрос: prodazhi skidki, п. 4.1 (руководитель ОКП до 45 дней, далее финдиректор)"
+SR-25,Добрый день. Какой номер у дежурной смены ИТ?,,,,false,out_of_corpus,small_talk_plus_question,"приветствие + вопрос: it reglament, п. 5.1 (внутренний 7700)"
+SR-26,"Здравствуйте, подскажите, сколько стоит дубликат пропуска?",,,,false,out_of_corpus,small_talk_plus_question,"приветствие + вопрос: ofis propuska parkovka, п. 2.2 (730 руб.)"
+SR-27,"Привет, а до скольки работает касса?",,,,false,out_of_corpus,small_talk_plus_question,"приветствие + вопрос: finansy avansovye otchety, п. 6.1 (до 12:30)"
+SR-28,спасибо) и ещё вопрос — какой порт у VPN?,,,,false,out_of_corpus,small_talk_plus_question,благодарность + вопрос: vpn pamyatka (51871/udp)
+SR-29,Доброе утро! Какие сейчас суточные по России?,,,,false,out_of_corpus,small_talk_plus_question,"приветствие + вопрос: komandirovki 2026, п. 3.1 (1 450 руб.)"
+SR-30,"Ок, спасибо. А по какой форме подаётся заявка на закупку?",,,,false,out_of_corpus,small_talk_plus_question,"подтверждение + благодарность + вопрос: zakupki reglament, п. 2.1 (ЗК-5)"
+SR-31,"Хай, сколько мест в переговорной «Полярная»?",,,,false,out_of_corpus,small_talk_plus_question,"приветствие + вопрос: ofis propuska parkovka, п. 4.1 (8 мест)"
+SR-32,"Привет, спасибо за прошлый ответ. Какой лимит стоимости подарка от партнёра?",,,,false,out_of_corpus,small_talk_plus_question,"приветствие + благодарность + вопрос: kodeks etiki, п. 4.1 (2 700 ₽)"
+SR-33,сколько будет 2+2?,,,,false,out_of_corpus,question_general,"арифметика, короткий вопрос не о компании"
+SR-34,какой сегодня день?,,,,false,out_of_corpus,question_general,"вопрос о дате, не о компании"
+SR-35,расскажи шутку,,,,false,out_of_corpus,question_general,"просьба развлечь, не приветствие и не благодарность"
+SR-36,переведи hello,,,,false,out_of_corpus,question_general,просьба о переводе
+SR-37,что такое НДС?,,,,false,out_of_corpus,question_general,"общий термин, в корпусе не раскрывается (есть только «с учётом НДС» в регламенте закупок)"
+SR-38,как пишется: прийти или придти?,,,,false,out_of_corpus,question_general,вопрос по орфографии
+SR-39,сколько дней в феврале?,,,,false,out_of_corpus,question_general,общий календарный вопрос
+SR-40,какое сегодня число?,,,,false,out_of_corpus,question_general,вопрос о дате

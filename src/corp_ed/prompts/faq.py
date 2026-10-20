@@ -315,9 +315,7 @@ def build_faq_messages(
     standalone_question — вопрос после parse_condensed. Без истории
     сообщения байт в байт те же, что в faq-v2.4.
     """
-    excerpts = _EXCERPT_SEPARATOR.join(
-        _format_excerpt(number, match) for number, match in enumerate(matches, start=1)
-    )
+    excerpts = format_excerpts(matches)
     dialogue = format_history(history) if history else ""
     context = (
         "Начало диалога — только чтобы понять вопрос; факты бери из "
@@ -538,6 +536,16 @@ def normalize_citations(answer: str, matches: Sequence[SourceChunk]) -> str:
         return f"[{found[0]}]" if len(found) == 1 else f"(п. {number})"
 
     return _NUMBER_CITATION.sub(replace, answer)
+
+
+def format_excerpts(matches: Sequence[SourceChunk], *, start: int = 1) -> str:
+    """Выдержки для модели: «[n] Документ > Раздел», текст, «(конец выдержки
+    [n])», через разделитель. start — номер первой: агент (agent-v1)
+    продолжает нумерацию в ответах инструмента поиска."""
+    return _EXCERPT_SEPARATOR.join(
+        _format_excerpt(number, match)
+        for number, match in enumerate(matches, start=start)
+    )
 
 
 def _format_excerpt(number: int, match: SourceChunk) -> str:
