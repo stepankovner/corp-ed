@@ -66,19 +66,25 @@ class ModelKnowledgeSource:
 
     name = "model"
 
-    def __init__(self, llm_gateway: LLMGateway, *, temperature: float) -> None:
+    def __init__(
+        self, llm_gateway: LLMGateway, *, temperature: float, small_talk: bool = False
+    ) -> None:
         self.llm_gateway = llm_gateway
         self.temperature = temperature
+        # BH-45: модель может ответить на «не вопрос» служебной строкой
+        # SMALL_TALK_PREFIX — разбирает FaqService (split_general_answer).
+        self.small_talk = small_talk
 
     async def generate(self, question: str) -> Completion:
         return await self.llm_gateway.generate(
-            messages=build_general_messages(question),
+            messages=build_general_messages(question, small_talk=self.small_talk),
             temperature=self.temperature,
         )
 
     def stream(self, question: str) -> AsyncGenerator[str | Completion, None]:
         return self.llm_gateway.stream(
-            build_general_messages(question), temperature=self.temperature
+            build_general_messages(question, small_talk=self.small_talk),
+            temperature=self.temperature,
         )
 
 

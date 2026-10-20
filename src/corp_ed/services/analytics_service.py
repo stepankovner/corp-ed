@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import GapCluster, MemberStatus, QaLog, User
+from corp_ed.repositories.qa_log_repository import is_question
 from corp_ed.services.suggestion_service import FREQUENT_MAX_LENGTH, FREQUENT_MIN_USERS
 
 FREQUENT_LIMIT = 10
@@ -81,7 +82,9 @@ class AnalyticsService:
         totals = (
             await self.session.execute(
                 select(
-                    func.count(),
+                    # «Не вопрос» (BH-45) — не вопрос: в счёт не идёт; люди
+                    # и кредиты — по всем строкам.
+                    func.count().filter(is_question()),
                     func.count().filter(QaLog.answer_given.is_(True)),
                     func.count().filter(QaLog.origin == "general_knowledge"),
                     func.count().filter(QaLog.origin == "none"),
@@ -99,7 +102,7 @@ class AnalyticsService:
             for row in await self.session.execute(
                 select(
                     local_day.label("day"),
-                    func.count().label("questions"),
+                    func.count().filter(is_question()).label("questions"),
                     func.count().filter(QaLog.answer_given.is_(True)).label("answered"),
                 )
                 .where(*period)
@@ -184,6 +187,7 @@ class AnalyticsService:
                 QaLog.created_at >= since,
                 QaLog.history_turns == 0,
                 QaLog.attachment_chunks == 0,
+                is_question(),
                 func.length(QaLog.question) <= FREQUENT_MAX_LENGTH,
             )
             .group_by(normalized)

@@ -58,6 +58,8 @@ from corp_ed.prompts.faq import (
     PROMPT_VERSION,
     SEARCH_PROMPT_VERSION,
     SEARCH_REQUEST_PREFIX,
+    SMALL_TALK_PREFIX,
+    SMALL_TALK_PROMPT_VERSION,
     SearchStep,
     build_faq_messages,
     build_general_messages,
@@ -65,6 +67,7 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
     search_request,
+    split_general_answer,
     strip_search_request,
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
@@ -228,6 +231,7 @@ class FaqService:
         gate_distance: float | None = None,
         near_margin: float = 0.0,
         search_step: bool = False,
+        small_talk: bool = False,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -246,7 +250,7 @@ class FaqService:
         self.retriever = retriever
         self.fulltext_weight = fulltext_weight
         self.general_source = general_source or ModelKnowledgeSource(
-            llm_gateway, temperature=temperature
+            llm_gateway, temperature=temperature, small_talk=small_talk
         )
         self.dialogue_store = dialogue_store
         # Без хранилища истории нет — функция выключена целиком.
@@ -259,7 +263,15 @@ class FaqService:
         self.rerank_max_words = rerank_max_words
         # Второй шаг поиска (BH-43): выключен — промпт faq-v2.7 байт в байт.
         self.search_step = search_step
-        self.prompt_version = SEARCH_PROMPT_VERSION if search_step else PROMPT_VERSION
+        # «Не вопрос» в общем ответе (BH-45): выключен — промпт общего
+        # ответа прежний байт в байт.
+        self.small_talk = small_talk
+        if small_talk:
+            self.prompt_version = SMALL_TALK_PROMPT_VERSION
+        elif search_step:
+            self.prompt_version = SEARCH_PROMPT_VERSION
+        else:
+            self.prompt_version = PROMPT_VERSION
 
     async def answer(
         self, question: str, user: User, conversation_id: UUID | None = None
@@ -1070,7 +1082,11 @@ class FaqService:
 
         В поток пометка не идёт: фронт узнаёт об общем ответе из события
         origin и показывает плашку; итоговый текст — с пометкой.
+
+        С правилом «не вопрос» (BH-45) — _general_or_small_talk.
         """
+        if self.small_talk:
+            return await self._general_or_small_talk(question, reason=reason, sink=sink)
         await sink.origin(AnswerOrigin.GENERAL_KNOWLEDGE)
         if isinstance(self.general_source, StreamingGeneralSource):
             source_stream = self.general_source.stream(question)
@@ -1100,6 +1116,63 @@ class FaqService:
         return _Outcome(
             content=finalize_general_answer(completion.content),
             origin=AnswerOrigin.GENERAL_KNOWLEDGE,
+            sources=[],
+            completions=[completion],
+        )
+
+    async def _general_or_small_talk(
+        self, question: str, *, reason: str, sink: AnswerSink
+    ) -> _Outcome:
+        """Общий ответ с правилом «не вопрос» (BH-45, промпт faq-v2.10).
+
+        На приветствие, благодарность или вопрос об ассистенте модель пишет
+        первой строкой SMALL_TALK_PREFIX и короткий дружелюбный ответ —
+        его показываем без пометки «ответа нет» и без совета уточнить,
+        origin SMALL_TALK, в отчёт о пробелах он не идёт. Иначе — общий
+        ответ, как раньше.
+
+        В потоке плашку нельзя показать сразу: что это — решает первая
+        строка (_SmallTalkGate); origin уходит перед первым показанным
+        куском. Итог — по split_general_answer (код ML): если модель
+        написала обе части, это вопрос, и показанное заменяет общий ответ.
+        """
+        if isinstance(self.general_source, StreamingGeneralSource):
+            source_stream = self.general_source.stream(question)
+        else:
+            source_stream = _single(await self.general_source.generate(question))
+        gate = _SmallTalkGate()
+        deferred = _OriginOnDecision(sink, gate)
+        streamed = await self._consume(
+            source_stream,
+            build_general_messages(question, small_talk=True),
+            sink=deferred,
+            gate=gate,
+        )
+        completion = streamed.completion
+        if completion.finish_reason is FinishReason.FILTERED and not streamed.stopped:
+            await sink.reset()
+            return self._filtered(completion, reason="general")
+        small_talk, text = split_general_answer(completion.content)
+        origin = (
+            AnswerOrigin.SMALL_TALK if small_talk else AnswerOrigin.GENERAL_KNOWLEDGE
+        )
+        await deferred.settle(origin)
+        if streamed.stopped:
+            return _Outcome(
+                content=text,
+                origin=origin,
+                sources=[],
+                completions=[completion],
+                stopped=True,
+            )
+        logger.info(
+            "faq_small_talk" if small_talk else "faq_general_answer",
+            reason=reason,
+            source=self.general_source.name,
+        )
+        return _Outcome(
+            content=text if small_talk else finalize_general_answer(text),
+            origin=origin,
             sources=[],
             completions=[completion],
         )
@@ -1306,6 +1379,86 @@ class _GeneralPrefixGate:
         trailing = self._held[len(self._held.rstrip()) :]
         marked = ensure_general_prefix(self._held)
         return marked[len(GENERAL_ANSWER_PREFIX) :].lstrip("\n") + trailing
+
+
+# Служебная первая строка «не вопроса» — как в prompts.faq.small_talk_reply:
+# кавычки, звёздочки, регистр и знак в конце не важны.
+_SMALL_TALK_LINE = re.compile(
+    r"^[\s«»\"'*]*реплика\s+без\s+вопроса[\s.!:»\"'*]*", re.IGNORECASE
+)
+_SMALL_TALK_WORDS = " ".join(SMALL_TALK_PREFIX.lower().rstrip(".").split())
+
+
+class _SmallTalkGate:
+    """Общий ответ с правилом «не вопрос» (BH-45): решить по первой строке.
+
+    Пока начало может оказаться служебной строкой SMALL_TALK_PREFIX — текст
+    придерживается (не дольше её длины). Оказалось — строку не показываем,
+    origin SMALL_TALK, дальше поток как есть. Нет — общий ответ: дальше
+    _GeneralPrefixGate (его на «не вопрос» звать нельзя — он срезает
+    пометку по длине). Решение — в origin, его отправит _OriginOnDecision.
+    """
+
+    def __init__(self) -> None:
+        self._held = ""
+        self.origin: AnswerOrigin | None = None
+        self._general = _GeneralPrefixGate()
+
+    def feed(self, piece: str) -> str:
+        if self.origin is AnswerOrigin.SMALL_TALK:
+            return piece
+        if self.origin is AnswerOrigin.GENERAL_KNOWLEDGE:
+            return self._general.feed(piece)
+        self._held += piece
+        line = _SMALL_TALK_LINE.match(self._held)
+        if line:
+            if line.end() == len(self._held):
+                # Строка дописана, но за ней могут быть ещё знаки и пробелы.
+                return ""
+            self.origin = AnswerOrigin.SMALL_TALK
+            return self._held[line.end() :]
+        probe = " ".join(self._held.lstrip(" \t\n«»\"'*").lower().split())
+        if _SMALL_TALK_WORDS.startswith(probe):
+            return ""
+        self.origin = AnswerOrigin.GENERAL_KNOWLEDGE
+        return self._general.feed(self._held)
+
+
+class _OriginOnDecision:
+    """Поток общего ответа с правилом «не вопрос» (BH-45): событие origin —
+    когда _SmallTalkGate решил, перед первым показанным куском."""
+
+    def __init__(self, sink: AnswerSink, gate: _SmallTalkGate) -> None:
+        self._sink = sink
+        self._gate = gate
+        self.sent: AnswerOrigin | None = None
+
+    async def stage(self, stage: str) -> None:
+        await self._sink.stage(stage)
+
+    async def origin(self, origin: AnswerOrigin) -> None:
+        await self._sink.origin(origin)
+        self.sent = origin
+
+    async def delta(self, text: str) -> None:
+        if self.sent is None and self._gate.origin is not None:
+            await self.origin(self._gate.origin)
+        await self._sink.delta(text)
+
+    async def reset(self) -> None:
+        await self._sink.reset()
+
+    async def should_stop(self) -> bool:
+        return await self._sink.should_stop()
+
+    async def settle(self, origin: AnswerOrigin) -> None:
+        """Итоговый origin: поток мог закончиться до решения, а итог —
+        разойтись с первой строкой (модель написала обе части)."""
+        if self.sent is origin:
+            return
+        if self.sent is not None:
+            await self._sink.reset()
+        await self.origin(origin)
 
 
 async def _single(completion: Completion) -> AsyncGenerator[str | Completion, None]:
