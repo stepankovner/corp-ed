@@ -59,7 +59,13 @@ from corp_ed.domain.context import (
     select_sections,
 )
 from corp_ed.domain.decision import parse_decision
-from corp_ed.domain.directory import format_entries, lookup, parse_directory
+from corp_ed.domain.directory import (
+    covers,
+    format_entries,
+    lookup,
+    parse_directory,
+    requested_fields,
+)
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
 from corp_ed.domain.rerank import RerankOrder, rerank_allowed
@@ -413,29 +419,31 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
 
 def _directory_search(
     title: str, markdown: str
-) -> Callable[[str], list[ContextBlock[OfflineMatch]]]:
+) -> Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]]:
     """Поиск по справочнику оргструктуры (decision-v4): записи — одной
     выдержкой (как блок контекста, чтобы источники ответа видели документ)."""
     entries = parse_directory(markdown)
     print(f"Справочник: «{title}», записей {len(entries)}")
 
-    def search(role: str) -> list[ContextBlock[OfflineMatch]]:
+    def search(
+        role: str, missing: str
+    ) -> tuple[list[ContextBlock[OfflineMatch]], bool]:
         found = lookup(entries, role)
         if not found:
-            return []
+            return [], False
+        complete = covers(found, requested_fields(missing))
         content = format_entries(found)
         match = OfflineMatch(
             content=content, title=title, heading_path=["Справочник"], distance=0.0
         )
-        return [
-            ContextBlock(
-                content=content,
-                title=title,
-                heading_path=["Справочник"],
-                match=match,
-                kind="chunk",
-            )
-        ]
+        block = ContextBlock(
+            content=content,
+            title=title,
+            heading_path=["Справочник"],
+            match=match,
+            kind="chunk",
+        )
+        return [block], complete
 
     return search
 
@@ -685,7 +693,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     documents = load_corpus(args.corpus)
     chunks = chunk_corpus(documents, chunking)
-    directory_search: Callable[[str], list[ContextBlock[OfflineMatch]]] | None = None
+    directory_search: (
+        Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]] | None
+    ) = None
     if args.decision_directory:
         # Оргструктура — по названию (у стенда названия — транслит имён файлов)
         # или по заголовку в первой строке; глоссарий и прочие «справочники» —
@@ -1087,6 +1097,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_wasted": decided.wasted if decided else "",
                 "decision_directory": (
                     f"{decided.directory_hits}/{decided.directory_misses}"
+                    f"/{decided.directory_partial}"
                     if decided
                     else ""
                 ),

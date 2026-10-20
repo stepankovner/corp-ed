@@ -162,3 +162,32 @@ def lookup(entries: list[Entry], query: str) -> list[Entry]:
 
 def format_entries(entries: list[Entry]) -> str:
     return "\n".join(f"— {entry.text()}." for entry in entries)
+
+
+# Какие поля записи нужны по словам «чего не хватает» из решения.
+_FIELD_WORDS = (
+    ("name", re.compile(r"фио|имя|имени|фамили|отчеств|зовут|кто\b", re.IGNORECASE)),
+    ("room", re.compile(r"кабинет|комнат", re.IGNORECASE)),
+    ("phone", re.compile(r"телефон|добавочн|\bдоб\b|мобильн", re.IGNORECASE)),
+    ("email", re.compile(r"e-?mail|mail|почт|адрес\s+эл|эл\.\s*адрес", re.IGNORECASE)),
+)
+_HYPHENS = str.maketrans({"\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-"})
+
+
+def requested_fields(missing: str) -> frozenset[str]:
+    """Поля записи, о которых говорит «чего не хватает» («ФИО и кабинет» →
+    имя и кабинет; «email-адрес отдела персонала» → почта). Пусто —
+    ничего конкретного не названо."""
+    text = missing.translate(_HYPHENS)
+    return frozenset(field for field, pattern in _FIELD_WORDS if pattern.search(text))
+
+
+def covers(entries: list[Entry], fields: frozenset[str]) -> bool:
+    """Есть ли запись, у которой заполнены все запрошенные поля.
+
+    Попадание по роли без нужного поля (у «Отдела персонала» в справочнике
+    нет почты) — не повод отвечать сразу: дальше обычный векторный добор.
+    """
+    if not entries:
+        return False
+    return any(all(getattr(entry, field) for field in fields) for entry in entries)

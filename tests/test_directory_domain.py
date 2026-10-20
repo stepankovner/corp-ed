@@ -2,7 +2,14 @@
 
 # ruff: noqa: E501 — строки образца справочника длинные намеренно
 
-from corp_ed.domain.directory import Entry, format_entries, lookup, parse_directory
+from corp_ed.domain.directory import (
+    Entry,
+    covers,
+    format_entries,
+    lookup,
+    parse_directory,
+    requested_fields,
+)
 
 SAMPLE = """\
 ОРГАНИЗАЦИОННАЯ СТРУКТУРА
@@ -74,3 +81,22 @@ def test_format() -> None:
     assert Entry(role="Отдел персонала", unit="", name="", room="210").text() == (
         "Отдел персонала — кабинет 210"
     )
+
+
+def test_requested_fields() -> None:
+    assert requested_fields("ФИО и кабинет") == {"name", "room"}
+    assert requested_fields("конкретный email\u2011адрес отдела персонала") == {"email"}
+    assert requested_fields("добавочный номер финансового директора") == {"phone"}
+    assert requested_fields("номер кабинета") == {"room"}
+    assert requested_fields("—") == frozenset()
+
+
+def test_covers_needs_all_requested_fields() -> None:
+    entries = parse_directory(SAMPLE)
+    hr = lookup(entries, "отдел персонала")
+    assert hr and not covers(hr, frozenset({"email"}))
+    assert covers(hr, frozenset({"room"}))
+    fin = lookup(entries, "финансовый директор")
+    assert covers(fin, frozenset({"name", "phone", "email"}))
+    assert covers(fin, frozenset())
+    assert not covers([], frozenset())
