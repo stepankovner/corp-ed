@@ -335,14 +335,14 @@ def test_directory_hit_answers_without_second_decision() -> None:
     answer = Script("черновик", "Согласует финансовый директор — Кукушкина [2].")
     calls: list[str] = []
 
-    def directory(role: str) -> Sequence[Chunk]:
+    def directory(role: str, missing: str) -> tuple[Sequence[Chunk], bool]:
         calls.append(role)
         return [
             Chunk(
                 "Финансовый директор — Ярослава Игоревна Кукушкина, кабинет 402.",
                 "Оргструктура",
             )
-        ]
+        ], True
 
     run = run_decided(
         "Кто (ФИО)?",
@@ -372,7 +372,57 @@ def test_directory_miss_falls_back_to_search() -> None:
         decide=Script(partial, decision()),
         answer=Script("Ответ [2]."),
         search=lambda q: [Chunk("б")],
-        directory=lambda role: [],
+        directory=lambda role, missing: ([], False),
     )
     assert run.directory_misses == 1 and run.queries == ["ФИО директора"]
     assert run.text == "Ответ [2]."
+
+
+def test_directory_partial_adds_entry_and_searches() -> None:
+    """Роль нашлась, но без запрошенной почты — запись в выдержки и добор."""
+    partial = decision(
+        sufficiency="partial",
+        search_query="почта отдела персонала",
+        lookup_role="отдел персонала",
+    )
+    run = run_decided(
+        "Куда писать?",
+        [Chunk("а")],
+        decide=Script(partial, decision()),
+        answer=Script("черновик", "Пишите на hr@ [3]."),
+        search=lambda q: [Chunk("hr@stk-test.example")],
+        directory=lambda role, missing: (
+            [Chunk("Отдел персонала — кабинет 210.")],
+            False,
+        ),
+        speculative=True,
+    )
+    assert run.directory_partial == 1 and run.directory_hits == 0
+    assert run.queries == ["почта отдела персонала"] and run.wasted == 1
+    assert [b.content for b in run.shown] == [
+        "а",
+        "Отдел персонала — кабинет 210.",
+        "hr@stk-test.example",
+    ]
+    assert run.text == "Пишите на hr@ [3]."
+
+
+def test_directory_entry_kept_when_excerpts_full() -> None:
+    """Выдержек уже под лимит — запись справочника всё равно в выдержках."""
+    partial = decision(
+        sufficiency="partial", search_query="ФИО", lookup_role="финансовый директор"
+    )
+    run = run_decided(
+        "Кто?",
+        [Chunk("а"), Chunk("б")],
+        decide=Script(partial),
+        answer=Script("Кукушкина [3]."),
+        search=no_search,
+        directory=lambda role, missing: (
+            [Chunk("Финансовый директор — Кукушкина.")],
+            True,
+        ),
+        max_excerpts=2,
+    )
+    assert run.directory_hits == 1
+    assert run.shown[-1].content == "Финансовый директор — Кукушкина."

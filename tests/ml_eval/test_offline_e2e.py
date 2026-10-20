@@ -647,3 +647,20 @@ def test_small_talk_flag_answers_without_the_not_found_mark(
     assert rows["q1"]["small_talk"] == "False"
     summary = read_csv(tmp_path / "out" / "summary.csv")
     assert summary[-1]["notes"].startswith("faq-v2.10")
+
+
+def test_directory_search_returns_context_blocks_with_source() -> None:
+    """Записи справочника — блок контекста: у ответа есть источник (match)."""
+    _directory_search = offline_e2e._directory_search
+
+    text = (
+        "— Финансовый директор — Ярослава Игоревна Кукушкина, кабинет 402, доб. 1120.\n"
+        "— Бухгалтерия — главный бухгалтер Олимпиада Сергеевна Брусникина.\n"
+    )
+    search = _directory_search("orgstruktura", text)
+    blocks, complete = search("финансовый директор", "ФИО и кабинет")
+    assert len(blocks) == 1
+    assert "Кукушкина" in blocks[0].content
+    assert blocks[0].match.title == "orgstruktura"
+    assert complete
+    assert search("старший смены", "ФИО") == ([], False)
