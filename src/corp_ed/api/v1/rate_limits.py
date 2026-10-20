@@ -185,6 +185,12 @@ CONNECTOR_GRANT_PER_USER = RatePolicy(
 CONNECTOR_OAUTH_CALLBACK_PER_IP = RatePolicy(
     "connector-oauth-ip", limit=300, window=900, fail_open=False
 )
+# Установка локального приложения Битрикс24: портал стучится на
+# служебный адрес, который ничего не читает и не пишет. Лимит — только от
+# пустого шума; fail_open: сбой Redis не должен срывать установку.
+CONNECTOR_BITRIX24_INSTALL_PER_IP = RatePolicy(
+    "connector-bitrix24-install-ip", limit=60, window=900, fail_open=True
+)
 
 
 def get_rate_limiter(request: Request) -> RateLimiter:

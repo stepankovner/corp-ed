@@ -8,6 +8,7 @@
 from collections.abc import AsyncGenerator
 from typing import Any
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -402,6 +403,130 @@ async def test_search_step_off_keeps_faq_v27(
     assert entry.search_query is None
 
 
+# --- строка запроса после ответа (BH-44) --------------------------------------
+
+AFTER_ANSWER = [
+    # той же строкой, фраза разрезана между кусками
+    (
+        [
+            "Наставника назначает ",
+            "директор по персоналу [1]. Допол",
+            "нительный поиск: ФИО директора",
+        ],
+        "Наставника назначает директор по персоналу [1].",
+    ),
+    # следующей строкой
+    (
+        ["Согласует финансовый директор [1].", "\n", "Дополнительный поиск: ФИО"],
+        "Согласует финансовый директор [1].",
+    ),
+    # жирным
+    (
+        ["Согласует финансовый директор [1].\n**Дополни", "тельный поиск:** ФИО"],
+        "Согласует финансовый директор [1].",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("pieces", "answer"), AFTER_ANSWER, ids=["same-line", "next-line", "bold"]
+)
+async def test_request_after_the_answer_is_cut_without_second_search(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+    pieces: list[str],
+    answer: str,
+) -> None:
+    rule, _ = await _two_documents(session)
+    llm = ScriptedStream(pieces)
+    service = _service(chunk_repo, llm)
+    sink = RecordingSink()
+
+    result = await service.answer_turn(QUESTION, employee, history=[], sink=sink)
+
+    shown = "".join(sink.deltas)
+    assert "оиск" not in shown
+    assert shown.rstrip() == answer
+    assert result.content == answer
+    assert result.origin is AnswerOrigin.DOCUMENTS
+    assert [s.id for s in result.sources] == [rule.id]
+    # Ответ уже показан — второго поиска и второго вызова нет.
+    assert len(llm.calls) == 1
+    assert service.embedding_gateway.query_calls == [QUESTION]  # type: ignore[attr-defined]
+    assert "searching_more" not in sink.stages
+    assert (await _log(session)).search_query is None
+
+
+async def test_answer_with_the_word_search_is_untouched(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    await _two_documents(session)
+    answer = (
+        "Поиск поставщика — по регламенту закупок [1].\n"
+        "Дополнительно согласует финансовый директор [1]."
+    )
+    cut = answer.index("Дополни") + len("Дополни")
+    llm = ScriptedStream([answer[:20], answer[20:cut], answer[cut:]])
+    sink = RecordingSink()
+
+    result = await _service(chunk_repo, llm).answer_turn(
+        QUESTION, employee, history=[], sink=sink
+    )
+
+    assert "".join(sink.deltas) == answer
+    assert result.content == answer
+
+
+async def test_second_answer_with_a_request_at_the_end_is_cut(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    # После второго поиска модель ответила и снова дописала запрос: это не
+    # повторная просьба (ответ есть) — строку срезаем, ответ показываем.
+    rule, person = await _two_documents(session)
+    llm = ScriptedStream(
+        REQUEST, ANSWER + "\nДополнительный поиск: приказ о назначении"
+    )
+    sink = RecordingSink()
+
+    result = await _service(chunk_repo, llm).answer_turn(
+        QUESTION, employee, history=[], sink=sink
+    )
+
+    assert result.content == ANSWER
+    assert [s.id for s in result.sources] == [rule.id, person.id]
+    assert "".join(sink.deltas).rstrip() == ANSWER
+    assert len(llm.calls) == 2
+
+
+async def test_stop_on_a_request_after_the_answer_keeps_the_answer(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    await _two_documents(session)
+    llm = ScriptedStream(
+        ["Согласует директор [1]. ", "Дополнительный поиск: ФИО", " директора"]
+    )
+    sink = RecordingSink(stop_before_piece=2)
+
+    result = await _service(chunk_repo, llm).answer_turn(
+        QUESTION, employee, history=[], sink=sink
+    )
+
+    assert result.stopped is True
+    assert result.content == "Согласует директор [1]."
+    assert "оиск" not in "".join(sink.deltas)
+
+
 def _feed(pieces: list[str]) -> list[str]:
     gate = _SearchGate(_RefusalGate())
     return [gate.feed(piece) for piece in pieces]
@@ -422,3 +547,18 @@ def test_gate_holds_only_while_answer_may_be_a_request() -> None:
         "оплачивается [1].",
     ]
     assert _feed(["Дополнительный поиск", ": X", "\nещё"]) == ["", "", ""]
+
+
+def test_gate_holds_a_tail_that_may_become_a_request() -> None:
+    # BH-44: после ответа держим только хвост, который может оказаться
+    # началом строки запроса; дописалась — дальше ничего.
+    assert _feed(["Ответ [1]. Доп", "олнительный ", "поиск: X", " ещё"]) == [
+        "Ответ [1]. ",
+        "",
+        "",
+        "",
+    ]
+    assert _feed(["Ответ [1]. Доп", "олнительно — тоже [2]."]) == [
+        "Ответ [1]. ",
+        "Дополнительно — тоже [2].",
+    ]

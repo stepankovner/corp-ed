@@ -3,7 +3,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from corp_ed.api.v1.dependencies import (
     get_connector_service,
@@ -11,6 +11,7 @@ from corp_ed.api.v1.dependencies import (
     require_role,
 )
 from corp_ed.api.v1.rate_limits import (
+    CONNECTOR_BITRIX24_INSTALL_PER_IP,
     CONNECTOR_GRANT_PER_USER,
     CONNECTOR_OAUTH_CALLBACK_PER_IP,
     CONNECTOR_SYNC_PER_TENANT,
@@ -279,6 +280,36 @@ async def oauth_callback(
     return RedirectResponse(
         _with_query(return_url, query), status_code=status.HTTP_303_SEE_OTHER
     )
+
+
+_BITRIX24_INSTALLED_PAGE = (
+    '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+    "<title>kronto</title></head>"
+    "<body><p>kronto: приложение установлено, окно можно закрыть.</p></body></html>"
+)
+
+
+@router.api_route(
+    "/bitrix24/install",
+    methods=["GET", "POST"],
+    include_in_schema=False,
+    response_class=HTMLResponse,
+    dependencies=[Depends(limit_by_ip(CONNECTOR_BITRIX24_INSTALL_PER_IP))],
+)
+async def bitrix24_install() -> HTMLResponse:
+    """«Путь для первоначальной установки» локального приложения Битрикс24.
+
+    Портал при установке шлёт сюда POST со своего сервера (событие
+    ONAPPINSTALL, тело с auth[access_token], auth[refresh_token]… либо
+    AUTH_ID, REFRESH_ID…) — это токены администратора портала. Нам они не
+    нужны: токены сотрудников приходят по OAuth-входу на /oauth/callback,
+    а права администратора kronto не хранит. Поэтому тело не читается и
+    не логируется, в базу ничего не пишется — только 200, чтобы установка
+    считалась завершённой. BX24.installFinish не вызывается: запрос идёт
+    с сервера портала, а без интерфейса (флажок «Приложение само
+    завершает установку» выключен) вызов не нужен. Без аутентификации,
+    как вебхук оплаты: ничего не читает и не меняет."""
+    return HTMLResponse(_BITRIX24_INSTALLED_PAGE)
 
 
 @router.post(

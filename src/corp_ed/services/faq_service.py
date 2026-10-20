@@ -65,6 +65,7 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
     search_request,
+    strip_search_request,
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
@@ -961,6 +962,8 @@ class FaqService:
             content = completion.content
             if second and _held_back(content):
                 content = ""
+            elif second:
+                content = strip_search_request(content)
             return _Outcome(
                 content=normalize_citations(content, context),
                 origin=AnswerOrigin.DOCUMENTS,
@@ -973,9 +976,12 @@ class FaqService:
             outcome = self._filtered(completion, reason="documents")
             outcome.completions = completions
             return outcome
+        # Ответила и всё равно дописала запрос (BH-44): строку срезаем, второй
+        # поиск по ней не делаем — ответ сотрудник уже видит.
+        raw = strip_search_request(completion.content) if second else completion.content
         # Модели иногда ставят в скобки номер пункта документа [4.2]
         # вместо номера выдержки: фронт такую ссылку не свяжет.
-        content = normalize_citations(completion.content, context)
+        content = normalize_citations(raw, context)
 
         # Выдержки нашлись, но модель по ним отказала: в документах
         # ответа нет — это тот же случай, что и пустой поиск.
@@ -1193,6 +1199,16 @@ def _asks_search(answer: str) -> bool:
     return _SEARCH_REQUEST_START.match(answer) is not None
 
 
+# Строка запроса в любом месте ответа (BH-44) — как в
+# prompts.faq.strip_search_request: поток режется там же, где итоговый текст.
+_SEARCH_REQUEST_ANYWHERE = re.compile(
+    r"[ \t]*\n?[ \t«\"*]*дополнительный\s+поиск\s*:", re.IGNORECASE
+)
+_SEARCH_HOLD_CHARS = len(SEARCH_REQUEST_PREFIX) + 20
+"""Хвост ответа, который может оказаться началом строки запроса, держим
+не дольше длины фразы (с запасом на пробелы, кавычки и `**`)."""
+
+
 def _held_back(text: str) -> bool:
     """Начало ответа — строка запроса или может ещё ею оказаться."""
     probe = " ".join(text.lstrip(' \t\n«"*').lower().split())
@@ -1208,13 +1224,18 @@ def _answered_with_search(streamed: _Streamed) -> bool:
 
 
 class _SearchGate:
-    """Не показывать строку «Дополнительный поиск: …» (BH-43).
+    """Не показывать строку «Дополнительный поиск: …».
 
-    Модель пишет её первой строкой вместо ответа. Пока начало ответа может
-    оказаться ею — текст придерживается (это не дольше первых ~25
-    символов, контракт BH-43); оказалось — не показывается ничего: сервис
-    ищет и спрашивает модель снова. Нет — придержанное и всё дальше идёт
-    в следующий фильтр (then, отказ модели).
+    Модель пишет её первой строкой вместо ответа (BH-43). Пока начало
+    ответа может оказаться ею — текст придерживается (это не дольше первых
+    ~25 символов, контракт BH-43); оказалось — не показывается ничего:
+    сервис ищет и спрашивает модель снова. Нет — придержанное и всё дальше
+    идёт в следующий фильтр (then, отказ модели).
+
+    Бывает, что модель отвечает и в конце всё равно дописывает запрос
+    (BH-44). Поэтому и дальше хвост, который может оказаться началом
+    строки запроса, придерживается; дописалась строка — до конца ответа
+    ничего не показываем. Итоговый текст режет strip_search_request.
     """
 
     def __init__(self, then: "_Gate") -> None:
@@ -1224,19 +1245,40 @@ class _SearchGate:
         self._swallow = False
 
     def feed(self, piece: str) -> str:
-        if self._open:
-            return self._then.feed(piece)
         if self._swallow:
             return ""
         self._held += piece
-        if _asks_search(self._held):
+        if not self._open:
+            if _asks_search(self._held):
+                self._swallow = True
+                return ""
+            if _held_back(self._held):
+                return ""
+            self._open = True
+        return self._then.feed(self._release())
+
+    def _release(self) -> str:
+        """Что из придержанного можно показать: всё до строки запроса или
+        до хвоста, который ещё может ею оказаться."""
+        text = self._held
+        found = _SEARCH_REQUEST_ANYWHERE.search(text)
+        if found:
             self._swallow = True
-            return ""
-        if _held_back(self._held):
-            return ""
-        self._open = True
-        held, self._held = self._held, ""
-        return self._then.feed(held)
+            self._held = ""
+            return text[: found.start()]
+        cut = len(text)
+        for start in range(max(0, len(text) - _SEARCH_HOLD_CHARS), len(text)):
+            if not text[start].isspace() and _may_start_request(text[start:]):
+                cut = start
+                break
+        self._held = text[cut:]
+        return text[:cut]
+
+
+def _may_start_request(tail: str) -> bool:
+    """Хвост ответа может оказаться началом «Дополнительный поиск:»."""
+    probe = " ".join(tail.lstrip(' \t\n«"*').lower().split())
+    return _SEARCH_WORDS.startswith(probe)
 
 
 _GENERAL_HOLD_CHARS = len(GENERAL_ANSWER_PREFIX) + 40
