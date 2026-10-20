@@ -314,12 +314,18 @@ def test_small_talk_reply_reads_the_service_line() -> None:
         SMALL_TALK_PREFIX,
         build_general_messages,
         small_talk_reply,
+        split_general_answer,
     )
 
     assert small_talk_reply(f"{SMALL_TALK_PREFIX}\nЗдравствуйте!") == "Здравствуйте!"
-    assert small_talk_reply("**«это не вопрос по документам»** Привет") == "Привет"
+    assert small_talk_reply("**«реплика без вопроса»** Привет") == "Привет"
     assert small_talk_reply(SMALL_TALK_PREFIX) == ""
     assert small_talk_reply(f"{GENERAL_ANSWER_PREFIX}\nОбычно так.") is None
+    # Попытка 1: модель написала обе части — это вопрос, показать с пометкой.
+    both = f"{SMALL_TALK_PREFIX}\nЗдравствуйте!\n\n---\n\n{GENERAL_ANSWER_PREFIX}\n391."
+    assert small_talk_reply(both) is None
+    assert split_general_answer(both) == (False, f"{GENERAL_ANSWER_PREFIX}\n391.")
+    assert split_general_answer(f"{SMALL_TALK_PREFIX} Привет!") == (True, "Привет!")
     system = build_general_messages("привет", small_talk=True)[0].content
     # Правила вопроса — те же: пометка общего ответа никуда не делась.
     assert SMALL_TALK_PREFIX in system and GENERAL_ANSWER_PREFIX in system

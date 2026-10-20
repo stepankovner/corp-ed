@@ -630,7 +630,7 @@ def test_small_talk_flag_answers_without_the_not_found_mark(
     # v2.10 (BH-45): «не вопрос» — первая строка служебная, ответ без пометки.
     corpus, dataset, fake = setup
     fake.answers = {
-        "Сообщение сотрудника: Какая": "«Это не вопрос по документам.»\nПривет!",
+        "Сообщение сотрудника: Какая": "«Реплика без вопроса.»\nПривет!",
         **fake.answers,
     }
 

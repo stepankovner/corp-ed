@@ -73,7 +73,7 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
     search_request,
-    small_talk_reply,
+    split_general_answer,
 )
 from eval.bench import (
     FUSION_CANDIDATES,
@@ -747,10 +747,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ask(build_general_messages(item.question, small_talk=args.small_talk))
             )
             # v2.10 (BH-45): «не вопрос» — ответ без пометки «ответа нет».
-            reply = small_talk_reply(calls[-1].text) if args.small_talk else None
-            if reply is not None:
-                answer = reply
-                small = True
+            if args.small_talk:
+                small, answer = split_general_answer(calls[-1].text.strip())
+                general = not small
             else:
                 answer = ensure_general_prefix(calls[-1].text.strip())
                 general = True
