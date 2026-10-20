@@ -658,8 +658,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     chunks = chunk_corpus(documents, chunking)
     directory_search = None
     if args.decision_directory:
-        pattern = re.compile(r"оргструктур|контакт|справочник", re.IGNORECASE)
-        source = next((d for d in documents if pattern.search(d.title)), None)
+        # Оргструктура — по названию (у стенда названия — транслит имён файлов)
+        # или по заголовку в первой строке; глоссарий и прочие «справочники» —
+        # нет.
+        by_title = re.compile(r"orgstruktura|оргструктур|org[_ -]?chart", re.IGNORECASE)
+        by_head = re.compile(r"организационн\w+\s+структур", re.IGNORECASE)
+        source = next(
+            (
+                d
+                for d in documents
+                if by_title.search(d.title) or by_head.search(d.markdown[:200])
+            ),
+            None,
+        )
         if source is None:
             print("--decision-directory: в корпусе нет документа-справочника")
             return 2
