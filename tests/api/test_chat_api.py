@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.api.v1.dependencies import get_llm_gateway
+from corp_ed.api.v1.dependencies import get_llm_gateway, get_rag_settings
 from corp_ed.core.config import EMBEDDING_DIM, get_settings
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import (
@@ -335,6 +335,36 @@ async def test_search_request_after_the_answer_is_not_shown(
     assert done["answer"]["origin"] == "documents"
     assert done["answer"]["content"] == "Отпуск — 28 дней [1]."
     assert len(fake_llm.calls) == 1
+
+
+async def test_greeting_is_answered_without_the_mark(
+    api: httpx.AsyncClient,
+    employee: User,
+    tenant_ctx: Tenant,
+    session: AsyncSession,
+    fake_llm: FakeAdapter,
+) -> None:
+    # BH-45: «привет» — дружелюбный ответ без плашки «ответа нет» и без
+    # совета; служебная строка в поток не попадает.
+    settings = app.dependency_overrides[get_rag_settings]()
+    app.dependency_overrides[get_rag_settings] = lambda: settings.model_copy(
+        update={"faq_small_talk": True}
+    )
+    fake_llm.content = "Реплика без вопроса.\nПривет! Спросите о правилах компании."
+    fake_llm.pieces = [
+        "Реплика без вопроса.\n",
+        "Привет! Спросите о правилах компании.",
+    ]
+
+    events = await _ask(api, employee, "Привет!")
+
+    assert {"type": "origin", "origin": "small_talk"} in events
+    shown = "".join(e["text"] for e in events if e["type"] == "delta")
+    assert shown == "Привет! Спросите о правилах компании."
+    done = final(events)
+    assert done["answer"]["origin"] == "small_talk"
+    assert done["answer"]["content"] == "Привет! Спросите о правилах компании."
+    assert done["answer"]["sources"] == []
 
 
 async def test_strict_mode_refusal(

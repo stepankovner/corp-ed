@@ -377,6 +377,13 @@ async def test_analytics_is_anonymous_and_counts_by_day(
                 origin="none",
             ),
             _log(tenant_ctx, worker, "Старый вопрос", created_at=old),
+            # «Не вопрос» (BH-45) — не в счёт вопросов и не в частые.
+            *[
+                _log(
+                    tenant_ctx, user, "Привет", answer_given=False, origin="small_talk"
+                )
+                for user in (admin, employee, worker)
+            ],
         ]
     )
     await session.commit()
