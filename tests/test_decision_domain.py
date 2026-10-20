@@ -74,6 +74,21 @@ def test_route_order() -> None:
     assert route(make(match="other_edition"), can_search=True) == Route.ANSWER
 
 
+def test_other_edition_answers_even_when_none() -> None:
+    # Приёмка 3: «ничего» при другой редакции — оценка по спрошенной
+    # редакции; ответ по найденной откажет сам, если по теме ничего нет.
+    edition = make(match="other_edition", subject="П-ОТП-07, редакция 3")
+    none = edition.model_copy(update={"sufficiency": "none"})
+    assert route(none, can_search=True) == Route.ANSWER
+    partial = edition.model_copy(
+        update={"sufficiency": "partial", "search_query": "П-ОТП-07 отгулы"}
+    )
+    assert route(partial, can_search=True) == Route.SEARCH
+    assert route(make(match="same", sufficiency="none"), can_search=True) == (
+        Route.NOT_FOUND
+    )
+
+
 def test_partial_without_query_answers() -> None:
     assert route(make(sufficiency="partial"), can_search=True) == Route.ANSWER
 

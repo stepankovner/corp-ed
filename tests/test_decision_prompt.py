@@ -13,6 +13,7 @@ from corp_ed.prompts.decision import (
     with_other_subject_note,
 )
 from corp_ed.prompts.faq import (
+    _SYSTEM_PROMPT,
     GENERAL_ANSWER_PREFIX,
     NOT_FOUND_ANSWER,
     build_faq_messages,
@@ -86,15 +87,48 @@ def test_decision_messages_put_excerpts_in_user() -> None:
     assert "(выдержек нет)" in empty[1].content
 
 
-def test_answer_messages_edition_hint_only_for_other_edition() -> None:
+def test_answer_messages_faq_unless_other_edition() -> None:
     chunks = [Chunk("Правила 2026 года.")]
     same = build_answer_messages("Вопрос?", chunks, decision(match="same"))
     assert same == build_faq_messages("Вопрос?", chunks)
-    edition = build_answer_messages("Вопрос?", chunks, decision())
-    assert edition[0] == same[0]
-    assert edition[-1].content.startswith(same[-1].content)
-    assert "не отказывай" in edition[-1].content
+    assert same[0].content == _SYSTEM_PROMPT  # faq-v2.7 байт в байт
     assert build_answer_messages("Вопрос?", chunks, None) == same
+    other = build_answer_messages("Вопрос?", chunks, decision(match="other"))
+    assert other == same
+
+
+def test_edition_answer_is_its_own_task() -> None:
+    chunks = [Chunk("Правила 2026 года.")]
+    system, user = build_answer_messages("Какие требования?", chunks, decision())
+    # Правило 4 про другую программу и пример «Старт» → «Развитие» заменены,
+    # остальные правила faq-v2.7 — те же.
+    assert NOT_FOUND_ANSWER not in system.content.split("4. ")[1].split("5. ")[0]
+    assert "Отвечай по той редакции, что в выдержках" in system.content
+    assert "„Развитие“" not in system.content
+    assert "Положение о премировании (редакция 2026 года)" in system.content
+    rest = system.content.split("4. ")[0], system.content.split("5. ")[1][:300]
+    assert rest == (
+        _SYSTEM_PROMPT.split("4. ")[0],
+        _SYSTEM_PROMPT.split("5. ")[1][:300],
+    )
+    # Что спросили и что нашли — из решения; выдержки и вопрос — как в faq.
+    assert "[1] Регламент закупок" in user.content
+    assert "Вопрос сотрудника: Какие требования?" in user.content
+    assert "Вопрос — про «ГПБ Тех 2025», а выдержки — про «ГПБ Тех 2026»" in (
+        user.content
+    )
+    assert user.content.rstrip().endswith("ничего нет по теме вопроса.")
+    assert "Правила 2026 года." not in system.content
+
+
+def test_edition_facts_without_names() -> None:
+    chunks = [Chunk("Положение П-ОТП-07, редакция 4.")]
+    same_name = decision(subject="П-ОТП-07", excerpts_subject="П-ОТП-07")
+    user = build_answer_messages("Вопрос?", chunks, same_name)[-1].content
+    assert "Вопрос — про «П-ОТП-07», а в выдержках — другой год" in user
+    unnamed = decision(subject="—", excerpts_subject="—")
+    user = build_answer_messages("Вопрос?", chunks, unnamed)[-1].content
+    assert "В выдержках — другой год, редакция или дата" in user
 
 
 def test_edition_note() -> None:
@@ -102,6 +136,12 @@ def test_edition_note() -> None:
         "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования такие [1]."
     )
     assert with_edition_note("Ответ [1].", decision(match="same")) == "Ответ [1]."
+    # Модель написала оговорку сама (edition-v1) — вторую не добавляем.
+    own = "В документах — редакция 4 положения, а не третья. Не более 6 [1]."
+    assert with_edition_note(own, decision()) == own
+    # Не из чего построить и модель не написала — ответ как есть.
+    unnamed = decision(subject="П-ОТП-07", excerpts_subject="П-ОТП-07")
+    assert with_edition_note("Не более 6 [1].", unnamed) == "Не более 6 [1]."
 
 
 def test_other_subject_note_goes_after_marker() -> None:

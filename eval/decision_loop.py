@@ -239,19 +239,16 @@ def run_decided(
         return run
     # Ответ по выдержкам: спекулятивный, если он есть и годится; в варианте
     # одним вызовом — поле ответа; иначе отдельный вызов (и при откате, и
-    # если поле пустое). Другой год: спекулятивный ответ по обычному промпту
-    # мог отказать (правило 4) — тогда ответ заново с указанием отвечать по
-    # найденной редакции.
+    # если поле пустое). Другой год или редакция: спекулятивный ответ — по
+    # обычному промпту, его правило 4 велит отказать (приёмка 3: отказ и
+    # после переспроса) — выбрасываем сразу, ответ — промптом edition-v1.
+    edition = decision is not None and decision.match == "other_edition"
     text = decision.answer.strip() if merged and decision is not None else ""
     if not text and spec is not None:
-        text = spec.text.strip()
-        if (
-            decision is not None
-            and decision.match == "other_edition"
-            and is_not_found(text)
-        ):
+        if edition:
             run.wasted += 1
-            text = ""
+        else:
+            text = spec.text.strip()
     if not text:
         completion = answer(build_answer_messages(question, shown, decision))
         run.calls.append(completion)
