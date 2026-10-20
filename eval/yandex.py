@@ -346,9 +346,12 @@ class YandexClient:
             "messages": list(messages),
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "tools": list(tools),
-            "tool_choice": tool_choice,
         }
+        # Пустые инструменты — вызов без них (последний после лимита доборов):
+        # tool_choice="none" у Flash пишет вызов текстом в ответ (20.10).
+        if tools:
+            payload["tools"] = list(tools)
+            payload["tool_choice"] = tool_choice
         if extra:
             payload.update(extra)
         with self._completion_slots:

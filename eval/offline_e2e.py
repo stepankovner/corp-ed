@@ -49,7 +49,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from corp_ed.domain.context import (
     ContextBlock,
@@ -73,8 +73,10 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
     search_request,
+    small_talk_reply,
     split_general_answer,
 )
+from eval.agent_loop import AgentRun, run_agent
 from eval.bench import (
     FUSION_CANDIDATES,
     add_rerank_arguments,
@@ -489,6 +491,13 @@ def _parser() -> argparse.ArgumentParser:
         '{"reasoning_effort": "none"}',
     )
     parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="вариант 1 (agent-v1): поиск сначала, модель с инструментом "
+        "search_documents может искать ещё (не больше 2 доборов) и отвечать "
+        "сама на реплики; дальше — общий ответ или отказ, как без флага",
+    )
+    parser.add_argument(
         "--small-talk",
         action="store_true",
         help="v2.10 (BH-45): в общем ответе правило «не вопрос» — приветствие, "
@@ -660,6 +669,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             **({"extra": llm_extra} if llm_extra else {}),
         )
 
+    def agent_search(query: str) -> list[ContextBlock[OfflineMatch]]:
+        """Добор агента: тот же поиск и порог BH-37, что у вопроса."""
+        more, more_best = search_more(query)
+        gated = relevant_matches(
+            more,
+            args.max_distance,
+            gate_distance=args.gate_distance,
+            near_margin=args.near_margin,
+            nearest=more_best,
+        )
+        return build_context(
+            gated,
+            mode=context_mode,
+            sections=sections,
+            max_tokens=args.context_tokens,
+            neighbours=args.neighbours,
+        )
+
+    def agent_chat(
+        messages: list[dict[str, Any]], tools: Sequence[dict[str, Any]]
+    ) -> Completion:
+        assert client is not None
+        return client.chat_with_tools(
+            messages,
+            model=args.model,
+            tools=tools,
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            extra=llm_extra,
+        )
+
     rows: list[dict[str, object]] = []
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
@@ -691,7 +731,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         general = False
         small = False
         hop_query, hop_added = "", 0
-        if selected and not args.dry_run:
+        agent_run: AgentRun | None = None
+        if args.agent and not args.dry_run:
+            agent_run = run_agent(
+                item.question, selected, chat=agent_chat, search=agent_search
+            )
+            calls.extend(agent_run.calls)
+            raw = agent_run.text or NOT_FOUND_ANSWER
+            selected = agent_run.shown
+            context_text = "\n".join(block.content for block in selected)
+            reply = small_talk_reply(raw)
+            if reply is not None:
+                small, answer = True, reply
+            elif not is_not_found(raw):
+                answer = normalize_citations(raw, selected)
+        elif selected and not args.dry_run:
             calls.append(
                 ask(build_faq_messages(item.question, selected, search="allowed"))
             )
@@ -738,11 +792,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Р1 (решено 25.09): ответа в документах нет — ни одна выдержка не
         # прошла порог или модель по выдержкам ответила отказом — общий ответ
         # со строгой пометкой, что он не из документов компании.
-        if (
-            mode == "general"
-            and not args.dry_run
-            and (not selected or is_not_found(raw))
-        ):
+        # Агент: общий ответ — только если модель отказала (реплика — уже
+        # ответ); без агента — как раньше.
+        needs_general = (
+            not small and is_not_found(raw)
+            if agent_run is not None
+            else not selected or is_not_found(raw)
+        )
+        if mode == "general" and not args.dry_run and needs_general:
             calls.append(
                 ask(build_general_messages(item.question, small_talk=args.small_talk))
             )
@@ -776,6 +833,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "answer_given": bool(selected),
                 "general_answer": general,
                 "small_talk": small,
+                "agent_queries": json.dumps(agent_run.queries, ensure_ascii=False)
+                if agent_run
+                else "",
+                "agent_added": json.dumps(agent_run.added) if agent_run else "",
+                "agent_limited": agent_run.refused_by_limit if agent_run else "",
+                "agent_markup": agent_run.raw_markup if agent_run else "",
+                "agent_forced": agent_run.forced_final if agent_run else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
