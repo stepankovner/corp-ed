@@ -41,6 +41,7 @@ from corp_ed.domain.rerank import rerank_allowed
 from corp_ed.prompts.multi_query import PROMPT_VERSION as MQ_PROMPT_VERSION
 from eval.corpus import BenchChunk, ChunkingConfig, chunk_corpus, load_corpus
 from eval.datasets import EvalItem, load_dataset, select_split
+from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.multi_query import paraphrase_questions
 from eval.relevance import RetrievedChunk
 from eval.rerank import (
@@ -259,6 +260,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--mq-model", default=DEFAULT_LLM, help="M6: модель")
     add_rerank_arguments(parser)
+    add_doc_context_arguments(parser)
     parser.add_argument("--api", choices=("native", "openai"), default=DEFAULT_API)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
@@ -279,6 +281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         overlap=args.overlap,
         crumbs_in_embed=not args.no_crumbs,
         title_in_crumbs=not args.crumbs_without_title,
+        doc_context=args.doc_context,
     )
     embedding_dim = args.embedding_dim or default_embedding_dim(args.embedding_model)
     dim_suffix = f"-d{embedding_dim}" if embedding_dim else ""
@@ -317,7 +320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + embedder
     )
 
-    documents = load_corpus(args.corpus)
+    documents = with_doc_context(args, load_corpus(args.corpus))
     chunks = chunk_corpus(documents, chunking)
     items: list[EvalItem] = load_dataset(args.dataset)
     # Без --split holdout золотого набора не берём (select_split, задача 2.1).

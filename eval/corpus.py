@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Literal
 
 from corp_ed.domain.context import Section
+from corp_ed.domain.doc_context import insert_context
 from corp_ed.domain.split import (
     SectionDraft,
     format_breadcrumbs,
@@ -37,12 +38,16 @@ FORMATS = {
 """Расширения, которые принимает продукт (`ingest.extract`); xlsx, pptx и
 doc — все, без настройки INGEST_EXTRA_FORMATS: стенд меряет и их."""
 SUPPORTED_SUFFIXES = tuple(FORMATS)
+DocContextMode = Literal["off", "embed", "llm", "both"]
 
 
 @dataclass(frozen=True)
 class Document:
     title: str
     markdown: str
+    context: str = ""
+    """Строка контекста документа (`domain.doc_context.context_phrase`);
+    пусто — без контекста. Заполняет `eval.doc_context.attach_contexts`."""
 
 
 @dataclass(frozen=True)
@@ -72,18 +77,28 @@ class ChunkingConfig:
     overlap: int = 100
     crumbs_in_embed: bool = True
     title_in_crumbs: bool = True
+    doc_context: DocContextMode = "off"
+    """Контекст документа (§9.3 п. 4): embed — строка контекста в
+    embed_text; llm — только в llm_text (её видят модели решения и
+    ответа, поиск как без контекста); both — в обоих."""
 
     @property
     def name(self) -> str:
+        context = {
+            "off": "",
+            "embed": "-ctx",
+            "llm": "-ctxllm",
+            "both": "-ctxboth",
+        }[self.doc_context]
         if self.version == "v1":
-            return f"v1-{self.chunk_size}-{self.overlap}"
+            return f"v1-{self.chunk_size}-{self.overlap}{context}"
         if not self.crumbs_in_embed:
             suffix = "-nocrumbs"
         elif not self.title_in_crumbs:
             suffix = "-notitle"
         else:
             suffix = ""
-        return f"v2-{self.chunk_tokens}-{self.overlap_tokens}{suffix}"
+        return f"v2-{self.chunk_tokens}-{self.overlap_tokens}{suffix}{context}"
 
 
 def extract_markdown(path: Path) -> str:
@@ -119,6 +134,9 @@ def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[Benc
     """Нарезать все документы. Для v1 embed_text = llm_text = текст чанка."""
     chunks: list[BenchChunk] = []
     for document in documents:
+        mode = config.doc_context
+        phrase = document.context if mode in ("embed", "both") else ""
+        llm_phrase = document.context if mode in ("llm", "both") else ""
         if config.version == "v1":
             texts = split_into_chunks(
                 document.markdown, chunk_size=config.chunk_size, overlap=config.overlap
@@ -129,8 +147,8 @@ def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[Benc
                     material=document.title,
                     position=position,
                     heading_path=[],
-                    embed_text=text,
-                    llm_text=text,
+                    embed_text=insert_context(text, "", phrase),
+                    llm_text=insert_context(text, "", llm_phrase),
                 )
                 for position, text in enumerate(texts)
             )
@@ -138,7 +156,10 @@ def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[Benc
 
         for section in _sections(document, config):
             for draft in section.chunks:
-                embed_text = draft.embed_text
+                # Контекст — второй строкой, после крошек: замена крошек ниже
+                # (E2) по-прежнему видит их первой строкой.
+                crumbs = format_breadcrumbs(document.title, draft.heading_path)
+                embed_text = insert_context(draft.embed_text, crumbs, phrase)
                 if not config.crumbs_in_embed:
                     embed_text = _replace_crumbs(
                         embed_text, document.title, draft.heading_path, ""
@@ -157,7 +178,7 @@ def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[Benc
                         position=draft.position,
                         heading_path=draft.heading_path,
                         embed_text=embed_text,
-                        llm_text=draft.llm_text,
+                        llm_text=insert_context(draft.llm_text, crumbs, llm_phrase),
                         section_id=section_key(document.title, section.position),
                     )
                 )
@@ -173,10 +194,20 @@ def section_corpus(
     в секции. У нарезки v1 секций нет."""
     if config.version == "v1":
         return {}
+
+    def with_context(document: Document, text: str, path: list[str]) -> str:
+        if config.doc_context not in ("llm", "both"):
+            return text
+        crumbs = format_breadcrumbs(document.title, path)
+        return insert_context(text, crumbs, document.context)
+
     return {
         section_key(document.title, section.position): Section(
-            content=section.llm_text,
-            chunks=[chunk.llm_text for chunk in section.chunks],
+            content=with_context(document, section.llm_text, section.heading_path),
+            chunks=[
+                with_context(document, chunk.llm_text, chunk.heading_path)
+                for chunk in section.chunks
+            ],
         )
         for document in documents
         for section in _sections(document, config)

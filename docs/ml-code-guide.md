@@ -879,6 +879,7 @@ src/corp_ed/
   domain/rerank.py         реранкер (M3): какие кандидаты отдать модели, порядок по баллам
   domain/threshold.py      порог (BH-37): «отвечать ли по документам» и до какого расстояния брать выдержки
   domain/editions.py       подсказка «новый документ заменяет прежнюю редакцию» (BH-41)
+  domain/doc_context.py    контекст документа в чанке: карточка DocContext, строка, статус редакции (§9.3 п. 4)
   domain/agent.py          агент: разбор вызова, вызов текстом, сторож названий (прототип)
   prompts/faq.py           промпт ответа faq-v2.9 (второй шаг поиска), ссылки, общий ответ,
                            «не вопрос» faq-v2.10, история диалога
@@ -890,10 +891,12 @@ src/corp_ed/
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
   prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)
+  prompts/doc_context.py   промпт карточки документа doc-context-v2 (один вызов на документ)
 eval/                      наборы, метрики, стенды, судья, клиент Яндекса (раздел 4),
                            реранкер стенда rerank.py, задержка bench_reranker.py,
                            другие поставщики providers.py, цикл агента agent_loop.py,
                            цикл «решение до ответа» decision_loop.py
+                           контекст документа doc_context.py (--doc-context)
 tests/                     test_preprocess, test_split, test_split_document, test_faq_prompt,
                            test_dialogue_prompt, test_context, test_retrieval_utils,
                            test_gaps, test_multi_query_prompt, test_query_multi,

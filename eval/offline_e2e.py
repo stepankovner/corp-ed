@@ -108,6 +108,7 @@ from eval.corpus import (
 )
 from eval.datasets import EvalItem, load_dataset, select_split
 from eval.decision_loop import DecidedRun, run_decided
+from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.metrics import percentile
 from eval.multi_query import Paraphrased, paraphrase_questions
 from eval.relevance import EVIDENCE_MIN_COVERAGE, evidence_coverage
@@ -620,6 +621,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--rrf-k", type=int, default=60)
     parser.add_argument("--chunk-tokens", type=int, default=400)
     parser.add_argument("--overlap-tokens", type=int, default=50)
+    add_doc_context_arguments(parser)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--config", default="", help="имя прогона (иначе — из флагов)")
     parser.add_argument("--out", type=Path, default=RESULTS_DIR)
@@ -635,7 +637,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     llm_extra = json.loads(args.llm_extra) if args.llm_extra else None
 
     chunking = ChunkingConfig(
-        chunk_tokens=args.chunk_tokens, overlap_tokens=args.overlap_tokens
+        chunk_tokens=args.chunk_tokens,
+        overlap_tokens=args.overlap_tokens,
+        doc_context=args.doc_context,
     )
     mode: NotFoundMode = args.not_found
     retriever: Retriever = args.retriever
@@ -691,7 +695,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + ("-dry" if args.dry_run else "")
     )
 
-    documents = load_corpus(args.corpus)
+    documents = with_doc_context(args, load_corpus(args.corpus))
     chunks = chunk_corpus(documents, chunking)
     directory_search: (
         Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]] | None
