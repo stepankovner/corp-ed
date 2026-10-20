@@ -138,3 +138,39 @@ def mismatch_note(decision: Decision) -> str:
     if not present or not asked or present.casefold() == asked.casefold():
         return ""
     return f"{NOTE_PREFIX}{present}, а не {asked}."
+
+
+EDITION_CAUTION = "в запрошенной редакции условия могли отличаться"
+"""Хвост оговорки при другом годе или редакции (решение Артёма 20.10,
+вариант «в»): ответ — по редакции из документов, а в спрошенной (прошлой
+или будущей) условия могли быть другими. Ставит код, не модель."""
+
+
+def edition_note(decision: Decision) -> str:
+    """«В документах — «X», а не «Y»; в запрошенной редакции условия могли
+    отличаться.» Без названий из решения — общая оговорка, а не пусто: при
+    другой редакции её нужно показать всегда."""
+    note = mismatch_note(decision)
+    if not note:
+        note = f"{NOTE_PREFIX}другой год или редакция, чем в вопросе."
+    return f"{note[:-1]}; {EDITION_CAUTION}."
+
+
+def note_end(text: str) -> int | None:
+    """Позиция точки, которой кончается оговорка «В документах — …, а не
+    ….» в начале ответа: первая точка после «а не» вне «ёлочек» и перед
+    пробелом или концом текста («Sprint 2.0», «01.09.2026», «ч. 1» внутри
+    названий — не конец). None — точки нет."""
+    start = text.find(" а не ")
+    depth = 0
+    for i in range(max(start, len(NOTE_PREFIX)), len(text)):
+        char = text[i]
+        if char == "«":
+            depth += 1
+        elif char == "»":
+            depth = max(0, depth - 1)
+        elif (
+            char == "." and not depth and (i + 1 == len(text) or text[i + 1].isspace())
+        ):
+            return i
+    return None

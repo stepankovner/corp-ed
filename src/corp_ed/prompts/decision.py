@@ -19,7 +19,15 @@
 from collections.abc import Sequence
 from typing import Any
 
-from corp_ed.domain.decision import NOTE_PREFIX, Decision, mismatch_note, quoted
+from corp_ed.domain.decision import (
+    EDITION_CAUTION,
+    NOTE_PREFIX,
+    Decision,
+    edition_note,
+    mismatch_note,
+    note_end,
+    quoted,
+)
 from corp_ed.llm.types import Message, Role
 from corp_ed.prompts.faq import (
     _SYSTEM_PROMPT,
@@ -324,14 +332,21 @@ def with_edition_note(answer: str, decision: Decision | None) -> str:
 
     edition-v1 велит модели написать её самой (год или редакцию она видит в
     выдержках, решение их не всегда называет); не написала — оговорка из
-    решения (mismatch_note), если её есть из чего построить.
+    решения (edition_note). Хвост «; в запрошенной редакции условия могли
+    отличаться» ставит код в обоих случаях (решение Артёма 20.10, вариант
+    «в»): в конец оговорки модели или в оговорку из решения.
     """
     if decision is None or decision.match != "other_edition":
         return answer
-    if answer.lstrip(" «*").startswith(NOTE_PREFIX):
+    if EDITION_CAUTION in answer.casefold():
         return answer
-    note = mismatch_note(decision)
-    return f"{note} {answer}" if note else answer
+    text = answer.lstrip(" «*")
+    if not text.startswith(NOTE_PREFIX):
+        return f"{edition_note(decision)} {answer}"
+    end = note_end(text)
+    if end is None:
+        return f"{text.rstrip()}; {EDITION_CAUTION}."
+    return f"{text[:end]}; {EDITION_CAUTION}.{text[end + 1 :]}"
 
 
 def with_other_subject_note(answer: str, decision: Decision | None) -> str:

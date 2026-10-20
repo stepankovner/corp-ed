@@ -152,8 +152,8 @@ def test_edition_note_prepended() -> None:
         "Вопрос?", [Chunk("а")], decide=decide, answer=answer, search=no_search
     )
     assert (
-        run.text
-        == "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования такие [1]."
+        run.text == "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025»; в запрошенной "
+        "редакции условия могли отличаться. Требования такие [1]."
     )
     assert "Отвечай по той редакции" in answer.seen[0][0].content
 
@@ -173,7 +173,10 @@ def test_other_edition_none_still_answers() -> None:
         "Вопрос?", [Chunk("а")], decide=decide, answer=answer, search=no_search
     )
     assert run.route is Route.ANSWER and not run.needs_general
-    assert run.text == "В документах — редакция 4, а не третья. Не более 6 [1]."
+    assert run.text == (
+        "В документах — редакция 4, а не третья; в запрошенной редакции условия "
+        "могли отличаться. Не более 6 [1]."
+    )
 
 
 def test_small_talk_separate_and_merged() -> None:
@@ -342,7 +345,8 @@ def test_speculative_other_edition_always_reanswers() -> None:
         assert run.wasted == 1 and len(answer.seen) == 2
         assert "Отвечай по той редакции" in answer.seen[1][0].content
         assert run.text.startswith(
-            "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025». Требования"
+            "В документах — «ГПБ Тех 2026», а не «ГПБ Тех 2025»; в запрошенной "
+            "редакции условия могли отличаться. Требования"
         )
 
 

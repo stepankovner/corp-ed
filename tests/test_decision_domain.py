@@ -7,7 +7,9 @@ import pytest
 from corp_ed.domain.decision import (
     Decision,
     Route,
+    edition_note,
     mismatch_note,
+    note_end,
     parse_decision,
     route,
     search_query,
@@ -114,6 +116,18 @@ def test_mismatch_note() -> None:
     )
     assert mismatch_note(make(subject="Старт-ИИ-2", excerpts_subject="—")) == ""
     assert mismatch_note(make(subject="УМНИК", excerpts_subject="умник")) == ""
+
+
+def test_edition_note_and_note_end() -> None:
+    named = make(subject="УМНИК-2025", excerpts_subject="УМНИК-2026")
+    assert edition_note(named) == (
+        "В документах — «УМНИК-2026», а не «УМНИК-2025»; в запрошенной "
+        "редакции условия могли отличаться."
+    )
+    assert edition_note(make()).startswith("В документах — другой год или редакция")
+    text = "В документах — «Sprint 2.0 (24.04.2026)», а не «Спринт 3.0». Ответ."
+    assert text[note_end(text) - 1 :].startswith("». Ответ")
+    assert note_end("В документах — редакция 4, а не 3") is None
 
 
 def test_other_needs_named_subject() -> None:
