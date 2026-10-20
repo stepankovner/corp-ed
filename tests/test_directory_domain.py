@@ -88,6 +88,7 @@ def test_requested_fields() -> None:
     assert requested_fields("конкретный email\u2011адрес отдела персонала") == {"email"}
     assert requested_fields("добавочный номер финансового директора") == {"phone"}
     assert requested_fields("номер кабинета") == {"room"}
+    assert requested_fields("адрес отдела персонала") == {"email"}
     assert requested_fields("—") == frozenset()
 
 

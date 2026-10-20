@@ -164,12 +164,14 @@ def format_entries(entries: list[Entry]) -> str:
     return "\n".join(f"— {entry.text()}." for entry in entries)
 
 
-# Какие поля записи нужны по словам «чего не хватает» из решения.
+# Какие поля записи нужны по словам «чего не хватает» из решения. «Адрес»
+# без уточнения — почта: других адресов в справочнике нет, а «адрес отдела»
+# (этап выбора, T2-11) — это адрес почты.
 _FIELD_WORDS = (
     ("name", re.compile(r"фио|имя|имени|фамили|отчеств|зовут|кто\b", re.IGNORECASE)),
     ("room", re.compile(r"кабинет|комнат", re.IGNORECASE)),
     ("phone", re.compile(r"телефон|добавочн|\bдоб\b|мобильн", re.IGNORECASE)),
-    ("email", re.compile(r"e-?mail|mail|почт|адрес\s+эл|эл\.\s*адрес", re.IGNORECASE)),
+    ("email", re.compile(r"e-?mail|mail|почт|адрес", re.IGNORECASE)),
 )
 _HYPHENS = str.maketrans({"\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-"})
 
