@@ -579,6 +579,42 @@ pymupdf4llm под AGPL нельзя держать в закрытом репо
   цикл; на каждый `tool_call` — свой ответ `role=tool`; инструмент
   предлагается, пока не исчерпаны доборы и место под выдержки.
 
+### 3.18. `domain/decision.py` + `prompts/decision.py` — решение до ответа (попытка 2)
+
+Стратегия после разбора попытки 1 (`ml-report.md`, «Стратегия»): до
+ответа модель заполняет строгую схему — что за сообщение (`kind`), о чём
+вопрос (`subject`), про что выдержки (`excerpts_subject`), про то ли они
+(`match`: same / other_edition / other / n/a), хватает ли их
+(`sufficiency`: full / partial / none), чего нет, что искать. Дальше
+решает код.
+
+- **Схема — pydantic-модель `Decision`**: она же строит JSON-схему для
+  запроса (`decision_schema`: без `title`, все поля обязательны,
+  `additionalProperties: false`) и проверяет ответ
+  (`parse_decision` → `None` при нарушении — откат на обычный ответ).
+  Порядок полей — порядок генерации: необязательное поле рассуждения
+  `reasoning` — первым, поле ответа `answer` (вариант «одним вызовом») —
+  последним. Ограничивает вывод поставщик (`response_format` json_schema,
+  `strict`); pydantic — вторая линия: у Cloud.ru поля приходят по
+  алфавиту, строгость ограничения не проверена.
+- **Маршрут `route(decision, can_search)`**: реплика → короткий ответ;
+  «про другое» (только при названном в вопросе) → «ответа нет» и
+  оговорка «В документах — «X», а не «Y»» (`mismatch_note`); «ничего» →
+  общий ответ; «не хватает» и добор возможен → добор; иначе — ответ (при
+  другом годе — с той же оговоркой первой фразой).
+- **Цикл `eval/decision_loop.py`**: решение видит историю доборов («Уже
+  искали: …»), одинаковый запрос второй раз не выполняется; не больше 2
+  доборов и 8 выдержек. Пометка «ответа нет» в поле ответа перевешивает
+  признак реплики — как в BH-45.
+- **Стенд**: `offline_e2e --decision separate|merged`,
+  `--decision-reasoning`, `--decision-provider/-model/-extra`,
+  `--decision-max-tokens` (2000), `--decision-only` (этап выбора — только
+  первое решение); колонки `decision_*`, токены решения — отдельно (у
+  решения может быть другой поставщик).
+
+Итог приёмки 20.10 — `ml-report.md`, «Попытка 2 — итоги»: качество выше
+конвейера, время — главный провал.
+
 ---
 
 ## 4. Eval — как мы измеряем
@@ -824,12 +860,15 @@ src/corp_ed/
   prompts/faq.py           промпт ответа faq-v2.9 (второй шаг поиска), ссылки, общий ответ,
                            «не вопрос» faq-v2.10, история диалога
   prompts/agent.py         промпт агента agent-v1 и инструмент search_documents (прототип)
+  domain/decision.py       решение до ответа: pydantic-схема Decision, маршрут, оговорка
+  prompts/decision.py      промпт решения decision-v2, схема для запроса, ответ по решению
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
   prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)
 eval/                      наборы, метрики, стенды, судья, клиент Яндекса (раздел 4),
                            реранкер стенда rerank.py, задержка bench_reranker.py,
-                           другие поставщики providers.py, цикл агента agent_loop.py
+                           другие поставщики providers.py, цикл агента agent_loop.py,
+                           цикл «решение до ответа» decision_loop.py
 tests/                     test_preprocess, test_split, test_split_document, test_faq_prompt,
                            test_dialogue_prompt, test_context, test_retrieval_utils,
                            test_gaps, test_multi_query_prompt, test_query_multi,
