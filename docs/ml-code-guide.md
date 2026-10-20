@@ -886,6 +886,7 @@ src/corp_ed/
   prompts/agent.py         промпт агента agent-v1 и инструмент search_documents (прототип)
   domain/decision.py       решение до ответа: pydantic-схема Decision, маршрут, оговорка
   domain/small_talk.py     реплики и вопросы об ассистенте — правилом в коде
+  domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4)
   prompts/decision.py      промпт решения decision-v5, схема для запроса, ответ по решению,
                            ответ при другой редакции edition-v1
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
