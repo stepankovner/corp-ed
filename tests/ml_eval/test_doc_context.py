@@ -114,6 +114,9 @@ def test_attach_and_chunk_with_context(corpus: Path, tmp_path: Path) -> None:
     plain = chunk_corpus(attached, ChunkingConfig())
     embed = chunk_corpus(attached, ChunkingConfig(doc_context="embed"))
     both = chunk_corpus(attached, ChunkingConfig(doc_context="both"))
+    llm = chunk_corpus(attached, ChunkingConfig(doc_context="llm"))
+    assert [c.embed_text for c in llm] == [c.embed_text for c in plain]
+    assert [c.llm_text for c in llm] == [c.llm_text for c in both]
     assert [c.embed_text for c in plain] == [
         c.embed_text for c in chunk_corpus(documents, ChunkingConfig())
     ]
@@ -122,7 +125,8 @@ def test_attach_and_chunk_with_context(corpus: Path, tmp_path: Path) -> None:
     assert embed[0].llm_text == plain[0].llm_text
     assert both[0].llm_text == f"{crumbs}\n{old.context}\nСуточные — 1 200 руб."
     assert ChunkingConfig(doc_context="embed").name == "v2-400-50-ctx"
-    assert ChunkingConfig(doc_context="both").name == "v2-400-50-ctxllm"
+    assert ChunkingConfig(doc_context="llm").name == "v2-400-50-ctxllm"
+    assert ChunkingConfig(doc_context="both").name == "v2-400-50-ctxboth"
 
     # Без крошек (E2) крошки срезаются, контекст остаётся.
     bare = chunk_corpus(
@@ -131,7 +135,7 @@ def test_attach_and_chunk_with_context(corpus: Path, tmp_path: Path) -> None:
     assert bare[0].embed_text == f"{old.context}\nСуточные — 1 200 руб."
 
     # Секции (M2) — тот же llm_text у чанков, иначе select_sections их не найдёт.
-    sections = section_corpus(attached, ChunkingConfig(doc_context="both"))
+    sections = section_corpus(attached, ChunkingConfig(doc_context="llm"))
     section = sections[both[0].section_id]
     assert both[0].llm_text in section.chunks
     assert old.context in section.content

@@ -1,6 +1,6 @@
 """Контекст документа для стенда (§9.3 п. 4): извлечение с кэшем и флаги.
 
-Один вызов модели на документ (doc-context-v1): имя файла + начало
+Один вызов модели на документ (doc-context-v2): имя файла + начало
 документа → карточка `DocContext` → строка контекста (`context_phrase`);
 статус редакции — правилом по корпусу (`edition_statuses`). Кэш — JSON
 `eval/.cache/doc_context.json`, ключ = версия промпта | модель | имя
@@ -9,7 +9,8 @@
 
 Флаги — общие для bench и offline_e2e:
     --doc-context embed   строка контекста в embed_text (поиск)
-    --doc-context both    и в llm_text (её видят решение и ответ)
+    --doc-context llm     только в llm_text (её видят решение и ответ)
+    --doc-context both    в оба
 
 Таблица карточек корпуса (для отчёта и просмотра глазами):
     python -m eval.doc_context --corpus ../sandbox/stand/corpus_product
@@ -172,10 +173,10 @@ def attach_contexts(
 def add_doc_context_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--doc-context",
-        choices=("off", "embed", "both"),
+        choices=("off", "embed", "llm", "both"),
         default="off",
         help="контекст документа в чанке (§9.3 п. 4): embed — в эмбеддинг, "
-        "both — и в текст для модели",
+        "llm — в текст для модели, both — в оба",
     )
     parser.add_argument(
         "--doc-context-provider",

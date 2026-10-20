@@ -38,7 +38,7 @@ FORMATS = {
 """Расширения, которые принимает продукт (`ingest.extract`); xlsx, pptx и
 doc — все, без настройки INGEST_EXTRA_FORMATS: стенд меряет и их."""
 SUPPORTED_SUFFIXES = tuple(FORMATS)
-DocContextMode = Literal["off", "embed", "both"]
+DocContextMode = Literal["off", "embed", "llm", "both"]
 
 
 @dataclass(frozen=True)
@@ -79,11 +79,17 @@ class ChunkingConfig:
     title_in_crumbs: bool = True
     doc_context: DocContextMode = "off"
     """Контекст документа (§9.3 п. 4): embed — строка контекста в
-    embed_text, both — ещё и в llm_text (её видят модели решения и ответа)."""
+    embed_text; llm — только в llm_text (её видят модели решения и
+    ответа, поиск как без контекста); both — в обоих."""
 
     @property
     def name(self) -> str:
-        context = {"off": "", "embed": "-ctx", "both": "-ctxllm"}[self.doc_context]
+        context = {
+            "off": "",
+            "embed": "-ctx",
+            "llm": "-ctxllm",
+            "both": "-ctxboth",
+        }[self.doc_context]
         if self.version == "v1":
             return f"v1-{self.chunk_size}-{self.overlap}{context}"
         if not self.crumbs_in_embed:
@@ -128,8 +134,9 @@ def chunk_corpus(documents: list[Document], config: ChunkingConfig) -> list[Benc
     """Нарезать все документы. Для v1 embed_text = llm_text = текст чанка."""
     chunks: list[BenchChunk] = []
     for document in documents:
-        phrase = document.context if config.doc_context != "off" else ""
-        llm_phrase = phrase if config.doc_context == "both" else ""
+        mode = config.doc_context
+        phrase = document.context if mode in ("embed", "both") else ""
+        llm_phrase = document.context if mode in ("llm", "both") else ""
         if config.version == "v1":
             texts = split_into_chunks(
                 document.markdown, chunk_size=config.chunk_size, overlap=config.overlap
@@ -189,7 +196,7 @@ def section_corpus(
         return {}
 
     def with_context(document: Document, text: str, path: list[str]) -> str:
-        if config.doc_context != "both":
+        if config.doc_context not in ("llm", "both"):
             return text
         crumbs = format_breadcrumbs(document.title, path)
         return insert_context(text, crumbs, document.context)
