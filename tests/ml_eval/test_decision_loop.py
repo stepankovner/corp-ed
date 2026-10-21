@@ -1018,3 +1018,17 @@ def test_timeout_on_recheck_keeps_parallel_general_if_needed() -> None:
 def test_default_gates_are_known_rules() -> None:
     assert DEFAULT_GATES == ("gate", "contact")
     assert set(DEFAULT_GATES) <= set(SPECULATION_GATES)
+
+
+def test_contact_rule_ignores_mail_service_and_personal_account() -> None:
+    def contact(question: str) -> str | None:
+        return speculation_skip(question, 3, 0.4, rules=("contact",), max_distance=0.59)
+
+    assert contact("Назови ФИО и адрес его почты.") == "contact"
+    assert contact("На какой адрес почты сообщить о конфликте?") == "contact"
+    assert contact("Какая у него электронная почта?") == "contact"
+    assert contact("Какой максимальный размер почтового ящика?") is None
+    assert contact("Перестала работать корпоративная почта, какой приоритет?") is None
+    assert contact("Статус в личном кабинете не появляется. Что делать?") is None
+    assert contact("Можно ли подписать договор от имени компании?") is None
+    assert contact("В какой комнате сидят айтишники?") == "contact"
