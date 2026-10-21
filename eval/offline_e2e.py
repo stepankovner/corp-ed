@@ -63,11 +63,14 @@ from corp_ed.domain.directory import (
     DIRECTORY_HEADING,
     DIRECTORY_HEADING_EXPLAINED,
     Entry,
+    Substitute,
     covers,
     format_entries,
     lookup,
+    lookup_substitute,
     parse_directory,
     requested_fields,
+    substitution_requested,
 )
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
@@ -427,25 +430,41 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
     )
 
 
+Found = list[Entry] | list[Substitute]
 DirectorySearch = Callable[
-    [str, str], tuple[list[ContextBlock[OfflineMatch]], bool, list[Entry]]
+    [str, str], tuple[list[ContextBlock[OfflineMatch]], bool, Found]
 ]
 
 
 def _directory_search(
-    title: str, markdown: str, *, heading: str = DIRECTORY_HEADING
+    title: str,
+    markdown: str,
+    *,
+    heading: str = DIRECTORY_HEADING,
+    substitution: bool = False,
 ) -> DirectorySearch:
     """Поиск по справочнику оргструктуры (decision-v4): записи — одной
     выдержкой (как блок контекста, чтобы источники ответа видели документ);
     третьим элементом — сами записи (для строки контакта, вариант A2).
-    heading — заголовок выдержки (A1 — DIRECTORY_HEADING_EXPLAINED)."""
+    heading — заголовок выдержки (A1 — DIRECTORY_HEADING_EXPLAINED).
+
+    substitution (--decision-substitution): если роль или «чего не хватает»
+    говорят о замещении — сначала пары «отсутствующий → замещающий»
+    (lookup_substitute), нет пар — обычный lookup. Текст вопроса сюда не
+    доходит (сигнатура (role, missing)) — T4-04 так не ловится, см.
+    ml-report, «Замещение в справочнике»."""
     entries = parse_directory(markdown)
-    print(f"Справочник: «{title}», записей {len(entries)}")
+    deputies = sum(1 for entry in entries if entry.deputy)
+    print(f"Справочник: «{title}», записей {len(entries)}, с замещающим {deputies}")
 
     def search(
         role: str, missing: str
-    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, list[Entry]]:
-        found = lookup(entries, role)
+    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, Found]:
+        found: Found = []
+        if substitution and substitution_requested(f"{role}\n{missing}"):
+            found = lookup_substitute(entries, role)
+        if not found:
+            found = lookup(entries, role)
         if not found:
             return [], False, []
         complete = covers(found, requested_fields(missing))
@@ -635,6 +654,13 @@ def _parser() -> argparse.ArgumentParser:
         "«контакт» / «справочник» в названии)",
     )
     parser.add_argument(
+        "--decision-substitution",
+        action="store_true",
+        help="фаза 0, 21.10: с --decision-directory — при словах о замещении в "
+        "роли или «чего не хватает» в выдержку пара «отсутствующий → "
+        "замещающий» (абзацы «Замещение» и «Подчинённость» оргструктуры)",
+    )
+    parser.add_argument(
         "--decision-only",
         action="store_true",
         help="этап 1: только первое решение по найденным выдержкам — без "
@@ -716,6 +742,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.decision_answer != "plain" and not args.decision_directory:
         print("--decision-answer: только с --decision-directory")
         return 2
+    if args.decision_substitution and not args.decision_directory:
+        print("--decision-substitution: только с --decision-directory")
+        return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
@@ -772,6 +801,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 heading=DIRECTORY_HEADING_EXPLAINED
                 if args.decision_answer == "first"
                 else DIRECTORY_HEADING,
+                substitution=args.decision_substitution,
             )
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
