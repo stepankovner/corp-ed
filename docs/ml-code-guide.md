@@ -640,6 +640,20 @@ sufficiency none — то же решение переспрашивается �
 пользователя при полном попадании с 1–2 записями; справочник отдаёт записи
 `Entry` третьим элементом). Колонки `decision_answer_mode`,
 `decision_contact`. Итоги — `ml-report.md`, «Шаг ответа после справочника».
+Фаза 1 (21.10, план §10.2 п. 1–2, §10.1 п. 3; по умолчанию выключено):
+`decision_loop.speculation_skip` / `--decision-speculate gated
+--decision-gate <правила>` — спекулятивный ответ не запускается по
+признакам до решения (`contact`, `who`, `gate`, `single`;
+`SPECULATION_GATES`); `decision_loop(refusal_parallel=True)` /
+`--decision-refusal-parallel` — при отказе low общий ответ идёт
+параллельно с перепроверкой (`DecidedRun.general`, `wasted_general`);
+`--decision-timeout <с>` — таймаут каждого вызова решения
+(`providers.OpenAICompatibleClient.complete(timeout=…)`, без повторов,
+`CallTimeoutError`), откат на обычный ответ (`DecidedRun.timeout_reason`).
+Колонки `decision_steps` (время каждого вызова), `decision_initial`,
+`decision_spec_skip`, `decision_wasted_reason`, `decision_general_parallel`,
+`decision_wasted_general`, `decision_timeout(_reason)`. Итоги — `ml-report.md`,
+«Фаза 1: хвост отказов, отсечение спекуляции, таймаут».
 
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов
