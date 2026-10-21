@@ -60,6 +60,9 @@ from corp_ed.domain.context import (
 )
 from corp_ed.domain.decision import parse_decision
 from corp_ed.domain.directory import (
+    DIRECTORY_HEADING,
+    DIRECTORY_HEADING_EXPLAINED,
+    Entry,
     covers,
     format_entries,
     lookup,
@@ -73,6 +76,7 @@ from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.types import Message
 from corp_ed.prompts.decision import (
+    CONTACT_NOTE_VERSION,
     DECISION_PROMPT_VERSION,
     build_decision_messages,
     decision_response_format,
@@ -107,7 +111,12 @@ from eval.corpus import (
     section_corpus,
 )
 from eval.datasets import EvalItem, load_dataset, select_split
-from eval.decision_loop import RECHECK_MODES, DecidedRun, run_decided
+from eval.decision_loop import (
+    DIRECTORY_ANSWER_MODES,
+    RECHECK_MODES,
+    DecidedRun,
+    run_decided,
+)
 from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.metrics import percentile
 from eval.multi_query import Paraphrased, paraphrase_questions
@@ -418,33 +427,40 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
     )
 
 
+DirectorySearch = Callable[
+    [str, str], tuple[list[ContextBlock[OfflineMatch]], bool, list[Entry]]
+]
+
+
 def _directory_search(
-    title: str, markdown: str
-) -> Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]]:
+    title: str, markdown: str, *, heading: str = DIRECTORY_HEADING
+) -> DirectorySearch:
     """Поиск по справочнику оргструктуры (decision-v4): записи — одной
-    выдержкой (как блок контекста, чтобы источники ответа видели документ)."""
+    выдержкой (как блок контекста, чтобы источники ответа видели документ);
+    третьим элементом — сами записи (для строки контакта, вариант A2).
+    heading — заголовок выдержки (A1 — DIRECTORY_HEADING_EXPLAINED)."""
     entries = parse_directory(markdown)
     print(f"Справочник: «{title}», записей {len(entries)}")
 
     def search(
         role: str, missing: str
-    ) -> tuple[list[ContextBlock[OfflineMatch]], bool]:
+    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, list[Entry]]:
         found = lookup(entries, role)
         if not found:
-            return [], False
+            return [], False, []
         complete = covers(found, requested_fields(missing))
         content = format_entries(found)
         match = OfflineMatch(
-            content=content, title=title, heading_path=["Справочник"], distance=0.0
+            content=content, title=title, heading_path=[heading], distance=0.0
         )
         block = ContextBlock(
             content=content,
             title=title,
-            heading_path=["Справочник"],
+            heading_path=[heading],
             match=match,
             kind="chunk",
         )
-        return [block], complete
+        return [block], complete, found
 
     return search
 
@@ -592,6 +608,16 @@ def _parser() -> argparse.ArgumentParser:
         "(вариант R) или ещё «хватает» при названной lookup_role (R2)",
     )
     parser.add_argument(
+        "--decision-answer",
+        choices=DIRECTORY_ANSWER_MODES,
+        default="plain",
+        help="шаг ответа после справочника: plain — запись последней выдержкой "
+        "«Справочник» (как было); first (A1) — первой выдержкой с заголовком "
+        "«Справочник: должность → человек, кабинет, телефон, почта»; contact "
+        "(A2) — запись на прежнем месте, в промпте ответа — строка контакта "
+        "(contact-v1)",
+    )
+    parser.add_argument(
         "--decision-rule",
         action="store_true",
         help="попытка 3: реплики и вопросы об ассистенте — правилом в коде, без модели",
@@ -687,6 +713,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.decision_recheck != "refusals" and not args.decision_fast_extra:
         print("--decision-recheck: только с --decision-fast-extra")
         return 2
+    if args.decision_answer != "plain" and not args.decision_directory:
+        print("--decision-answer: только с --decision-directory")
+        return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
@@ -717,9 +746,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     documents = with_doc_context(args, load_corpus(args.corpus))
     chunks = chunk_corpus(documents, chunking)
-    directory_search: (
-        Callable[[str, str], tuple[list[ContextBlock[OfflineMatch]], bool]] | None
-    ) = None
+    directory_search: DirectorySearch | None = None
     if args.decision_directory:
         # Оргструктура — по названию (у стенда названия — транслит имён файлов)
         # или по заголовку в первой строке; глоссарий и прочие «справочники» —
@@ -739,7 +766,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if source is None:
             print("--decision-directory: в корпусе нет справочника — добор вектором")
         else:
-            directory_search = _directory_search(source.title, source.markdown)
+            directory_search = _directory_search(
+                source.title,
+                source.markdown,
+                heading=DIRECTORY_HEADING_EXPLAINED
+                if args.decision_answer == "first"
+                else DIRECTORY_HEADING,
+            )
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
     # Без --split holdout золотого набора не берём (select_split, задача 2.1).
@@ -967,6 +1000,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 directory=directory_search,
                 decide_fast=decide_fast if fast_extra else None,
                 recheck=args.decision_recheck,
+                directory_answer=args.decision_answer,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1142,6 +1176,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_recheck_reason": ",".join(decided.recheck_reasons)
                 if decided
                 else "",
+                "decision_answer_mode": (
+                    "first"
+                    if decided.directory_first
+                    else "contact"
+                    if decided.contact
+                    else ""
+                )
+                if decided
+                else "",
+                "decision_contact": decided.contact if decided else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1237,6 +1281,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         + ("-dir" if args.decision_directory else "")
         + ("-recheck" if args.decision_fast_extra else "")
         + ("-role" if args.decision_recheck == "refusals+role" else "")
+        + {"plain": "", "first": "-a1", "contact": f"-a2-{CONTACT_NOTE_VERSION}"}[
+            args.decision_answer
+        ]
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"

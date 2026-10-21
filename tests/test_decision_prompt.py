@@ -3,9 +3,11 @@
 from dataclasses import dataclass, field
 
 from corp_ed.domain.decision import Decision
+from corp_ed.domain.directory import Entry
 from corp_ed.prompts.decision import (
     build_answer_messages,
     build_decision_messages,
+    contact_note,
     decision_response_format,
     decision_schema,
     decision_system_prompt,
@@ -186,3 +188,45 @@ def test_other_subject_note_goes_after_marker() -> None:
     assert noted.endswith("Общие сведения.")
     assert with_other_subject_note(NOT_FOUND_ANSWER, other).endswith("«Старт-ИИ-2».")
     assert with_other_subject_note(general, decision()) == general
+
+
+def test_contact_note_from_entries() -> None:
+    """A2: строка контакта собирается кодом из записей справочника."""
+    cfo = Entry(
+        role="Финансовый директор",
+        unit="",
+        name="Ярослава Игоревна Кукушкина",
+        room="402",
+        phone="1120",
+        email="kukushkina@stk-test.example",
+    )
+    assert contact_note([cfo], 4) == (
+        "Контакт по справочнику: Финансовый директор — Ярослава Игоревна "
+        "Кукушкина, кабинет 402, доб. 1120, kukushkina@stk-test.example; укажи "
+        "его в ответе со ссылкой на выдержку [4]."
+    )
+    hr = Entry(role="", unit="Отдел персонала", name="", room="210")
+    assert contact_note([hr], 1) == (
+        "Контакт по справочнику: Отдел персонала — кабинет 210; укажи его в "
+        "ответе со ссылкой на выдержку [1]."
+    )
+    two = contact_note([cfo, hr], 2)
+    assert two.startswith("Контакты по справочнику: Финансовый директор")
+    assert "; Отдел персонала — кабинет 210; укажи нужный" in two
+    assert contact_note([cfo, hr, cfo], 2) == ""  # неоднозначно — без строки
+    assert contact_note([], 1) == ""
+
+
+def test_answer_messages_with_contact_keep_faq_prompt() -> None:
+    """Строка контакта — только абзац в конце сообщения пользователя;
+    без неё сообщения байт в байт faq-v2.7."""
+    chunks = [Chunk("Отчёт сдаётся главному бухгалтеру."), Chunk("— Бухгалтерия.")]
+    plain = build_answer_messages("Куда?", chunks, decision(match="same"), contact="")
+    assert plain == build_faq_messages("Куда?", chunks)
+    note = "Контакт по справочнику: X; укажи его в ответе со ссылкой на выдержку [2]."
+    got = build_answer_messages("Куда?", chunks, decision(match="same"), contact=note)
+    assert got[0] == plain[0] and got[0].content == _SYSTEM_PROMPT
+    assert got[1].content == plain[1].content + "\n\n" + note
+    # Другая редакция — своя постановка, строку не ставим.
+    edition = build_answer_messages("Куда?", chunks, decision(), contact=note)
+    assert note not in edition[1].content

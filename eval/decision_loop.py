@@ -22,6 +22,15 @@ decide_fast — быстрый вызов решения (reasoning low); есл
 recheck="refusals" — прежний вариант R. Причина перепроверки — в записи
 быстрого решения (поле "recheck") и в DecidedRun.recheck_reasons.
 
+Шаг ответа после справочника (ml-report, «Шаг ответа после справочника»,
+Артём 20.10): directory_answer="plain" — как было (запись последней
+выдержкой); "first" (A1) — перед ответом выдержки справочника переносятся в
+начало shown (номера [n] в ответе и источники — по новому порядку);
+"contact" (A2) — при полном попадании в конец сообщения пользователя
+дописывается строка контакта, собранная кодом из записей (contact_note),
+запись остаётся выдержкой для ссылки. Записи (Entry) справочник отдаёт
+третьим элементом; поиск без него (два элемента) — как раньше, без строки.
+
 Модель, поиск и ответ подставляются функциями — цикл тестируется на
 подделках, а offline_e2e подключает его к нынешнему поиску, порогам BH-37
 и общему ответу. Маршрут — corp_ed.domain.decision.route: реплика; про
@@ -50,6 +59,7 @@ from corp_ed.llm.types import Message
 from corp_ed.prompts.decision import (
     build_answer_messages,
     build_decision_messages,
+    contact_note,
     with_edition_note,
 )
 from corp_ed.prompts.faq import (
@@ -107,6 +117,13 @@ class DecidedRun:
     (decide_fast); в decisions — оба, быстрое первым."""
     recheck_reasons: list[str] = field(default_factory=list)
     """Причина каждой перепроверки: "refusal" или "role" (по порядку)."""
+    directory_found: list[tuple[Any, list[Any], bool]] = field(default_factory=list)
+    """Выдержки справочника, добавленные в shown: (блок, записи Entry,
+    полное ли попадание)."""
+    contact: str = ""
+    """Строка контакта, дописанная в промпт ответа (A2); пусто — не было."""
+    directory_first: bool = False
+    """Выдержки справочника перенесены в начало перед ответом (A1)."""
 
     @property
     def needs_general(self) -> bool:
@@ -120,6 +137,10 @@ def _key(block: Any) -> str:
 
 RECHECK_MODES = ("refusals", "refusals+role")
 """Что перепроверять: только отказы (R) или ещё «хватает» при роли (R2)."""
+
+DIRECTORY_ANSWER_MODES = ("plain", "first", "contact")
+"""Как подать справочник в ответ: как было, первой выдержкой (A1), строкой
+контакта в промпте (A2)."""
 
 
 def _recheck_reason(decision: Decision | None, step: Route, mode: str) -> str | None:
@@ -193,14 +214,19 @@ def run_decided(
     merged: bool = False,
     rule: bool = False,
     speculative: bool = False,
-    directory: Callable[[str, str], tuple[Sequence[SourceChunk], bool]] | None = None,
+    directory: Callable[[str, str], tuple[Any, ...]] | None = None,
     decide_fast: Ask | None = None,
     recheck: str = "refusals",
+    directory_answer: str = "plain",
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
     if recheck not in RECHECK_MODES:
         raise ValueError(f"recheck: {recheck!r} не из {RECHECK_MODES}")
+    if directory_answer not in DIRECTORY_ANSWER_MODES:
+        raise ValueError(
+            f"directory_answer: {directory_answer!r} не из {DIRECTORY_ANSWER_MODES}"
+        )
     shown: list[Any] = list(initial)[:max_excerpts]
     run = DecidedRun(text=NOT_FOUND_ANSWER, route=Route.NOT_FOUND, shown=shown)
     if rule and (fixed := rule_reply(question)) is not None:
@@ -264,12 +290,17 @@ def run_decided(
             role = lookup_role(decision)
             assert role is not None
             seen = {_key(block) for block in shown}
-            blocks, complete = directory(role, decision.missing)
+            result = directory(role, decision.missing)
+            blocks, complete = result[0], bool(result[1])
+            entries = list(result[2]) if len(result) > 2 else []
             found = [b for b in blocks if _key(b) not in seen]
             if found:
                 # Записи справочника — выдержкой сверх лимита (они короткие,
                 # обрезать их нельзя); спекулятивный ответ их не видел.
                 shown.extend(found)
+                run.directory_found.extend(
+                    (block, entries, complete) for block in found
+                )
                 if spec is not None:
                     run.wasted += 1
                     spec = None
@@ -361,9 +392,42 @@ def run_decided(
         else:
             text = spec.text.strip()
     if not text:
-        completion = answer(build_answer_messages(question, shown, decision))
+        contact = _directory_answer(run, shown, directory_answer)
+        completion = answer(
+            build_answer_messages(question, shown, decision, contact=contact)
+        )
         run.calls.append(completion)
         run.wall_ms += completion.latency_ms
         text = completion.text.strip()
     run.text = text if is_not_found(text) else with_edition_note(text, decision)
     return run
+
+
+def _directory_answer(run: DecidedRun, shown: list[Any], mode: str) -> str:
+    """Подача справочника в ответ (A1 / A2); возвращает строку контакта.
+
+    "first" — выдержки справочника в начало shown (тот же список, что
+    run.shown: номера [n] и источники — по новому порядку). "contact" —
+    строка по записям полного попадания с номером его выдержки."""
+    present = [
+        (block, entries, complete)
+        for block, entries, complete in run.directory_found
+        if any(block is item for item in shown)
+    ]
+    if not present:
+        return ""
+    if mode == "first":
+        blocks = [block for block, _, _ in present]
+        rest = [item for item in shown if not any(item is b for b in blocks)]
+        shown[:] = blocks + rest
+        run.directory_first = True
+        return ""
+    if mode == "contact":
+        for block, entries, complete in present:
+            if not complete:
+                continue
+            number = next(k for k, item in enumerate(shown, 1) if item is block)
+            run.contact = contact_note(entries, number)
+            if run.contact:
+                return run.contact
+    return ""
