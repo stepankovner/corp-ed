@@ -28,7 +28,7 @@ from corp_ed.domain.decision import (
     note_end,
     quoted,
 )
-from corp_ed.domain.directory import Entry
+from corp_ed.domain.directory import Entry, Substitute
 from corp_ed.llm.types import Message, Role
 from corp_ed.prompts.faq import (
     _SYSTEM_PROMPT,
@@ -321,18 +321,30 @@ def build_decision_messages(
 CONTACT_NOTE_VERSION = "contact-v1"
 """Вариант A2 шага ответа (ml-report, «Шаг ответа после справочника»):
 строка контакта из записи справочника в конце сообщения пользователя."""
+CONTACT_NOTE_SUBSTITUTE_VERSION = "contact-sub-v1"
+"""Строка контакта для пары замещения (ml-report, «Замещение в
+справочнике»); для обычных записей — CONTACT_NOTE_VERSION без изменений."""
 CONTACT_NOTE_MAX_ENTRIES = 2
 """Больше записей — неоднозначно (до починки T4-09 «директор» давал
 четырёх): строку не ставим, записи остаются только выдержкой."""
 
 
-def contact_note(entries: Sequence[Entry], number: int) -> str:
+def contact_note(entries: Sequence[Entry | Substitute], number: int) -> str:
     """Строка контакта для промпта ответа (A2), собранная кодом из записей
     справочника; number — номер выдержки «Справочник» для ссылки [n].
-    Пусто, если записей нет или их больше CONTACT_NOTE_MAX_ENTRIES."""
+    Пусто, если записей нет или их больше CONTACT_NOTE_MAX_ENTRIES.
+
+    Пара замещения (`Substitute`, CONTACT_NOTE_SUBSTITUTE_VERSION) — одна
+    позиция: в строке оба человека и связь между ними, поэтому «укажи его»
+    неоднозначно — просим того, к кому обращаться в ситуации из вопроса."""
     if not entries or len(entries) > CONTACT_NOTE_MAX_ENTRIES:
         return ""
     texts = "; ".join(entry.text() for entry in entries)
+    if any(isinstance(entry, Substitute) for entry in entries):
+        return (
+            f"Контакты по справочнику: {texts}; укажи в ответе того, к кому "
+            f"обращаться в ситуации из вопроса, со ссылкой на выдержку [{number}]."
+        )
     if len(entries) == 1:
         return (
             f"Контакт по справочнику: {texts}; укажи его в ответе со ссылкой "

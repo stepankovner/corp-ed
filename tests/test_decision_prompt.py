@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from corp_ed.domain.decision import Decision
-from corp_ed.domain.directory import Entry
+from corp_ed.domain.directory import Entry, Substitute
 from corp_ed.prompts.decision import (
     build_answer_messages,
     build_decision_messages,
@@ -215,6 +215,39 @@ def test_contact_note_from_entries() -> None:
     assert "; Отдел персонала — кабинет 210; укажи нужный" in two
     assert contact_note([cfo, hr, cfo], 2) == ""  # неоднозначно — без строки
     assert contact_note([], 1) == ""
+
+
+def test_contact_note_with_substitute_pair() -> None:
+    """Пара замещения — одна позиция; в строке оба и связь, ответ — про
+    того, к кому идти в ситуации из вопроса."""
+    cup = Entry(
+        role="руководитель",
+        unit="Центр учёта поставок (ЦУП)",
+        name="Мирон Аркадьевич Черепашкин",
+        room="118",
+        deputy="Финансовый директор",
+        deputy_note="если заместитель не назначен, вопросы решает вышестоящий "
+        "руководитель",
+    )
+    cfo = Entry(
+        role="Финансовый директор",
+        unit="",
+        name="Ярослава Игоревна Кукушкина",
+        room="402",
+    )
+    pair = Substitute(absent=cup, deputy=cfo)
+    assert contact_note([pair], 6) == (
+        "Контакты по справочнику: Центр учёта поставок (ЦУП) — руководитель — "
+        "Мирон Аркадьевич Черепашкин, кабинет 118; при отсутствии: если "
+        "заместитель не назначен, вопросы решает вышестоящий руководитель — "
+        "Финансовый директор — Ярослава Игоревна Кукушкина, кабинет 402; укажи в "
+        "ответе того, к кому обращаться в ситуации из вопроса, со ссылкой на "
+        "выдержку [6]."
+    )
+    assert contact_note([pair, pair], 6).startswith("Контакты по справочнику:")
+    assert contact_note([pair, pair, pair], 6) == ""
+    # Обычные записи — строка contact-v1 без изменений.
+    assert contact_note([cfo], 1).startswith("Контакт по справочнику: Финансовый")
 
 
 def test_answer_messages_with_contact_keep_faq_prompt() -> None:
