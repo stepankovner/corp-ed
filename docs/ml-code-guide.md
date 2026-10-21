@@ -640,6 +640,14 @@ sufficiency none — то же решение переспрашивается �
 пользователя при полном попадании с 1–2 записями; справочник отдаёт записи
 `Entry` третьим элементом). Колонки `decision_answer_mode`,
 `decision_contact`. Итоги — `ml-report.md`, «Шаг ответа после справочника».
+`--decision-substitution` (21.10, фаза 0): с `--decision-directory` — если в
+роли или «чего не хватает» есть слова о замещении (`substitution_requested`),
+справочник отдаёт пары `Substitute` «отсутствующий → замещающий»
+(`lookup_substitute`; замещающий — `Entry.deputy` из явных фраз или, при
+правиле «вопросы решает вышестоящий руководитель», из «Подчинённости»);
+нет пар — обычный `lookup`. `format_entries`, `covers`, `contact_note`
+принимают пары (поля — замещающего; строка `contact-sub-v1`). Итоги —
+`ml-report.md`, «Замещение в справочнике».
 
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов
@@ -906,9 +914,10 @@ src/corp_ed/
   prompts/agent.py         промпт агента agent-v1 и инструмент search_documents (прототип)
   domain/decision.py       решение до ответа: pydantic-схема Decision, маршрут, оговорка
   domain/small_talk.py     реплики и вопросы об ассистенте — правилом в коде
-  domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4)
+  domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4),
+                           замещение: Entry.deputy, substitution_requested, lookup_substitute, Substitute
   prompts/decision.py      промпт решения decision-v5, схема для запроса, ответ по решению,
-                           ответ при другой редакции edition-v1, строка контакта contact-v1
+                           ответ при другой редакции edition-v1, строка контакта contact-v1 / contact-sub-v1
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
   prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)
