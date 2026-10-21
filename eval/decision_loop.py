@@ -38,8 +38,28 @@ recheck="refusals" — прежний вариант R. Причина пере�
 — добор (не больше max_extra, выдержек не больше max_excerpts) и снова
 решение; иначе — ответ по тому, что есть. Решение не прошло схему — откат на
 обычный ответ по выдержкам.
+
+Фаза 1 (ml-report, «Фаза 1: хвост отказов, отсечение спекуляции, таймаут»,
+план §10.2 п. 1–2, §10.1 п. 3; по умолчанию всё выключено — как было):
+- speculation_skip — правила, по которым спекулятивный ответ не запускается
+  (признаки до решения: вопрос о контакте, «кто», зона шлюза, одна
+  выдержка); вызывающий передаёт speculative=False и пишет причину;
+- refusal_parallel=True — при отказе быстрого решения («ничего» / «про
+  другое») общий ответ (build_general_messages) идёт параллельно с
+  перепроверкой: время low + max(medium, общий); перепроверка вернула не
+  отказ — общий ответ выброшен (wasted_general). Готовый общий ответ —
+  DecidedRun.general, вызывающий второй раз его не просит;
+- таймаут: decide / decide_fast могут бросить TimeoutError (eval.providers
+  .CallTimeoutError, complete(timeout=…)) — откат на обычный ответ:
+  спекулятивный, если есть, иначе вызов ответа по выдержкам (faq-v2.7);
+  выдержек нет — «ответа нет» и общий ответ. DecidedRun.timeout_reason —
+  "fast" или "recheck".
+Время каждого вызова по порядку — DecidedRun.steps; причина каждого
+выброшенного спекулятивного ответа — wasted_reasons.
 """
 
+import re
+import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -124,6 +144,24 @@ class DecidedRun:
     """Строка контакта, дописанная в промпт ответа (A2); пусто — не было."""
     directory_first: bool = False
     """Выдержки справочника перенесены в начало перед ответом (A1)."""
+    wasted_reasons: list[str] = field(default_factory=list)
+    """Почему выброшен каждый спекулятивный ответ: directory, search,
+    refusal, small_talk, edition."""
+    steps: list[tuple[str, float]] = field(default_factory=list)
+    """Вызовы по порядку и их время, мс: fast / decide / recheck (с
+    «!timeout» — не дождались), spec, answer, small_talk, general∥."""
+    general: Completion | None = None
+    """Общий ответ, готовый параллельно с перепроверкой (refusal_parallel);
+    его токены — в calls, время — в wall_ms."""
+    wasted_general: int = 0
+    """Общих ответов выброшено: перепроверка вернула не отказ."""
+    timeout_reason: str = ""
+    """Таймаут шага решения: "fast" (быстрый вызов или единственный),
+    "recheck" (перепроверка); пусто — не было."""
+
+    @property
+    def timeout(self) -> bool:
+        return bool(self.timeout_reason)
 
     @property
     def needs_general(self) -> bool:
@@ -141,6 +179,46 @@ RECHECK_MODES = ("refusals", "refusals+role")
 DIRECTORY_ANSWER_MODES = ("plain", "first", "contact")
 """Как подать справочник в ответ: как было, первой выдержкой (A1), строкой
 контакта в промпте (A2)."""
+
+SPECULATION_GATES = ("contact", "who", "gate", "single")
+"""Правила отсечения спекулятивного ответа (фаза 1) — по признакам до
+решения: contact — вопрос просит ФИО / кабинет / телефон / почту (при
+попадании в справочник спекулятивный ответ выбрасывается всегда); who —
+«кто» / «кому» (роль); gate — лучшая дистанция в зоне шлюза BH-37 (дальше
+max_distance); single — одна выдержка."""
+
+_CONTACT = re.compile(
+    r"фио|фамили|\bимя\b|\bимени\b|отчеств|зовут|кабинет|комнат|телефон|"
+    r"добавочн|\bдоб\b|e-?mail|почт",
+    re.IGNORECASE,
+)
+_WHO = re.compile(r"\bкто\b|\bкому\b", re.IGNORECASE)
+
+
+def speculation_skip(
+    question: str,
+    excerpts: int,
+    best_distance: float | None,
+    *,
+    rules: Sequence[str],
+    max_distance: float,
+) -> str | None:
+    """Первое сработавшее правило отсечения (None — спекулировать)."""
+    for rule in rules:
+        if rule not in SPECULATION_GATES:
+            raise ValueError(f"правило {rule!r} не из {SPECULATION_GATES}")
+        if (
+            (rule == "contact" and _CONTACT.search(question.replace("ё", "е")))
+            or (rule == "who" and _WHO.search(question))
+            or (
+                rule == "gate"
+                and best_distance is not None
+                and best_distance > max_distance
+            )
+            or (rule == "single" and excerpts == 1)
+        ):
+            return rule
+    return None
 
 
 def _recheck_reason(decision: Decision | None, step: Route, mode: str) -> str | None:
@@ -168,6 +246,13 @@ class _Decided:
     records: list[dict[str, Any]]
     rechecked: bool = False
     reason: str | None = None
+    wall_ms: float = 0.0
+    steps: list[tuple[str, float]] = field(default_factory=list)
+    general: Completion | None = None
+    timeout: str = ""
+
+
+_REFUSALS = (Route.NOT_FOUND, Route.OTHER_SUBJECT)
 
 
 def _decide_chain(
@@ -178,24 +263,69 @@ def _decide_chain(
     can_search: bool,
     directory: bool,
     recheck: str = "refusals",
+    general: Callable[[], Completion] | None = None,
 ) -> _Decided:
     """Одно решение: быстрый вызов и, при отказе (или «хватает + роль» в
-    режиме refusals+role), перепроверка обычным."""
+    режиме refusals+role), перепроверка обычным. general — общий ответ:
+    при отказе быстрого («ничего» / «про другое») — параллельно с
+    перепроверкой. Таймаут вызова (TimeoutError) — решения нет, timeout."""
 
-    def once(ask: Ask) -> tuple[Completion, Decision | None, Route, dict[str, Any]]:
-        completion = ask(messages)
+    def once(
+        ask: Ask, label: str
+    ) -> tuple[Completion | None, Decision | None, Route, dict[str, Any], float]:
+        started = time.perf_counter()
+        try:
+            completion = ask(messages)
+        except TimeoutError as exc:
+            elapsed = getattr(exc, "elapsed_ms", None)
+            ms = (
+                float(elapsed)
+                if elapsed is not None
+                else (time.perf_counter() - started) * 1000
+            )
+            return None, None, Route.ANSWER, {"timeout": label}, ms
         decision = parse_decision(completion.text)
+        ms = completion.latency_ms
         if decision is None:
-            return completion, None, Route.ANSWER, {"invalid": completion.text[:500]}
+            record = {"invalid": completion.text[:500]}
+            return completion, None, Route.ANSWER, record, ms
         step = route(decision, can_search=can_search, directory=directory)
-        return completion, decision, step, decision.model_dump()
+        return completion, decision, step, decision.model_dump(), ms
 
-    completion, decision, step, record = once(decide_fast or decide)
-    result = _Decided([completion], decision, step, [record])
+    label = "fast" if decide_fast is not None else "decide"
+    completion, decision, step, record, ms = once(decide_fast or decide, label)
+    result = _Decided(
+        [completion] if completion is not None else [],
+        decision,
+        step,
+        [record],
+        wall_ms=ms,
+        steps=[(label if completion is not None else f"{label}!timeout", ms)],
+    )
+    if completion is None:
+        result.timeout = "fast"
+        return result
     reason = _recheck_reason(decision, step, recheck)
     if decide_fast is not None and reason is not None:
-        completion, decision, step, record = once(decide)
-        result.completions.append(completion)
+        if general is not None and reason == "refusal" and step in _REFUSALS:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                recheck_f = pool.submit(once, decide, "recheck")
+                general_f = pool.submit(general)
+                completion, decision, step, record, ms = recheck_f.result()
+                result.general = general_f.result()
+            result.wall_ms += max(ms, result.general.latency_ms)
+        else:
+            completion, decision, step, record, ms = once(decide, "recheck")
+            result.wall_ms += ms
+        result.steps.append(
+            ("recheck" if completion is not None else "recheck!timeout", ms)
+        )
+        if result.general is not None:
+            result.steps.append(("general∥", result.general.latency_ms))
+        if completion is not None:
+            result.completions.append(completion)
+        else:
+            result.timeout = "recheck"
         result.records[0] = {**result.records[0], "fast": True, "recheck": reason}
         result.records.append(record)
         result.decision, result.step, result.rechecked = decision, step, True
@@ -218,6 +348,53 @@ def run_decided(
     decide_fast: Ask | None = None,
     recheck: str = "refusals",
     directory_answer: str = "plain",
+    refusal_parallel: bool = False,
+    max_extra: int = MAX_EXTRA_SEARCHES,
+    max_excerpts: int = MAX_EXCERPTS,
+) -> DecidedRun:
+    """Цикл решения (см. докстринг модуля). Общий ответ, готовый параллельно с
+    перепроверкой, остаётся в run.general, только если он и нужен (ответа по
+    документам нет); иначе — выброшен (wasted_general)."""
+    run = _run_decided(
+        question,
+        initial,
+        decide=decide,
+        answer=answer,
+        search=search,
+        reasoning=reasoning,
+        merged=merged,
+        rule=rule,
+        speculative=speculative,
+        directory=directory,
+        decide_fast=decide_fast,
+        recheck=recheck,
+        directory_answer=directory_answer,
+        refusal_parallel=refusal_parallel,
+        max_extra=max_extra,
+        max_excerpts=max_excerpts,
+    )
+    if run.general is not None and not run.needs_general:
+        run.general = None
+        run.wasted_general += 1
+    return run
+
+
+def _run_decided(
+    question: str,
+    initial: Sequence[SourceChunk],
+    *,
+    decide: Ask,
+    answer: Ask,
+    search: Callable[[str], Sequence[SourceChunk]],
+    reasoning: bool = False,
+    merged: bool = False,
+    rule: bool = False,
+    speculative: bool = False,
+    directory: Callable[[str, str], tuple[Any, ...]] | None = None,
+    decide_fast: Ask | None = None,
+    recheck: str = "refusals",
+    directory_answer: str = "plain",
+    refusal_parallel: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -239,6 +416,14 @@ def run_decided(
         return run
     searches = 0
     spec: Completion | None = None
+
+    def general() -> Completion:
+        return answer(build_general_messages(question))
+
+    def discard(reason: str) -> None:
+        run.wasted += 1
+        run.wasted_reasons.append(reason)
+
     while True:
         can_search = searches < max_extra and len(shown) < max_excerpts
         messages = build_decision_messages(
@@ -259,6 +444,7 @@ def run_decided(
                 can_search=can,
                 directory=directory is not None,
                 recheck=recheck,
+                general=general if refusal_parallel else None,
             )
 
         if speculative and not merged and not searches and shown:
@@ -270,12 +456,17 @@ def run_decided(
                 decided, spec = decided_f.result(), spec_f.result()
             run.speculated = True
             run.calls.append(spec)
-            run.wall_ms += max(
-                sum(c.latency_ms for c in decided.completions), spec.latency_ms
-            )
+            run.steps.append(("spec", spec.latency_ms))
+            run.wall_ms += max(decided.wall_ms, spec.latency_ms)
         else:
             decided = chain()
-            run.wall_ms += sum(c.latency_ms for c in decided.completions)
+            run.wall_ms += decided.wall_ms
+        run.steps.extend(decided.steps)
+        if decided.general is not None:
+            run.calls.append(decided.general)
+            if run.general is not None:  # прежний не понадобился
+                run.wasted_general += 1
+            run.general = decided.general
         run.calls.extend(decided.completions)
         run.decision_calls.extend(decided.completions)
         run.rechecked += decided.rechecked
@@ -284,6 +475,13 @@ def run_decided(
         decision, step = decided.decision, decided.step
         run.decision = decision
         run.decisions.extend(decided.records)
+        if decided.timeout:
+            # Таймаут решения — откат на обычный ответ (спекулятивный, если
+            # есть, иначе вызов ответа); выдержек нет — «ответа нет».
+            run.timeout_reason = decided.timeout
+            if not shown:
+                step = Route.NOT_FOUND
+            break
         if decision is None:
             run.invalid += 1
         if step is Route.DIRECTORY and decision is not None and directory is not None:
@@ -302,7 +500,7 @@ def run_decided(
                     (block, entries, complete) for block in found
                 )
                 if spec is not None:
-                    run.wasted += 1
+                    discard("directory")
                     spec = None
             if found and complete:
                 # Все запрошенные поля есть — сразу ответ: второе решение и
@@ -333,7 +531,7 @@ def run_decided(
             if new:
                 shown.extend(new)
                 if spec is not None:
-                    run.wasted += 1
+                    discard("search")
                     spec = None
                 continue
             # Добор ничего не дал — решаем по тому, что есть.
@@ -364,6 +562,7 @@ def run_decided(
         else:
             completion = answer(build_general_messages(question, small_talk=True))
             run.calls.append(completion)
+            run.steps.append(("small_talk", completion.latency_ms))
             run.wall_ms += completion.latency_ms
             reply = small_talk_reply(completion.text.strip())
             if reply is None:  # модель всё же сочла это вопросом
@@ -372,12 +571,12 @@ def run_decided(
             else:
                 run.text = drop_citations(reply)
         if spec is not None:
-            run.wasted += 1
+            discard("small_talk")
         return run
-    if step in (Route.OTHER_SUBJECT, Route.NOT_FOUND):
+    if step in _REFUSALS:
         run.text = NOT_FOUND_ANSWER
         if spec is not None:
-            run.wasted += 1
+            discard("refusal")
         return run
     # Ответ по выдержкам: спекулятивный, если он есть и годится; в варианте
     # одним вызовом — поле ответа; иначе отдельный вызов (и при откате, и
@@ -388,7 +587,7 @@ def run_decided(
     text = decision.answer.strip() if merged and decision is not None else ""
     if not text and spec is not None:
         if edition:
-            run.wasted += 1
+            discard("edition")
         else:
             text = spec.text.strip()
     if not text:
@@ -397,6 +596,7 @@ def run_decided(
             build_answer_messages(question, shown, decision, contact=contact)
         )
         run.calls.append(completion)
+        run.steps.append(("answer", completion.latency_ms))
         run.wall_ms += completion.latency_ms
         text = completion.text.strip()
     run.text = text if is_not_found(text) else with_edition_note(text, decision)

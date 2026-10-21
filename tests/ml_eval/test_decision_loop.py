@@ -9,8 +9,14 @@ import pytest
 from corp_ed.domain.decision import Route
 from corp_ed.domain.directory import Entry
 from corp_ed.llm.types import Message
-from corp_ed.prompts.faq import NOT_FOUND_ANSWER, SMALL_TALK_PREFIX
-from eval.decision_loop import run_decided
+from corp_ed.prompts.faq import (
+    NOT_FOUND_ANSWER,
+    SMALL_TALK_PREFIX,
+    build_faq_messages,
+    build_general_messages,
+)
+from eval.decision_loop import run_decided, speculation_skip
+from eval.providers import CallTimeoutError
 from eval.yandex import Completion
 
 
@@ -779,3 +785,226 @@ def test_directory_answer_mode_checked() -> None:
             search=no_search,
             directory_answer="code",
         )
+
+
+# --- Фаза 1: отсечение спекуляции, параллельный общий ответ, таймаут ---
+
+
+def test_speculation_skip_rules() -> None:
+    def skip(question: str, excerpts: int = 3, best: float | None = 0.5, *rules: str):
+        return speculation_skip(
+            question, excerpts, best, rules=rules, max_distance=0.59
+        )
+
+    assert skip("Назови ФИО и кабинет", 3, 0.5, "contact") == "contact"
+    assert skip("Какой добавочный телефон у бухгалтерии?", 3, 0.5, "contact")
+    assert skip("Сколько дней отпуска?", 3, 0.5, "contact") is None
+    assert skip("Кто согласует закупку?", 3, 0.5, "who") == "who"
+    assert skip("Кому писать заявление?", 3, 0.5, "who") == "who"
+    assert skip("Сколько дней отпуска?", 3, 0.5, "who") is None
+    assert skip("Сколько дней отпуска?", 3, 0.65, "gate") == "gate"
+    assert skip("Сколько дней отпуска?", 3, 0.59, "gate") is None
+    assert skip("Сколько дней отпуска?", 3, None, "gate") is None
+    assert skip("Сколько дней отпуска?", 1, 0.5, "single") == "single"
+    # Первое сработавшее правило — по порядку списка.
+    assert skip("Кто (ФИО)?", 1, 0.65, "single", "contact") == "single"
+    assert skip("Сколько?", 3, 0.5) is None
+    with pytest.raises(ValueError):
+        skip("Сколько?", 3, 0.5, "magic")
+
+
+def test_wasted_reasons_recorded() -> None:
+    run = run_decided(
+        "Кто (ФИО)?",
+        [Chunk("а")],
+        decide=Script(
+            decision(sufficiency="partial", search_query="ФИО директора"), decision()
+        ),
+        answer=Script("черновик [1]", "Кукушкина [2]."),
+        search=lambda q: [Chunk("б")],
+        speculative=True,
+    )
+    assert run.wasted_reasons == ["search"]
+    assert [label for label, _ in run.steps] == ["spec", "decide", "decide", "answer"]
+
+
+class ByPrompt:
+    """Подделка ответа: общий ответ (build_general_messages) и ответ по
+    выдержкам различает по сообщениям — вызовы идут из разных потоков."""
+
+    def __init__(self, question: str, *, general: Completion, faq: Completion) -> None:
+        self.general_messages = build_general_messages(question)
+        self.general, self.faq = general, faq
+        self.calls: list[str] = []
+
+    def __call__(self, messages: list[Message]) -> Completion:
+        if messages == self.general_messages:
+            self.calls.append("general")
+            return self.general
+        self.calls.append("faq")
+        return self.faq
+
+
+def test_refusal_parallel_general_used_when_recheck_confirms() -> None:
+    question = "Есть ли в компании ипотека?"
+    nothing = decision(sufficiency="none")
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет. Обычно…", 2000.0),
+        faq=timed("черновик", 1500.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Timed((nothing, 3000.0)),
+        decide_fast=Timed((nothing, 1000.0)),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+        refusal_parallel=True,
+    )
+    assert run.route is Route.NOT_FOUND and run.needs_general
+    assert run.general is not None and run.general.text.startswith("В документах")
+    assert run.wasted_general == 0 and run.wasted == 1
+    assert sorted(answer.calls) == ["faq", "general"]
+    # low + max(medium, общий) = 1000 + 3000; спекулятивный — параллельно.
+    assert run.wall_ms == 4000.0
+    assert run.general in run.calls
+    labels = [label for label, _ in run.steps]
+    assert labels[:1] == ["spec"] and labels[1:] == ["fast", "recheck", "general∥"]
+
+
+def test_refusal_parallel_general_wasted_when_recheck_flips() -> None:
+    question = "Кто согласует закупку?"
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет.", 4000.0),
+        faq=timed("Согласует директор [1].", 1000.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Timed((decision(), 2000.0)),
+        decide_fast=Timed((decision(sufficiency="none"), 1000.0)),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+        refusal_parallel=True,
+    )
+    assert run.route is Route.ANSWER and run.text == "Согласует директор [1]."
+    assert run.general is None and run.wasted_general == 1
+    # Время — по самому долгому из пары (общий ответ 4 с): плата за параллель.
+    assert run.wall_ms == 5000.0
+    assert len(run.calls) == 4  # спекулятивный, low, medium, общий
+
+
+def test_refusal_parallel_only_on_refusal_routes() -> None:
+    # «хватает + роль» (R2) и отказ без быстрого решения — общий не запускается.
+    question = "Кто согласует?"
+    answer = ByPrompt(
+        question,
+        general=timed("общий", 1.0),
+        faq=timed("Директор [1].", 1.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(decision()),
+        decide_fast=Script(decision(lookup_role="финансовый директор")),
+        answer=answer,
+        search=no_search,
+        recheck="refusals+role",
+        refusal_parallel=True,
+    )
+    assert "general" not in answer.calls and run.wasted_general == 0
+    run = run_decided(
+        "Есть ли ипотека?",
+        [Chunk("а")],
+        decide=Script(decision(sufficiency="none")),
+        answer=Script(),
+        search=no_search,
+        refusal_parallel=True,
+    )
+    assert run.general is None and run.route is Route.NOT_FOUND
+
+
+class Late:
+    """Подделка решения, которое не уложилось в таймаут."""
+
+    def __init__(self, elapsed_ms: float = 8000.0) -> None:
+        self.elapsed_ms = elapsed_ms
+        self.calls = 0
+
+    def __call__(self, messages: list[Message]) -> Completion:
+        self.calls += 1
+        raise CallTimeoutError("cloudru", self.elapsed_ms)
+
+
+def test_timeout_on_fast_falls_back_to_speculative_answer() -> None:
+    slow = Script()
+    run = run_decided(
+        "Сколько дней отпуска?",
+        [Chunk("а")],
+        decide=slow,
+        decide_fast=Late(),
+        answer=Timed(("28 дней [1].", 1500.0)),
+        search=no_search,
+        speculative=True,
+    )
+    assert run.timeout and run.timeout_reason == "fast"
+    assert run.text == "28 дней [1]." and run.wasted == 0 and run.invalid == 0
+    assert slow.seen == [] and run.decision_calls == []
+    assert run.wall_ms == 8000.0
+    assert run.steps == [("spec", 1500.0), ("fast!timeout", 8000.0)]
+
+
+def test_timeout_without_speculation_calls_answer() -> None:
+    answer = Script("28 дней [1].")
+    run = run_decided(
+        "Сколько дней отпуска?",
+        [Chunk("а")],
+        decide=Late(),
+        answer=answer,
+        search=no_search,
+    )
+    assert run.timeout_reason == "fast" and run.route is Route.ANSWER
+    assert run.text == "28 дней [1]." and len(answer.seen) == 1
+    # Обычный ответ — faq-v2.7 по выдержкам (без строки контакта).
+    assert answer.seen[0] == build_faq_messages("Сколько дней отпуска?", [Chunk("а")])
+
+
+def test_timeout_without_excerpts_is_not_found() -> None:
+    run = run_decided(
+        "Есть ли ипотека?",
+        [],
+        decide=Late(),
+        answer=Script(),
+        search=no_search,
+    )
+    assert run.timeout and run.route is Route.NOT_FOUND and run.needs_general
+
+
+def test_timeout_on_recheck_keeps_parallel_general_if_needed() -> None:
+    question = "Есть ли ипотека?"
+    late = Late(8000.0)
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет.", 2000.0),
+        faq=timed(NOT_FOUND_ANSWER, 1000.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=late,
+        decide_fast=Timed((decision(sufficiency="none"), 1000.0)),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+        refusal_parallel=True,
+    )
+    # Перепроверка не уложилась — откат на спекулятивный ответ; он — отказ,
+    # и готовый общий ответ пригодился.
+    assert run.timeout_reason == "recheck" and late.calls == 1
+    assert run.needs_general and run.general is not None and run.wasted_general == 0
+    assert run.wall_ms == 9000.0  # low + max(8000, 2000)
+    assert run.decisions[-1] == {"timeout": "recheck"}

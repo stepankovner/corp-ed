@@ -671,3 +671,44 @@ def test_directory_search_returns_context_blocks_with_source() -> None:
     assert explained("финансовый директор", "ФИО")[0][0].heading_path == [
         "Справочник: x"
     ]
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        # gated — только со спекуляцией и хотя бы одним правилом
+        ["--decision-speculate", "gated", "--decision-speculative"],
+        ["--decision-speculate", "gated", "--decision-gate", "contact"],
+        ["--decision-speculative", "--decision-gate", "contact"],
+        [
+            "--decision-speculative",
+            "--decision-speculate",
+            "gated",
+            "--decision-gate",
+            "magic",
+        ],
+        # параллельный общий ответ — только с быстрым решением и general
+        ["--decision-refusal-parallel"],
+        [
+            "--decision-refusal-parallel",
+            "--decision-fast-extra",
+            '{"reasoning_effort": "low"}',
+            "--not-found",
+            "strict",
+        ],
+        # таймаут — только у OpenAI-совместимых поставщиков решения
+        ["--decision-timeout", "8"],
+    ],
+)
+def test_phase1_flags_validated(
+    flags: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["--corpus", "c", "--dataset", "d", "--decision", "separate", *flags]
+    assert offline_e2e.main(argv) == 2
+    assert "--decision-" in capsys.readouterr().out
+
+
+def test_phase1_defaults_keep_old_behaviour() -> None:
+    args = offline_e2e._parser().parse_args(["--corpus", "c", "--dataset", "d"])
+    assert (args.decision_speculate, args.decision_gate) == ("always", "")
+    assert not args.decision_refusal_parallel and args.decision_timeout == 0.0

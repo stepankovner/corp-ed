@@ -114,8 +114,10 @@ from eval.datasets import EvalItem, load_dataset, select_split
 from eval.decision_loop import (
     DIRECTORY_ANSWER_MODES,
     RECHECK_MODES,
+    SPECULATION_GATES,
     DecidedRun,
     run_decided,
+    speculation_skip,
 )
 from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.metrics import percentile
@@ -628,6 +630,36 @@ def _parser() -> argparse.ArgumentParser:
         help="попытка 3: ответ Flash по первым выдержкам параллельно с решением",
     )
     parser.add_argument(
+        "--decision-speculate",
+        choices=("always", "gated"),
+        default="always",
+        help="фаза 1: always — спекулятивный ответ на каждом вопросе с выдержками "
+        "(как было); gated — не запускать его, если сработало правило "
+        "--decision-gate (признаки до решения)",
+    )
+    parser.add_argument(
+        "--decision-gate",
+        default="",
+        help="фаза 1: правила отсечения спекуляции через запятую — "
+        + ", ".join(SPECULATION_GATES)
+        + " (см. eval.decision_loop.SPECULATION_GATES)",
+    )
+    parser.add_argument(
+        "--decision-refusal-parallel",
+        action="store_true",
+        help="фаза 1: при отказе low («ничего» / «про другое») общий ответ — "
+        "параллельно с перепроверкой на medium; перепроверка вернула не отказ — "
+        "общий ответ выброшен (decision_wasted_general)",
+    )
+    parser.add_argument(
+        "--decision-timeout",
+        type=float,
+        default=0.0,
+        help="фаза 1: таймаут (с) на каждый вызов решения и перепроверки, без "
+        "повторов; по истечении — обычный ответ (спекулятивный или вызов Flash). "
+        "0 — без таймаута (как было: httpx 60 с и до 5 попыток)",
+    )
+    parser.add_argument(
         "--decision-directory",
         action="store_true",
         help="decision-v4: справочник оргструктуры как таблица — поиск по должности "
@@ -715,6 +747,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.decision_answer != "plain" and not args.decision_directory:
         print("--decision-answer: только с --decision-directory")
+        return 2
+    gates = [g.strip() for g in args.decision_gate.split(",") if g.strip()]
+    if args.decision_speculate == "gated" and not (args.decision_speculative and gates):
+        print(
+            "--decision-speculate gated: только с --decision-speculative и "
+            "--decision-gate"
+        )
+        return 2
+    if gates and args.decision_speculate != "gated":
+        print("--decision-gate: только с --decision-speculate gated")
+        return 2
+    if any(g not in SPECULATION_GATES for g in gates):
+        print(f"--decision-gate: правила из {', '.join(SPECULATION_GATES)}")
+        return 2
+    if args.decision_refusal_parallel and not (
+        args.decision_fast_extra and args.not_found == "general"
+    ):
+        print(
+            "--decision-refusal-parallel: только с --decision-fast-extra и "
+            "--not-found general"
+        )
+        return 2
+    if args.decision_timeout and (
+        args.decision == "off"
+        or (args.decision_provider or args.llm_provider) not in ("mws", "cloudru")
+    ):
+        # Таймаут без повторов сделан у OpenAI-совместимых поставщиков
+        # (eval.providers); у клиента Яндекса его нет.
+        print("--decision-timeout: только с --decision-provider mws или cloudru")
         return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
@@ -908,6 +969,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) -> Completion:
         assert decision_client is not None
         extra = extra or decision_extra
+        # Фаза 1: таймаут — только у поставщиков eval.providers (проверено
+        # при разборе флагов).
+        timeout = {"timeout": args.decision_timeout} if args.decision_timeout else {}
         return decision_client.complete(
             messages,
             model=args.decision_model or args.model,
@@ -915,6 +979,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_tokens=args.decision_max_tokens,
             api="openai",
             response_format=decision_format,
+            **timeout,
             **(
                 {"extra": extra}
                 if extra
@@ -967,6 +1032,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         decided: DecidedRun | None = None
         decision_calls: list[Completion] = []
         first_decision = ""
+        initial_count = len(selected)
+        spec_skip = (
+            speculation_skip(
+                item.question,
+                len(selected),
+                best,
+                rules=gates,
+                max_distance=args.max_distance,
+            )
+            if args.decision_speculate == "gated" and selected
+            else None
+        )
         if args.decision_only and not args.dry_run:
             calls.append(
                 decide(
@@ -996,11 +1073,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reasoning=args.decision_reasoning,
                 merged=args.decision == "merged",
                 rule=args.decision_rule,
-                speculative=args.decision_speculative,
+                speculative=args.decision_speculative and spec_skip is None,
                 directory=directory_search,
                 decide_fast=decide_fast if fast_extra else None,
                 recheck=args.decision_recheck,
                 directory_answer=args.decision_answer,
+                refusal_parallel=args.decision_refusal_parallel,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1094,10 +1172,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         ):
             # Решение: ответа по документам нет — общий ответ с пометкой; на
             # реплики решение отвечает само, поэтому промпт общего ответа
-            # прежний (без правила реплик).
-            calls.append(ask(build_general_messages(item.question)))
+            # прежний (без правила реплик). Фаза 1: готов параллельно с
+            # перепроверкой — второй раз не просим (он уже в calls и wall_ms).
+            if decided.general is None:
+                calls.append(ask(build_general_messages(item.question)))
+            general_text = (decided.general or calls[-1]).text.strip()
             answer = with_other_subject_note(
-                ensure_general_prefix(calls[-1].text.strip()), decided.decision
+                ensure_general_prefix(general_text), decided.decision
             )
             general = True
         elif mode == "general" and not args.dry_run and needs_general:
@@ -1118,8 +1199,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         latency = (
             decided.wall_ms if decided is not None else sum(c.latency_ms for c in calls)
         )
-        if decided is not None and general:
+        if decided is not None and general and decided.general is None:
             latency += calls[-1].latency_ms  # общий ответ — после цикла
+            decided.steps.append(("general", calls[-1].latency_ms))
         tokens_in = sum(c.input_tokens for c in calls)
         tokens_out = sum(c.output_tokens for c in calls)
         reasoning = sum(c.reasoning_tokens for c in calls)
@@ -1186,6 +1268,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if decided
                 else "",
                 "decision_contact": decided.contact if decided else "",
+                # Фаза 1: признаки до решения и время по шагам — для разбора.
+                "decision_initial": initial_count if decided else "",
+                "decision_spec_skip": spec_skip or "",
+                "decision_wasted_reason": ",".join(decided.wasted_reasons)
+                if decided
+                else "",
+                "decision_steps": json.dumps(
+                    [[label, round(ms)] for label, ms in decided.steps],
+                    ensure_ascii=False,
+                )
+                if decided
+                else "",
+                "decision_general_parallel": decided.general is not None
+                if decided
+                else "",
+                "decision_wasted_general": decided.wasted_general if decided else "",
+                "decision_timeout": decided.timeout if decided else "",
+                "decision_timeout_reason": decided.timeout_reason if decided else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),

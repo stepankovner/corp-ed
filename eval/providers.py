@@ -51,6 +51,19 @@ class ProviderError(RuntimeError):
         self.body = body
 
 
+class CallTimeoutError(TimeoutError):
+    """Вызов не уложился в таймаут complete(timeout=…) — без повторов.
+
+    elapsed_ms — сколько прошло с начала вызова (для времени по стене).
+    Соединение закрывает клиент; продолжает ли поставщик генерацию и берёт
+    ли за неё деньги — не известно, токенов прерванного вызова нет."""
+
+    def __init__(self, provider: str, elapsed_ms: float) -> None:
+        super().__init__(f"{provider}: таймаут вызова, {elapsed_ms:.0f} мс")
+        self.provider = provider
+        self.elapsed_ms = elapsed_ms
+
+
 class OpenAICompatibleClient:
     """Синхронный клиент /chat/completions и /embeddings с повторами при 429."""
 
@@ -135,8 +148,15 @@ class OpenAICompatibleClient:
         api: str = "openai",
         response_format: dict[str, Any] | None = None,
         extra: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> Completion:
-        """Как YandexClient.complete с api="openai"; api другим быть не может."""
+        """Как YandexClient.complete с api="openai"; api другим быть не может.
+
+        timeout (с) — срок на весь вызов (фаза 1, таймаут шага решения): таймаут
+        запроса httpx — остаток срока, повторов после таймаута нет (иначе
+        таймаут чтения — подкласс TransportError — повторялся бы до 5 раз),
+        по истечении — CallTimeoutError. Срок держится на соединение, запись и
+        чтение по отдельности: для ответа без стрима это почти всё время."""
         if api != "openai":
             raise ValueError(f"{self.provider}: только OpenAI-совместимый API")
         payload: dict[str, Any] = {
@@ -153,7 +173,7 @@ class OpenAICompatibleClient:
             payload.update(extra)
         with self._slots:
             started = time.perf_counter()
-            body = self._post("/chat/completions", payload)
+            body = self._post("/chat/completions", payload, timeout=timeout)
             latency_ms = (time.perf_counter() - started) * 1000
         choice = body["choices"][0]
         usage = body.get("usage") or {}
@@ -199,24 +219,47 @@ class OpenAICompatibleClient:
             latency_ms = (time.perf_counter() - started) * 1000
         return parse_chat_body(body, model, latency_ms)
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _post(
+        self, path: str, payload: dict[str, Any], *, timeout: float | None = None
+    ) -> dict[str, Any]:
         headers = {"Authorization": f"Bearer {self._api_key}"}
+        started = time.perf_counter()
+        deadline = None if timeout is None else started + timeout
+
+        def expired() -> CallTimeoutError:
+            return CallTimeoutError(
+                self.provider, (time.perf_counter() - started) * 1000
+            )
+
         for attempt in range(self._max_attempts):
             self._limiter.wait()
+            options: dict[str, Any] = {}
+            if deadline is not None:
+                left = deadline - time.perf_counter()
+                if left <= 0:
+                    raise expired()
+                options["timeout"] = httpx.Timeout(left)
             try:
                 response = self._http.post(
-                    self._base_url + path, json=payload, headers=headers
+                    self._base_url + path, json=payload, headers=headers, **options
                 )
-            except httpx.TransportError:
+            except httpx.TimeoutException:
+                if deadline is not None:
+                    raise expired() from None
                 if attempt == self._max_attempts - 1:
                     raise
                 self._pause(attempt)
+                continue
+            except httpx.TransportError:
+                if attempt == self._max_attempts - 1:
+                    raise
+                self._pause(attempt, deadline)
                 continue
             if (
                 response.status_code in RETRYABLE_STATUS
                 and attempt < self._max_attempts - 1
             ):
-                self._pause(attempt)
+                self._pause(attempt, deadline)
                 continue
             if response.status_code >= 400:
                 raise ProviderError(self.provider, response.status_code, response.text)
@@ -224,8 +267,13 @@ class OpenAICompatibleClient:
             return data
         raise RuntimeError("unreachable")
 
-    def _pause(self, attempt: int) -> None:
-        self._sleep(self._base_delay * 2**attempt * random.uniform(0.5, 1.5))
+    def _pause(self, attempt: int, deadline: float | None = None) -> None:
+        delay = self._base_delay * 2**attempt * random.uniform(0.5, 1.5)
+        if deadline is not None:
+            # Пауза не дольше срока: после неё следующий заход сам увидит,
+            # что срок вышел, и бросит CallTimeoutError.
+            delay = max(0.0, min(delay, deadline - time.perf_counter()))
+        self._sleep(delay)
 
 
 class _SentenceEncoder(Protocol):
