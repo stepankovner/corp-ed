@@ -15,7 +15,12 @@ from corp_ed.prompts.faq import (
     build_faq_messages,
     build_general_messages,
 )
-from eval.decision_loop import run_decided, speculation_skip
+from eval.decision_loop import (
+    DEFAULT_GATES,
+    SPECULATION_GATES,
+    run_decided,
+    speculation_skip,
+)
 from eval.providers import CallTimeoutError
 from eval.yandex import Completion
 
@@ -1008,3 +1013,8 @@ def test_timeout_on_recheck_keeps_parallel_general_if_needed() -> None:
     assert run.needs_general and run.general is not None and run.wasted_general == 0
     assert run.wall_ms == 9000.0  # low + max(8000, 2000)
     assert run.decisions[-1] == {"timeout": "recheck"}
+
+
+def test_default_gates_are_known_rules() -> None:
+    assert DEFAULT_GATES == ("gate", "contact")
+    assert set(DEFAULT_GATES) <= set(SPECULATION_GATES)

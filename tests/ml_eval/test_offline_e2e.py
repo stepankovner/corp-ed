@@ -676,8 +676,7 @@ def test_directory_search_returns_context_blocks_with_source() -> None:
 @pytest.mark.parametrize(
     "flags",
     [
-        # gated — только со спекуляцией и хотя бы одним правилом
-        ["--decision-speculate", "gated", "--decision-speculative"],
+        # gated — только со спекуляцией; правила — из списка
         ["--decision-speculate", "gated", "--decision-gate", "contact"],
         ["--decision-speculative", "--decision-gate", "contact"],
         [

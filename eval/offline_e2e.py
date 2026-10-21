@@ -112,6 +112,7 @@ from eval.corpus import (
 )
 from eval.datasets import EvalItem, load_dataset, select_split
 from eval.decision_loop import (
+    DEFAULT_GATES,
     DIRECTORY_ANSWER_MODES,
     RECHECK_MODES,
     SPECULATION_GATES,
@@ -642,7 +643,9 @@ def _parser() -> argparse.ArgumentParser:
         default="",
         help="фаза 1: правила отсечения спекуляции через запятую — "
         + ", ".join(SPECULATION_GATES)
-        + " (см. eval.decision_loop.SPECULATION_GATES)",
+        + "; пусто при gated — "
+        + ",".join(DEFAULT_GATES)
+        + " (см. eval.decision_loop.DEFAULT_GATES)",
     )
     parser.add_argument(
         "--decision-refusal-parallel",
@@ -749,11 +752,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("--decision-answer: только с --decision-directory")
         return 2
     gates = [g.strip() for g in args.decision_gate.split(",") if g.strip()]
-    if args.decision_speculate == "gated" and not (args.decision_speculative and gates):
-        print(
-            "--decision-speculate gated: только с --decision-speculative и "
-            "--decision-gate"
-        )
+    if args.decision_speculate == "gated" and not gates:
+        gates = list(DEFAULT_GATES)
+    if args.decision_speculate == "gated" and not args.decision_speculative:
+        print("--decision-speculate gated: только с --decision-speculative")
         return 2
     if gates and args.decision_speculate != "gated":
         print("--decision-gate: только с --decision-speculate gated")
