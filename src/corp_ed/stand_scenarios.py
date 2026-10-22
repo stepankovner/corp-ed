@@ -559,7 +559,7 @@ async def _folder(
             raise StandError("сотрудник: временный пароль, нужен новый")
         await staff.change_password(employee.password, employee.new_password)
     joined = await staff.request(
-        "POST", "/invites/accept", json={"secret": invite_code}
+        "POST", "/invites/accept", json={"secret": invite_code, "terms": True}
     )
     outcome = joined.json().get("outcome") if joined.status_code == 200 else None
     session = joined.json().get("session") if joined.status_code == 200 else None
