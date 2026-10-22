@@ -865,10 +865,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             or fallback not in ("mws", "cloudru")
             or fallback == primary
             or not fallback_model
+            or args.decision_only
         ):
             print(
                 "--decision-fallback: только с --decision и --decision-provider "
-                "mws или cloudru; второе звено — другой из них"
+                "mws или cloudru, без --decision-only (там отката нет); второе "
+                "звено — другой из них"
             )
             return 2
         try:
