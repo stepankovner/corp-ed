@@ -1016,7 +1016,7 @@ def test_timeout_on_recheck_keeps_parallel_general_if_needed() -> None:
 
 
 def test_default_gates_are_known_rules() -> None:
-    assert DEFAULT_GATES == ("gate", "contact")
+    assert DEFAULT_GATES == ("gate",)  # 22.10: contact — только в shadow
     assert set(DEFAULT_GATES) <= set(SPECULATION_GATES)
 
 
