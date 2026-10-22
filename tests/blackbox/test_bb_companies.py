@@ -277,7 +277,7 @@ async def make_invite(admin: Actor, **options: Any) -> dict[str, Any]:
 
 async def accept(person: Actor, secret: str) -> httpx.Response:
     """Вступить по ссылке или коду; вступил — сессия переключается на компанию."""
-    r = await person.post("/invites/accept", json={"secret": secret})
+    r = await person.post("/invites/accept", json={"secret": secret, "terms": True})
     if r.status_code == 200 and r.json().get("session"):
         person.use(r.json()["session"]["access_token"])
     return r
@@ -2130,7 +2130,12 @@ async def test_company_request_create_list_cancel(kronto: Kronto) -> None:
 
     r = await applicant.post(
         "/account/company-requests",
-        json={"company_name": "ООО Ромашка", "seats": 15, "comment": "Хотим пилот"},
+        json={
+            "company_name": "ООО Ромашка",
+            "inn": "1234567894",
+            "seats": 15,
+            "comment": "Хотим пилот",
+        },
     )
     assert r.status_code == 201, r.text
     request = r.json()
@@ -2140,11 +2145,15 @@ async def test_company_request_create_list_cancel(kronto: Kronto) -> None:
     assert request["decided_at"] is None
 
     for bad in (
-        {"company_name": "Я"},
-        {"company_name": "x" * 201},
-        {"company_name": "ООО Лютик", "seats": 0},
-        {"company_name": "ООО Лютик", "comment": "x" * 2001},
-        {"company_name": "ООО Лютик", "tariff": "base"},
+        {"company_name": "Я", "inn": "1234567894"},
+        {"company_name": "x" * 201, "inn": "1234567894"},
+        {"company_name": "ООО Лютик", "inn": "1234567894", "seats": 0},
+        {"company_name": "ООО Лютик", "inn": "1234567894", "comment": "x" * 2001},
+        {"company_name": "ООО Лютик", "inn": "1234567894", "tariff": "base"},
+        # ИНН обязателен (решение 22.10) и проверяется по контрольным цифрам.
+        {"company_name": "ООО Лютик"},
+        {"company_name": "ООО Лютик", "inn": "123456789"},
+        {"company_name": "ООО Лютик", "inn": "1234567890"},
         {},
     ):
         r = await applicant.post("/account/company-requests", json=bad)
@@ -2172,7 +2181,8 @@ async def test_company_request_create_list_cancel(kronto: Kronto) -> None:
     r = await guest.get(f"{API}/account/company-requests")
     assert r.status_code in UNAUTHENTICATED, r.text
     r = await guest.post(
-        f"{API}/account/company-requests", json={"company_name": "ООО Гость"}
+        f"{API}/account/company-requests",
+        json={"company_name": "ООО Гость", "inn": "1234567894"},
     )
     assert r.status_code in UNAUTHENTICATED, r.text
 
@@ -2184,7 +2194,8 @@ async def test_approved_company_request_makes_applicant_admin(kronto: Kronto) ->
         kronto, "founder@romashka.ru", first="Ольга", last="Ромашкина"
     )
     r = await applicant.post(
-        "/account/company-requests", json={"company_name": "ООО Ромашка", "seats": 5}
+        "/account/company-requests",
+        json={"company_name": "ООО Ромашка", "inn": "1234567894", "seats": 5},
     )
     assert r.status_code == 201, r.text
     request_id = r.json()["id"]

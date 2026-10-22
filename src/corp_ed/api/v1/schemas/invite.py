@@ -68,6 +68,13 @@ class InviteSecretRequest(RequestModel):
     """Токен из ссылки или код приглашения."""
 
 
+class InviteAcceptRequest(InviteSecretRequest):
+    terms: Literal[True]
+    """Принимаю пользовательское соглашение — обязательно: соглашение
+    называет вступление в компанию его принятием (решение 22.10). Время и
+    редакция пишутся в учётку, как при регистрации."""
+
+
 class InvitePreviewResponse(BaseModel):
     company_name: str
     expires_at: datetime

@@ -261,7 +261,9 @@ async def join_employee(
         first_name=first_name,
         last_name=last_name,
     )
-    r = await session.post(f"{API}/invites/accept", json={"secret": invite["token"]})
+    r = await session.post(
+        f"{API}/invites/accept", json={"secret": invite["token"], "terms": True}
+    )
     assert r.status_code == 200, r.text
     join = r.json()
     assert join["outcome"] == "joined", join

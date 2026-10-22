@@ -41,6 +41,7 @@ function request(overrides: Partial<Request> = {}): Request {
   return {
     id: "r-1",
     company_name: "ООО «Север»",
+    inn: "1234567894",
     seats: 25,
     comment: null,
     status: "new",
@@ -235,11 +236,17 @@ describe("компании: заявка на подключение", () => {
     // Пробный месяц — только первой пилотной компании (ТЗ §2): на сайте не обещаем.
     expect(within(section).queryByText(/Расширенный/)).not.toBeInTheDocument();
     await user.type(await within(section).findByLabelText("Название компании"), "  ООО  «Север» ");
+    await user.type(within(section).getByLabelText("ИНН компании"), " 1234567894 ");
     await user.type(within(section).getByLabelText(/Сколько сотрудников/), "25");
     await user.click(within(section).getByRole("button", { name: "Отправить заявку" }));
 
     expect(await screen.findByText("Заявка отправлена")).toBeInTheDocument();
-    expect(body).toEqual({ company_name: "ООО «Север»", seats: 25, comment: null });
+    expect(body).toEqual({
+      company_name: "ООО «Север»",
+      inn: "1234567894",
+      seats: 25,
+      comment: null,
+    });
     expect(await within(section).findByText("на рассмотрении")).toBeInTheDocument();
     expect(within(section).getByText("25 мест")).toBeInTheDocument();
     expect(within(section).getByText(/Мы напишем на anna@meridian-stroy.ru/)).toBeInTheDocument();
@@ -267,6 +274,7 @@ describe("компании: заявка на подключение", () => {
 
     const section = await screen.findByRole("region", { name: "Подключить свою компанию" });
     await user.type(await within(section).findByLabelText("Название компании"), "ООО «Север»");
+    await user.type(within(section).getByLabelText("ИНН компании"), "1234567894");
     await user.click(within(section).getByRole("button", { name: "Отправить заявку" }));
 
     expect(
@@ -289,12 +297,46 @@ describe("компании: заявка на подключение", () => {
 
     const section = await screen.findByRole("region", { name: "Подключить свою компанию" });
     await user.type(await within(section).findByLabelText("Название компании"), "А");
+    await user.type(within(section).getByLabelText("ИНН компании"), "12345");
     await user.type(within(section).getByLabelText(/Сколько сотрудников/), "0");
     await user.click(within(section).getByRole("button", { name: "Отправить заявку" }));
 
     expect(within(section).getByText("Укажите название компании.")).toBeInTheDocument();
+    expect(
+      within(section).getByText("ИНН — 10 цифр у организации или 12 у ИП."),
+    ).toBeInTheDocument();
     expect(within(section).getByText("Целое число от 1 до 10 000.")).toBeInTheDocument();
     expect(created).toBe(false);
+  });
+
+  it("ИНН с ошибкой в контрольных цифрах — ответ сервера у поля", async () => {
+    const user = userEvent.setup();
+    signedInAs(loneMe());
+    server.use(
+      http.post("/api/v1/account/company-requests", () =>
+        HttpResponse.json(
+          {
+            detail: "ИНН с ошибкой: не сходятся контрольные цифры",
+            code: "invalid_requisites",
+            field: "inn",
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    renderApp("/settings/companies");
+
+    const section = await screen.findByRole("region", { name: "Подключить свою компанию" });
+    await user.type(await within(section).findByLabelText("Название компании"), "ООО «Север»");
+    const inn = within(section).getByLabelText("ИНН компании");
+    await user.type(inn, "1234567890");
+    await user.click(within(section).getByRole("button", { name: "Отправить заявку" }));
+
+    expect(inn).toHaveAccessibleDescription(/не сходятся контрольные цифры/);
+    // Ошибка — только у поля, без общей плашки над формой.
+    expect(within(section).getAllByRole("alert")).toHaveLength(1);
+    await user.type(inn, "{Backspace}4");
+    expect(inn).not.toHaveAccessibleDescription(/не сходятся контрольные цифры/);
   });
 
   it("отменяет заявку на рассмотрении — форма возвращается", async () => {

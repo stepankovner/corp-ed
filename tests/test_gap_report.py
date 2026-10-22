@@ -27,7 +27,7 @@ from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
 from corp_ed.prompts.gaps import GAP_LABEL_SCHEMA, PROMPT_VERSION
 from corp_ed.services import gap_report_service
-from corp_ed.services.gap_report_service import GapReportService
+from corp_ed.services.gap_report_service import PLACEHOLDER_TITLE, GapReportService
 from corp_ed.services.retention_service import RetentionService
 from tests.factories import make_user
 
@@ -350,7 +350,9 @@ async def test_label_failure_leaves_placeholder_and_retries_next_night(
     assert report.failed is False
     assert report.labeled == 0
     [cluster] = await clusters_of(session, tenant_ctx.id)
-    assert cluster.title == "Суточные?"  # самый свежий вопрос
+    # Вопросы одного человека: вопрос в названии был бы тем же примером,
+    # которого админ не видит (решение 22.10).
+    assert cluster.title == PLACEHOLDER_TITLE
     assert cluster.prompt_version == ""
 
     await service(session_maker, LabelLLM()).run("test")

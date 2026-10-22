@@ -98,7 +98,11 @@ async def test_staff_approves_request_and_company_appears(
     session.add(applicant)
     await session.flush()
     request = CompanyRequest(
-        account_id=applicant.id, company_name="ООО «Ромашка»", seats=5, comment="Пилот"
+        account_id=applicant.id,
+        company_name="ООО «Ромашка»",
+        inn="1234567894",
+        seats=5,
+        comment="Пилот",
     )
     session.add(request)
     await session.commit()
@@ -106,6 +110,7 @@ async def test_staff_approves_request_and_company_appears(
     listed = await api.get("/api/v1/staff/requests", headers=bearer(staff))
     assert listed.status_code == 200, listed.text
     [item] = listed.json()
+    assert item["inn"] == "1234567894"
     assert item["applicant_email"] == "lena@romashka.ru"
     assert item["applicant_name"] == "Лена Ромашкина"
 

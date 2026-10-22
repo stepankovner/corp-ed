@@ -397,6 +397,7 @@ test.describe.serial("путь компании", () => {
     await page.getByRole("link", { name: "Создать учётную запись" }).click();
     await register(page, invitedEmail, "Инна");
 
+    await page.getByRole("checkbox", { name: /пользовательское соглашение/ }).check();
     await page.getByRole("button", { name: "Вступить" }).click();
     await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Управление" })).toHaveCount(0);
@@ -496,6 +497,7 @@ test.describe.serial("путь компании", () => {
     await expect(page.getByRole("heading", { name: "Здравствуйте, Кирилл" })).toBeVisible();
     await page.getByLabel("Ссылка или код приглашения").fill(inviteCode.toLowerCase());
     await page.getByRole("button", { name: "Продолжить" }).click();
+    await page.getByRole("checkbox", { name: /пользовательское соглашение/ }).check();
     await page.getByRole("button", { name: "Вступить" }).click();
     await expect(page.getByRole("log", { name: "Переписка" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Компания: E2E/ })).toBeVisible();

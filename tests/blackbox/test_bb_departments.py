@@ -212,7 +212,7 @@ async def join(kronto: Kronto, company: Company, alias: str, first_name: str) ->
     assert response.status_code == 200, response.text
     _bearer(browser, response.json()["access_token"])
     response = await browser.post(
-        f"{API}/invites/accept", json={"secret": company.invite}
+        f"{API}/invites/accept", json={"secret": company.invite, "terms": True}
     )
     assert response.status_code == 200, response.text
     joined = response.json()

@@ -29,6 +29,7 @@ const STATUS: Record<Request["status"], { label: string; tone: Tone }> = {
 const MAX_COMPANY_NAME = 200;
 const MAX_SEATS = 10_000;
 const MAX_COMMENT = 2000;
+const INN_SHAPE = /^(\d{10}|\d{12})$/;
 
 /**
  * «Подключить свою компанию» (ТЗ §2): заявку одобряет команда kronto,
@@ -127,12 +128,18 @@ function RequestForm() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [company, setCompany] = useState("");
+  const [inn, setInn] = useState("");
+  const [serverInnProblem, setServerInnProblem] = useState<string | null>(null);
   const [seats, setSeats] = useState("");
   const [comment, setComment] = useState("");
   const [touched, setTouched] = useState(false);
   const name = company.split(/\s+/).filter(Boolean).join(" ");
   const seatsValue = seats.trim() ? Number(seats) : null;
   const nameProblem = name.length < 2 ? "Укажите название компании." : null;
+  const innValue = inn.trim();
+  const innProblem = !INN_SHAPE.test(innValue)
+    ? "ИНН — 10 цифр у организации или 12 у ИП."
+    : serverInnProblem;
   const seatsProblem =
     seatsValue !== null &&
     (!Number.isInteger(seatsValue) || seatsValue < 1 || seatsValue > MAX_SEATS)
@@ -143,7 +150,12 @@ function RequestForm() {
     mutationFn: () =>
       unwrap(
         api.POST("/api/v1/account/company-requests", {
-          body: { company_name: name, seats: seatsValue, comment: comment.trim() || null },
+          body: {
+            company_name: name,
+            inn: innValue,
+            seats: seatsValue,
+            comment: comment.trim() || null,
+          },
         }),
       ),
     onSuccess: async () => {
@@ -151,6 +163,11 @@ function RequestForm() {
       await queryClient.invalidateQueries({ queryKey: REQUESTS_KEY });
     },
     onError: async (err) => {
+      // Контрольные цифры ИНН проверяет сервер — ошибку показываем у поля.
+      if (err instanceof ApiError && err.field === "inn") {
+        setServerInnProblem(err.message);
+        return;
+      }
       // Заявка уже есть (например, подана в другой вкладке) — покажем её
       // в списке; форма тогда пропадёт, поэтому ответ — и всплывающим.
       if (err instanceof ApiError && err.code === "company_request_exists") {
@@ -163,13 +180,16 @@ function RequestForm() {
   function submit(event: SubmitEvent) {
     event.preventDefault();
     setTouched(true);
-    if (nameProblem || seatsProblem) return;
+    if (nameProblem || innProblem || seatsProblem) return;
     create.mutate();
   }
 
+  const innError = create.error instanceof ApiError && create.error.field === "inn";
   return (
     <form className={styles.form} onSubmit={submit} noValidate>
-      {create.isError ? <Notice kind="error">{errorMessage(create.error)}</Notice> : null}
+      {create.isError && !innError ? (
+        <Notice kind="error">{errorMessage(create.error)}</Notice>
+      ) : null}
       <TextField
         label="Название компании"
         autoComplete="organization"
@@ -178,6 +198,20 @@ function RequestForm() {
         value={company}
         onChange={(e) => setCompany(e.target.value)}
         error={touched ? nameProblem : null}
+      />
+      <TextField
+        label="ИНН компании"
+        inputMode="numeric"
+        autoComplete="off"
+        required
+        maxLength={12}
+        value={inn}
+        onChange={(e) => {
+          setInn(e.target.value);
+          setServerInnProblem(null);
+        }}
+        hint="10 цифр у организации, 12 — у ИП."
+        error={touched || serverInnProblem ? innProblem : null}
       />
       <TextField
         label="Сколько сотрудников будут пользоваться"

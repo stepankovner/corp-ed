@@ -289,12 +289,14 @@ describe("приглашение", () => {
     expect(router.state.location.search).toBe("?next=%2Fjoin");
   });
 
-  it("с учётной записью — одна кнопка, сессия переключается на компанию", async () => {
+  it("с учётной записью — галочка соглашения и кнопка, сессия переключается на компанию", async () => {
     const user = userEvent.setup();
     let joined = false;
+    let accepted: unknown;
     server.use(
       http.post("/api/v1/invites/preview", () => HttpResponse.json(companyPreview())),
-      http.post("/api/v1/invites/accept", () => {
+      http.post("/api/v1/invites/accept", async ({ request }) => {
+        accepted = await request.json();
         joined = true;
         return HttpResponse.json({
           outcome: "joined",
@@ -307,8 +309,14 @@ describe("приглашение", () => {
     );
     renderApp(`/join#${INVITE}`);
 
+    // Без соглашения не вступить: соглашение называет вступление его принятием.
     await user.click(await screen.findByRole("button", { name: "Вступить" }));
+    expect(screen.getByText("Без принятия соглашения вступить нельзя.")).toBeInTheDocument();
+    expect(joined).toBe(false);
+    await user.click(screen.getByRole("checkbox", { name: /пользовательское соглашение/ }));
+    await user.click(screen.getByRole("button", { name: "Вступить" }));
     expect(await screen.findByRole("log", { name: "Переписка" })).toBeInTheDocument();
+    expect(accepted).toEqual({ secret: INVITE, terms: true });
     expect(getSession()?.accessToken).toBe("access-4");
     expect(pendingInvite()).toBeNull();
     expect(await screen.findByText("Вы в «ООО «Меридиан Строй»»")).toBeInTheDocument();
@@ -330,7 +338,8 @@ describe("приглашение", () => {
       http.get("/api/v1/auth/me", () => HttpResponse.json(loneMe())),
     );
     renderApp(`/join#${INVITE}`);
-    await user.click(await screen.findByRole("button", { name: "Отправить заявку" }));
+    await user.click(await screen.findByRole("checkbox", { name: /пользовательское соглашение/ }));
+    await user.click(screen.getByRole("button", { name: "Отправить заявку" }));
     expect(await screen.findByRole("heading", { name: "Заявка отправлена" })).toBeInTheDocument();
     expect(getSession()?.accessToken).toBe("access-1");
   });

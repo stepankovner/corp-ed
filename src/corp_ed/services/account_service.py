@@ -574,45 +574,65 @@ class AccountService:
         и заявки удаляются вместе с учёткой."""
         if not verify_password(password, account.hashed_password):
             raise InvalidPasswordError()
-        with account_scope(account.id):
-            memberships = await self.users.memberships_of_account(account.id)
-        blocking: list[str] = []
-        for membership in memberships:
-            with tenant_scope(membership.tenant_id):
-                member = await self.users.get_by_id(membership.id)
-                if member is None:
-                    continue
-                if (
-                    member.role is UserRole.ADMIN
-                    and member.status is MemberStatus.ACTIVE
-                    and await self.users.count_active_admins() <= 1
-                ):
-                    tenant = await self.tenants.get_by_id(member.tenant_id)
-                    blocking.append(tenant.name if tenant else str(member.tenant_id))
-        if blocking:
-            raise LastAdminError(
-                "Вы единственный администратор: "
-                + ", ".join(f"«{name}»" for name in blocking)
-                + ". Назначьте другого администратора, затем удалите учётку"
-            )
-        for membership in memberships:
-            with tenant_scope(membership.tenant_id):
-                member = await self.users.get_by_id(membership.id)
-                if member is not None:
-                    _mark_left(member)
-                    await self.session.flush()
-        self.audit.record(
-            AuditAction.ACCOUNT_DELETED, details={"account_id": str(account.id)}
-        )
-        await self.accounts.delete(account)
-        await self.session.commit()
-        logger.info("account_deleted", account_id=str(account.id))
+        await erase_account(self.session, self.audit, account)
 
     async def _active_token(self, raw: str, purpose: EmailTokenPurpose) -> EmailToken:
         token = await self.tokens.get_by_hash(hash_refresh_token(raw), purpose.value)
         if token is None or token.used_at is not None or token.expires_at <= _now():
             raise InvalidEmailCodeError()
         return token
+
+
+async def erase_account(
+    session: AsyncSession,
+    audit: AuditRepository,
+    account: Account,
+    *,
+    reason: str | None = None,
+) -> None:
+    """Удалить учётку: сам человек (delete_account) или ночная задача
+    для учёток без компании (reason="companyless", решение 22.10).
+
+    Членства становятся «ушёл», ссылки на них в журнале вопросов остаются
+    без личных данных; токены, письма и заявки удаляются вместе с
+    учёткой. Последний администратор компании учётку не удалит.
+    """
+    users = UserRepository(session)
+    tenants = TenantRepository(session)
+    with account_scope(account.id):
+        memberships = await users.memberships_of_account(account.id)
+    blocking: list[str] = []
+    for membership in memberships:
+        with tenant_scope(membership.tenant_id):
+            member = await users.get_by_id(membership.id)
+            if member is None:
+                continue
+            if (
+                member.role is UserRole.ADMIN
+                and member.status is MemberStatus.ACTIVE
+                and await users.count_active_admins() <= 1
+            ):
+                tenant = await tenants.get_by_id(member.tenant_id)
+                blocking.append(tenant.name if tenant else str(member.tenant_id))
+    if blocking:
+        raise LastAdminError(
+            "Вы единственный администратор: "
+            + ", ".join(f"«{name}»" for name in blocking)
+            + ". Назначьте другого администратора, затем удалите учётку"
+        )
+    for membership in memberships:
+        with tenant_scope(membership.tenant_id):
+            member = await users.get_by_id(membership.id)
+            if member is not None:
+                _mark_left(member)
+                await session.flush()
+    details = {"account_id": str(account.id)}
+    if reason is not None:
+        details["reason"] = reason
+    audit.record(AuditAction.ACCOUNT_DELETED, details=details)
+    await AccountRepository(session).delete(account)
+    await session.commit()
+    logger.info("account_deleted", account_id=str(account.id), reason=reason)
 
 
 async def _ensure_not_last_admin(

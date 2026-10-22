@@ -20,7 +20,7 @@ function companySettings(overrides: Partial<Settings> = {}): Settings {
     mfa_policy: "any",
     allow_remember_device: true,
     email_domains: ["meridian-stroy.ru"],
-    chat_retention_months: 12,
+    chat_retention_months: 6,
     tariff: "base",
     seats: 30,
     members: 12,
@@ -218,7 +218,7 @@ describe("настройки компании", () => {
 
     const section = await screen.findByRole("region", { name: "Хранение диалогов" });
     const select = within(section).getByLabelText("Хранить диалоги");
-    expect(select).toHaveValue("12");
+    expect(select).toHaveValue("6");
     expect(select).toHaveAccessibleDescription(
       /удаляются целиком, вместе с вложениями и общими ссылками/,
     );
@@ -226,29 +226,29 @@ describe("настройки компании", () => {
       within(select)
         .getAllByRole("option")
         .map((option) => option.textContent),
-    ).toEqual(["1 месяц", "3 месяца", "6 месяцев", "12 месяцев", "24 месяца", "36 месяцев"]);
+    ).toEqual(["3 месяца", "6 месяцев", "12 месяцев"]);
 
-    await user.selectOptions(select, "24");
-    expect(await screen.findByText("Диалоги хранятся 24 месяца")).toBeInTheDocument();
-    expect(bodies).toEqual([{ chat_retention_months: 24 }]);
+    await user.selectOptions(select, "12");
+    expect(await screen.findByText("Диалоги хранятся 12 месяцев")).toBeInTheDocument();
+    expect(bodies).toEqual([{ chat_retention_months: 12 }]);
 
     // Короче — часть диалогов удалится насовсем: сначала спрашиваем.
-    await user.selectOptions(select, "3");
+    await user.selectOptions(select, "6");
     const ask = screen.getByRole("dialog", { name: "Сократить срок хранения диалогов?" });
-    expect(ask).toHaveAccessibleDescription(/не было вопросов дольше 3 месяцев/);
+    expect(ask).toHaveAccessibleDescription(/не было вопросов дольше 6 месяцев/);
     await user.click(within(ask).getByRole("button", { name: "Отмена" }));
-    expect(select).toHaveValue("24");
+    expect(select).toHaveValue("12");
     expect(bodies).toHaveLength(1);
 
-    await user.selectOptions(select, "1");
+    await user.selectOptions(select, "3");
     await user.click(
       within(screen.getByRole("dialog", { name: "Сократить срок хранения диалогов?" })).getByRole(
         "button",
         { name: "Сократить" },
       ),
     );
-    await waitFor(() => expect(select).toHaveValue("1"));
-    expect(bodies).toEqual([{ chat_retention_months: 24 }, { chat_retention_months: 1 }]);
+    await waitFor(() => expect(select).toHaveValue("3"));
+    expect(bodies).toEqual([{ chat_retention_months: 12 }, { chat_retention_months: 3 }]);
   });
 
   it("логотип: загрузка, отказ сервера, проверка размера и удаление", async () => {

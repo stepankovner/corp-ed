@@ -18,6 +18,7 @@ from corp_ed.api.v1.rate_limits import (
     get_rate_limiter,
 )
 from corp_ed.api.v1.schemas.invite import (
+    InviteAcceptRequest,
     InviteCreatedResponse,
     InviteCreateRequest,
     InvitePreviewResponse,
@@ -115,7 +116,7 @@ async def preview_invite(
 async def accept_invite(
     request: Request,
     response: Response,
-    data: InviteSecretRequest,
+    data: InviteAcceptRequest,
     service: Service,
     account: Annotated[Account, Depends(get_current_account)],
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
@@ -123,7 +124,8 @@ async def accept_invite(
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> JoinResponse:
     """Вступить в компанию своей учёткой. Вступил — сессия сразу
-    переключается на эту компанию; ждёт одобрения — сессия прежняя."""
+    переключается на эту компанию; ждёт одобрения — сессия прежняя.
+    terms — галочка пользовательского соглашения (обязательна)."""
     await enforce(limiter, INVITE_PER_IP, client_ip(request))
     result = await service.accept(account, data.secret)
     tenant = await tenant_repo.get_by_id(result.member.tenant_id)
