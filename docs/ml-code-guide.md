@@ -950,7 +950,10 @@ tests/                     test_preprocess, test_split, test_split_document, tes
 docs/                      ml-summary, ml-code-guide (этот файл), ml-report, ml-plan,
                            backend-handoff, ml-golden-guide, ml-alice-protocol,
                            ml-vs-alice, ml-formats, ml-holdout-protocol,
-                           ml-agent-plan; этап всего проекта — ROADMAP
+                           ml-agent-plan, ml-monitoring (мониторинг ML: метрики
+                           corp_ed_decision_*, тревоги, ночной прогон, выборки для
+                           улучшений — BH-49) и ml-monitoring-dashboard.json (строки
+                           дашборда Grafana); этап всего проекта — ROADMAP
 ```
 
 Остальное в `src/` (API, сервисы, репозитории, LLM-адаптеры, миграции) —
