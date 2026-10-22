@@ -82,7 +82,7 @@ JSON вместе со строками).
 | `outcome` спекулятивного ответа | `used`, `wasted`, `skipped` |
 | `reason` спекулятивного ответа | `none` (при `used`); при `wasted` — `small_talk`, `other_subject`, `not_found`, `shown_changed` (добор или справочник), `other_edition`; при `skipped` — `gate`, `contact` (отсечение фазы 1, если возьмут) |
 | `outcome` справочника | `hit`, `partial`, `miss`, `absent` (у компании справочника нет) |
-| `result` перепроверки | `confirmed`, `flipped` (medium перевернул отказ low) |
+| `result` перепроверки | причина × исход: `refusal_confirmed`, `refusal_flipped`, `role_confirmed`, `role_flipped` (причина — `decision_recheck_reason`: `refusal` — отказ low, `role` — R2; `flipped` — medium изменил маршрут) |
 | `result` добора | `new`, `empty`, `repeated`, `limit` |
 | `result` тени | `agree_answer`, `agree_refusal`, `scheme_refused` (схема отказала, конвейер ответил), `pipeline_refused` (наоборот) |
 | `vote` | `up`, `down` |
@@ -108,16 +108,17 @@ JSON вместе со строками).
 | 12 | `corp_ed_decision_stage_duration_seconds` | Histogram, корзины 0,05 / 0,1 / 0,25 / 0,5 / 1 / 2 / 3 / 4 / 5 / 7 / 9 / 12 / 15 / 20 / 30 | `mode`, `stage` | один раз на вопрос по окончании цикла — суммы веток (`search_ms`, `decision_ms`, `recheck_ms`, `directory_ms`, `extra_search_ms`, `answer_ms`), `total` = `latency_ms`; нулевые ветки не наблюдать | где время: приёмка 4 — p50 4,2 / p95 11,6 с; критерий Артёма p50 ≤ 5 с, p95 ≤ 12 с (`ml-agent-plan.md` §7.4 п. 1) |
 | 13 | `corp_ed_decision_question_duration_seconds` | Histogram, корзины как у № 12 | `mode`, `route` | по окончании цикла: `latency_ms` по итоговому маршруту | время по веткам: без добора p95 9,7 с, справочник 10,8 с, добор 17,8 с, отказы 6,3 с (фаза 1) |
 | 14 | `corp_ed_decision_speculative_total` | Counter | `mode`, `outcome`, `reason` | п. 2 (запуск или отсечение), п. 5 (взят), «Когда выбрасывается» | цена: выброшено ≈ 25 % на стенде, 48 % на смешанных, 83 % на пакете с отказами |
-| 15 | `corp_ed_decision_branch_total` | Counter | `mode`, `kind` (`recheck`, `directory`, `extra_search`, `shadow`), `result` (значения из 1.1 для своего `kind`) | «Перепроверка» (`confirmed`/`flipped` по `decision_recheck_reason`), п. 3 `DIRECTORY` (BH-47), п. 4, «Теневой режим» (`decision_shadow_agree`) | исходы веток одним счётчиком: перепроверка — у 29 % ответов (стенд 15 %), справочник, доборы, согласие тени с конвейером |
+| 15 | `corp_ed_decision_branch_total` | Counter | `mode`, `kind` (`recheck`, `directory`, `extra_search`, `shadow`), `result` (значения из 1.1 для своего `kind`) | «Перепроверка» (причина из `decision_recheck_reason` × `confirmed`/`flipped`), п. 3 `DIRECTORY` (BH-47), п. 4, «Теневой режим» (`decision_shadow_agree`) | исходы веток одним счётчиком: перепроверка — у 29 % ответов (стенд 15 %), справочник, доборы, согласие тени с конвейером |
 | 16 | `corp_ed_decision_tokens_total` | Counter | `provider`, `direction` | каждый вызов решения (и проба) | цена шага решения в ₽/час; gpt-oss у Cloud.ru 15,86 / 61 ₽ за 1 млн |
 
 Справочник и перепроверка сведены в № 15, чтобы не плодить счётчики:
-`kind` и `result` — пары из перечня (`recheck` × {`confirmed`, `flipped`},
+`kind` и `result` — пары из перечня (`recheck` × {`refusal_confirmed`, `refusal_flipped`, `role_confirmed`, `role_flipped`},
 `directory` × {`hit`, `partial`, `miss`, `absent`}, `extra_search` ×
 {`new`, `empty`, `repeated`, `limit`}, `shadow` × {`agree_answer`,
 `agree_refusal`, `scheme_refused`, `pipeline_refused`}), других пар
-нет. Причина перепроверки (`refusal` / `role`) в метрику не идёт — она
-в журнале; R2 (`role`) не принят.
+нет. Причина перепроверки вшита в `result` (а не отдельной меткой), чтобы
+пары оставались перечнем; `role_*` появятся, только если возьмут R2
+(сейчас умолчание — перепроверка отказов, R).
 
 ### 1.3. Метрики версий и качества (работают и без BH-46)
 
@@ -357,7 +358,7 @@ groups:
 | 30 | Время по маршрутам, p95 | timeseries | `… by (le, route) (…question_duration…)` | добор — самый медленный (17,8 с в приёмке 4) |
 | 31 | Откаты по причине | timeseries | `sum by (reason) (increase(corp_ed_decision_fallback_total[1h]))` | пусто |
 | 32 | Спекулятивный ответ | timeseries | `sum by (outcome, reason) (increase(…speculative_total[1h]))` | `used` и `wasted/not_found` |
-| 33 | Перепроверка, справочник, доборы | timeseries | `sum by (kind, result) (increase(…branch_total{kind!="shadow"}[1h]))` | перепроверка ≈ 15–29 %, `flipped` редко |
+| 33 | Перепроверка, справочник, доборы | timeseries | `sum by (kind, result) (increase(…branch_total{kind!="shadow"}[1h]))` | перепроверка ≈ 15–29 %, `refusal_flipped` редко (1 из 21 в фазе 1) |
 
 **Строка «Поставщики моделей»** (id 34)
 

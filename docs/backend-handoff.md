@@ -1611,7 +1611,7 @@ Word: извлечение совпадает с antiword по словам (100
   | `corp_ed_decision_stage_duration_seconds` | Histogram | `mode`, `stage` | по окончании цикла — суммы `search_ms` … `answer_ms`, `total` = `latency_ms`; нулевые ветки не наблюдать |
   | `corp_ed_decision_question_duration_seconds` | Histogram | `mode`, `route` | по окончании цикла — `latency_ms` по итоговому маршруту |
   | `corp_ed_decision_speculative_total` | Counter | `mode`, `outcome`, `reason` | п. 2 (запуск или отсечение), п. 5 (взят), «Когда выбрасывается» |
-  | `corp_ed_decision_branch_total` | Counter | `mode`, `kind`, `result` | «Перепроверка» (`confirmed` / `flipped`), п. 3 `DIRECTORY` (BH-47), п. 4 (доборы), «Теневой режим» (`decision_shadow_agree`) |
+  | `corp_ed_decision_branch_total` | Counter | `mode`, `kind`, `result` | «Перепроверка» (`refusal_confirmed` / `refusal_flipped` / `role_confirmed` / `role_flipped` — причина из `decision_recheck_reason` × исход), п. 3 `DIRECTORY` (BH-47), п. 4 (доборы), «Теневой режим» (`decision_shadow_agree`) |
   | `corp_ed_decision_tokens_total` | Counter | `provider`, `direction` | каждый вызов решения и проба |
   | `corp_ed_ml_build` (ряд `corp_ed_ml_build_info`) | Info | версии промптов (`decision-v6`, `faq-v2.7`, `faq-v2.9`, `edition-v1`, `contact-v1`, общий), модели ответа, эмбеддингов, решения у обоих звеньев, `effort` | при старте API, из констант ML и настроек |
   | `corp_ed_faq_best_distance` | Histogram, корзины гуще у 0,51 / 0,59 / 0,70 | нет | `faq_service`, там же, где `best_vector_distance` идёт в `qa_log`; без вопросов с вложением |

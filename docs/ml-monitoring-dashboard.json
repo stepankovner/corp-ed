@@ -485,7 +485,7 @@
       "id": 33,
       "type": "timeseries",
       "title": "Перепроверка, справочник, доборы",
-      "description": "recheck: confirmed / flipped; directory: hit / partial / miss / absent; extra_search: new / empty / repeated / limit",
+      "description": "recheck: причина (refusal, role) × confirmed / flipped; directory: hit / partial / miss / absent; extra_search: new / empty / repeated / limit",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
