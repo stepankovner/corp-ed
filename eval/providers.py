@@ -6,6 +6,9 @@ model_uri, cache_uri), поэтому offline_e2e и bench меняют пост
 - OpenAICompatibleClient — MWS GPT и Cloud.ru Foundation Models по
   OpenAI-совместимому API: /chat/completions и /embeddings, ключ в
   заголовке Authorization: Bearer;
+- DecisionChain — цепочка поставщиков шага решения (Cloud.ru → MWS, BH-46
+  «Поставщики решения», 22.10): переход к следующему звену при сбое,
+  предохранитель на звено, журнал событий;
 - LocalEmbedder — открытые веса через sentence-transformers (bge-m3 на
   своём процессоре, Р-3 «в»); пакета в зависимостях проекта нет —
   запускать из sandbox/.venv-rerank, как реранкер (eval/rerank.py).
@@ -19,6 +22,7 @@ import random
 import threading
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
@@ -274,6 +278,242 @@ class OpenAICompatibleClient:
             # что срок вышел, и бросит CallTimeoutError.
             delay = max(0.0, min(delay, deadline - time.perf_counter()))
         self._sleep(delay)
+
+
+CONFIG_STATUS = frozenset({400, 401, 402, 403, 404})
+"""Ошибки настройки (handoff BH-46 «Поставщики решения» п. 3): Cloud.ru —
+неверный ключ 400, ключ не того уровня 401, нет денег 402, нет модели 404;
+MWS — нет прав 403, нет деплоймента 404. Переход ко второму звену и
+тревога сразу."""
+
+MAYBE_CONFIG_STATUS = {"mws": frozenset({500})}
+"""MWS отвечает 500 `INTERNAL` и на неверный ключ (15.10): и ошибка, и
+возможная настройка — в журнал поставщик и код, без тревоги."""
+
+
+def classify_failure(provider: str, exc: BaseException) -> tuple[str, int | None]:
+    """Вид сбоя звена и код ответа (если был).
+
+    timeout — не уложился в срок (CallTimeoutError, таймаут httpx);
+    transport — обрыв связи; overload — 429; server — 5xx;
+    server_or_config — 5xx, которым поставщик отвечает и на неверный ключ
+    (MWS 500); config — ошибка настройки (CONFIG_STATUS); request — прочие
+    4xx (запрос не принят). Любой вид — переход к следующему звену."""
+    if isinstance(exc, (CallTimeoutError, httpx.TimeoutException)):
+        return "timeout", None
+    if isinstance(exc, httpx.TransportError):
+        return "transport", None
+    if isinstance(exc, ProviderError):
+        status = exc.status
+        if status in CONFIG_STATUS:
+            return "config", status
+        if status in MAYBE_CONFIG_STATUS.get(provider, frozenset()):
+            return "server_or_config", status
+        if status == 429:
+            return "overload", status
+        if status >= 500:
+            return "server", status
+        return "request", status
+    raise exc
+
+
+class CircuitBreaker:
+    """Предохранитель звена: threshold сбоев подряд за window секунд —
+    звено открыто на cooldown секунд (вызовы идут мимо него); по истечении
+    — одна пробная попытка (полуоткрыто): успех закрывает, неудача —
+    ещё cooldown. Ориентир handoff: 5 сбоев, 60 с, 120 с."""
+
+    def __init__(
+        self,
+        threshold: int = 5,
+        window: float = 60.0,
+        cooldown: float = 120.0,
+        *,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.threshold = threshold
+        self.window = window
+        self.cooldown = cooldown
+        self._clock = clock
+        self._failures: list[float] = []
+        self._opened_at: float | None = None
+        self._trial = False
+        self._lock = threading.Lock()
+
+    def state(self) -> str:
+        with self._lock:
+            return self._state()
+
+    def _state(self) -> str:
+        if self._opened_at is None:
+            return "closed"
+        if self._clock() - self._opened_at < self.cooldown:
+            return "open"
+        return "half_open"
+
+    def allow(self) -> bool:
+        """Можно ли звать звено сейчас; в полуоткрытом — только одна проба."""
+        with self._lock:
+            state = self._state()
+            if state == "closed":
+                return True
+            if state == "open" or self._trial:
+                return False
+            self._trial = True
+            return True
+
+    def success(self) -> None:
+        with self._lock:
+            self._failures.clear()
+            self._opened_at = None
+            self._trial = False
+
+    def failure(self) -> None:
+        with self._lock:
+            now = self._clock()
+            if self._trial or self._opened_at is not None:
+                # Проба не прошла — ещё cooldown.
+                self._opened_at = now
+                self._trial = False
+                return
+            self._failures = [t for t in self._failures if now - t < self.window]
+            self._failures.append(now)
+            if len(self._failures) >= self.threshold:
+                self._opened_at = now
+                self._failures.clear()
+
+
+class ChainExhaustedError(RuntimeError):
+    """Ни одно звено цепочки не ответило (все упали или пропущены
+    предохранителем) — вызывающий идёт обычным путём ответа."""
+
+
+@dataclass(frozen=True)
+class ChainEvent:
+    """Строка журнала цепочки: звено, исход, код, состояние предохранителя
+    до вызова, тревога (ошибка настройки), время."""
+
+    provider: str
+    outcome: str
+    """ok | skipped (предохранитель открыт) | вид сбоя classify_failure."""
+    status: int | None
+    breaker: str
+    alert: bool
+    ms: float
+
+    def as_list(self) -> list[Any]:
+        return [self.provider, self.outcome, self.status, self.breaker, round(self.ms)]
+
+
+@dataclass
+class ChainLink:
+    provider: str
+    client: Any
+    """Клиент с complete(...) как у OpenAICompatibleClient."""
+    model: str
+    breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
+
+
+class DecisionChain:
+    """Цепочка поставщиков шага решения для eval (BH-46, «Поставщики
+    решения»): звенья по порядку; сбой (5xx, 429, обрыв, таймаут, ошибка
+    настройки) — сразу следующее звено с остатком срока; у каждого звена
+    свой предохранитель. Срок timeout — на весь вызов цепочки (п. 5
+    handoff), link_timeout — потолок одного звена (без него первое звено
+    может съесть весь срок). Все звенья недоступны — ChainExhaustedError,
+    срок вышел — CallTimeoutError: в обоих случаях цикл решения идёт
+    обычным путём ответа. Журнал — events / drain(); модель у каждого звена
+    своя, аргумент model вызова не используется.
+
+    Клиенты звеньев — с max_attempts=1: свои повторы клиента съели бы
+    время до перехода (в продукте — то же: одна попытка на звено)."""
+
+    def __init__(
+        self,
+        links: Sequence[ChainLink],
+        *,
+        link_timeout: float | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not links:
+            raise ValueError("цепочка без звеньев")
+        self.links = list(links)
+        self.link_timeout = link_timeout
+        self._clock = clock
+        self._events: list[ChainEvent] = []
+        self._lock = threading.Lock()
+
+    def _log(self, event: ChainEvent) -> None:
+        with self._lock:
+            self._events.append(event)
+
+    @property
+    def events(self) -> list[ChainEvent]:
+        with self._lock:
+            return list(self._events)
+
+    def drain(self) -> list[ChainEvent]:
+        """События с прошлого drain (offline_e2e — после каждого вопроса)."""
+        with self._lock:
+            out, self._events = self._events, []
+        return out
+
+    def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str = "",
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> Completion:
+        started = self._clock()
+        deadline = None if timeout is None else started + timeout
+        for link in self.links:
+            state = link.breaker.state()
+            limit = self.link_timeout
+            if deadline is not None:
+                left = deadline - self._clock()
+                if left <= 0:
+                    break
+                limit = left if limit is None else min(limit, left)
+            if not link.breaker.allow():
+                self._log(ChainEvent(link.provider, "skipped", None, state, False, 0.0))
+                continue
+            call_started = self._clock()
+            try:
+                completion: Completion = link.client.complete(
+                    messages,
+                    model=link.model,
+                    **({"timeout": limit} if limit is not None else {}),
+                    **kwargs,
+                )
+            except (ProviderError, CallTimeoutError, httpx.TransportError) as exc:
+                kind, status = classify_failure(link.provider, exc)
+                link.breaker.failure()
+                elapsed = getattr(exc, "elapsed_ms", None)
+                self._log(
+                    ChainEvent(
+                        link.provider,
+                        kind,
+                        status,
+                        state,
+                        kind == "config",
+                        float(elapsed)
+                        if elapsed is not None
+                        else (self._clock() - call_started) * 1000,
+                    )
+                )
+                continue
+            link.breaker.success()
+            self._log(
+                ChainEvent(
+                    link.provider, "ok", None, state, False, completion.latency_ms
+                )
+            )
+            return completion
+        if deadline is not None and self._clock() >= deadline:
+            raise CallTimeoutError("chain", (self._clock() - started) * 1000)
+        raise ChainExhaustedError("ни одно звено цепочки решения не ответило")
 
 
 class _SentenceEncoder(Protocol):

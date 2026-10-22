@@ -53,7 +53,9 @@ recheck="refusals" — прежний вариант R. Причина пере�
   .CallTimeoutError, complete(timeout=…)) — откат на обычный ответ:
   спекулятивный, если есть, иначе вызов ответа по выдержкам (faq-v2.7);
   выдержек нет — «ответа нет» и общий ответ. DecidedRun.timeout_reason —
-  "fast" или "recheck".
+  "fast" или "recheck". Так же — eval.providers.ChainExhaustedError (22.10:
+  ни одно звено цепочки поставщиков решения не ответило): в записи решения
+  "unavailable", шаг — «…!unavailable».
 Время каждого вызова по порядку — DecidedRun.steps; причина каждого
 выброшенного спекулятивного ответа — wasted_reasons.
 """
@@ -91,6 +93,7 @@ from corp_ed.prompts.faq import (
     is_not_found,
     small_talk_reply,
 )
+from eval.providers import ChainExhaustedError
 from eval.yandex import Completion
 
 Ask = Callable[[list[Message]], Completion]
@@ -307,6 +310,11 @@ def _decide_chain(
                 else (time.perf_counter() - started) * 1000
             )
             return None, None, Route.ANSWER, {"timeout": label}, ms
+        except ChainExhaustedError:
+            # Цепочка поставщиков (eval.providers.DecisionChain): ни одно
+            # звено не ответило — решения нет, откат как при таймауте.
+            ms = (time.perf_counter() - started) * 1000
+            return None, None, Route.ANSWER, {"timeout": label, "unavailable": True}, ms
         decision = parse_decision(completion.text)
         ms = completion.latency_ms
         if decision is None:
@@ -314,6 +322,11 @@ def _decide_chain(
             return completion, None, Route.ANSWER, record, ms
         step = route(decision, can_search=can_search, directory=directory)
         return completion, decision, step, decision.model_dump(), ms
+
+    def failed(label: str, record: dict[str, Any]) -> str:
+        return (
+            f"{label}!unavailable" if record.get("unavailable") else f"{label}!timeout"
+        )
 
     label = "fast" if decide_fast is not None else "decide"
     completion, decision, step, record, ms = once(decide_fast or decide, label)
@@ -323,7 +336,7 @@ def _decide_chain(
         step,
         [record],
         wall_ms=ms,
-        steps=[(label if completion is not None else f"{label}!timeout", ms)],
+        steps=[(label if completion is not None else failed(label, record), ms)],
     )
     if completion is None:
         result.timeout = "fast"
@@ -341,7 +354,7 @@ def _decide_chain(
             completion, decision, step, record, ms = once(decide, "recheck")
             result.wall_ms += ms
         result.steps.append(
-            ("recheck" if completion is not None else "recheck!timeout", ms)
+            ("recheck" if completion is not None else failed("recheck", record), ms)
         )
         if result.general is not None:
             result.steps.append(("general∥", result.general.latency_ms))

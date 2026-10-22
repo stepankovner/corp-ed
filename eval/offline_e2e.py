@@ -487,6 +487,27 @@ def _directory_search(
     return search
 
 
+FALLBACK_MODEL = {"mws": "gpt-oss-120b", "cloudru": "openai/gpt-oss-120b"}
+"""Модель второго звена по умолчанию (у MWS — идентификатор деплоймента)."""
+
+
+def parse_fallback(value: str) -> tuple[str, str]:
+    """«mws» или «mws:gpt-oss-120b» → (поставщик, модель)."""
+    provider, _, model = value.partition(":")
+    return provider, model or FALLBACK_MODEL.get(provider, "")
+
+
+def parse_breaker(value: str) -> tuple[int, float, float]:
+    """«N,W,M» → (сбоев подряд, окно с, сколько с звено открыто)."""
+    parts = [p.strip() for p in value.split(",")]
+    if len(parts) != 3:
+        raise ValueError(f"--decision-breaker: нужно N,W,M, а не {value!r}")
+    threshold, window, cooldown = int(parts[0]), float(parts[1]), float(parts[2])
+    if threshold < 1 or window <= 0 or cooldown <= 0:
+        raise ValueError(f"--decision-breaker: N ≥ 1, W и M > 0, а не {value!r}")
+    return threshold, window, cooldown
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m eval.offline_e2e",
@@ -682,6 +703,29 @@ def _parser() -> argparse.ArgumentParser:
         "0 — без таймаута (как было: httpx 60 с и до 5 попыток)",
     )
     parser.add_argument(
+        "--decision-fallback",
+        default="",
+        help="22.10, BH-46 «Поставщики решения»: второе звено цепочки решения — "
+        "«mws» или «mws:<модель>» (у MWS модель — идентификатор деплоймента); "
+        "сбой первого (5xx, 429, обрыв, таймаут, ошибка настройки) — сразу второе "
+        "с остатком --decision-timeout; одна попытка на звено, без повторов "
+        "клиента; оба недоступны — обычный путь ответа. Журнал — колонки "
+        "decision_chain*",
+    )
+    parser.add_argument(
+        "--decision-link-timeout",
+        type=float,
+        default=0.0,
+        help="с --decision-fallback: потолок (с) одного звена; без него первое "
+        "звено может занять весь --decision-timeout",
+    )
+    parser.add_argument(
+        "--decision-breaker",
+        default="5,60,120",
+        help="с --decision-fallback: предохранитель звена N,W,M — N сбоев подряд "
+        "за W с — звено пропускается M с, потом одна проба (ориентир handoff)",
+    )
+    parser.add_argument(
         "--decision-directory",
         action="store_true",
         help="decision-v4: справочник оргструктуры как таблица — поиск по должности "
@@ -732,7 +776,13 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    from eval.providers import OpenAICompatibleClient
+    from eval.providers import (
+        ChainEvent,
+        ChainLink,
+        CircuitBreaker,
+        DecisionChain,
+        OpenAICompatibleClient,
+    )
     from eval.yandex import YandexClient
 
     llm_extra = json.loads(args.llm_extra) if args.llm_extra else None
@@ -804,6 +854,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Таймаут без повторов сделан у OpenAI-совместимых поставщиков
         # (eval.providers); у клиента Яндекса его нет.
         print("--decision-timeout: только с --decision-provider mws или cloudru")
+        return 2
+    fallback, fallback_model, breaker = "", "", (5, 60.0, 120.0)
+    if args.decision_fallback:
+        primary = args.decision_provider or args.llm_provider
+        fallback, fallback_model = parse_fallback(args.decision_fallback)
+        if (
+            args.decision == "off"
+            or primary not in ("mws", "cloudru")
+            or fallback not in ("mws", "cloudru")
+            or fallback == primary
+            or not fallback_model
+        ):
+            print(
+                "--decision-fallback: только с --decision и --decision-provider "
+                "mws или cloudru; второе звено — другой из них"
+            )
+            return 2
+        try:
+            breaker = parse_breaker(args.decision_breaker)
+        except ValueError as exc:
+            print(exc)
+            return 2
+    elif args.decision_link_timeout:
+        print("--decision-link-timeout: только с --decision-fallback")
         return 2
     if args.decision_substitution and not args.decision_directory:
         print("--decision-substitution: только с --decision-directory")
@@ -981,10 +1055,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             extra=llm_extra,
         )
 
-    decision_client: YandexClient | OpenAICompatibleClient | None = None
+    decision_client: YandexClient | OpenAICompatibleClient | DecisionChain | None = None
     decision_extra = json.loads(args.decision_extra) if args.decision_extra else None
     decision_provider = args.decision_provider or args.llm_provider
-    if args.decision != "off" and not args.dry_run:
+    if args.decision_fallback and not args.dry_run:
+        # Цепочка Cloud.ru → MWS (или наоборот): одна попытка на звено.
+        decision_client = DecisionChain(
+            [
+                ChainLink(
+                    provider,
+                    OpenAICompatibleClient.from_env(provider, max_attempts=1),
+                    model,
+                    CircuitBreaker(*breaker),
+                )
+                for provider, model in (
+                    (decision_provider, args.decision_model or args.model),
+                    (fallback, fallback_model),
+                )
+            ],
+            link_timeout=args.decision_link_timeout or None,
+        )
+    elif args.decision != "off" and not args.dry_run:
         decision_client = (
             client
             if decision_provider == args.llm_provider
@@ -1030,6 +1121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return decide(messages, fast_extra)
 
     rows: list[dict[str, object]] = []
+    chain_log: list[ChainEvent] = []
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
     ):
@@ -1239,6 +1331,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         reasoning = sum(c.reasoning_tokens for c in calls)
         finish = calls[-1].finish_reason if calls else ""
 
+        chain_events: list[ChainEvent] = (
+            decision_client.drain()
+            if isinstance(decision_client, DecisionChain)
+            else []
+        )
+        chain_log.extend(chain_events)
         answered = is_answered(answer, answer_given=bool(selected))
         rows.append(
             {
@@ -1318,6 +1416,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_wasted_general": decided.wasted_general if decided else "",
                 "decision_timeout": decided.timeout if decided else "",
                 "decision_timeout_reason": decided.timeout_reason if decided else "",
+                # Цепочка поставщиков (--decision-fallback): по вызову решения —
+                # звено, исход, код, состояние предохранителя до вызова, мс.
+                "decision_chain": json.dumps(
+                    [e.as_list() for e in chain_events], ensure_ascii=False
+                )
+                if chain_events
+                else "",
+                "decision_chain_used": ",".join(
+                    e.provider for e in chain_events if e.outcome == "ok"
+                ),
+                "decision_chain_alert": ",".join(
+                    f"{e.provider}:{e.status}" for e in chain_events if e.alert
+                ),
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1402,6 +1513,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"выход {extra['mq_output_tokens']}; из кэша "
             f"{sum(p.cached for p in paraphrased)} из {len(paraphrased)}"
         )
+    if chain_log:
+        tally: dict[str, int] = {}
+        for event in chain_log:
+            key = f"{event.provider}:{event.outcome}"
+            tally[key] = tally.get(key, 0) + 1
+        alerts = sorted({f"{e.provider}:{e.status}" for e in chain_log if e.alert})
+        print(
+            "Цепочка решения: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(tally.items()))
+            + (f"; ТРЕВОГА (настройка): {', '.join(alerts)}" if alerts else "")
+        )
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
     prompt_version = (
@@ -1417,6 +1539,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.decision_answer
         ]
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
+        + (f"-chain-{fallback}" if args.decision_fallback else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"
         else SMALL_TALK_PROMPT_VERSION
