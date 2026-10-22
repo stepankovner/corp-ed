@@ -108,6 +108,7 @@ from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.agent_ingest_service import issue_token
 from corp_ed.services.company_request_service import CompanyRequestService
+from corp_ed.services.companyless_service import CompanylessService
 from corp_ed.services.connector_check_service import CheckReport, run_check
 from corp_ed.services.connector_secrets_rotation import ConnectorSecretsRotation
 from corp_ed.services.connector_service import TokenRevocation, revoke_all
@@ -463,6 +464,12 @@ async def _run(args: argparse.Namespace) -> int:
             f"trusted_devices: {purged.trusted_devices}, "
             f"conversations: {purged.conversations}, "
             f"left_members: {purged.left_members}"
+        )
+        # Учётки без компании (решение 22.10): письмо за неделю, потом удаление.
+        companyless = await CompanylessService(get_session_maker()).run()
+        print(
+            f"companyless_warned: {companyless.warned}, "
+            f"companyless_deleted: {companyless.deleted}"
         )
         return 0
 
@@ -836,7 +843,7 @@ async def _requests(args: argparse.Namespace) -> int:
             print(
                 f"{request.id}  {request.created_at:%d.%m.%Y %H:%M}  "
                 f"[{request.status}]  {request.company_name}  "
-                f"мест: {request.seats or '—'}  {who}"
+                f"ИНН: {request.inn or '—'}  мест: {request.seats or '—'}  {who}"
             )
             if request.comment:
                 print(f"    {request.comment[:300]}")

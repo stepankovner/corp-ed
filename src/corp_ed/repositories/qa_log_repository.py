@@ -143,6 +143,9 @@ class QaLogRepository:
                 QaLog.miss_kind.in_(kinds),
                 QaLog.embedding_model == embedding_model,
                 is_question(),
+                # Вопрос стёрт (песочница, решение 22.10): ни текста, ни
+                # вектора — кластеризовать нечего.
+                QaLog.question != "",
             )
             .order_by(QaLog.created_at.desc())
             .limit(limit)

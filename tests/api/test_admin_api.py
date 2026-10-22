@@ -120,13 +120,13 @@ async def test_admin_sets_dialog_retention_from_the_list_only(
 ) -> None:
     headers = bearer(admin)
     before = (await api.get("/api/v1/company", headers=headers)).json()
-    assert before["chat_retention_months"] == 12
+    assert before["chat_retention_months"] == 6
 
     response = await api.patch(
-        "/api/v1/company", json={"chat_retention_months": 6}, headers=headers
+        "/api/v1/company", json={"chat_retention_months": 12}, headers=headers
     )
     assert response.status_code == 200, response.text
-    assert response.json()["chat_retention_months"] == 6
+    assert response.json()["chat_retention_months"] == 12
     with tenant_scope(tenant_ctx.id):
         event = (
             await session.scalars(
@@ -134,20 +134,20 @@ async def test_admin_sets_dialog_retention_from_the_list_only(
             )
         ).one()
     assert event.actor_user_id == admin.id
-    assert event.details == {"chat_retention_months": {"old": 12, "new": 6}}
+    assert event.details == {"chat_retention_months": {"old": 6, "new": 12}}
 
-    # Только из списка: 1, 3, 6, 12, 24, 36.
-    for value in (0, 2, 5, 37, -1, "шесть", True, 6.5):
+    # Только из списка: 3, 6, 12 (решение 22.10: 1, 24 и 36 больше нет).
+    for value in (0, 1, 2, 5, 24, 36, 37, -1, "шесть", True, 6.5):
         bad = await api.patch(
             "/api/v1/company", json={"chat_retention_months": value}, headers=headers
         )
         assert bad.status_code == 422, value
     forbidden = await api.patch(
-        "/api/v1/company", json={"chat_retention_months": 1}, headers=bearer(employee)
+        "/api/v1/company", json={"chat_retention_months": 3}, headers=bearer(employee)
     )
     assert forbidden.status_code == 403
     await session.refresh(tenant_ctx)
-    assert tenant_ctx.chat_retention_months == 6
+    assert tenant_ctx.chat_retention_months == 12
 
 
 async def test_strong_policy_closes_company_to_employee_without_app(
@@ -176,14 +176,14 @@ async def test_company_domains_limit_who_joins_by_any_invite(
 
     refused = await api.post(
         "/api/v1/invites/accept",
-        json={"secret": invite["token"]},
+        json={"secret": invite["token"], "terms": True},
         headers=account_bearer(outsider),
     )
     assert refused.status_code == 422
     assert "@meridian.ru" in refused.json()["detail"]
     joined = await api.post(
         "/api/v1/invites/accept",
-        json={"secret": invite["token"]},
+        json={"secret": invite["token"], "terms": True},
         headers=account_bearer(insider),
     )
     assert joined.status_code == 200, joined.text

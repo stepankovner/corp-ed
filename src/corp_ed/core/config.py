@@ -964,7 +964,10 @@ class ConnectorSettings(BaseSettings):
     )
     secrets_keys: SecretStr | None = None
     max_per_tenant: int = Field(default=20, gt=0, le=1000)
-    default_sync_interval_minutes: int = Field(default=60, ge=15, le=1440)
+    # 30 минут (решение 22.10; было 60): изменения прав в системе клиента
+    # доходят до ответов вдвое быстрее, а запросов к ней — вдвое больше;
+    # для крупных клиентов с лимитами API админ ставит 60 и больше.
+    default_sync_interval_minutes: int = Field(default=30, ge=15, le=1440)
     # Бюджет одного запуска: документов и минут; остаток — следующим.
     max_documents_per_run: int = Field(default=200, gt=0, le=5000)
     max_run_minutes: int = Field(default=20, gt=0, le=180)

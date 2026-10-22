@@ -6,7 +6,8 @@
 участника. Отличия от чата приложения:
 
 - без входа и без истории: каждый вопрос — сам по себе, диалог нигде не
-  хранится (в журнале вопросов — как у любой компании, с маской ПДн);
+  хранится; текст вопроса не хранится и в журнале (решение 22.10): строка
+  журнала остаётся ради учёта кредитов — без вопроса и его вектора;
 - режим STRICT: ответ только по документам, иначе честный отказ — иначе
   песочница стала бы бесплатным чатом с моделью для всего интернета;
 - лимиты по IP и общий суточный, при недоступном Redis — отказ
@@ -23,10 +24,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from corp_ed.core.config import DemoSettings
+from corp_ed.core.config import EMBEDDING_DIM, DemoSettings
 from corp_ed.core.exceptions import (
     CreditsExhaustedError,
     DailyLimitExhaustedError,
@@ -41,6 +42,7 @@ from corp_ed.domain.models import (
     MaterialStatus,
     MemberStatus,
     NotificationSetting,
+    QaLog,
     Tenant,
     User,
     UserRole,
@@ -135,7 +137,7 @@ class DemoService:
                 faq = self.build_faq(session)
                 try:
                     result = await faq.answer_turn(
-                        question, member, history=[], sink=sink
+                        question, member, history=[], sink=sink, commit=False
                     )
                 except (CreditsExhaustedError, DailyLimitExhaustedError):
                     logger.warning("demo_pool_exhausted")
@@ -150,6 +152,10 @@ class DemoService:
                         "demo_busy",
                         "Модель сейчас не отвечает. Попробуйте ещё раз через минуту.",
                     ) from None
+                # Вопрос посетителя не храним (решение 22.10): строка журнала
+                # нужна только для пула кредитов песочницы.
+                await forget_questions(session, tenant.id)
+                await session.commit()
         logger.info("demo_answered", origin=result.origin.value)
         return DemoAnswer(
             content=result.content,
@@ -251,6 +257,8 @@ class DemoService:
                 created, updated, unchanged = await self._sync_documents(
                     session, tenant
                 )
+                # Вопросы, записанные до решения 22.10, — тоже без текста.
+                await forget_questions(session, tenant.id)
             await session.commit()
         logger.info(
             "demo_setup",
@@ -297,6 +305,25 @@ class DemoService:
             else:
                 unchanged += 1
         return created, updated, unchanged
+
+
+async def forget_questions(session: AsyncSession, tenant_id: UUID) -> int:
+    """Стереть из журнала песочницы текст вопросов и всё, что из него
+    получено: переписанный вопрос, поисковый запрос, вектор. Остаются
+    токены, кредиты и исход ответа — по ним считается пул песочницы.
+    Пустой вопрос не идёт в отчёт о пробелах (QaLogRepository.gap_candidates)."""
+    result = await session.execute(
+        update(QaLog)
+        .where(QaLog.tenant_id == tenant_id, QaLog.question != "")
+        .values(
+            question="",
+            standalone_question=None,
+            search_query=None,
+            question_embedding=[0.0] * EMBEDDING_DIM,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]
 
 
 def _off() -> DemoUnavailableError:

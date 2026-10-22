@@ -65,6 +65,8 @@ class StaffCompanyUpdate(RequestModel):
 class StaffRequestResponse(BaseModel):
     id: UUID
     company_name: str
+    inn: str | None
+    """ИНН из заявки; null — заявка до 22.10, когда поля не было."""
     seats: int | None
     comment: str | None
     status: Literal["new", "approved", "rejected", "cancelled"]

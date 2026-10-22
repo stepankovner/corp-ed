@@ -262,7 +262,7 @@ async def test_admin_creates_connector_without_secrets(
     assert body["kind"] == FAKE_KIND and body["mode"] == "organization"
     assert body["status"] == "active" and body["credentials_set_at"] is None
     assert body["config"] == {"base_url": "https://portal.example.com/rest/"}
-    assert body["sync_interval_minutes"] == 60
+    assert body["sync_interval_minutes"] == 30  # решение 22.10
     assert "credentials" not in body
     # Без учётных данных синхронизация не ставится.
     assert await _jobs(session) == []

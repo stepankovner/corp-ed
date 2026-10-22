@@ -184,7 +184,7 @@ async def test_join_request_notifies_admins(
 
     response = await api.post(
         "/api/v1/invites/accept",
-        json={"secret": created.json()["token"]},
+        json={"secret": created.json()["token"], "terms": True},
         headers=account_bearer(joiner),
     )
     assert response.json()["outcome"] == "pending"

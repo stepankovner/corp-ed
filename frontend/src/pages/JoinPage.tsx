@@ -16,7 +16,7 @@ import { formatDate } from "../lib/format";
 import { useDocumentTitle } from "../lib/title";
 import { Button } from "../ui/Button";
 import { buttonClass } from "../ui/buttonClass";
-import { TextField } from "../ui/Field";
+import { Checkbox, TextField } from "../ui/Field";
 import { Notice } from "../ui/Notice";
 import { PageSpinner } from "../ui/Spinner";
 import { useToast } from "../ui/useToast";
@@ -160,15 +160,23 @@ function Accept({ secret, preview, me }: { secret: string; preview: Preview; me:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
+  // Соглашение называет вступление в компанию его принятием — отдельная
+  // галочка, как при регистрации (решение 22.10).
+  const [terms, setTerms] = useState(false);
+  const [touched, setTouched] = useState(false);
   const company = preview.company_name;
   const domain = preview.email_domain;
   const wrongDomain = domain !== null && !me.email.toLowerCase().endsWith(`@${domain}`);
 
   async function join() {
+    setTouched(true);
+    if (!terms) return;
     setError(null);
     setBusy(true);
     try {
-      const result = await unwrap(api.POST("/api/v1/invites/accept", { body: { secret } }));
+      const result = await unwrap(
+        api.POST("/api/v1/invites/accept", { body: { secret, terms: true } }),
+      );
       clearPendingInvite();
       if (!result.session) {
         await reloadMe();
@@ -217,6 +225,25 @@ function Accept({ secret, preview, me }: { secret: string; preview: Preview; me:
         </Notice>
       ) : null}
       <Terms preview={preview} />
+      <div>
+        <Checkbox
+          label={
+            <>
+              Принимаю{" "}
+              <a href="/terms" target="_blank" rel="noreferrer">
+                пользовательское соглашение
+              </a>
+            </>
+          }
+          checked={terms}
+          onChange={(e) => setTerms(e.target.checked)}
+        />
+        {touched && !terms ? (
+          <p className={authStyles.fieldError} role="alert">
+            Без принятия соглашения вступить нельзя.
+          </p>
+        ) : null}
+      </div>
       <Button block busy={busy} onClick={() => void join()} disabled={wrongDomain}>
         {preview.requires_approval ? "Отправить заявку" : "Вступить"}
       </Button>
