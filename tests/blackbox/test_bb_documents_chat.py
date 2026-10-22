@@ -101,7 +101,13 @@ def assert_no_shared_words(question: str, *texts: str) -> None:
 
 def assert_no_leak(text: str, *needles: str) -> None:
     for needle in needles:
-        assert needle not in text, f"утечка {needle!r}: {text[:3000]}"
+        if needle.isdigit():
+            # Число — отдельным словом: «7931» внутри метки времени
+            # (…:22.067931Z) или чужого id — не утечка, а совпадение цифр.
+            leaked = re.search(rf"(?<!\w){needle}(?!\w)", text) is not None
+        else:
+            leaked = needle in text
+        assert not leaked, f"утечка {needle!r}: {text[:3000]}"
 
 
 # ---------------------------------------------------------------------------

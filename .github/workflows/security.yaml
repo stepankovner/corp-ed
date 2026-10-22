@@ -178,12 +178,15 @@ jobs:
             ghcr.io/aquasecurity/trivy:latest image \
             --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed \
             --pkg-types os,library "kronto-web:$TAG"
+      # tests/live — стенды для живых проверок коннекторов на машине
+      # разработчика (Samba AD DC работает от root по своей природе); в
+      # образы и на сервер они не попадают.
       - name: Scan Dockerfile and compose for misconfiguration
         run: |
           docker run --rm \
             -v "$PWD:/work:ro" -v "$HOME/.cache/trivy/$RUNNER_NAME:/root/.cache/" \
             ghcr.io/aquasecurity/trivy:latest config \
-            --exit-code 1 --severity HIGH,CRITICAL /work
+            --exit-code 1 --severity HIGH,CRITICAL --skip-dirs "**/tests/live" /work
       # Состав образа (CycloneDX) — для сертификации и разбора инцидентов:
       # «есть ли у нас пакет X версии Y» отвечается без пересборки.
       - name: SBOM
