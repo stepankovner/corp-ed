@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import re
 import time
 from collections.abc import AsyncGenerator
@@ -8,8 +9,9 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from corp_ed.core.database import get_session_maker
 from corp_ed.core.dialogue_store import (
     DialogueKey,
     DialogueStore,
@@ -34,6 +36,7 @@ from corp_ed.core.metrics import (
     FAQ_FEEDBACK,
     LLM_FALLBACK,
 )
+from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.agent import drop_citations
 from corp_ed.domain.context import select_context
 from corp_ed.domain.decision import Route, mismatch_note
@@ -277,6 +280,7 @@ class FaqService:
         decider: HedgedDecider | None = None,
         decision_mode: DecisionMode = DecisionMode.OFF,
         decision_budget: float = 6.0,
+        shadow_sessions: async_sessionmaker[AsyncSession] | None = None,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -318,6 +322,9 @@ class FaqService:
         self.decider = decider
         self.decision_mode = decision_mode
         self.decision_budget = decision_budget
+        # Тень пишет журнал своей сессией (по умолчанию — общий пул).
+        self.shadow_sessions = shadow_sessions
+        self.shadow_tasks: list[asyncio.Task[None]] = []
         if small_talk:
             self.prompt_version = SMALL_TALK_PROMPT_VERSION
         elif search_step:
@@ -414,6 +421,10 @@ class FaqService:
         # Со схемой правило реплик — её шаг 0 (BH-48), и без своей настройки.
         rule = self.small_talk_rule or scheme is DecisionMode.ON
         kind = classify_small_talk(question) if rule else None
+        # В тени правило только пишется: ответ — конвейера (BH-46).
+        shadow_rule = (
+            classify_small_talk(question) if scheme is DecisionMode.SHADOW else None
+        )
         if kind is not None:
             if scheme is DecisionMode.ON:
                 DECISION_QUESTIONS.labels("on", "rule").inc()
@@ -456,6 +467,7 @@ class FaqService:
 
         await self._release()
         search_ms = _elapsed_ms(started)
+        shadow: _Shadow | None = None
         if scheme is DecisionMode.ON:
             outcome = await self._decided(
                 standalone,
@@ -468,15 +480,35 @@ class FaqService:
             )
             second = None
         else:
-            outcome = await self._answer(
-                question,
-                context,
-                mode,
-                history=history,
-                standalone=standalone,
-                sink=sink,
-                second=second,
+            shadow = (
+                self._start_shadow(
+                    standalone,
+                    context,
+                    viewer=user.id,
+                    tenant_id=user.tenant_id,
+                    books=await self._directory_books(user.id),
+                    rule=shadow_rule,
+                    search_ms=search_ms,
+                )
+                if scheme is DecisionMode.SHADOW
+                else None
             )
+            try:
+                outcome = await self._answer(
+                    question,
+                    context,
+                    mode,
+                    history=history,
+                    standalone=standalone,
+                    sink=sink,
+                    second=second,
+                )
+            except BaseException:
+                if shadow is not None:
+                    shadow.cancel()
+                raise
+            if shadow is not None:
+                shadow.pipeline.set_result(outcome)
         search_query = second.query if second else None
 
         # Переписывание — такой же вызов модели, его токены оплачиваются.
@@ -537,6 +569,8 @@ class FaqService:
         )
         if outcome.verdict is not None:
             _observe_decision(outcome.verdict, search_ms, _elapsed_ms(started))
+        if scheme is DecisionMode.SHADOW and shadow is not None:
+            shadow.entry.set_result((entry.id, user.tenant_id, _elapsed_ms(started)))
         if nearest is not None and not attached:
             FAQ_BEST_DISTANCE.observe(nearest)
         await self.credits.note_spend(usage, credits)
@@ -591,16 +625,232 @@ class FaqService:
 
     def _decision_mode(self, tenant: Tenant | None) -> DecisionMode:
         """Режим схемы для вопроса: поле компании, иначе умолчание окружения.
-        Без поставщиков решения (нет ключа Cloud.ru) — off в любом режиме.
-        shadow пока идёт прежним путём (теневой цикл — отдельным PR)."""
+        Без поставщиков решения (нет ключа Cloud.ru) — off в любом режиме."""
         wanted = (
             DecisionMode(tenant.decision_mode)
             if tenant is not None and tenant.decision_mode
             else self.decision_mode
         )
-        if wanted is DecisionMode.ON and self.decider is not None:
-            return DecisionMode.ON
-        return DecisionMode.OFF
+        return wanted if self.decider is not None else DecisionMode.OFF
+
+    def _start_shadow(
+        self,
+        question: str,
+        context: list[ChunkMatch],
+        *,
+        viewer: UUID,
+        tenant_id: UUID,
+        books: list[Book],
+        rule: str | None,
+        search_ms: int,
+    ) -> "_Shadow":
+        """Теневой режим (BH-46): сотрудник получает ответ конвейера, а цикл
+        схемы идёт в фоне, как в on, и дописывает журнал, когда закончит.
+
+        Решение запускается одновременно с первым вызовом конвейера по тем
+        же выдержкам; ответ конвейера и есть спекулятивный ответ схемы —
+        второй вызов Flash только когда схема ответила бы не тем (выдержки
+        менялись, другая редакция, готового ответа нет). На «ответа нет» и
+        реплике общий ответ схема не зовёт — для сравнения хватает
+        маршрута. Текст ответа схемы в журнал не идёт (qa_log ответов не
+        хранит) — только флаги. Фон не держит ответ сотруднику и не трогает
+        сессию запроса: справочники прочитаны до старта, добор — своей сессией.
+        """
+        shadow = _Shadow()
+        task = asyncio.create_task(
+            self._run_shadow(
+                shadow,
+                question,
+                context,
+                viewer=viewer,
+                tenant_id=tenant_id,
+                books=books,
+                rule=rule,
+                search_ms=search_ms,
+            )
+        )
+        shadow.task = task
+        _SHADOW_TASKS.add(task)
+        task.add_done_callback(_SHADOW_TASKS.discard)
+        self.shadow_tasks.append(task)
+        return shadow
+
+    async def _run_shadow(
+        self,
+        shadow: "_Shadow",
+        question: str,
+        context: list[ChunkMatch],
+        *,
+        viewer: UUID,
+        tenant_id: UUID,
+        books: list[Book],
+        rule: str | None,
+        search_ms: int,
+    ) -> None:
+        try:
+            async with asyncio.timeout(SHADOW_TIMEOUT):
+                columns = await self._shadow_columns(
+                    shadow,
+                    question,
+                    context,
+                    viewer=viewer,
+                    tenant_id=tenant_id,
+                    books=books,
+                    rule=rule,
+                    search_ms=search_ms,
+                )
+                entry_id, tenant_id, _ = await shadow.entry
+        except TimeoutError:
+            logger.warning("decision_shadow_timeout")
+            return
+        except Exception:
+            logger.exception("decision_shadow_failed")
+            return
+        await self._write_shadow(entry_id, tenant_id, columns)
+
+    async def _shadow_columns(
+        self,
+        shadow: "_Shadow",
+        question: str,
+        context: list[ChunkMatch],
+        *,
+        viewer: UUID,
+        tenant_id: UUID,
+        books: list[Book],
+        rule: str | None,
+        search_ms: int,
+    ) -> dict[str, object]:
+        started = time.perf_counter()
+        if rule is not None:
+            # Правило BH-48 в тени только пишется: ответ — конвейера.
+            pipeline = await shadow.pipeline
+            DECISION_QUESTIONS.labels("shadow", "rule").inc()
+            return {
+                "decision_route": Route.SMALL_TALK.value,
+                "decision_trace": {
+                    "decision_by_rule": True,
+                    "decision_shadow_source": "rule",
+                    "decision_shadow_not_found": False,
+                    "decision_pipeline_not_found": _refused(pipeline),
+                    "decision_shadow_agree": not _refused(pipeline),
+                },
+            }
+        assert self.decider is not None  # noqa: S101 — тень только с ним
+
+        async def first_answer(shown: list[ChunkMatch]) -> Completion:
+            """Ответ конвейера как спекулятивный ответ схемы: первый вызов,
+            если он — ответ, а не строка «Дополнительный поиск»."""
+            pipeline = await shadow.pipeline
+            first = pipeline.completions[0] if pipeline.completions else None
+            if first is None or search_request(first.content) is not None:
+                raise _NoReadyAnswerError
+            return first
+
+        async def search(query: str, shown: list[ChunkMatch]) -> list[ChunkMatch]:
+            # Своя сессия: сессией запроса в это время пользуется конвейер.
+            maker = self.shadow_sessions or get_session_maker()
+            with tenant_scope(tenant_id):
+                async with maker() as own:
+                    return await self._rebound(own)._scheme_search(query, viewer)
+
+        async def directory(role: str, missing: str, q: str) -> DirectoryHit:
+            return find_in_directory(books, role, missing)
+
+        loop = DecisionLoop(
+            decide=self.decider.decide,
+            search=search,
+            speculate=first_answer,
+            general=None,
+            directory=directory if books else None,
+            budget=self.decision_budget,
+        )
+        verdict = await loop.run(question, context)
+        # Ответ конвейера — не вызов схемы (общий ответ тень не зовёт): своих
+        # вызовов Flash у цикла нет, они — в _shadow_answer.
+        verdict.completions = []
+        pipeline = await shadow.pipeline
+        source, answer, own = await self._shadow_answer(question, verdict, pipeline)
+        scheme_refused = answer is None or is_not_found(answer)
+        pipeline_refused = _refused(pipeline)
+        result = (
+            ("agree_refusal" if scheme_refused else "agree_answer")
+            if scheme_refused == pipeline_refused
+            else ("scheme_refused" if scheme_refused else "pipeline_refused")
+        )
+        DECISION_BRANCH.labels("shadow", "shadow", result).inc()
+        wall = search_ms + _elapsed_ms(started)
+        _observe_decision(verdict, search_ms, wall, mode="shadow")
+        columns = _decision_columns(verdict, DecisionMode.SHADOW, search_ms)
+        trace = dict(columns["decision_trace"])  # type: ignore[call-overload]
+        trace.update(
+            {
+                "decision_shadow_source": source,
+                "decision_shadow_not_found": scheme_refused,
+                "decision_pipeline_not_found": pipeline_refused,
+                "decision_shadow_agree": scheme_refused == pipeline_refused,
+                "decision_shadow_answer_calls": len(own),
+                "decision_shadow_answer_input_tokens": sum(
+                    c.usage.input_tokens for c in own
+                ),
+                "decision_shadow_answer_output_tokens": sum(
+                    c.usage.output_tokens for c in own
+                ),
+                "decision_shadow_ms": wall,
+            }
+        )
+        columns["decision_trace"] = trace
+        return columns
+
+    def _rebound(self, session: AsyncSession) -> "FaqService":
+        """Тот же сервис на другой сессии — для поиска в фоне тени."""
+        clone = copy.copy(self)
+        clone.session = session
+        clone.chunk_repo = ChunkRepository(session)
+        clone.glossary_repo = GlossaryRepository(session)
+        return clone
+
+    async def _shadow_answer(
+        self, question: str, verdict: Verdict, pipeline: _Outcome
+    ) -> tuple[str, str | None, list[Completion]]:
+        """Что показала бы схема: откуда ответ (pipeline / own / refusal /
+        small_talk), его текст (None — реплика) и свои вызовы Flash."""
+        if verdict.route is Route.SMALL_TALK:
+            return "small_talk", None, []
+        if verdict.route in (Route.NOT_FOUND, Route.OTHER_SUBJECT):
+            return (
+                "refusal",
+                with_other_subject_note(NOT_FOUND_ANSWER, verdict.decision),
+                [],
+            )
+        if verdict.spec is not None:
+            return "pipeline", pipeline.content, []
+        with llm_stage("answer"):
+            completion = await self.llm_gateway.generate(
+                build_answer_messages(
+                    question, verdict.shown, verdict.decision, contact=verdict.contact
+                ),
+                temperature=self.temperature,
+            )
+        return "own", completion.content, [completion]
+
+    async def _write_shadow(
+        self, entry_id: UUID, tenant_id: UUID, columns: dict[str, object]
+    ) -> None:
+        """Дописать журнал своей сессией: сессия запроса к этому времени
+        закрыта, а строка — уже записана (или вот-вот: чат пишет её вместе
+        с сообщением)."""
+        maker = self.shadow_sessions or get_session_maker()
+        for _ in range(SHADOW_WRITE_ATTEMPTS):
+            with tenant_scope(tenant_id):
+                async with maker() as session:
+                    entry = await session.get(QaLog, entry_id)
+                    if entry is not None:
+                        for name, value in columns.items():
+                            setattr(entry, name, value)
+                        await session.commit()
+                        return
+            await asyncio.sleep(SHADOW_WRITE_PAUSE)
+        logger.warning("decision_shadow_row_missing", qa_log_id=str(entry_id))
 
     async def _decided(
         self,
@@ -1908,6 +2158,40 @@ class _OriginOnDecision:
         await self.origin(origin)
 
 
+SHADOW_TIMEOUT = 60.0
+"""Сколько фон схемы может идти после ответа: дольше — строка журнала
+остаётся без колонок схемы."""
+SHADOW_WRITE_ATTEMPTS = 20
+SHADOW_WRITE_PAUSE = 0.5
+_SHADOW_TASKS: set[asyncio.Task[None]] = set()
+"""Фоновые циклы схемы: ссылка, чтобы задачу не собрал сборщик мусора."""
+
+
+class _NoReadyAnswerError(Exception):
+    """Первый вызов конвейера — строка поиска, а не ответ (BH-43)."""
+
+
+@dataclass
+class _Shadow:
+    """Связь фона схемы с ответом конвейера и его строкой журнала."""
+
+    pipeline: "asyncio.Future[_Outcome]" = field(
+        default_factory=lambda: asyncio.get_running_loop().create_future()
+    )
+    entry: "asyncio.Future[tuple[UUID, UUID, int]]" = field(
+        default_factory=lambda: asyncio.get_running_loop().create_future()
+    )
+    task: "asyncio.Task[None] | None" = None
+
+    def cancel(self) -> None:
+        if self.task is not None:
+            self.task.cancel()
+
+
+def _refused(outcome: _Outcome) -> bool:
+    return outcome.origin is not AnswerOrigin.DOCUMENTS
+
+
 def _masked(value: object) -> object:
     """Строки решения — после mask_pii, как вопрос: «чего не хватает» и
     запрос добора повторяют его слова (152-ФЗ)."""
@@ -1941,25 +2225,27 @@ def _decision_columns(
     }
 
 
-def _observe_decision(verdict: Verdict, search_ms: int, total_ms: int) -> None:
+def _observe_decision(
+    verdict: Verdict, search_ms: int, total_ms: int, *, mode: str = "on"
+) -> None:
     """Метрики схемы на вопрос (BH-49 часть «А»)."""
     route = "fallback" if verdict.fallback else verdict.route.value
-    DECISION_QUESTIONS.labels("on", route).inc()
-    DECISION_QUESTION_DURATION.labels("on", route).observe(total_ms / 1000)
+    DECISION_QUESTIONS.labels(mode, route).inc()
+    DECISION_QUESTION_DURATION.labels(mode, route).observe(total_ms / 1000)
     if verdict.fallback:
-        DECISION_FALLBACK.labels("on", verdict.fallback).inc()
+        DECISION_FALLBACK.labels(mode, verdict.fallback).inc()
     if verdict.spec_skip:
-        DECISION_SPECULATIVE_TOTAL.labels("on", "skipped", verdict.spec_skip).inc()
+        DECISION_SPECULATIVE_TOTAL.labels(mode, "skipped", verdict.spec_skip).inc()
     for reason in verdict.wasted:
-        DECISION_SPECULATIVE_TOTAL.labels("on", "wasted", reason).inc()
+        DECISION_SPECULATIVE_TOTAL.labels(mode, "wasted", reason).inc()
     if verdict.spec is not None:
-        DECISION_SPECULATIVE_TOTAL.labels("on", "used", "none").inc()
+        DECISION_SPECULATIVE_TOTAL.labels(mode, "used", "none").inc()
     for result in verdict.recheck_results:
-        DECISION_BRANCH.labels("on", "recheck", result).inc()
+        DECISION_BRANCH.labels(mode, "recheck", result).inc()
     for result in verdict.directory:
-        DECISION_BRANCH.labels("on", "directory", result).inc()
+        DECISION_BRANCH.labels(mode, "directory", result).inc()
     for result in verdict.extra_results:
-        DECISION_BRANCH.labels("on", "extra_search", result).inc()
+        DECISION_BRANCH.labels(mode, "extra_search", result).inc()
     stages = {
         "search": search_ms,
         "decision": verdict.decision_ms,
@@ -1970,7 +2256,7 @@ def _observe_decision(verdict: Verdict, search_ms: int, total_ms: int) -> None:
     }
     for stage, ms in stages.items():
         if ms:
-            DECISION_STAGE_DURATION.labels("on", stage).observe(ms / 1000)
+            DECISION_STAGE_DURATION.labels(mode, stage).observe(ms / 1000)
 
 
 def _elapsed_ms(started: float) -> int:
