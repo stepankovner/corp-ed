@@ -54,9 +54,14 @@ from corp_ed.domain.models import (
     User,
     UserRole,
 )
-from corp_ed.domain.types import Retriever
+from corp_ed.domain.types import DecisionMode, Retriever
+from corp_ed.llm.decision_client import HedgedDecider
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
-from corp_ed.llm.factory import build_embedding_gateway, build_llm_gateway
+from corp_ed.llm.factory import (
+    build_decider,
+    build_embedding_gateway,
+    build_llm_gateway,
+)
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.reranker import HttpReranker, Reranker
 from corp_ed.llm.throttle import Throttle
@@ -641,6 +646,18 @@ def get_credit_order_service(
     return CreditOrderService(session, audit, notifier=notifier, invoices=invoices)
 
 
+def get_decider(
+    request: Request,
+    settings: Annotated[LLMSettings, Depends(get_llm_settings)],
+    rag: Annotated[RagSettings, Depends(get_rag_settings)],
+) -> HedgedDecider | None:
+    """Поставщики шага решения (BH-46); None — без ключа Cloud.ru. Клиент
+    моделей берётся, только когда он нужен: без ключа схемы нет."""
+    if not settings.fallback_enabled:
+        return None
+    return build_decider(get_http_client(request), settings, rag)
+
+
 FaqBuilder = Callable[[AsyncSession], FaqService]
 """FaqService на заданной сессии: у фоновой задачи чата (ТЗ §6) своя
 сессия БД — сессия запроса закрывается раньше, чем дописан ответ."""
@@ -654,6 +671,7 @@ def get_faq_builder(
     notifier: Annotated[TeamNotifier, Depends(get_team_notifier)],
     reranker: Annotated[Reranker | None, Depends(get_reranker)],
     dialogue_store: Annotated[DialogueStore | None, Depends(get_dialogue_store)],
+    decider: Annotated[HedgedDecider | None, Depends(get_decider)],
 ) -> FaqBuilder:
     def build(session: AsyncSession) -> FaqService:
         tenant_repo = TenantRepository(session)
@@ -684,6 +702,9 @@ def get_faq_builder(
             search_step=settings.faq_search_step,
             small_talk=settings.faq_small_talk,
             small_talk_rule=settings.faq_small_talk_rule,
+            decider=decider,
+            decision_mode=DecisionMode(settings.faq_decision_mode),
+            decision_budget=settings.faq_decision_budget_seconds,
             context_max_tokens=settings.context_max_tokens,
             temperature=settings.faq_temperature,
             retriever=Retriever(settings.retriever),

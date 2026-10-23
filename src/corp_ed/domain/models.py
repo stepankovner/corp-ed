@@ -1195,6 +1195,21 @@ class QaLog(TenantMixin, Base):
     # Время ответа от вопроса до записи журнала (BH-49): суточный p95 по
     # компании. NULL — строки до BH-49.
     latency_ms: Mapped[int | None] = mapped_column()
+    # Схема «решение до ответа» (BH-46): режим на момент вопроса; при
+    # ответе по схеме — итоговый маршрут, все решения по порядку (JSON
+    # Decision с поставщиком, усилием, дублем; строки — после mask_pii),
+    # вызовы, токены и время шага решения — отдельно от ответа (у решения
+    # свой поставщик и своя цена). Остальные поля стенда (offline_e2e:
+    # decision_exhausted, decision_wasted, decision_timeout, …, время по
+    # веткам) — в decision_trace под теми же именами.
+    decision_mode: Mapped[str | None] = mapped_column(String(8))
+    decision_route: Mapped[str | None] = mapped_column(String(16))
+    decision: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    decision_calls: Mapped[int | None] = mapped_column()
+    decision_input_tokens: Mapped[int | None] = mapped_column()
+    decision_output_tokens: Mapped[int | None] = mapped_column()
+    decision_latency_ms: Mapped[int | None] = mapped_column()
+    decision_trace: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     best_vector_distance: Mapped[float | None]
     best_fulltext_score: Mapped[float | None]
     answer_given: Mapped[bool]
