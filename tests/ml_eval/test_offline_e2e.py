@@ -694,6 +694,9 @@ def test_directory_search_asker_unit() -> None:
     # Роль с отделом, глава — офис-менеджер; вопрос не нужен.
     _, _, entries, note = search("руководитель АХС", "кабинет")
     assert [e.room for e in entries] == ["10"] and "(роль)" in note
+    # Глава та же, что у lookup, — пометка «(= lookup)».
+    _, _, entries, note = search("руководитель ОКП", "фамилия")
+    assert [e.room for e in entries] == ["30"] and note.endswith("(= lookup)")
     # Роль не общая — обычный lookup, пометки нет.
     _, _, entries, note = search("офис-менеджер", "кабинет", question)
     assert [e.room for e in entries] == ["10"] and note == ""
@@ -723,6 +726,8 @@ def test_directory_search_asker_unit() -> None:
         ],
         # таймаут — только у OpenAI-совместимых поставщиков решения
         ["--decision-timeout", "8"],
+        # отдел спрашивающего — только со справочником
+        ["--decision-asker-unit"],
     ],
 )
 def test_phase1_flags_validated(

@@ -463,8 +463,8 @@ def _directory_search(
     вопроса; общая роль при отделе спрашивающего или «руководитель
     <подразделения>» — глава подразделения (head_for_role) вместо обычного
     lookup (тот по «руководитель» находит чужих руководителей). Замещение —
-    тогда для главы. Четвёртый элемент — что нашли (HeadMatch.note), иначе
-    пусто."""
+    тогда для главы. Четвёртый элемент — что нашли (HeadMatch.note; с
+    «(= lookup)», если запись та же, что дал бы lookup), иначе пусто."""
     entries = parse_directory(markdown)
     deputies = sum(1 for entry in entries if entry.deputy)
     print(f"Справочник: «{title}», записей {len(entries)}, с замещающим {deputies}")
@@ -475,6 +475,10 @@ def _directory_search(
         found: Found = []
         head = head_for_role(entries, role, question) if asker_unit else None
         note = head.note() if head else ""
+        if head and lookup(entries, role) == [head.head]:
+            # «руководитель ОКП»: глава та же, что и у lookup, — записи не
+            # меняются; в колонке видно, что срабатывание пустое.
+            note += " (= lookup)"
         if substitution and substitution_requested(f"{role}\n{missing}"):
             found = lookup_substitute(entries, head.head.who() if head else role)
         if not found:
