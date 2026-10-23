@@ -178,6 +178,41 @@ def refreshed_credentials(adapter: object) -> Mapping[str, str] | None:
     return value if isinstance(value, Mapping) else None
 
 
+@dataclass(frozen=True)
+class SharedResource:
+    """Папка или файл, который владелец открыл сотруднику лично.
+
+    owner — идентификатор владельца в источнике (как external_user_id
+    его гранта); locator — адрес ресурса в листинге владельца (как
+    RemoteDocument.locator): документ владельца с этим адресом или под
+    ним (locator + "/") становится виден и сотруднику.
+    """
+
+    owner: str
+    locator: str
+
+
+class SharedLookup(Protocol):
+    async def __call__(
+        self, modules: Sequence[str], user: str
+    ) -> Sequence[SharedResource] | None: ...
+
+
+def shared_lookup(adapter: object) -> SharedLookup | None:
+    """Узнать у источника, что коллеги открыли сотруднику лично.
+
+    Режим per_user видит только листинг самого сотрудника, а папки,
+    которые ему открыли (Яндекс Диск: «Общий доступ»), в листинг не
+    попадают. Адаптер, который может их назвать, держит метод
+    shared_with(modules, user): user — external_user_id сотрудника;
+    None — для выбранных модулей и настроек этого не бывает;
+    AdapterError — этими учётными данными спрашивать нельзя (у Яндекса
+    — токен не администратора организации). Сопоставляет с документами
+    владельца ядро."""
+    method = getattr(adapter, "shared_with", None)
+    return method if callable(method) else None
+
+
 class SourceAdapter(Protocol):
     async def check(self) -> None:
         """Проверить учётные данные без загрузки документов.

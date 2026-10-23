@@ -58,6 +58,7 @@ const STAT_LABELS: [string, string][] = [
   ["failed", "с ошибкой"],
   ["skipped", "пропущено"],
   ["seen", "просмотрено"],
+  ["shared", "открыто по личному доступу"],
 ];
 
 function runStats(stats: Run["stats"]): string {
