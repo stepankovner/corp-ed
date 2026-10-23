@@ -10,6 +10,7 @@ from corp_ed.domain.directory import (
     asker_unit,
     covers,
     format_entries,
+    generic_role_miss,
     head_for_role,
     is_generic_role,
     lookup,
@@ -597,3 +598,19 @@ def test_head_found_by_lookup_of_its_who() -> None:
     for unit in ("Бухгалтерия", "Административно-хозяйственная служба"):
         head = unit_head(entries, unit)
         assert head is not None and lookup(entries, head.who())[0] == head
+
+
+def test_generic_role_miss() -> None:
+    """Решение Артёма 23.10: общая роль без главы — промах с причиной."""
+    entries = _fake()
+    q = "По своду регламентов чьим приказом вносятся изменения? В каком кабинете?"
+    assert head_for_role(entries, "руководитель", q) is None
+    assert generic_role_miss(entries, "руководитель", q) == (
+        "промах: общая роль без отдела спрашивающего"
+    )
+    assert generic_role_miss(entries, "начальник", "Я работаю на складе.") == (
+        "промах: общая роль, главу «Склад» не определить"
+    )
+    # Роль не общая — не промах, дальше обычный lookup.
+    assert generic_role_miss(entries, "руководитель казначейства", q) == ""
+    assert generic_role_miss(entries, "главный бухгалтер", q) == ""

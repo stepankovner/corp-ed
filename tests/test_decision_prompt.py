@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from corp_ed.domain.decision import Decision
 from corp_ed.domain.directory import Entry, Substitute
 from corp_ed.prompts.decision import (
+    DECISION_PROMPT_VERSION,
+    LOOKUP_OWN_HEAD,
     build_answer_messages,
     build_decision_messages,
     contact_note,
@@ -67,6 +69,29 @@ def test_response_format() -> None:
     assert fmt["type"] == "json_schema"
     assert fmt["json_schema"]["strict"] is True
     assert "reasoning" in fmt["json_schema"]["schema"]["properties"]
+
+
+V6_SHA = {
+    (False, False): "e78d91e2dbe60fa460739ebf1027a71b811f9a05e6786e8e6cb17f3197762ee2",
+    (False, True): "11de0c758a46d42bc27090e8681df0a7feb8997d2102211f816793e5f93490ab",
+    (True, False): "af81687579022066b914955cdcfe11a07b074da5ad0d7150460fd3e3fdbef349",
+    (True, True): "f9a523bfd8ef8d6e4180c416f54c4a81ef81f6a97f305281ebc48e7acddc15d1",
+}
+
+
+def test_v7_only_adds_own_head_rule() -> None:
+    """decision-v7 — единственная правка этапа: правило о своём
+    руководителе сразу после lookup_role; без него — байт в байт v6."""
+    import hashlib
+
+    assert DECISION_PROMPT_VERSION == "decision-v7"
+    for (reasoning, answer), sha in V6_SHA.items():
+        system = decision_system_prompt(reasoning=reasoning, answer=answer)
+        assert system.count(LOOKUP_OWN_HEAD) == 1
+        assert "без лишних слов; иначе «—».\n" + LOOKUP_OWN_HEAD in system
+        v6 = system.replace(LOOKUP_OWN_HEAD, "")
+        assert hashlib.sha256(v6.encode()).hexdigest() == sha
+    assert "«руководитель ЦУП»" in LOOKUP_OWN_HEAD
 
 
 def test_system_prompt_variants() -> None:

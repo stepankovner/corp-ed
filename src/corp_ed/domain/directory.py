@@ -31,7 +31,8 @@ T3-05) отвечаются не строкой справочника, а це�
 названном в вопросе («Я в ОКП», «выхожу в бухгалтерию»), — глава этого
 подразделения (`head_for_role`: `is_generic_role`, `asker_unit`,
 `role_unit`, `unit_head`), как бы ни называлась его должность
-(офис-менеджер, главный бухгалтер). `lookup` не меняется.
+(офис-менеджер, главный бухгалтер). Общая роль без отдела — промах
+(`generic_role_miss`, решение Артёма 23.10). `lookup` не меняется.
 """
 
 import re
@@ -939,3 +940,20 @@ def head_for_role(
             return None
     head = unit_head(entries, unit)
     return HeadMatch(unit=unit, source=source, head=head) if head else None
+
+
+def generic_role_miss(entries: Sequence[Entry], role: str, question: str) -> str:
+    """Причина промаха справочника для общей роли без главы, иначе пусто.
+
+    Решение Артёма 23.10: общая роль («руководитель») без отдела
+    спрашивающего — промах, а не чужие руководители (`lookup` по
+    «руководитель» находит всех с этой должностью — T7-19). Дальше —
+    прежний маршрут: добор, ответ по тому, что есть, или отказ. Так же —
+    если отдел есть, а главу не определить. Звать, когда `head_for_role`
+    вернул None."""
+    if not is_generic_role(role):
+        return ""
+    unit = asker_unit(question, entries)
+    if unit is None:
+        return "промах: общая роль без отдела спрашивающего"
+    return f"промах: общая роль, главу «{unit}» не определить"
