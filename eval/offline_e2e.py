@@ -726,6 +726,29 @@ def _parser() -> argparse.ArgumentParser:
         "за W с — звено пропускается M с, потом одна проба (ориентир handoff)",
     )
     parser.add_argument(
+        "--decision-hedge",
+        default="",
+        help="фаза 2, BH-46 п. 2–3: дублирующий запрос шага решения — "
+        "«<поставщик>:<модель>» дублёра, например yandex:qwen3.6-35b-a3b; "
+        "основной (--decision-provider mws или cloudru) молчит "
+        "--decision-hedge-delay с, ответил с ошибкой или не по схеме — тот же "
+        "запрос дублёру; первый годный побеждает, токены проигравшего — "
+        "decision_hedge_wasted_tokens. Не вместе с --decision-fallback",
+    )
+    parser.add_argument(
+        "--decision-hedge-delay",
+        type=float,
+        default=2.0,
+        help="с --decision-hedge: через сколько секунд без ответа основного "
+        "уходит дубль (handoff BH-46: 2 с)",
+    )
+    parser.add_argument(
+        "--decision-hedge-extra",
+        default='{"reasoning_effort": "none"}',
+        help="с --decision-hedge: JSON полей запроса дублёра (вместо полей "
+        "основного; у Qwen — только reasoning_effort none)",
+    )
+    parser.add_argument(
         "--decision-directory",
         action="store_true",
         help="decision-v4: справочник оргструктуры как таблица — поиск по должности "
@@ -738,6 +761,13 @@ def _parser() -> argparse.ArgumentParser:
         help="фаза 0, 21.10: с --decision-directory — при словах о замещении в "
         "роли или «чего не хватает» в выдержку пара «отсутствующий → "
         "замещающий» (абзацы «Замещение» и «Подчинённость» оргструктуры)",
+    )
+    parser.add_argument(
+        "--decision-directory-on-refusal",
+        action="store_true",
+        help="фаза 2, план §10.4: с --decision-directory — отказ решения "
+        "(«ничего» / «про другое») при названной lookup_role сначала идёт в "
+        "справочник; полное попадание — ответ, промах — прежний отказ",
     )
     parser.add_argument(
         "--decision-only",
@@ -781,6 +811,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ChainLink,
         CircuitBreaker,
         DecisionChain,
+        HedgedDecider,
+        HedgeEvent,
         OpenAICompatibleClient,
     )
     from eval.yandex import YandexClient
@@ -883,6 +915,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     if args.decision_substitution and not args.decision_directory:
         print("--decision-substitution: только с --decision-directory")
+        return 2
+    if args.decision_directory_on_refusal and not args.decision_directory:
+        print("--decision-directory-on-refusal: только с --decision-directory")
+        return 2
+    hedge, hedge_model = "", ""
+    if args.decision_hedge:
+        hedge, _, hedge_model = args.decision_hedge.partition(":")
+        if (
+            args.decision == "off"
+            or args.decision_only
+            or args.decision_fallback
+            or (args.decision_provider or args.llm_provider) not in ("mws", "cloudru")
+            or hedge not in ("yandex", "mws", "cloudru")
+            or hedge == (args.decision_provider or args.llm_provider)
+            or not hedge_model
+            or args.decision_hedge_delay < 0
+        ):
+            print(
+                "--decision-hedge: «<поставщик>:<модель>» другого поставщика, "
+                "только с --decision и --decision-provider mws или cloudru, без "
+                "--decision-only и --decision-fallback; задержка ≥ 0"
+            )
+            return 2
+    elif args.decision_hedge_delay != 2.0:
+        print("--decision-hedge-delay: только с --decision-hedge")
         return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
@@ -1060,7 +1117,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     decision_client: YandexClient | OpenAICompatibleClient | DecisionChain | None = None
     decision_extra = json.loads(args.decision_extra) if args.decision_extra else None
     decision_provider = args.decision_provider or args.llm_provider
-    if args.decision_fallback and not args.dry_run:
+    if args.decision_hedge and not args.dry_run:
+        # Фаза 2: дублирующий запрос — основной с одной попыткой (быстрая
+        # ошибка — сразу дублёру), дублёр Яндекса со своими повторами клиента.
+        decision_client = HedgedDecider(
+            OpenAICompatibleClient.from_env(decision_provider, max_attempts=1),
+            args.decision_model or args.model,
+            YandexClient.from_env()
+            if hedge == "yandex"
+            else OpenAICompatibleClient.from_env(hedge, max_attempts=1),
+            hedge_model,
+            delay=args.decision_hedge_delay,
+            hedge_extra=json.loads(args.decision_hedge_extra)
+            if args.decision_hedge_extra
+            else {},
+            valid=lambda text: parse_decision(text) is not None,
+            primary_name=decision_provider,
+            hedge_name=hedge,
+        )
+    elif args.decision_fallback and not args.dry_run:
         # Цепочка Cloud.ru → MWS (или наоборот): одна попытка на звено.
         decision_client = DecisionChain(
             [
@@ -1124,6 +1199,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     rows: list[dict[str, object]] = []
     chain_log: list[ChainEvent] = []
+    hedge_log: list[HedgeEvent] = []
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
     ):
@@ -1205,6 +1281,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 recheck=args.decision_recheck,
                 directory_answer=args.decision_answer,
                 refusal_parallel=args.decision_refusal_parallel,
+                directory_on_refusal=args.decision_directory_on_refusal,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1339,6 +1416,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             else []
         )
         chain_log.extend(chain_events)
+        # Фаза 2: дубль — события вызовов решения этого вопроса (drain ждёт
+        # проигравших, их токены — в цену; на время ответа это не влияет).
+        hedge_events: list[HedgeEvent] = (
+            decision_client.drain()
+            if isinstance(decision_client, HedgedDecider)
+            else []
+        )
+        hedge_log.extend(hedge_events)
+        by_model: dict[str, list[int]] = {}
+        for c in decision_calls:
+            tokens = by_model.setdefault(c.model, [0, 0])
+            tokens[0] += c.input_tokens
+            tokens[1] += c.output_tokens
         answered = is_answered(answer, answer_given=bool(selected))
         rows.append(
             {
@@ -1431,6 +1521,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "decision_chain_alert": ",".join(
                     f"{e.provider}:{e.status}" for e in chain_events if e.alert
                 ),
+                # Дубль (--decision-hedge): был ли, кто выиграл (по вызовам
+                # с дублем), токены не взятых ответов; полный журнал по
+                # вызовам — decision_hedge (HedgeEvent.as_list).
+                "decision_hedged": any(e.hedged for e in hedge_events)
+                if hedge_events
+                else "",
+                "decision_hedge_winner": ",".join(
+                    e.winner or "none" for e in hedge_events if e.hedged
+                ),
+                "decision_hedge_wasted_tokens": sum(
+                    sum(t) for e in hedge_events for t in e.wasted.values()
+                )
+                if hedge_events
+                else "",
+                "decision_hedge_abandoned": sum(e.abandoned for e in hedge_events)
+                if hedge_events
+                else "",
+                "decision_hedge": json.dumps(
+                    [e.as_list() for e in hedge_events], ensure_ascii=False
+                )
+                if hedge_events
+                else "",
+                # Токены решения по моделям (взятые в решение вызовы; у дубля
+                # модели разные — цена по каждой своя).
+                "decision_tokens_by_model": json.dumps(by_model, ensure_ascii=False)
+                if by_model
+                else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1526,6 +1643,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             + ", ".join(f"{k} {v}" for k, v in sorted(tally.items()))
             + (f"; ТРЕВОГА (настройка): {', '.join(alerts)}" if alerts else "")
         )
+    if hedge_log:
+        hedged = [e for e in hedge_log if e.hedged]
+        wins = {w: sum(e.winner == w for e in hedged) for w in ("primary", "hedge")}
+        print(
+            f"Дубль решения: вызовов {len(hedge_log)}, с дублем {len(hedged)} "
+            f"(выиграл основной {wins['primary']}, дублёр {wins['hedge']}, "
+            f"никто {len(hedged) - wins['primary'] - wins['hedge']}); причины "
+            + ", ".join(
+                f"{t} {sum(e.trigger == t for e in hedged)}"
+                for t in ("delay", "error", "invalid")
+            )
+            + f"; не дождались проигравших {sum(e.abandoned for e in hedge_log)}"
+            + (
+                "; ТРЕВОГА (настройка основного)"
+                if any(e.alert for e in hedge_log)
+                else ""
+            )
+        )
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
     prompt_version = (
@@ -1542,6 +1677,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ]
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + (f"-chain-{fallback}" if args.decision_fallback else "")
+        + ("-dor" if args.decision_directory_on_refusal else "")
+        + (f"-hedge-{hedge}" if args.decision_hedge else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"
         else SMALL_TALK_PROMPT_VERSION

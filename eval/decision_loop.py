@@ -58,6 +58,15 @@ recheck="refusals" — прежний вариант R. Причина пере�
   "unavailable", шаг — «…!unavailable».
 Время каждого вызова по порядку — DecidedRun.steps; причина каждого
 выброшенного спекулятивного ответа — wasted_reasons.
+
+Фаза 2 (ml-report, «Фаза 2: совместная приёмка», план §10.4; по умолчанию
+выключено): directory_on_refusal=True — отказ решения («ничего» / «про
+другое», corp_ed.domain.decision.is_refusal) при названной lookup_role и
+подключённом справочнике идёт в справочник. Полное попадание — ответ по
+выдержкам с записью; промах или запись без нужного поля — прежний отказ
+(route без справочника), а не ответ по тому, что есть. Перепроверка и общий
+ответ параллельно — по отказу в самом решении, а не по маршруту: при
+попадании общий ответ выброшен (wasted_general).
 """
 
 import re
@@ -71,6 +80,7 @@ from corp_ed.domain.agent import MAX_EXCERPTS, MAX_EXTRA_SEARCHES, drop_citation
 from corp_ed.domain.decision import (
     Decision,
     Route,
+    is_refusal,
     lookup_role,
     parse_decision,
     route,
@@ -253,8 +263,11 @@ def speculation_skip(
 def _recheck_reason(decision: Decision | None, step: Route, mode: str) -> str | None:
     """Почему быстрое решение переспросить обычным вызовом (None — не надо)."""
     if step in (Route.NOT_FOUND, Route.OTHER_SUBJECT) or (
-        decision is not None and decision.sufficiency == "none"
+        decision is not None
+        and (decision.sufficiency == "none" or is_refusal(decision))
     ):
+        # is_refusal: «про другое» при справочнике до отказа даёт маршрут
+        # DIRECTORY, но это всё ещё отказ — перепроверяем.
         return "refusal"
     if (
         mode == "refusals+role"
@@ -293,6 +306,7 @@ def _decide_chain(
     directory: bool,
     recheck: str = "refusals",
     general: Callable[[], Completion] | None = None,
+    directory_on_refusal: bool = False,
 ) -> _Decided:
     """Одно решение: быстрый вызов и, при отказе (или «хватает + роль» в
     режиме refusals+role), перепроверка обычным. general — общий ответ:
@@ -323,7 +337,12 @@ def _decide_chain(
         if decision is None:
             record = {"invalid": completion.text[:500]}
             return completion, None, Route.ANSWER, record, ms
-        step = route(decision, can_search=can_search, directory=directory)
+        step = route(
+            decision,
+            can_search=can_search,
+            directory=directory,
+            directory_on_refusal=directory_on_refusal,
+        )
         return completion, decision, step, decision.model_dump(), ms
 
     def failed(label: str, record: dict[str, Any]) -> str:
@@ -346,7 +365,10 @@ def _decide_chain(
         return result
     reason = _recheck_reason(decision, step, recheck)
     if decide_fast is not None and reason is not None:
-        if general is not None and reason == "refusal" and step in _REFUSALS:
+        refusing = step in _REFUSALS or (
+            step is Route.DIRECTORY and decision is not None and is_refusal(decision)
+        )
+        if general is not None and reason == "refusal" and refusing:
             with ThreadPoolExecutor(max_workers=2) as pool:
                 recheck_f = pool.submit(once, decide, "recheck")
                 general_f = pool.submit(general)
@@ -388,6 +410,7 @@ def run_decided(
     recheck: str = "refusals",
     directory_answer: str = "plain",
     refusal_parallel: bool = False,
+    directory_on_refusal: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -409,6 +432,7 @@ def run_decided(
         recheck=recheck,
         directory_answer=directory_answer,
         refusal_parallel=refusal_parallel,
+        directory_on_refusal=directory_on_refusal,
         max_extra=max_extra,
         max_excerpts=max_excerpts,
     )
@@ -434,6 +458,7 @@ def _run_decided(
     recheck: str = "refusals",
     directory_answer: str = "plain",
     refusal_parallel: bool = False,
+    directory_on_refusal: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -484,6 +509,7 @@ def _run_decided(
                 directory=directory is not None,
                 recheck=recheck,
                 general=general if refusal_parallel else None,
+                directory_on_refusal=directory_on_refusal,
             )
 
         if speculative and not merged and not searches and shown:

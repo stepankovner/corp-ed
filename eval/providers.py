@@ -9,6 +9,10 @@ model_uri, cache_uri), поэтому offline_e2e и bench меняют пост
 - DecisionChain — цепочка поставщиков шага решения (Cloud.ru → MWS, BH-46
   «Поставщики решения», 22.10): переход к следующему звену при сбое,
   предохранитель на звено, журнал событий;
+- HedgedDecider — дублирующий запрос шага решения (BH-46 «Бюджет времени
+  шага решения и дублирующий запрос», фаза 2, 23.10): основной Cloud.ru,
+  через delay секунд без ответа (или сразу при быстрой ошибке) — тот же
+  запрос дублёру (Qwen у Яндекса), побеждает первый годный ответ;
 - LocalEmbedder — открытые веса через sentence-transformers (bge-m3 на
   своём процессоре, Р-3 «в»); пакета в зависимостях проекта нет —
   запускать из sandbox/.venv-rerank, как реранкер (eval/rerank.py).
@@ -22,7 +26,9 @@ import random
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor
+from concurrent.futures import wait as futures_wait
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import httpx
@@ -514,6 +520,281 @@ class DecisionChain:
         if deadline is not None and self._clock() >= deadline:
             raise CallTimeoutError("chain", (self._clock() - started) * 1000)
         raise ChainExhaustedError("ни одно звено цепочки решения не ответило")
+
+
+HEDGE_EXTRA: dict[str, Any] = {"reasoning_effort": "none"}
+"""Поля запроса дублёра (Qwen3.6 у Яндекса): только без размышлений — `low`
+рвёт лимит токенов (ml-report, «Qwen3.6 у Яндекса как модель решения»)."""
+
+
+def _failure_kind(provider: str, exc: BaseException) -> tuple[str, int | None]:
+    """Вид сбоя ноги дубля: как classify_failure, ошибки Яндекса — по коду."""
+    if isinstance(exc, (ProviderError, CallTimeoutError, httpx.TransportError)):
+        return classify_failure(provider, exc)
+    status = getattr(exc, "status", None)
+    if isinstance(status, int):
+        if status == 429:
+            return "overload", status
+        return ("server" if status >= 500 else "request"), status
+    return type(exc).__name__, None
+
+
+@dataclass
+class HedgeEvent:
+    """Строка журнала одного вызова решения с дублем (BH-46 п. 2–3).
+
+    hedged — дубль отправлен; trigger — почему: delay (основной молчал
+    delay с), error (быстрая ошибка основного), invalid (основной ответил не
+    по схеме); winner — primary / hedge / "" (годного ответа нет). Токены
+    проигравшего (wasted_*) — если он успел ответить; abandoned — не успел до
+    drain (его токены неизвестны). effort — reasoning_effort вызова
+    основного (low — быстрый, medium — перепроверка)."""
+
+    effort: str
+    hedged: bool = False
+    trigger: str = ""
+    winner: str = ""
+    primary_outcome: str = "pending"
+    primary_status: int | None = None
+    hedge_outcome: str = ""
+    hedge_status: int | None = None
+    launch_ms: float = 0.0
+    primary_ms: float = 0.0
+    hedge_ms: float = 0.0
+    total_ms: float = 0.0
+    wasted: dict[str, list[int]] = field(default_factory=dict)
+    """Токены ответов, не взятых в решение: модель → [вход, выход]."""
+    abandoned: bool = False
+    alert: bool = False
+
+    def as_list(self) -> list[Any]:
+        return [
+            self.effort,
+            self.trigger,
+            self.winner,
+            self.primary_outcome,
+            self.hedge_outcome,
+            round(self.launch_ms),
+            round(self.primary_ms),
+            round(self.hedge_ms),
+            round(self.total_ms),
+            self.wasted,
+            self.abandoned,
+        ]
+
+
+class HedgedDecider:
+    """Дублирующий запрос шага решения для eval (hedged request, BH-46
+    «Бюджет времени шага решения и дублирующий запрос», п. 2–3; фаза 2).
+
+    Каждый вызов уходит основному (Cloud.ru); если за delay секунд ответа
+    нет — тот же запрос (те же сообщения и схема) уходит дублёру (Qwen у
+    Яндекса, поля запроса — hedge_extra вместо полей основного); быстрая
+    ошибка основного или ответ не по схеме — дублёр сразу. Побеждает первый
+    годный ответ (valid(text)); ответ возвращается с latency_ms — временем
+    от начала вызова до победы (с ожиданием дубля). Срок timeout — на весь
+    вызов: основному он передаётся как таймаут запроса, дублёра (у клиента
+    Яндекса таймаута нет) ждём до того же срока; ни одного годного к сроку
+    — CallTimeoutError, оба упали — ChainExhaustedError (в обоих случаях
+    цикл решения идёт обычным путём ответа). Оба ответили не по схеме —
+    ответ основного (цикл запишет invalid).
+
+    Проигравший запрос не отменяется (синхронный httpx в потоке): он
+    дорабатывает до конца или до своего таймаута, его токены — в журнал
+    (HedgeEvent.wasted_*) и в цену. drain() после вопроса дожидается
+    проигравших не дольше drain_wait секунд; не дождался — abandoned.
+
+    Клиент основного — с max_attempts=1: иначе 5xx повторялись бы внутри
+    клиента и «быстрая ошибка — дублёр сразу» не срабатывала бы."""
+
+    def __init__(
+        self,
+        primary: Any,
+        primary_model: str,
+        hedge: Any,
+        hedge_model: str,
+        *,
+        delay: float = 2.0,
+        hedge_extra: dict[str, Any] | None = None,
+        valid: Callable[[str], bool] = lambda text: bool(text.strip()),
+        primary_name: str = "cloudru",
+        hedge_name: str = "yandex",
+        drain_wait: float = 30.0,
+        clock: Callable[[], float] = time.perf_counter,
+    ) -> None:
+        self.primary, self.primary_model = primary, primary_model
+        self.hedge, self.hedge_model = hedge, hedge_model
+        self.delay = delay
+        self.hedge_extra = dict(HEDGE_EXTRA if hedge_extra is None else hedge_extra)
+        self.valid = valid
+        self.primary_name, self.hedge_name = primary_name, hedge_name
+        self.drain_wait = drain_wait
+        self._clock = clock
+        self._events: list[HedgeEvent] = []
+        self._losers: list[tuple[HedgeEvent, Future[Completion]]] = []
+        self._lock = threading.Lock()
+
+    def drain(self) -> list[HedgeEvent]:
+        """События с прошлого drain; проигравших ждём до drain_wait с."""
+        with self._lock:
+            events, self._events = self._events, []
+            losers, self._losers = self._losers, []
+        if losers:
+            futures_wait([f for _, f in losers], timeout=self.drain_wait)
+        for event, future in losers:
+            if not future.done():
+                event.abandoned = True
+                continue
+            if future.exception() is not None:
+                continue  # проигравший упал: токенов нет
+            lost = future.result()
+            tokens = event.wasted.setdefault(lost.model, [0, 0])
+            tokens[0] += lost.input_tokens
+            tokens[1] += lost.output_tokens
+        return events
+
+    def complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str = "",
+        timeout: float | None = None,
+        extra: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Completion:
+        del model  # у каждой ноги своя модель
+        started = self._clock()
+        deadline = None if timeout is None else started + timeout
+        event = HedgeEvent(effort=str((extra or {}).get("reasoning_effort", "")))
+        pool = ThreadPoolExecutor(max_workers=2)
+
+        def call_primary() -> Completion:
+            t0 = self._clock()
+            try:
+                return self.primary.complete(
+                    messages,
+                    model=self.primary_model,
+                    **({"timeout": timeout} if timeout is not None else {}),
+                    **({"extra": extra} if extra else {}),
+                    **kwargs,
+                )
+            finally:
+                event.primary_ms = (self._clock() - t0) * 1000
+
+        def call_hedge() -> Completion:
+            t0 = self._clock()
+            try:
+                return self.hedge.complete(
+                    messages,
+                    model=self.hedge_model,
+                    **({"extra": self.hedge_extra} if self.hedge_extra else {}),
+                    **kwargs,
+                )
+            finally:
+                event.hedge_ms = (self._clock() - t0) * 1000
+
+        primary_f = pool.submit(call_primary)
+        hedge_f: Future[Completion] | None = None
+        roles: dict[Future[Completion], str] = {primary_f: "primary"}
+        answers: dict[str, Completion] = {}
+        errors: dict[str, BaseException] = {}
+        winner: Completion | None = None
+
+        def launch(trigger: str) -> Future[Completion]:
+            event.hedged, event.trigger = True, trigger
+            event.launch_ms = (self._clock() - started) * 1000
+            future = pool.submit(call_hedge)
+            roles[future] = "hedge"
+            return future
+
+        def settle(future: Future[Completion]) -> Completion | None:
+            role = roles[future]
+            try:
+                done = future.result()
+            except BaseException as exc:  # noqa: BLE001 — сбой ноги: в журнал
+                errors[role] = exc
+                name = self.primary_name if role == "primary" else self.hedge_name
+                kind, status = _failure_kind(name, exc)
+                if role == "primary":
+                    event.primary_outcome, event.primary_status = kind, status
+                    event.alert = kind == "config"
+                else:
+                    event.hedge_outcome, event.hedge_status = kind, status
+                return None
+            answers[role] = done
+            ok = self.valid(done.text)
+            if role == "primary":
+                event.primary_outcome = "ok" if ok else "invalid"
+            else:
+                event.hedge_outcome = "ok" if ok else "invalid"
+            return done if ok else None
+
+        try:
+            pending: set[Future[Completion]] = {primary_f}
+            while pending and winner is None:
+                now = self._clock()
+                if deadline is not None and now >= deadline:
+                    break
+                if hedge_f is None:
+                    until = started + self.delay
+                    if deadline is not None:
+                        until = min(until, deadline)
+                else:
+                    until = deadline if deadline is not None else None
+                left = None if until is None else max(0.0, until - now)
+                done, _ = futures_wait(
+                    pending, timeout=left, return_when=FIRST_COMPLETED
+                )
+                for future in done:
+                    pending.discard(future)
+                    result = settle(future)
+                    if result is not None and winner is None:
+                        winner = result
+                        event.winner = roles[future]
+                if winner is not None:
+                    break
+                if hedge_f is None:
+                    primary_failed = primary_f.done()
+                    now = self._clock()
+                    expired = deadline is not None and now >= deadline
+                    if not expired and (primary_failed or now >= started + self.delay):
+                        trigger = (
+                            "error"
+                            if "primary" in errors
+                            else "invalid"
+                            if primary_failed
+                            else "delay"
+                        )
+                        hedge_f = launch(trigger)
+                        pending.add(hedge_f)
+            elapsed = (self._clock() - started) * 1000
+            event.total_ms = elapsed
+            used: Future[Completion] | None = None
+            if winner is not None:
+                if hedge_f is not None and event.hedge_outcome == "":
+                    event.hedge_outcome = "pending"
+                used = primary_f if event.winner == "primary" else hedge_f
+            elif not pending and "primary" in answers:
+                # Оба не по схеме (или дублёр упал) — ответ основного: цикл
+                # запишет invalid и пойдёт обычным путём.
+                used = primary_f
+            elif not pending and "hedge" in answers:
+                used = hedge_f
+            # Всё, что не взято в решение, — в журнал проигравших (их токены
+            # считаются в цену; неуспевшие — abandoned).
+            with self._lock:
+                self._losers.extend(
+                    (event, future) for future in roles if future is not used
+                )
+            if used is not None:
+                return replace(used.result(), latency_ms=elapsed)
+            if pending:
+                raise CallTimeoutError("hedge", elapsed)
+            raise ChainExhaustedError("ни основной, ни дублёр не ответили")
+        finally:
+            with self._lock:
+                self._events.append(event)
+            pool.shutdown(wait=False)
 
 
 class _SentenceEncoder(Protocol):

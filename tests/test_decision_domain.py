@@ -8,6 +8,7 @@ from corp_ed.domain.decision import (
     Decision,
     Route,
     edition_note,
+    is_refusal,
     mismatch_note,
     note_end,
     parse_decision,
@@ -136,3 +137,33 @@ def test_other_needs_named_subject() -> None:
     assert route(
         make(match="other", subject="—", sufficiency="none"), can_search=True
     ) == (Route.NOT_FOUND)
+
+
+def test_directory_on_refusal_route() -> None:
+    # Фаза 2 (план §10.4): отказ при названной роли — сначала справочник,
+    # только с флагом и подключённым справочником.
+    none_role = make(sufficiency="none", lookup_role="руководитель ОКП")
+    other_role = make(
+        match="other", subject="Старт-ИИ-2", lookup_role="руководитель ОКП"
+    )
+    for refusal, before in (
+        (none_role, Route.NOT_FOUND),
+        (other_role, Route.OTHER_SUBJECT),
+    ):
+        assert is_refusal(refusal)
+        assert route(refusal, can_search=True, directory=True) == before
+        assert route(refusal, can_search=True, directory_on_refusal=True) == before
+        assert (
+            route(refusal, can_search=True, directory=True, directory_on_refusal=True)
+            == Route.DIRECTORY
+        )
+    # Без роли, при другой редакции и на реплике — как было.
+    flags = {"can_search": True, "directory": True, "directory_on_refusal": True}
+    assert route(make(sufficiency="none"), **flags) == Route.NOT_FOUND
+    assert route(make(sufficiency="none", lookup_role="—"), **flags) == Route.NOT_FOUND
+    edition = make(match="other_edition", sufficiency="none", lookup_role="директор")
+    assert not is_refusal(edition) and route(edition, **flags) == Route.ANSWER
+    talk = make(kind="small_talk", sufficiency="none", lookup_role="директор")
+    assert not is_refusal(talk) and route(talk, **flags) == Route.SMALL_TALK
+    # «Про другое» без названного в вопросе — не отказ.
+    assert not is_refusal(make(match="other", sufficiency="full"))

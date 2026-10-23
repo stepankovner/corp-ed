@@ -92,7 +92,26 @@ def search_query(decision: Decision) -> str | None:
     return None if not query or query == NONE_MARK else query
 
 
-def route(decision: Decision, *, can_search: bool, directory: bool = False) -> Route:
+def is_refusal(decision: Decision) -> bool:
+    """Решение — отказ по содержанию: выдержки про другое (при названном в
+    вопросе) или по теме ничего (кроме другого года или редакции — там
+    ответ, §7.1 п. 3). Не зависит от того, подключён ли справочник: по нему
+    и перепроверка, и общий ответ параллельно (фаза 2, справочник до
+    отказа)."""
+    if decision.kind != "question":
+        return False
+    if decision.match == "other" and quoted(decision.subject):
+        return True
+    return decision.sufficiency == "none" and decision.match != "other_edition"
+
+
+def route(
+    decision: Decision,
+    *,
+    can_search: bool,
+    directory: bool = False,
+    directory_on_refusal: bool = False,
+) -> Route:
     """Что делать дальше.
 
     Порядок важен: реплика; выдержки про другое (при названном в вопросе) —
@@ -107,9 +126,22 @@ def route(decision: Decision, *, can_search: bool, directory: bool = False) -> R
     оценивая выдержки по спрошенной редакции, хотя промпт велит оценивать
     по найденной. Если по теме в выдержках правда ничего нет, ответ
     откажет сам (правило 3 промпта ответа).
+
+    directory_on_refusal (фаза 2, план §10.4 — провалы T6-01, T6-07):
+    отказ («ничего» или «про другое») при названной роли и подключённом
+    справочнике — сначала справочник. Промах (и попадание без нужного поля)
+    цикл решения возвращает к прежнему маршруту — route без справочника
+    даёт тот же отказ, а не ответ по тому, что есть.
     """
     if decision.kind == "small_talk":
         return Route.SMALL_TALK
+    if (
+        directory_on_refusal
+        and directory
+        and lookup_role(decision)
+        and is_refusal(decision)
+    ):
+        return Route.DIRECTORY
     # «Про другое» — только относительно названного в вопросе: без subject
     # сравнивать не с чем (так и в схеме: match — при subject не «—»).
     if decision.match == "other" and quoted(decision.subject):
