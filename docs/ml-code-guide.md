@@ -253,6 +253,12 @@ ChunkDraft(
 - `to_fulltext_query(text)` — «Сколько дней отпуска?» → «Сколько or дней or
   отпуска». Без этого `websearch_to_tsquery` в Postgres требует **все**
   слова вопроса сразу и почти ничего не находит.
+- `lexeme_coverage(question, fragment)` — доля лексем вопроса (словарь
+  russian), которые есть во фрагменте; пусто — 0. Порог «нашли» для поиска
+  только по словам (BH-51 (а)); лексемы считает вызывающий — продукт
+  `tsvector_to_array`, eval `bm25.tokenize`. Замер 23.10: как порог ответа
+  не годится (`ml-report.md`, «Полнотекстовый поиск при отказе
+  эмбеддингов»), как сигнал для отчёта о пробелах — да.
 - `rrf_merge(rankings, weights, k=60)` — очки чанка = Σ вес / (60 + место в
   списке). Веса 1.0 (вектор) и 0.5 (полнотекст) — оптимум Битрикс24, у нас
   тоже не хуже прочих. **Порог по очкам RRF ставить нельзя**: лучший всегда
@@ -750,7 +756,7 @@ sufficiency none — то же решение переспрашивается �
 |---|---|
 | `python -m eval.run_eval retrieval / e2e / score` | **официальные числа** через API бэкенда: поиск (`/faq/search`), ответы (`/faq/ask`), подсчёт после ручной разметки `correct` 0/1/2 |
 | `python -m eval.bench` | офлайн-стенд поиска: сам режет корпус (v1/v2, любые размеры, с крошками или без), ищет BM25, вектором или гибридом. `--rerank [модель]` — реранкер поверх вектора (`--rerank-depth`, `--rerank-quantize` — int8, `--rerank-trust-remote-code` — модели со своим кодом) |
-| `python -m eval.offline_e2e` | весь `/faq/ask` в памяти: поиск → порог → бюджет → промпт (`faq-v2.9`, второй шаг поиска) → модель → нормализация ссылок → общий ответ. `--not-found strict/general`, `--max-distance`, `--gate-distance` (BH-37), `--rerank…`, `--llm-extra '{"reasoning_effort": "none"}'` — лишние поля запроса к модели; `--small-talk` — `faq-v2.10` (BH-45); `--agent` — агент с инструментом поиска (3.17); `--llm-provider mws/cloudru` — модель другого поставщика |
+| `python -m eval.offline_e2e` | весь `/faq/ask` в памяти: поиск → порог → бюджет → промпт (`faq-v2.9`, второй шаг поиска) → модель → нормализация ссылок → общий ответ. `--not-found strict/general`, `--max-distance`, `--gate-distance` (BH-37), `--rerank…`, `--llm-extra '{"reasoning_effort": "none"}'` — лишние поля запроса к модели; `--small-talk` — `faq-v2.10` (BH-45); `--agent` — агент с инструментом поиска (3.17); `--llm-provider mws/cloudru` — модель другого поставщика; `--retriever fulltext --fulltext-coverage c` — только по словам, без эмбеддинга вопроса (BH-51 (а)), `--fulltext-rank cd` — подобие `ts_rank_cd` продукта вместо BM25, колонка `best_coverage` |
 | `python -m eval.bench_reranker` | задержка реранкера на CPU: N кандидатов, M прогонов, медиана и p95; `--quantize`, `--trust-remote-code` |
 | `python -m eval.compare A.csv B.csv` | «B лучше A или шум?»: CI + p-value, сколько вопросов стало лучше и хуже |
 | `python -m eval.threshold …_retrieval.csv` | два распределения расстояний (по корпусу / вне), гистограмма, кандидаты порога |
@@ -939,7 +945,7 @@ src/corp_ed/
   domain/split.py          нарезка v2, крошки, два текста, разделы
   domain/context.py        бюджет контекста, small-to-big
   domain/query.py          словарь сокращений (M5), слияние переформулировок (M6)
-  domain/fulltext.py       запрос для полнотекстового поиска (M1)
+  domain/fulltext.py       запрос для полнотекстового поиска (M1), покрытие лексем (BH-51)
   domain/fusion.py         RRF (M1)
   domain/gaps.py           отчёт о пробелах: классификация, кластеры, приоритет, ПДн
   domain/rerank.py         реранкер (M3): какие кандидаты отдать модели, порядок по баллам
