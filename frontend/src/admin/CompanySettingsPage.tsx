@@ -620,7 +620,7 @@ function SecuritySection({ settings }: { settings: Settings }) {
 type RetentionMonths = NonNullable<Update["chat_retention_months"]>;
 
 /** Как на бэкенде (CHAT_RETENTION_MONTHS). */
-const RETENTION_MONTHS: RetentionMonths[] = [1, 3, 6, 12, 24, 36];
+const RETENTION_MONTHS: RetentionMonths[] = [3, 6, 12];
 
 /** «3 месяца» — и «дольше 3 месяцев» (родительный падеж). */
 function months(n: number, genitive = false): string {

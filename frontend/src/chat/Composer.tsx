@@ -281,6 +281,8 @@ export function Composer({
           <ShieldCheck size={14} aria-hidden />
           Администратор видит вопросы только обезличенно
         </span>
+        {/* Решение 22.10: напоминание у каждого вопроса, не только в справке. */}
+        <span>ИИ может ошибаться. Проверяйте важное по источникам.</span>
         {value.length > MAX_QUESTION * 0.8 ? (
           <span className={over ? styles.over : undefined}>
             {value.length.toLocaleString("ru-RU")} / {MAX_QUESTION.toLocaleString("ru-RU")}

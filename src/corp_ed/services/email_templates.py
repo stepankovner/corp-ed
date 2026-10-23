@@ -315,6 +315,43 @@ def company_rejected(*, name: str | None, company: str) -> RenderedEmail:
     return RenderedEmail("company_rejected", subject, text, html)
 
 
+def companyless_warning(
+    *, name: str | None, delete_on: date, join_url: str, request_url: str
+) -> RenderedEmail:
+    """Учётка без компании будет удалена (решение 22.10): за неделю."""
+    subject = f"Учётная запись {BRAND} будет удалена {delete_on:%d.%m.%Y}"
+    lead = (
+        f"Вы зарегистрировались в {BRAND}, но так и не вступили ни в одну "
+        "компанию. Учётные записи без компании мы не храним: эта будет "
+        f"удалена {delete_on:%d.%m.%Y} вместе с именем и почтой."
+    )
+    keep = (
+        "Чтобы её сохранить, вступите в компанию по приглашению "
+        "администратора или подайте заявку на подключение своей компании."
+    )
+    text = (
+        f"{_greeting(name)}\n\n{lead}\n\n{keep}\n"
+        f"Вступить по приглашению: {join_url}\n"
+        f"Подключить компанию: {request_url}\n\n"
+        "Если учётная запись не нужна — ничего делать не надо."
+    )
+    html = _layout(
+        subject,
+        [
+            _p(escape(_greeting(name))),
+            _p(escape(lead)),
+            _p(escape(keep)),
+            _button("Вступить по приглашению", join_url),
+            _muted(
+                f'Или <a href="{escape(request_url, quote=True)}">подайте заявку '
+                "на подключение своей компании</a>. Если учётная запись не нужна — "
+                "ничего делать не надо."
+            ),
+        ],
+    )
+    return RenderedEmail("companyless_warning", subject, text, html)
+
+
 def _device_line(device: str | None, ip: str | None) -> str:
     parts = [p for p in (device, f"адрес {ip}" if ip else None) if p]
     return ", ".join(parts) if parts else "неизвестное устройство"

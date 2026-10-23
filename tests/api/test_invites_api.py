@@ -10,6 +10,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.config import get_registration_settings
 from corp_ed.core.security import hash_refresh_token
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import (
@@ -47,7 +48,7 @@ async def _accept(
 ) -> httpx.Response:
     return await api.post(
         "/api/v1/invites/accept",
-        json={"secret": secret},
+        json={"secret": secret, "terms": True},
         headers=account_bearer(account),
     )
 
@@ -185,12 +186,23 @@ async def test_join_by_link_or_code_switches_the_session(
 ) -> None:
     created = await _create(api, admin_account)
     joiner = await _joiner(session)
+    # Без галочки соглашения не вступить (решение 22.10).
+    for terms in ({}, {"terms": False}):
+        refused = await api.post(
+            "/api/v1/invites/accept",
+            json={"secret": created[form], **terms},
+            headers=account_bearer(joiner),
+        )
+        assert refused.status_code == 422, terms
 
     response = await _accept(api, joiner, created[form])
 
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["outcome"] == "joined"
+    await session.refresh(joiner)
+    assert joiner.terms_accepted_at is not None
+    assert joiner.terms_version == get_registration_settings().terms_version
     assert body["company_name"] == "Test Co"
     headers = {"Authorization": f"Bearer {body['session']['access_token']}"}
     me = (await api.get("/api/v1/auth/me", headers=headers)).json()
@@ -372,7 +384,7 @@ async def test_accept_requires_a_signed_in_account(
 ) -> None:
     created = await _create(api, admin_account)
     response = await api.post(
-        "/api/v1/invites/accept", json={"secret": created["token"]}
+        "/api/v1/invites/accept", json={"secret": created["token"], "terms": True}
     )
     assert response.status_code == 401
 

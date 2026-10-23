@@ -190,11 +190,13 @@ async def create_company_request(
     service: Annotated[CompanyRequestService, Depends(get_company_request_service)],
     limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
 ) -> CompanyRequestResponse:
-    """Заявка «Подключить компанию»: одобряет команда Kronto."""
+    """Заявка «Подключить компанию»: одобряет команда Kronto. 422
+    invalid_requisites с полем inn — ИНН с ошибкой в контрольных цифрах."""
     await enforce(limiter, COMPANY_REQUEST_PER_ACCOUNT, str(account.id))
     created = await service.create(
         account,
         company_name=data.company_name,
+        inn=data.inn,
         seats=data.seats,
         comment=data.comment,
     )

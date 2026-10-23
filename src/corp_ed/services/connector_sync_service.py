@@ -13,7 +13,8 @@
    и задача ингеста; не изменился — только права;
 3. права: режим organization — visibility и список почт от адаптера
    сопоставляются с users; режим per_user — документ виден тому, в чьём
-   листинге он есть;
+   листинге он есть, и тем, кому владелец открыл его папку лично, если
+   источник умеет их назвать (shared_lookup: Яндекс Диск);
 4. исчезнувшие из источника документы удаляются — но только если обход
    дошёл до конца: обрезанный бюджетом или сбоем листинг не повод
    удалять то, чего в нём не оказалось.
@@ -27,7 +28,7 @@
 
 import hashlib
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -45,8 +46,10 @@ from corp_ed.connectors.base import (
     FetchedMarkdown,
     FetchedPage,
     RemoteDocument,
+    SharedResource,
     SourceAdapter,
     refreshed_credentials,
+    shared_lookup,
 )
 from corp_ed.connectors.common import counting_skips
 from corp_ed.connectors.html import html_to_markdown
@@ -137,6 +140,9 @@ class SyncStats:
     # Сколько сотрудников (гранты) обошли в режиме per_user.
     grants: int = 0
     grants_expired: int = 0
+    # Сколько раз документ открыт сотруднику по личному доступу владельца
+    # (папка «Общий доступ» на Яндекс Диске): пары сотрудник — документ.
+    shared: int = 0
     # Отсеяно адаптерами без скачивания (П-3): форматы, которых ассистент
     # не читает ({".doc": 14}), и файлы больше лимита размера.
     skipped_formats: dict[str, int] = field(default_factory=dict)
@@ -172,6 +178,28 @@ class _Run:
     error_code: str | None = None
     # external_id → material_id всех документов, встреченных в запуске.
     seen: dict[str, UUID] = field(default_factory=dict)
+
+
+@dataclass
+class _Shares:
+    """Открытое лично: владелец (id в источнике) → (locator, сотрудник).
+    recipients — сотрудники, о ком источник ответил: их права снимаются
+    после обхода всех владельцев."""
+
+    by_owner: dict[str, list[tuple[str, UUID]]] = field(default_factory=dict)
+    recipients: set[UUID] = field(default_factory=set)
+
+
+def _shared_to(shared: Sequence[tuple[str, UUID]], locator: str) -> set[UUID]:
+    """Кому открыт документ владельца с этим адресом: ресурс — он сам или
+    папка над ним («Общие» не открывает «Общие 2»)."""
+    if not locator:
+        return set()
+    return {
+        recipient
+        for prefix, recipient in shared
+        if locator == prefix or locator.startswith(prefix + "/")
+    }
 
 
 class _StopRunError(Exception):
@@ -328,14 +356,24 @@ class ConnectorSyncService:
                 await self._stop_connector(session, run, ERROR_CREDENTIALS_UNREADABLE)
                 return
             app_credentials = decrypted
+        # До загрузки токенов основного обхода: спрос у источника может
+        # продлить токен гранта, и обход должен взять уже новый.
+        shares = await self._shares(session, run, app_credentials)
         # Плоские кортежи, а не ORM-объекты: откат транзакции после сбоя
         # документа сбрасывает загруженные атрибуты, и следующее чтение
         # ушло бы в базу из синхронного кода.
         active = [
-            (grant.id, grant.user_id, grant.credentials)
+            (grant.id, grant.user_id, grant.credentials, grant.external_user_id)
             for grant in await grants.list_active_with_credentials(connector.id)
         ]
-        for grant_id, user_id, token in active:
+        # Кому открыто лично: права сотрудника снимаются после обхода всех
+        # владельцев — иначе получатель, обойдённый раньше владельца, терял
+        # бы и снова получал документ в каждом запуске.
+        received: dict[UUID, set[UUID]] = {
+            recipient: set() for recipient in shares.recipients
+        }
+        deferred: dict[UUID, set[UUID]] = {}
+        for grant_id, user_id, token, external_user_id in active:
             run.stats.grants += 1
             credentials = self._decrypt(token)
             if credentials is None:
@@ -349,7 +387,15 @@ class ConnectorSyncService:
                 if adapter is None:
                     return
                 await adapter.check()
-                mine = await self._walk(session, run, adapter, viewer=user_id)
+                owner = getattr(adapter, "external_user_id", None) or external_user_id
+                mine = await self._walk(
+                    session,
+                    run,
+                    adapter,
+                    viewer=user_id,
+                    shared=shares.by_owner.get(owner or "", ()),
+                    received=received,
+                )
             except AdapterAuthError as exc:
                 if exc.code == "invalid_grant" and await self._grant_changed(
                     session, grant_id, token
@@ -381,10 +427,21 @@ class ConnectorSyncService:
                 # Листинг сотрудника оборван бюджетом: чего в нём не
                 # оказалось — не значит, что прав больше нет.
                 break
+            if user_id in received:
+                deferred[user_id] = mine
+                continue
             await materials.revoke_access_except(run.connector_id, user_id, mine)
             await session.commit()
 
         if run.complete:
+            # Обойдены все владельцы — открытое лично известно целиком.
+            # Обрыв бюджетом оставляет права получателей до полного обхода,
+            # как и у сотрудников, до которых обход не дошёл.
+            for user_id, mine in deferred.items():
+                await materials.revoke_access_except(
+                    run.connector_id, user_id, mine | received[user_id]
+                )
+            await session.commit()
             run.stats.removed = await materials.delete_by_connector_except(
                 run.connector_id, run.seen.keys()
             )
@@ -399,8 +456,14 @@ class ConnectorSyncService:
         adapter: SourceAdapter,
         *,
         viewer: UUID | None,
+        shared: Sequence[tuple[str, UUID]] = (),
+        received: dict[UUID, set[UUID]] | None = None,
     ) -> set[UUID]:
         """Обойти листинг; вернуть id материалов, которые в нём встретились.
+
+        shared — (locator, сотрудник): что владелец этого листинга открыл
+        коллегам лично; документ по этому адресу или под ним виден и им,
+        а его id попадает в received[сотрудник].
 
         AdapterAuthError поднимается наверх: что делать с отвергнутыми
         учётными данными, решает режим (остановить коннектор или грант).
@@ -445,6 +508,11 @@ class ConnectorSyncService:
                         await jobs.enqueue(material.tenant_id, material.id)
 
                 await self._apply_access(materials, users, material, document, viewer)
+                for recipient in _shared_to(shared, document.locator):
+                    await materials.grant_access(material.id, recipient)
+                    if received is not None:
+                        received.setdefault(recipient, set()).add(material.id)
+                    run.stats.shared += 1
                 await session.commit()
                 walked.add(material.id)
         except (AdapterAuthError, AdapterConfigError):
@@ -509,6 +577,90 @@ class ConnectorSyncService:
             await materials.replace_access(material.id, known.values())
         else:
             await materials.replace_access(material.id, ())
+
+    # --- открытое лично (per_user) ---------------------------------------------------
+
+    async def _shares(
+        self,
+        session: AsyncSession,
+        run: _Run,
+        app_credentials: Mapping[str, str],
+    ) -> _Shares:
+        """Спросить источник, что коллеги открыли каждому подключённому
+        сотруднику лично.
+
+        Спрашивать умеет не любой токен (у Яндекса — только администратора
+        организации), поэтому гранты пробуются по очереди до первого, кому
+        источник ответил. Отказ одному гранту — не повод его останавливать:
+        токен проверит основной обход. Временный сбой — весь запуск позже,
+        иначе получатели потеряли бы права до следующего запуска. Никто не
+        смог ответить — открытого лично нет: права, выданные раньше,
+        снимутся обходом (не проверить — значит не показывать).
+        """
+        grants = await GrantRepository(session).list_active_with_credentials(
+            run.connector_id
+        )
+        people = [
+            (grant.id, grant.user_id, grant.credentials, grant.external_user_id)
+            for grant in grants
+        ]
+        recipients = {
+            external: user_id for _, user_id, _, external in people if external
+        }
+        if not recipients:
+            return _Shares()
+        log = logger.bind(connector_id=str(run.connector_id))
+        for grant_id, user_id, token, _ in people:
+            credentials = self._decrypt(token)
+            if credentials is None:
+                continue
+            adapter: SourceAdapter | None = None
+            try:
+                try:
+                    adapter = self.registry.build(
+                        run.kind,
+                        run.config,
+                        {**app_credentials, **credentials},
+                        self.http,
+                    )
+                except UnknownKindError:
+                    return _Shares()
+                lookup = shared_lookup(adapter)
+                if lookup is None:
+                    return _Shares()
+                found: dict[UUID, Sequence[SharedResource]] = {}
+                for external, recipient in recipients.items():
+                    resources = await lookup(run.modules, external)
+                    if resources is None:
+                        # Источник умеет, но не при этих настройках (у
+                        # Яндекса — нет ID организации или модуля disk).
+                        log.info("connector_shares_not_applicable")
+                        return _Shares()
+                    found[recipient] = resources
+            except (AdapterAuthError, AdapterConfigError):
+                continue
+            except (AdapterError, OutboundURLError) as exc:
+                if getattr(exc, "retryable", False):
+                    raise _StopRunError(_run_error_code(exc), retryable=True) from exc
+                continue
+            finally:
+                if adapter is not None:
+                    await self._persist_refresh(
+                        session, run, adapter, grant_id=grant_id
+                    )
+            log.info("connector_shares_resolved", via_user=str(user_id))
+            shares = _Shares(recipients=set(recipients.values()))
+            for recipient, resources in found.items():
+                for resource in resources:
+                    if recipients.get(resource.owner) in (None, recipient):
+                        # Владелец не подключён к kronto: его документов у нас нет.
+                        continue
+                    shares.by_owner.setdefault(resource.owner, []).append(
+                        (resource.locator, recipient)
+                    )
+            return shares
+        log.info("connector_shares_unavailable")
+        return _Shares()
 
     # --- вспомогательное --------------------------------------------------------------
 

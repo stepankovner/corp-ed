@@ -12,7 +12,7 @@ from corp_ed.domain.tariffs import Tariff
 from corp_ed.domain.types import NotFoundMode
 
 MfaPolicy = Literal["any", "strong"]
-ChatRetentionMonths = Literal[1, 3, 6, 12, 24, 36]
+ChatRetentionMonths = Literal[3, 6, 12]
 """Варианты срока хранения диалогов — как CHAT_RETENTION_MONTHS."""
 
 
@@ -58,7 +58,7 @@ class CompanySettingsRequest(RequestModel):
     @field_validator("chat_retention_months", mode="before")
     @classmethod
     def _months_not_bool(cls, value: object) -> object:
-        # Literal[1, …] принял бы true из JSON как 1 месяц.
+        # Literal[…] принял бы true из JSON как число.
         if isinstance(value, bool):
             raise ValueError("Срок хранения — число месяцев")
         return value

@@ -36,6 +36,7 @@ from corp_ed.services.demo_service import NO_LOGIN_HASH, DemoService
 from tests.api.conftest import login
 from tests.security.test_rate_limits import DownLimiter
 from tests.test_credits import spend
+from tests.test_gap_report import ask, topic
 
 SETTINGS = DemoSettings()
 
@@ -228,11 +229,35 @@ async def test_answer_from_documents_with_sources(
             "content": "4.3. Суточные — 700 рублей за каждый день командировки.",
         }
     ]
-    # Вопрос — в журнале компании песочницы, как у любой компании.
+    # Текст вопроса посетителя не хранится (решение 22.10): строка журнала —
+    # только для учёта кредитов песочницы, без вопроса и его вектора.
     with tenant_scope(tenant.id):
         async with session_maker() as session:
             log = (await session.scalars(select(QaLog))).one()
-            assert log.question == "Какие суточные в командировке?"
+            assert log.question == ""
+            assert log.standalone_question is None and log.search_query is None
+            assert not any(log.question_embedding)
+            assert log.credits > 0
+
+
+async def test_setup_erases_questions_stored_before(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Вопросы, записанные до решения 22.10, стирает выкатка (cli demo setup)."""
+    tenant = await _setup(session_maker)
+    member = await _member(session_maker, tenant)
+    with tenant_scope(tenant.id):
+        async with session_maker() as session:
+            ask(session, member, "Мой телефон +79161234567, перезвоните", topic(0))
+            await session.commit()
+
+    await DemoService(session_maker, SETTINGS).setup()
+
+    with tenant_scope(tenant.id):
+        async with session_maker() as session:
+            log = (await session.scalars(select(QaLog))).one()
+            assert log.question == ""
+            assert not any(log.question_embedding)
 
 
 async def test_outside_documents_is_honest_refusal_without_model(

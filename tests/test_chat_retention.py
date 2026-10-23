@@ -140,10 +140,10 @@ async def test_purge_removes_dialogs_inactive_longer_than_company_term(
     tenant_ctx: Tenant,
     employee: User,
 ) -> None:
-    # Компания A хранит диалоги месяц, компания B — три года.
-    tenant_ctx.chat_retention_months = 1
+    # Компания A хранит диалоги три месяца, компания B — год.
+    tenant_ctx.chat_retention_months = 3
     other = Tenant(
-        id=uuid4(), company_code="other", name="Other Co", chat_retention_months=36
+        id=uuid4(), company_code="other", name="Other Co", chat_retention_months=12
     )
     session.add(other)
     await session.commit()
@@ -152,13 +152,13 @@ async def test_purge_removes_dialogs_inactive_longer_than_company_term(
         session.add(stranger)
         await session.commit()
 
-    # A: последняя активность 40 дней назад — старше месяца, удаляется
-    # вместе с вложением, фрагментами и общей ссылкой.
+    # A: последняя активность 100 дней назад — старше трёх месяцев,
+    # удаляется вместе с вложением, фрагментами и общей ссылкой.
     stale = await _conversation(
         session,
         employee,
         created_at=NOW - timedelta(days=400),
-        updated_at=NOW - timedelta(days=40),
+        updated_at=NOW - timedelta(days=100),
         shared=True,
     )
     # A: начат давно, но вопрос задан 10 дней назад — жив. Считается
@@ -183,19 +183,19 @@ async def test_purge_removes_dialogs_inactive_longer_than_company_term(
         )
         session.add(pending)
         await session.commit()
-    # B: те же 40 дней — срок B три года, жив.
+    # B: те же 100 дней — срок B год, жив.
     same_age = await _conversation(
         session,
         stranger,
-        created_at=NOW - timedelta(days=40),
-        updated_at=NOW - timedelta(days=40),
+        created_at=NOW - timedelta(days=100),
+        updated_at=NOW - timedelta(days=100),
     )
-    # B: дольше трёх лет без активности — удаляется по сроку B.
+    # B: дольше года без активности — удаляется по сроку B.
     ancient = await _conversation(
         session,
         stranger,
-        created_at=NOW - timedelta(days=4 * 365),
-        updated_at=NOW - timedelta(days=4 * 365),
+        created_at=NOW - timedelta(days=400),
+        updated_at=NOW - timedelta(days=400),
     )
     with tenant_scope(tenant_ctx.id):
         stale_attachment = (
@@ -236,27 +236,27 @@ async def test_purge_removes_dialogs_inactive_longer_than_company_term(
     assert len(left_b["chunks"]) == 1
 
 
-async def test_new_company_keeps_dialogs_twelve_months(
+async def test_new_company_keeps_dialogs_six_months(
     session: AsyncSession,
     session_maker: async_sessionmaker[AsyncSession],
     tenant_ctx: Tenant,
     employee: User,
 ) -> None:
     await session.refresh(tenant_ctx)
-    assert tenant_ctx.chat_retention_months == 12
+    assert tenant_ctx.chat_retention_months == 6
 
-    # 9 октября − 12 месяцев = 9 октября прошлого года, 03:10.
+    # 9 октября − 6 месяцев = 9 апреля, 03:10 (решение 22.10; было 12).
     kept = await _conversation(
         session,
         employee,
-        created_at=datetime(2025, 10, 9, 3, 11, tzinfo=UTC),
-        updated_at=datetime(2025, 10, 9, 3, 11, tzinfo=UTC),
+        created_at=datetime(2026, 4, 9, 3, 11, tzinfo=UTC),
+        updated_at=datetime(2026, 4, 9, 3, 11, tzinfo=UTC),
     )
     gone = await _conversation(
         session,
         employee,
-        created_at=datetime(2025, 10, 9, 3, 9, tzinfo=UTC),
-        updated_at=datetime(2025, 10, 9, 3, 9, tzinfo=UTC),
+        created_at=datetime(2026, 4, 9, 3, 9, tzinfo=UTC),
+        updated_at=datetime(2026, 4, 9, 3, 9, tzinfo=UTC),
     )
 
     report = await RetentionService(session_maker, qa_log_days=365).purge(now=NOW)

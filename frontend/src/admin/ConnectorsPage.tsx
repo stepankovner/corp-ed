@@ -216,7 +216,8 @@ function ConnectorForm({
   const [modules, setModules] = useState(kind.modules.map((module) => module.name));
   const [config, setConfig] = useState<Record<string, string>>({});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
-  const [syncInterval, setSyncInterval] = useState(60);
+  // Как CONNECTOR_DEFAULT_SYNC_INTERVAL_MINUTES на сервере (решение 22.10).
+  const [syncInterval, setSyncInterval] = useState(30);
   const fields = secretFields(kind);
 
   const create = useMutation({

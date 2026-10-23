@@ -273,7 +273,7 @@ describe("страницы сайта", () => {
     expect(main).not.toHaveTextContent("без персональных данных");
     expect(main).toHaveTextContent("маскирование может что-то пропустить");
     // Диалоги: срок компании и 30 дней после ухода.
-    expect(main).toHaveTextContent("по умолчанию 12 месяцев без активности");
+    expect(main).toHaveTextContent("по умолчанию 6 месяцев без активности");
     expect(main).toHaveTextContent("после ухода из компании — удаляются через 30 дней");
   });
 

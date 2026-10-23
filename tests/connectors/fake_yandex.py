@@ -102,6 +102,12 @@ class FakeYandex:
     tracker_cloud: bool = False
     """Трекер привязан к организации Identity Hub: нужен X-Cloud-Org-ID."""
     tracker_headers: list[dict[str, str]] = field(default_factory=list)
+    accessible: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    """uid сотрудника → ответ accessible-resources ({uid, path, public_hash?})."""
+    disk_admins: set[str] = field(default_factory=set)
+    """Логины администраторов организации: только им отвечает
+    admin/accessible-resources, остальным — 403."""
+    accessible_per_page: int = 2
 
     def __post_init__(self) -> None:
         self.access_tokens.setdefault(ACCESS_TOKEN, LOGIN)
@@ -338,6 +344,8 @@ class FakeYandex:
             return self._resources(query, virtual=True)
         if path == "/v1/disk/virtual-disks/discovery":
             return self._discovery(query)
+        if path == "/v1/disk/public/resources/admin/accessible-resources":
+            return self._accessible(query, login)
         if path in (
             "/v1/disk/resources/download",
             "/v1/disk/virtual-disks/resources/download",
@@ -354,6 +362,23 @@ class FakeYandex:
                 },
             )
         return _error(404, "DiskNotFoundError")
+
+    def _accessible(self, query: dict[str, str], login: str) -> httpx.Response:
+        """Ресурсы, открытые сотруднику лично (yandex.ru/dev/disk-api,
+        public-accessed-by-user; живой ответ 23.10): {items: [{uid, path,
+        public_hash?}], limit, iteratation_key} — ключ следующей страницы
+        живой Диск пишет с опечаткой."""
+        if login not in self.disk_admins:
+            return _error(403, "DiskForbiddenError", "Доступ запрещён.")
+        if query.get("org_id") != ORG_ID or not query.get("user_id"):
+            return _error(400, "FieldValidationError", "org_id")
+        items = self.accessible.get(query["user_id"], [])
+        start = int(query.get("iteration_key") or 0)
+        end = start + self.accessible_per_page
+        body: dict[str, Any] = {"items": items[start:end], "limit": query.get("limit")}
+        if end < len(items):
+            body["iteratation_key"] = str(end)
+        return httpx.Response(200, json=body)
 
     def _discovery(self, query: dict[str, str]) -> httpx.Response:
         if query.get("org_id") != ORG_ID:

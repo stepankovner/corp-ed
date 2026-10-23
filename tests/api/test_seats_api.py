@@ -104,7 +104,7 @@ async def test_invite_join_stops_when_seats_are_full(
     await session.commit()
     response = await api.post(
         "/api/v1/invites/accept",
-        json={"secret": token},
+        json={"secret": token, "terms": True},
         headers=account_bearer(late),
     )
 

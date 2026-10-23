@@ -95,7 +95,8 @@ export interface paths {
         put?: never;
         /**
          * Create Company Request
-         * @description Заявка «Подключить компанию»: одобряет команда Kronto.
+         * @description Заявка «Подключить компанию»: одобряет команда Kronto. 422
+         *     invalid_requisites с полем inn — ИНН с ошибкой в контрольных цифрах.
          */
         post: operations["create_company_request_api_v1_account_company_requests_post"];
         delete?: never;
@@ -1949,6 +1950,7 @@ export interface paths {
          * Accept Invite
          * @description Вступить в компанию своей учёткой. Вступил — сессия сразу
          *     переключается на эту компанию; ждёт одобрения — сессия прежняя.
+         *     terms — галочка пользовательского соглашения (обязательна).
          */
         post: operations["accept_invite_api_v1_invites_accept_post"];
         delete?: never;
@@ -3327,6 +3329,8 @@ export interface components {
             comment?: string | null;
             /** Company Name */
             company_name: string;
+            /** Inn */
+            inn: string;
             /** Seats */
             seats?: number | null;
         };
@@ -3348,6 +3352,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Inn */
+            inn: string | null;
             /** Seats */
             seats: number | null;
             /**
@@ -3364,7 +3370,7 @@ export interface components {
             /** Allow Remember Device */
             allow_remember_device?: boolean | null;
             /** Chat Retention Months */
-            chat_retention_months?: (1 | 3 | 6 | 12 | 24 | 36) | null;
+            chat_retention_months?: (3 | 6 | 12) | null;
             /** Daily Credits Per Member */
             daily_credits_per_member?: number | null;
             /** Email Domains */
@@ -4297,6 +4303,16 @@ export interface components {
              */
             material_id: string;
             status: components["schemas"]["MaterialStatus"];
+        };
+        /** InviteAcceptRequest */
+        InviteAcceptRequest: {
+            /** Secret */
+            secret: string;
+            /**
+             * Terms
+             * @constant
+             */
+            terms: true;
         };
         /** InviteCreateRequest */
         InviteCreateRequest: {
@@ -5843,6 +5859,8 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /** Inn */
+            inn: string | null;
             /** Seats */
             seats: number | null;
             /**
@@ -9742,7 +9760,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["InviteSecretRequest"];
+                "application/json": components["schemas"]["InviteAcceptRequest"];
             };
         };
         responses: {

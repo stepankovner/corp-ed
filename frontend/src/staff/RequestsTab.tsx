@@ -206,6 +206,7 @@ function RequestCard({
         )}
       </div>
       <div className={adminStyles.meta}>
+        <span className="num">{request.inn ? `ИНН ${request.inn}` : "ИНН не указан"}</span>
         <span>
           {request.seats
             ? `${formatNumber(request.seats)} ${plural(request.seats, "место", "места", "мест")}`
