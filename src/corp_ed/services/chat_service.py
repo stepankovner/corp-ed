@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from corp_ed.core.dialogue_store import MAX_STORED_ANSWER_CHARS
 from corp_ed.core.exceptions import CodedConflictError, ConflictError, NotFoundError
+from corp_ed.core.metrics import FAQ_FEEDBACK
 from corp_ed.domain.gaps import mask_pii
 from corp_ed.domain.models import (
     ChatAttachment,
@@ -67,6 +68,8 @@ SHARE_TTL = timedelta(days=30)
 STALE_GENERATION = timedelta(minutes=10)
 """Ответ «пишется» дольше — задача умерла (перезапуск API): он прерван.
 Больше, чем предел самой генерации (chat_generation.GENERATION_TIMEOUT)."""
+
+_VOTE = {1: "up", -1: "down"}
 
 FEEDBACK_REASONS = frozenset(
     {"inaccurate", "incomplete", "outdated", "wrong_source", "other"}
@@ -465,6 +468,9 @@ class ChatService:
         if reason is not None and (value != -1 or reason not in FEEDBACK_REASONS):
             raise ConflictError("Причина — только к оценке «не помог»")
         comment = (comment or "").strip()[:MAX_FEEDBACK_COMMENT] or None
+        if value is not None:
+            # Снятие оценки не вычитается (BH-49): счётчик — поток оценок.
+            FAQ_FEEDBACK.labels(_VOTE[value], reason or "none").inc()
         message.feedback = value
         message.feedback_reason = reason
         message.feedback_comment = comment

@@ -49,6 +49,7 @@ from corp_ed.api.v1.endpoints import (
 )
 from corp_ed.core.config import (
     LLMSettings,
+    RagSettings,
     get_connector_settings,
     get_http_settings,
     get_payment_settings,
@@ -130,6 +131,7 @@ from corp_ed.services.chat_generation import (
     InMemoryStopSignals,
     RedisStopSignals,
 )
+from corp_ed.services.ml_build import publish_ml_build
 from corp_ed.services.payments.tochka import TochkaProvider, tochka_http_client
 from corp_ed.services.team_notify import build_team_notifier
 from corp_ed.services.team_notify import drain as drain_team_notifier
@@ -236,6 +238,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning("billing_seller_requisites_missing")
     # Пробные вызовы Flash, эмбеддингов и резерва (BH-52) — в процессе API,
     # где живут предохранители.
+    _publish_ml_build()
     probes_stop = asyncio.Event()
     probes_task: asyncio.Task[None] | None = None
     prober = _prober(app.state.http_client)
@@ -274,6 +277,13 @@ def _prober(client: httpx.AsyncClient) -> Prober | None:
     except ValidationError:
         return None
     return build_prober(client, settings)
+
+
+def _publish_ml_build() -> None:
+    try:
+        publish_ml_build(LLMSettings(), RagSettings())  # type: ignore[call-arg]
+    except ValidationError:
+        logger.warning("ml_build_settings_missing")
 
 
 def _llm_limits() -> tuple[int, float, float]:

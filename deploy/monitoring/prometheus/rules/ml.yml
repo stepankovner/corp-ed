@@ -1,0 +1,39 @@
+# Тревоги ML (BH-49, проект — docs/ml-monitoring.md раздел 2). Сейчас — две,
+# не зависящие от шага решения (BH-46): 8 и 9. Метка observe="true" — пишутся
+# в Prometheus без получателя (alertmanager/entrypoint.sh): первую неделю
+# смотрим нормальные уровни, потом включаем по одной (решение Артёма 22.10).
+groups:
+  - name: ml-quality
+    rules:
+      # 8. Рост доли общих ответов и отказов: 6 ч против 7 сут
+      - alert: MlGeneralShareRising
+        expr: |
+          (
+            sum(increase(corp_ed_faq_answers_total{origin=~"general_knowledge|none"}[6h]))
+            / sum(increase(corp_ed_faq_answers_total{origin!="small_talk"}[6h]))
+          ) - (
+            sum(increase(corp_ed_faq_answers_total{origin=~"general_knowledge|none"}[7d]))
+            / sum(increase(corp_ed_faq_answers_total{origin!="small_talk"}[7d]))
+          ) > 0.15
+          and sum(increase(corp_ed_faq_answers_total{origin!="small_talk"}[6h])) >= 50
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "Доля «нет в документах» выросла на {{ $value | humanizePercentage }} к неделе"
+          description: "Сломался поиск или эмбеддинги, удалили документы, новая тема вопросов. Отчёт о пробелах, журнал."
+
+      # 9. Сдвиг медианы ближайшей дистанции: сутки против суток неделю назад
+      - alert: MlDistanceShift
+        expr: |
+          abs(
+            histogram_quantile(0.5, sum by (le) (rate(corp_ed_faq_best_distance_bucket[1d])))
+            - histogram_quantile(0.5, sum by (le) (rate(corp_ed_faq_best_distance_bucket[1d] offset 7d)))
+          ) > 0.05
+          and sum(increase(corp_ed_faq_best_distance_count[1d])) >= 100
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "Медиана ближайшей дистанции сдвинулась на {{ $value | humanize }} за неделю"
+          description: "Сменилась модель эмбеддингов или корпус — пороги 0,59 / 0,70 могли устареть. Сказать ML."

@@ -20,7 +20,13 @@ from corp_ed.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from corp_ed.core.metrics import FAQ_ANSWERS, FAQ_DEGRADED, LLM_FALLBACK
+from corp_ed.core.metrics import (
+    FAQ_ANSWERS,
+    FAQ_BEST_DISTANCE,
+    FAQ_DEGRADED,
+    FAQ_FEEDBACK,
+    LLM_FALLBACK,
+)
 from corp_ed.domain.context import select_context
 from corp_ed.domain.fulltext import to_fulltext_query
 from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
@@ -362,6 +368,7 @@ class FaqService:
         стоить ни эмбеддинга, ни вызова модели (досье 10.2).
         """
         sink = sink or _SILENT
+        started = time.perf_counter()
         usage = await self.credits.ensure_available(user)
         kind = classify_small_talk(question) if self.small_talk_rule else None
         if kind is not None:
@@ -373,6 +380,7 @@ class FaqService:
                 conversation_id=conversation_id,
                 sink=sink,
                 commit=commit,
+                started=started,
             )
         tenant = await self.tenant_repo.get_by_id(user.tenant_id)
         mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
@@ -467,8 +475,11 @@ class FaqService:
                 rerank_ms=reranked.ms,
                 attachment_chunks=len(attached),
                 search_query=mask_pii(search_query) if search_query else None,
+                latency_ms=_elapsed_ms(started),
             )
         )
+        if nearest is not None and not attached:
+            FAQ_BEST_DISTANCE.observe(nearest)
         await self.credits.note_spend(usage, credits)
         if commit:
             await self.session.commit()
@@ -529,6 +540,7 @@ class FaqService:
         conversation_id: UUID | None,
         sink: AnswerSink,
         commit: bool,
+        started: float,
     ) -> FaqAnswer:
         """Реплика без вопроса — шаблон ML (BH-48, domain/small_talk.py).
 
@@ -554,6 +566,7 @@ class FaqService:
                 conversation_id=conversation_id,
                 history_turns=len(history),
                 small_talk_rule=kind,
+                latency_ms=_elapsed_ms(started),
             )
         )
         if commit:
@@ -983,6 +996,7 @@ class FaqService:
         if entry is None or entry.user_id != user.id:
             raise NotFoundError("Ответ не найден")
         entry.feedback = feedback
+        FAQ_FEEDBACK.labels("up" if feedback > 0 else "down", "none").inc()
         await self.session.commit()
 
     async def _answer(
@@ -1563,6 +1577,10 @@ class _OriginOnDecision:
         if self.sent is not None:
             await self._sink.reset()
         await self.origin(origin)
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
 
 
 def _count_fallback(stage: str, completion: Completion) -> None:

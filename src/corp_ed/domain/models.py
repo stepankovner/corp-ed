@@ -1185,6 +1185,9 @@ class QaLog(TenantMixin, Base):
     # Реплика правилом (BH-48): вид — greeting, thanks, bye, ack, about;
     # NULL — сообщение шло обычным путём.
     small_talk_rule: Mapped[str | None] = mapped_column(String(16))
+    # Время ответа от вопроса до записи журнала (BH-49): суточный p95 по
+    # компании. NULL — строки до BH-49.
+    latency_ms: Mapped[int | None] = mapped_column()
     best_vector_distance: Mapped[float | None]
     best_fulltext_score: Mapped[float | None]
     answer_given: Mapped[bool]
