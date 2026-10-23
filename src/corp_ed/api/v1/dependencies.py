@@ -10,6 +10,7 @@ import httpx
 import jwt
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -648,11 +649,15 @@ def get_credit_order_service(
 
 def get_decider(
     request: Request,
-    settings: Annotated[LLMSettings, Depends(get_llm_settings)],
     rag: Annotated[RagSettings, Depends(get_rag_settings)],
 ) -> HedgedDecider | None:
-    """Поставщики шага решения (BH-46); None — без ключа Cloud.ru. Клиент
-    моделей берётся, только когда он нужен: без ключа схемы нет."""
+    """Поставщики шага решения (BH-46); None — без ключа Cloud.ru. Настройки
+    моделей и клиент берутся, только когда они нужны: без ключей (тесты,
+    разработка фронта) схемы нет, а вопрос идёт прежним путём."""
+    try:
+        settings = get_llm_settings()
+    except ValidationError:
+        return None
     if not settings.fallback_enabled:
         return None
     return build_decider(get_http_client(request), settings, rag)
