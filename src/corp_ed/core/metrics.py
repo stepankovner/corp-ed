@@ -56,8 +56,11 @@ LLM_FALLBACK = Counter(
 )
 LLM_BREAKER_OPEN = Gauge(
     "corp_ed_llm_breaker_open",
-    "Предохранитель основной модели открыт: 1 — вызовы идут сразу в резерв",
+    "Предохранитель Яндекса открыт: 1 — chat сразу в резерв, embedding — "
+    "быстрая ошибка, загрузка документов ждёт",
+    ["kind"],
 )
+BREAKER_KINDS = ("chat", "embedding")
 FALLBACK_STAGES = ("answer", "general", "condense", "gaps_label")
 FALLBACK_REASONS = (
     "timeout",
@@ -71,7 +74,8 @@ FALLBACK_REASONS = (
 for _stage in FALLBACK_STAGES:
     for _reason in FALLBACK_REASONS:
         LLM_FALLBACK.labels(_stage, _reason)
-LLM_BREAKER_OPEN.set(0)
+for _kind in BREAKER_KINDS:
+    LLM_BREAKER_OPEN.labels(_kind).set(0)
 
 WORKER_QUEUE = Gauge(
     "corp_ed_worker_queue_jobs",

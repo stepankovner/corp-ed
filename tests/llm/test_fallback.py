@@ -158,7 +158,7 @@ async def test_config_error_opens_the_breaker_at_once() -> None:
     await _stream(gateway)
 
     assert gateway.primary_down()
-    assert LLM_BREAKER_OPEN._value.get() == 1
+    assert LLM_BREAKER_OPEN.labels("chat")._value.get() == 1
     _, completion = await _stream(gateway)
     assert completion.fallback_reason == BREAKER_OPEN
     assert primary.calls == 1
@@ -186,7 +186,7 @@ async def test_three_failures_open_the_breaker_then_probe_closes_it() -> None:
     _, completion = await _stream(gateway)
     assert (completion.provider, completion.fallback_reason) == ("yandex", None)
     assert not gateway.primary_down()
-    assert LLM_BREAKER_OPEN._value.get() == 0
+    assert LLM_BREAKER_OPEN.labels("chat")._value.get() == 0
     assert reserve.calls == 4
 
 

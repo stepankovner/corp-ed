@@ -5,6 +5,8 @@
 const LABELS: Record<string, string> = {
   // Индексация документов
   embedding_provider_error: "Сервис векторизации недоступен, повторим позже",
+  embedding_input_rejected:
+    "Сервис векторизации не принял текст документа — проверьте файл и загрузите заново",
   internal_error: "Внутренняя ошибка при обработке",
   material_not_found: "Документ удалён",
   document_too_large: "Документ слишком большой",

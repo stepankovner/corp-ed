@@ -20,18 +20,23 @@ from corp_ed.domain.models import (
     MaterialStatus,
     Tenant,
 )
+from corp_ed.llm.embedding_breaker import BreakerEmbeddings
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
+from corp_ed.llm.fallback import CircuitBreaker
 from corp_ed.llm.types import EmbeddingResult
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.services.ingest_service import IngestService
 from corp_ed.services.reindex_service import ReindexService
 from corp_ed.worker import (
+    ERROR_INPUT_REJECTED,
     ERROR_NOT_FOUND,
     ERROR_PROVIDER,
+    PROVIDER_MAX_DELAY,
     IngestWorker,
     heartbeat,
+    provider_delay,
     retry_delay,
 )
 
@@ -48,14 +53,18 @@ RAG = RagSettings(
 
 
 class FailingEmbeddings(EmbeddingGateway):
-    def __init__(self, *, retryable: bool) -> None:
+    def __init__(self, *, retryable: bool, status: int | None = None) -> None:
         self.retryable = retryable
+        self.status = status
+
+    def _error(self) -> LLMError:
+        return LLMError("provider down", retryable=self.retryable, status=self.status)
 
     async def embed_document(self, text: str) -> EmbeddingResult:
-        raise LLMError("provider down", retryable=self.retryable)
+        raise self._error()
 
     async def embed_query(self, text: str) -> EmbeddingResult:
-        raise LLMError("provider down", retryable=self.retryable)
+        raise self._error()
 
 
 async def _material(
@@ -85,11 +94,9 @@ async def _reload(session: AsyncSession, material: Material) -> Material:
 
 
 def _worker(
-    maker: async_sessionmaker[AsyncSession],
-    embeddings: EmbeddingGateway,
-    max_attempts: int = 5,
+    maker: async_sessionmaker[AsyncSession], embeddings: EmbeddingGateway
 ) -> IngestWorker:
-    return IngestWorker(maker, embeddings, RAG, max_attempts=max_attempts)
+    return IngestWorker(maker, embeddings, RAG)
 
 
 async def test_empty_queue(session_maker: async_sessionmaker[AsyncSession]) -> None:
@@ -158,39 +165,105 @@ async def test_retryable_error_requeues_with_backoff(
     assert await _worker(session_maker, FakeEmbeddingAdapter()).run_once() is False
 
 
-async def test_attempts_are_exhausted(
+async def test_provider_errors_never_fail_the_document(
     session: AsyncSession,
     session_maker: async_sessionmaker[AsyncSession],
     tenant_ctx: Tenant,
 ) -> None:
+    # BH-51 (в): 503 девять раз подряд — документ ждёт, пауза растёт до
+    # часа; поставщик вернулся — READY без повторной загрузки.
     material = await _material(session, tenant_ctx)
-    worker = _worker(session_maker, FailingEmbeddings(retryable=True), max_attempts=2)
+    worker = _worker(session_maker, FailingEmbeddings(retryable=True, status=503))
 
-    await worker.run_once()
+    for _ in range(9):
+        await session.execute(update(IngestJob).values(run_after=datetime.now(UTC)))
+        await session.commit()
+        before = datetime.now(UTC)
+        assert await worker.run_once() is True
+        [job] = await _jobs(session)
+        assert job.status is IngestJobStatus.QUEUED
+        assert job.run_after - before <= PROVIDER_MAX_DELAY + timedelta(seconds=5)
+
+    assert job.attempts == 9
+    assert job.run_after - before > PROVIDER_MAX_DELAY - timedelta(seconds=5)
+    reloaded = await _reload(session, material)
+    assert reloaded.status is MaterialStatus.PENDING
+    assert reloaded.status_error == ERROR_PROVIDER
+
     await session.execute(update(IngestJob).values(run_after=datetime.now(UTC)))
     await session.commit()
-    await worker.run_once()
+    assert await _worker(session_maker, FakeEmbeddingAdapter()).run_once() is True
+    assert (await _reload(session, material)).status is MaterialStatus.READY
+
+
+def test_provider_delay_is_capped_at_an_hour() -> None:
+    assert [provider_delay(n).total_seconds() for n in range(1, 10)] == [
+        30,
+        60,
+        120,
+        240,
+        480,
+        960,
+        1920,
+        3600,
+        3600,
+    ]
+    assert provider_delay(500) == PROVIDER_MAX_DELAY
+
+
+async def test_key_or_payment_error_waits_too(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    tenant_ctx: Tenant,
+) -> None:
+    # 401 / 402 — беда поставщика, а не документа: ждём, не FAILED.
+    material = await _material(session, tenant_ctx)
+
+    await _worker(
+        session_maker, FailingEmbeddings(retryable=False, status=401)
+    ).run_once()
 
     [job] = await _jobs(session)
-    assert job.status is IngestJobStatus.FAILED
-    assert (await _reload(session, material)).status is MaterialStatus.FAILED
+    assert job.status is IngestJobStatus.QUEUED
+    reloaded = await _reload(session, material)
+    assert reloaded.status is MaterialStatus.PENDING
+    assert reloaded.status_error == ERROR_PROVIDER
 
 
-async def test_non_retryable_error_fails_at_once(
+async def test_rejected_text_fails_the_document(
     session: AsyncSession,
     session_maker: async_sessionmaker[AsyncSession],
     tenant_ctx: Tenant,
 ) -> None:
     material = await _material(session, tenant_ctx)
 
-    await _worker(session_maker, FailingEmbeddings(retryable=False)).run_once()
+    await _worker(
+        session_maker, FailingEmbeddings(retryable=False, status=400)
+    ).run_once()
 
     [job] = await _jobs(session)
     assert job.status is IngestJobStatus.FAILED
     reloaded = await _reload(session, material)
     assert reloaded.status is MaterialStatus.FAILED
     # Клиенту — код, а не текст исключения провайдера.
-    assert reloaded.status_error == ERROR_PROVIDER
+    assert reloaded.status_error == ERROR_INPUT_REJECTED
+
+
+async def test_open_breaker_leaves_jobs_in_the_queue(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    tenant_ctx: Tenant,
+) -> None:
+    await _material(session, tenant_ctx)
+    breaker = CircuitBreaker(kind="embedding")
+    breaker.record_failure("error_payment")
+    embeddings = BreakerEmbeddings(FakeEmbeddingAdapter(), breaker)
+
+    assert await _worker(session_maker, embeddings).run_once() is False
+
+    [job] = await _jobs(session)
+    assert (job.status, job.attempts) == (IngestJobStatus.QUEUED, 0)
+    breaker.record_success()
 
 
 async def test_failed_ingest_keeps_previous_chunks(
@@ -205,7 +278,9 @@ async def test_failed_ingest_keeps_previous_chunks(
         await IngestJobRepository(session).enqueue(tenant_ctx.id, material.id)
         await session.commit()
 
-    await _worker(session_maker, FailingEmbeddings(retryable=False)).run_once()
+    await _worker(
+        session_maker, FailingEmbeddings(retryable=False, status=400)
+    ).run_once()
 
     with tenant_scope(tenant_ctx.id):
         chunks = (await session.execute(select(Chunk))).scalars().all()

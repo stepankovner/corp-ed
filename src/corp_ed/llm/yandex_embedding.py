@@ -64,7 +64,14 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
         read_timeout: float = 60.0,
         document_throttle: Throttle | None = None,
         query_throttle: Throttle | None = None,
+        query_timeout: float | None = None,
+        query_attempts: int | None = None,
+        max_delay: float | None = None,
     ):
+        """query_timeout — срок эмбеддинга вопроса (BH-51: 5 с, сотрудник
+        ждёт): таймаут не повторяется, повтор — query_attempts только на
+        быструю ошибку с паузой не больше max_delay. Документы — прежние
+        read_timeout × max_attempts: загрузку никто не ждёт."""
         self._client = client
         self._family = family
         self._dim = dim
@@ -78,6 +85,9 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
         self._max_attempts = max_attempts
         self._base_delay = base_delay
         self._read_timeout = read_timeout
+        self._query_timeout = query_timeout
+        self._query_attempts = query_attempts
+        self._max_delay = max_delay
 
     async def embed_document(self, text: str) -> EmbeddingResult:
         return await self._embed(text, "doc", self._document_throttle)
@@ -95,6 +105,8 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
         if self._family != "text-search":
             payload["dim"] = str(self._dim)
         timings: list[int] = []
+        short = kind == "query" and self._query_timeout is not None
+        read_timeout = self._query_timeout if short else self._read_timeout
 
         async def do_request() -> httpx.Response:
             # Слот берёт КАЖДАЯ попытка, в том числе повтор после 429:
@@ -108,7 +120,7 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
                 headers=auth_headers(self._api_key),
                 timeout=httpx.Timeout(
                     connect=5.0,
-                    read=self._read_timeout,
+                    read=read_timeout,
                     write=10.0,
                     pool=5.0,
                 ),
@@ -119,8 +131,12 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
 
         response = await call_with_retry(
             do_request,
-            max_attempts=self._max_attempts,
+            max_attempts=(self._query_attempts or self._max_attempts)
+            if short
+            else self._max_attempts,
             base_delay=self._base_delay,
+            retry_on_timeout=not short,
+            max_delay=self._max_delay if short else None,
         )
 
         try:

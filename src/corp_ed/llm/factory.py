@@ -3,6 +3,7 @@ import asyncio
 import httpx
 
 from corp_ed.core.config import LLMSettings
+from corp_ed.llm.embedding_breaker import BreakerEmbeddings
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.fake import DevAdapter
 from corp_ed.llm.fake_embedding import WordEmbeddingAdapter
@@ -14,6 +15,7 @@ from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
 from corp_ed.llm.yandex_openai import CloudRuAdapter, YandexOpenAIAdapter
 
 _breaker: CircuitBreaker | None = None
+_embedding_breaker: CircuitBreaker | None = None
 
 
 def shared_breaker(settings: LLMSettings) -> CircuitBreaker:
@@ -26,6 +28,18 @@ def shared_breaker(settings: LLMSettings) -> CircuitBreaker:
             open_seconds=settings.llm_breaker_open_seconds,
         )
     return _breaker
+
+
+def shared_embedding_breaker(settings: LLMSettings) -> CircuitBreaker:
+    """Предохранитель эмбеддингов — свой, один на процесс (BH-51)."""
+    global _embedding_breaker
+    if _embedding_breaker is None:
+        _embedding_breaker = CircuitBreaker(
+            failures=settings.llm_breaker_failures,
+            open_seconds=settings.llm_breaker_open_seconds,
+            kind="embedding",
+        )
+    return _embedding_breaker
 
 
 def build_llm_gateway(
@@ -94,14 +108,16 @@ def build_embedding_gateway(
     document_throttle: Throttle | None = None,
     query_throttle: Throttle | None = None,
 ) -> EmbeddingGateway:
-    """Эмбеддер по LLM_PROVIDER: Yandex или «мешок слов» в режиме fake."""
+    """Эмбеддер по LLM_PROVIDER: Yandex или «мешок слов» в режиме fake.
+
+    Yandex — с коротким сроком вопроса и предохранителем (BH-51)."""
     if settings.llm_provider == "fake":
         if not settings.llm_fake_quotas:
             return WordEmbeddingAdapter()
         return WordEmbeddingAdapter(
             document_throttle=document_throttle, query_throttle=query_throttle
         )
-    return YandexEmbeddingAdapter(
+    adapter = YandexEmbeddingAdapter(
         client=client,
         folder_id=settings.yc_folder_id,
         api_key=settings.yc_api_key.get_secret_value(),
@@ -109,4 +125,8 @@ def build_embedding_gateway(
         dim=settings.embedding_dim,
         document_throttle=document_throttle,
         query_throttle=query_throttle,
+        query_timeout=settings.embedding_query_timeout_seconds,
+        query_attempts=settings.llm_max_attempts,
+        max_delay=settings.llm_retry_max_delay_seconds,
     )
+    return BreakerEmbeddings(adapter, shared_embedding_breaker(settings))

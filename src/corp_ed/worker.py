@@ -93,7 +93,6 @@ from corp_ed.services.team_notify import drain as drain_team_notifier
 
 logger = structlog.get_logger()
 
-MAX_ATTEMPTS = 5
 STALE_AFTER = timedelta(minutes=15)
 """Задача в RUNNING дольше этого — воркер упал; её берёт другой."""
 IDLE_SLEEP = 2.0
@@ -106,13 +105,25 @@ HEARTBEAT_EVERY = 30.0
 # Коды ошибок для материала: видны админу компании. Текст исключения и
 # ответ провайдера — только в логе.
 ERROR_PROVIDER = "embedding_provider_error"
+ERROR_INPUT_REJECTED = "embedding_input_rejected"
 ERROR_NOT_FOUND = "material_not_found"
 ERROR_INTERNAL = "internal_error"
+
+
+PROVIDER_MAX_DELAY = timedelta(hours=1)
 
 
 def retry_delay(attempt: int) -> timedelta:
     """30 с, 1 мин, 2 мин, 4 мин… — сбой провайдера обычно проходит сам."""
     return timedelta(seconds=30 * 2 ** (attempt - 1))
+
+
+def provider_delay(attempt: int) -> timedelta:
+    """Пауза загрузки при сбое поставщика (BH-51 (в)): 30 с · 2ⁿ⁻¹, не
+    больше часа и без предела попыток — документ ждёт поставщика."""
+    if attempt > 8:
+        return PROVIDER_MAX_DELAY
+    return min(retry_delay(attempt), PROVIDER_MAX_DELAY)
 
 
 class IngestWorker:
@@ -121,16 +132,19 @@ class IngestWorker:
         session_maker: async_sessionmaker[AsyncSession],
         embedding_gateway: EmbeddingGateway,
         rag: RagSettings,
-        *,
-        max_attempts: int = MAX_ATTEMPTS,
     ) -> None:
         self.session_maker = session_maker
         self.embedding_gateway = embedding_gateway
         self.rag = rag
-        self.max_attempts = max_attempts
 
     async def run_once(self) -> bool:
-        """Выполнить одну задачу. False — очередь пуста."""
+        """Выполнить одну задачу. False — очередь пуста.
+
+        Предохранитель эмбеддингов открыт — задачи не берём (BH-51 (в)):
+        каждая ждала бы срок и вернулась в очередь; ждут в очереди.
+        """
+        if self.embedding_gateway.down():
+            return False
         async with self.session_maker() as session:
             job = await IngestJobRepository(session).claim_next(stale_after=STALE_AFTER)
             await session.commit()
@@ -186,11 +200,17 @@ class IngestWorker:
             log.info("ingest_skipped_missing_material")
             return
         except LLMError as exc:
-            await self._fail(session, service, job, ERROR_PROVIDER, exc.retryable)
-            log.warning("ingest_provider_error", error=str(exc))
+            # Поставщик отверг сам текст — виноват документ; любая другая
+            # ошибка поставщика (сеть, 5xx, ключ, оплата, наша квота) —
+            # документ ждёт, пока поставщик вернётся (BH-51 (в)).
+            if exc.input_rejected:
+                await self._fail(session, service, job, ERROR_INPUT_REJECTED)
+            else:
+                await self._wait_provider(session, service, job)
+            log.warning("ingest_provider_error", error=str(exc), status=exc.status)
             return
         except Exception:
-            await self._fail(session, service, job, ERROR_INTERNAL, retryable=False)
+            await self._fail(session, service, job, ERROR_INTERNAL)
             log.exception("ingest_failed")
             return
 
@@ -199,25 +219,23 @@ class IngestWorker:
         WORKER_JOBS.labels("ingest", "done").inc()
         log.info("ingest_done", chunks=chunks)
 
-    async def _fail(
-        self,
-        session: AsyncSession,
-        service: IngestService,
-        job: ClaimedJob,
-        error: str,
-        retryable: bool,
+    async def _wait_provider(
+        self, session: AsyncSession, service: IngestService, job: ClaimedJob
     ) -> None:
         jobs = IngestJobRepository(session)
-        if retryable and job.attempts < self.max_attempts:
-            await service.mark(job.material_id, MaterialStatus.PENDING, error)
-            await jobs.retry_later(job.id, error, retry_delay(job.attempts))
-            result = "retry"
-        else:
-            await service.mark(job.material_id, MaterialStatus.FAILED, error)
-            await jobs.mark_failed(job.id, error)
-            result = "failed"
+        await service.mark(job.material_id, MaterialStatus.PENDING, ERROR_PROVIDER)
+        await jobs.retry_later(job.id, ERROR_PROVIDER, provider_delay(job.attempts))
         await session.commit()
-        WORKER_JOBS.labels("ingest", result).inc()
+        WORKER_JOBS.labels("ingest", "retry").inc()
+
+    async def _fail(
+        self, session: AsyncSession, service: IngestService, job: ClaimedJob, error: str
+    ) -> None:
+        jobs = IngestJobRepository(session)
+        await service.mark(job.material_id, MaterialStatus.FAILED, error)
+        await jobs.mark_failed(job.id, error)
+        await session.commit()
+        WORKER_JOBS.labels("ingest", "failed").inc()
 
 
 SYNC_MAX_ATTEMPTS = 3

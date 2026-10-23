@@ -49,7 +49,9 @@ class CircuitBreaker:
         failures: int = 3,
         open_seconds: float = 120.0,
         clock: Callable[[], float] = time.monotonic,
+        kind: str = "chat",
     ) -> None:
+        self.kind = kind
         self.failures = failures
         self.open_seconds = open_seconds
         self._clock = clock
@@ -68,18 +70,23 @@ class CircuitBreaker:
 
     def record_success(self) -> None:
         if self._opened_at is not None:
-            logger.info("llm_breaker_closed")
+            logger.info("llm_breaker_closed", kind=self.kind)
         self._streak = 0
         self._opened_at = None
-        LLM_BREAKER_OPEN.set(0)
+        LLM_BREAKER_OPEN.labels(self.kind).set(0)
 
     def record_failure(self, kind: ErrorKind) -> None:
         self._streak += 1
         if kind in _OPEN_AT_ONCE or self._streak >= self.failures:
             if not self.is_open():
-                logger.warning("llm_breaker_opened", reason=kind, streak=self._streak)
+                logger.warning(
+                    "llm_breaker_opened",
+                    kind=self.kind,
+                    reason=kind,
+                    streak=self._streak,
+                )
             self._opened_at = self._clock()
-            LLM_BREAKER_OPEN.set(1)
+            LLM_BREAKER_OPEN.labels(self.kind).set(1)
 
 
 class FallbackGateway(LLMGateway):

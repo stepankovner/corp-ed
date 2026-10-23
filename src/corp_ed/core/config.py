@@ -151,6 +151,10 @@ class LLMSettings(BaseSettings):
     # воркера. Вопросам сотрудников — своя доля, ингесту — своя, в сумме
     # с запасом до квоты (BH-4: «поиск приоритетнее ингеста»).
     embedding_query_rps: float = Field(default=3.0, gt=0)
+    # Срок эмбеддинга вопроса (BH-51): не ответил — сотруднику быстрая
+    # ошибка, а не 3 минуты ожидания. Повтор и предохранитель — те же
+    # настройки, что у модели ответа (LLM_MAX_ATTEMPTS, LLM_BREAKER_*).
+    embedding_query_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     embedding_ingest_rps: float = Field(default=6.0, gt=0)
 
     @model_validator(mode="after")
