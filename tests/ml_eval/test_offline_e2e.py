@@ -659,19 +659,53 @@ def test_directory_search_returns_context_blocks_with_source() -> None:
         "— Бухгалтерия — главный бухгалтер Олимпиада Сергеевна Брусникина.\n"
     )
     search = _directory_search("orgstruktura", text)
-    blocks, complete, entries = search("финансовый директор", "ФИО и кабинет")
+    blocks, complete, entries, note = search("финансовый директор", "ФИО и кабинет")
     assert len(blocks) == 1
     assert "Кукушкина" in blocks[0].content
     assert blocks[0].match.title == "orgstruktura"
     assert blocks[0].heading_path == ["Справочник"]
     assert complete
     assert [e.name for e in entries] == ["Ярослава Игоревна Кукушкина"]
-    assert search("старший смены", "ФИО") == ([], False, [])
+    assert note == ""
+    assert search("старший смены", "ФИО") == ([], False, [], "")
     # A1: заголовок выдержки — с пояснением.
     explained = _directory_search("orgstruktura", text, heading="Справочник: x")
     assert explained("финансовый директор", "ФИО")[0][0].heading_path == [
         "Справочник: x"
     ]
+
+
+def test_directory_search_asker_unit() -> None:
+    """--decision-asker-unit: общая роль и отдел спрашивающего — глава
+    подразделения вместо всех «руководителей»; без флага — как было."""
+    text = (
+        "— Центр учёта поставок (ЦУП) — руководитель Корней Маркович Ложкин, кабинет 11.\n"  # noqa: E501
+        "— Отдел корпоративных продаж (ОКП) — руководитель Нонна Глебовна Пряжкина, кабинет 30.\n"  # noqa: E501
+        "— Административно-хозяйственная служба — офис-менеджер Фёкла Ивановна Метёлкина, кабинет 10.\n"  # noqa: E501
+    )
+    question = "Я в ОКП. Кто как мой непосредственный руководитель согласует?"
+    plain = offline_e2e._directory_search("orgstruktura", text)
+    _, _, entries, note = plain("руководитель", "фамилия", question)
+    assert len(entries) == 2 and note == ""
+    search = offline_e2e._directory_search("orgstruktura", text, asker_unit=True)
+    blocks, complete, entries, note = search("руководитель", "фамилия", question)
+    assert [e.name for e in entries] == ["Нонна Глебовна Пряжкина"]
+    assert complete and "Пряжкина" in blocks[0].content
+    assert note.startswith("Отдел корпоративных продаж (ОКП) (вопрос) →")
+    # Роль с отделом, глава — офис-менеджер; вопрос не нужен.
+    _, _, entries, note = search("руководитель АХС", "кабинет")
+    assert [e.room for e in entries] == ["10"] and "(роль)" in note
+    # Общая роль без отдела (T7-19) — промах с причиной, а не чужие
+    # руководители; без флага — как было (оба руководителя).
+    miss = search("руководитель", "кабинет", "Чьим приказом вносятся изменения?")
+    assert miss == ([], False, [], "промах: общая роль без отдела спрашивающего")
+    assert len(plain("руководитель", "кабинет", "Чьим приказом?")[2]) == 2
+    # Глава та же, что у lookup, — пометка «(= lookup)».
+    _, _, entries, note = search("руководитель ОКП", "фамилия")
+    assert [e.room for e in entries] == ["30"] and note.endswith("(= lookup)")
+    # Роль не общая — обычный lookup, пометки нет.
+    _, _, entries, note = search("офис-менеджер", "кабинет", question)
+    assert [e.room for e in entries] == ["10"] and note == ""
 
 
 @pytest.mark.parametrize(
@@ -698,6 +732,8 @@ def test_directory_search_returns_context_blocks_with_source() -> None:
         ],
         # таймаут — только у OpenAI-совместимых поставщиков решения
         ["--decision-timeout", "8"],
+        # отдел спрашивающего — только со справочником
+        ["--decision-asker-unit"],
     ],
 )
 def test_phase1_flags_validated(

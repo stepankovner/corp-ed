@@ -417,6 +417,68 @@ def test_directory_miss_falls_back_to_search() -> None:
     assert run.text == "Ответ [2]."
 
 
+@pytest.mark.parametrize("asker", [False, True])
+def test_directory_gets_question_with_asker_unit(asker: bool) -> None:
+    """asker_unit=True: справочник получает текст вопроса третьим
+    аргументом, пометка «что нашли» — в run.asker_unit; без флага — вызов
+    с двумя аргументами, как было."""
+    partial = decision(
+        sufficiency="partial", search_query="ФИО", lookup_role="руководитель"
+    )
+    question = "Я в ОКП. Кто мой руководитель?"
+    seen: list[tuple[str, ...]] = []
+
+    def directory(*args: str) -> tuple[Sequence[Chunk], bool, list[Entry], str]:
+        seen.append(args)
+        note = "ОКП (вопрос) → руководитель Пряжкина" if len(args) > 2 else ""
+        return [Chunk("ОКП — руководитель Пряжкина.")], True, [], note
+
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(partial),
+        answer=Script("Пряжкина [2]."),
+        search=no_search,
+        directory=directory,
+        asker_unit=asker,
+    )
+    if asker:
+        assert seen == [("руководитель", "—", question)]
+        assert run.asker_unit == ["ОКП (вопрос) → руководитель Пряжкина"]
+    else:
+        assert seen == [("руководитель", "—")]
+        assert run.asker_unit == []
+    assert run.directory_hits == 1 and run.text == "Пряжкина [2]."
+
+
+def test_directory_generic_role_miss_goes_on_as_before() -> None:
+    """Промах «общая роль без отдела» — как любой промах: добор вектором,
+    причина — в run.asker_unit."""
+    partial = decision(
+        sufficiency="partial",
+        search_query="приказ генерального директора кабинет",
+        lookup_role="руководитель",
+    )
+    run = run_decided(
+        "Чьим приказом вносятся изменения и в каком кабинете?",
+        [Chunk("а")],
+        decide=Script(partial, decision()),
+        answer=Script("Генеральный директор, кабинет 401 [2]."),
+        search=lambda q: [Chunk("Генеральный директор — кабинет 401.")],
+        directory=lambda role, missing, question: (
+            [],
+            False,
+            [],
+            "промах: общая роль без отдела спрашивающего",
+        ),
+        asker_unit=True,
+    )
+    assert run.directory_misses == 1 and run.directory_hits == 0
+    assert run.queries == ["приказ генерального директора кабинет"]
+    assert run.asker_unit == ["промах: общая роль без отдела спрашивающего"]
+    assert run.text == "Генеральный директор, кабинет 401 [2]."
+
+
 def test_directory_partial_adds_entry_and_searches() -> None:
     """Роль нашлась, но без запрошенной почты — запись в выдержки и добор."""
     partial = decision(

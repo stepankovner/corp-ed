@@ -687,6 +687,23 @@ sufficiency none — то же решение переспрашивается �
 `decision_hedge_wasted_tokens`, `decision_hedge_abandoned`, `decision_hedge`,
 `decision_tokens_by_model`; тесты — `tests/ml_eval/test_decision_hedge.py`.
 
+Отдел спрашивающего (23.10, `ml-report.md`, «Отдел спрашивающего в поиске по
+справочнику»): `--decision-asker-unit` (с `--decision-directory`) —
+справочник получает текст вопроса третьим аргументом
+(`decision_loop(asker_unit=True)`). Общая роль (`is_generic_role`,
+`GENERIC_ROLES`) при отделе спрашивающего в вопросе (`asker_unit`: только
+«о себе» — «я / мы / работаю / выхожу …» через «мост», без «не») или роль
+«руководитель <подразделения>» (`role_unit`) дают главу подразделения
+(`unit_head`: `HEAD_TITLES`, иначе единственная запись) — одну её запись
+вместо всего, что даёт `lookup`. Сборка — `head_for_role` → `HeadMatch`.
+Общая роль без главы — промах (`generic_role_miss`, решение Артёма 23.10):
+`lookup` не зовётся, причина — в колонке. Колонка `decision_asker_unit`
+(«(= lookup)» — записи те же), версия `-au`; разбор —
+`sandbox/stand/asker_unit_audit.py`. Промпт решения `decision-v7`
+(`prompts/decision.py`): к правилу `lookup_role` дописана строка
+`LOOKUP_OWN_HEAD` («свой руководитель → "руководитель <подразделение>"»);
+`_FIELDS = _FIELDS_V6 + LOOKUP_OWN_HEAD`, sha-тест сверяет остальное с v6.
+
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов
 и скорость поставщика решения).
@@ -960,7 +977,9 @@ src/corp_ed/
   domain/small_talk.py     реплики и вопросы об ассистенте — правилом в коде
   domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4),
                            замещение: Entry.deputy, substitution_requested, lookup_substitute, Substitute
-  prompts/decision.py      промпт решения decision-v5, схема для запроса, ответ по решению,
+                           отдел спрашивающего: is_generic_role, asker_unit, unit_head, role_unit, head_for_role,
+                           generic_role_miss
+  prompts/decision.py      промпт решения decision-v7, схема для запроса, ответ по решению,
                            ответ при другой редакции edition-v1, строка контакта contact-v1 / contact-sub-v1
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
