@@ -2125,6 +2125,33 @@ export interface paths {
         patch: operations["update_material_api_v1_materials__material_id__patch"];
         trace?: never;
     };
+    "/api/v1/materials/{material_id}/directory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Directory Entries
+         * @description Записи справочника сотрудников, распознанные в документе (BH-47):
+         *     показать перед «Использовать?» и проверить, что берёт ассистент.
+         */
+        get: operations["directory_entries_api_v1_materials__material_id__directory_get"];
+        put?: never;
+        /**
+         * Answer Directory
+         * @description «Использовать как справочник сотрудников?» (BH-47): да — ассистент
+         *     ищет по документу, кто занимает должность и как связаться; нет — не
+         *     ищет. Подсказка снимается в обоих случаях.
+         */
+        post: operations["answer_directory_api_v1_materials__material_id__directory_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/materials/{material_id}/edition-hint": {
         parameters: {
             query?: never;
@@ -3940,6 +3967,33 @@ export interface components {
             unconfirmed: number;
         };
         /**
+         * DirectoryAnswer
+         * @description Ответ на «Использовать как справочник сотрудников?» (BH-47); false
+         *     — и снять отметку с документа.
+         */
+        DirectoryAnswer: {
+            /** Use */
+            use: boolean;
+        };
+        /**
+         * DirectoryEntryResponse
+         * @description Запись справочника, как её распознал код (domain.directory).
+         */
+        DirectoryEntryResponse: {
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            /** Phone */
+            phone: string;
+            /** Role */
+            role: string;
+            /** Room */
+            room: string;
+            /** Unit */
+            unit: string;
+        };
+        /**
          * EditionHintAnswer
          * @description Ответ на подсказку «Этот документ заменяет «…»?» (BH-41).
          */
@@ -4605,6 +4659,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Directory Hint */
+            directory_hint?: number | null;
             /** Edition Hint */
             edition_hint?: string[];
             /** Folder Id */
@@ -4616,6 +4672,11 @@ export interface components {
             id: string;
             /** Indexed At */
             indexed_at: string | null;
+            /**
+             * Is Directory
+             * @default false
+             */
+            is_directory: boolean;
             /** Source Filename */
             source_filename: string | null;
             /** Source Format */
@@ -10092,6 +10153,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["MaterialUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaterialResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    directory_entries_api_v1_materials__material_id__directory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                material_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DirectoryEntryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_directory_api_v1_materials__material_id__directory_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                material_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DirectoryAnswer"];
             };
         };
         responses: {

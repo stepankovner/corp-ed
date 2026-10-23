@@ -4,12 +4,13 @@
 ScriptedStream по очереди: спекулятивный, затем ответ или общий.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from corp_ed.domain.models import QaLog, Tenant, User
+from corp_ed.domain.models import Material, QaLog, Tenant, User
 from corp_ed.domain.small_talk import reply
 from corp_ed.domain.types import AnswerOrigin, DecisionMode, NotFoundMode
 from corp_ed.prompts.decision import EDITION_CAUTION
@@ -19,6 +20,7 @@ from corp_ed.services.faq_service import FaqService
 from corp_ed.services.general_answer import CLARIFY_ADVICE
 from tests.test_decision_loop import Decider, decision
 from tests.test_search_step import (
+    OTHER_AXIS,
     QUERY,
     QUERY_AXIS,
     QUESTION,
@@ -336,3 +338,74 @@ async def test_partial_searches_more_and_answers_anew_by_stream(
     assert entry.decision_trace["decision_added"] == [1]
     assert entry.decision_trace["decision_wasted_reason"] == "shown_changed"
     assert entry.decision_calls == 2
+
+
+ORG_LINES = [
+    "— Финансовый директор — Кукушкина Ярослава Игоревна, кабинет 402, "
+    "доб. 1120, kukushkina@example.ru",
+    "— Бухгалтерия — главный бухгалтер Петров Иван Сергеевич, кабинет 405",
+]
+
+
+async def _org_chart(session: AsyncSession, *, superseded: bool = False) -> None:
+    [chunk, _] = await _document(session, "Оргструктура", ORG_LINES, OTHER_AXIS)
+    material = await session.get(Material, chunk.material_id)
+    assert material is not None
+    material.is_directory = True
+    if superseded:
+        material.superseded_at = datetime.now(UTC)
+    await session.commit()
+
+
+async def test_directory_hit_answers_with_the_contact_line(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    await _regulation(session)
+    await _org_chart(session)
+    partial = decision(
+        sufficiency="partial", missing="ФИО", lookup_role="финансовый директор"
+    )
+    final = "Согласует финансовый директор Кукушкина Ярослава Игоревна [2]."
+    llm = ScriptedStream(ANSWER, final)
+
+    result = await _scheme(
+        chunk_repo, llm, SpyDecider(Decider(partial), Sink())
+    ).answer_turn(QUESTION, employee, history=[])
+
+    assert result.content == final
+    card = result.sources[-1]
+    assert (card.title, card.heading_path) == ("Оргструктура", ["Справочник"])
+    assert "Кукушкина Ярослава Игоревна, кабинет 402" in card.content
+    # Ответ заново — с строкой контакта последним абзацем сообщения.
+    user_message = llm.calls[1][-1].content
+    assert user_message.endswith("укажи его в ответе со ссылкой на выдержку [2].")
+    entry = await _log(session)
+    assert entry.prompt_version == "faq-v2.7+contact-v1"
+    assert entry.decision_trace is not None
+    assert entry.decision_trace["decision_directory"] == "hit"
+    assert entry.decision_trace["decision_directory_entries"] == 1
+
+
+async def test_superseded_org_chart_is_not_the_directory(
+    session: AsyncSession,
+    chunk_repo: ChunkRepository,
+    tenant_ctx: Tenant,
+    employee: User,
+) -> None:
+    await _regulation(session)
+    await _org_chart(session, superseded=True)
+    partial = decision(
+        sufficiency="partial", missing="ФИО", lookup_role="финансовый директор"
+    )
+    llm = ScriptedStream(ANSWER)
+
+    await _scheme(chunk_repo, llm, SpyDecider(Decider(partial), Sink())).answer_turn(
+        QUESTION, employee, history=[]
+    )
+
+    entry = await _log(session)
+    assert entry.decision_trace is not None
+    assert entry.decision_trace["decision_directory"] == ""

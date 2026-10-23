@@ -13,6 +13,7 @@ from corp_ed.core.exceptions import (
     NotFoundError,
     UnacceptableFileError,
 )
+from corp_ed.domain.directory import Entry
 from corp_ed.domain.editions import superseded_candidates
 from corp_ed.domain.models import Folder, Material, MaterialStatus, User
 from corp_ed.ingest.extract import ExtractionError, detect_format, error_message
@@ -20,6 +21,7 @@ from corp_ed.ingest.sandbox import extract_isolated
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.ingest_job_repository import IngestJobRepository
 from corp_ed.repositories.material_repository import MaterialRepository
+from corp_ed.services.directory_service import directory_hint, entries_of
 
 logger = structlog.get_logger()
 
@@ -67,6 +69,7 @@ class MaterialService:
             content=content,
             folder_id=folder_id,
             edition_hint=await self._edition_hint(title, content),
+            directory_hint=directory_hint(title, content),
         )
 
         await self.material_repo.create(material)
@@ -153,6 +156,7 @@ class MaterialService:
             source_size=len(data),
             folder_id=folder_id,
             edition_hint=await self._edition_hint(title, markdown),
+            directory_hint=directory_hint(title, markdown),
         )
         await self.material_repo.create(material)
         await self.job_repo.enqueue(material.tenant_id, material.id)
@@ -298,6 +302,41 @@ class MaterialService:
         logger.info(
             "edition_hint_answered", material_id=str(material.id), accept=accept
         )
+        return material
+
+    # --- справочник сотрудников (BH-47) ------------------------------------------
+
+    async def directory_entries(self, material_id: UUID) -> list[Entry]:
+        """Что распознано в документе как справочник: показать администратору
+        перед «Использовать?» и после — что берёт шаг решения."""
+        material = await self.get(material_id)
+        return entries_of(material.content)
+
+    async def answer_directory(
+        self, actor: User, material_id: UUID, *, use: bool
+    ) -> Material:
+        """«Использовать как справочник сотрудников?» — да: записи документа
+        идут в поиск по должности шага решения (BH-47); нет или снять — не
+        идут. Подсказка снимается в обоих случаях."""
+        material = await self.get(material_id)
+        if use and not entries_of(material.content):
+            raise CodedConflictError(
+                "В документе не нашлось строк справочника", "directory_empty"
+            )
+        previous = material.is_directory
+        material.is_directory = use
+        material.directory_hint = None
+        if previous != use:
+            self.audit.record(
+                AuditAction.MATERIAL_DIRECTORY_CHANGED,
+                tenant_id=material.tenant_id,
+                actor_id=actor.id,
+                target_type="material",
+                target_id=material.id,
+                details={"title": material.title, "is_directory": use},
+            )
+        await self.session.commit()
+        logger.info("directory_answered", material_id=str(material.id), use=use)
         return material
 
     def _supersede(

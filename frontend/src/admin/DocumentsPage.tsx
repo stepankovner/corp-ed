@@ -177,6 +177,11 @@ export function DocumentsPage() {
   const materialById = useMemo(() => new Map(list.map((m) => [m.id, m])), [list]);
   // Подсказки «новая редакция» ждут ответа, в какой бы папке ни лежал документ.
   const hinted = useMemo(() => list.filter((m) => m.edition_hint?.length), [list]);
+  // Подсказки «похоже на справочник сотрудников» (BH-47).
+  const directoryHinted = useMemo(
+    () => list.filter((m) => m.directory_hint && !m.superseded_at),
+    [list],
+  );
   const here = useMemo(() => list.filter((m) => inPlace(m, place)), [list, place]);
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -402,6 +407,9 @@ export function DocumentsPage() {
           replaces={(material.edition_hint ?? []).flatMap((id) => materialById.get(id) ?? [])}
         />
       ))}
+      {directoryHinted.map((material) => (
+        <DirectoryHint key={material.id} material={material} />
+      ))}
       {restore.isError ? (
         <div className={styles.block}>
           <Notice kind="error">{errorMessage(restore.error)}</Notice>
@@ -526,6 +534,9 @@ export function DocumentsPage() {
                         ) : (
                           <Badge tone={status.tone}>{status.label}</Badge>
                         )}
+                        {material.is_directory && !material.superseded_at ? (
+                          <DirectoryMark material={material} />
+                        ) : null}
                         {material.status_error ? (
                           <span className={styles.errorText}>
                             {describeCode(material.status_error)}
@@ -764,6 +775,114 @@ function EditionHint({ material, replaces }: { material: Material; replaces: Mat
         </div>
       </Notice>
     </div>
+  );
+}
+
+function useDirectoryAnswer(material: Material) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (use: boolean) =>
+      unwrap(
+        api.POST("/api/v1/materials/{material_id}/directory", {
+          params: { path: { material_id: material.id } },
+          body: { use },
+        }),
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["materials"] }),
+  });
+}
+
+/**
+ * Подсказка при загрузке (BH-47): документ похож на оргструктуру. Да — по
+ * нему ассистент находит, кто занимает должность и как с ним связаться; без
+ * ответа «Использовать» записи не берутся.
+ */
+function DirectoryHint({ material }: { material: Material }) {
+  const [open, setOpen] = useState(false);
+  const answer = useDirectoryAnswer(material);
+  const entries = useQuery({
+    queryKey: ["materials", material.id, "directory"],
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/materials/{material_id}/directory", {
+          params: { path: { material_id: material.id } },
+        }),
+      ),
+    enabled: open,
+  });
+  const count = material.directory_hint ?? 0;
+  return (
+    <div className={styles.block}>
+      <Notice
+        kind="info"
+        title={`«${material.title}» похоже на справочник сотрудников: ${count} ${plural(count, "запись", "записи", "записей")}. Использовать?`}
+      >
+        <p>
+          Если да, ассистент будет брать из него, кто занимает должность, кабинет, телефон и почту,
+          когда в регламенте названа только должность.{" "}
+          <Button variant="link" size="sm" onClick={() => setOpen(!open)}>
+            {open ? "Скрыть распознанное" : "Показать распознанное"}
+          </Button>
+        </p>
+        {open ? (
+          entries.isPending ? (
+            <Spinner size={14} />
+          ) : entries.isError ? (
+            <p className={styles.errorText}>{errorMessage(entries.error)}</p>
+          ) : (
+            <ul aria-label="Распознанные записи">
+              {entries.data.map((entry, index) => (
+                <li key={index}>
+                  {[entry.unit, entry.role].filter(Boolean).join(" — ")}
+                  {entry.name ? ` — ${entry.name}` : ""}
+                  {entry.room ? `, кабинет ${entry.room}` : ""}
+                  {entry.phone ? `, доб. ${entry.phone}` : ""}
+                  {entry.email ? `, ${entry.email}` : ""}
+                </li>
+              ))}
+            </ul>
+          )
+        ) : null}
+        {answer.isError ? <p className={styles.errorText}>{errorMessage(answer.error)}</p> : null}
+        <div className={pageStyles.row} style={{ marginTop: 8 }}>
+          <Button
+            size="sm"
+            busy={answer.isPending && answer.variables}
+            disabled={answer.isPending}
+            onClick={() => answer.mutate(true)}
+          >
+            Использовать
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            busy={answer.isPending && !answer.variables}
+            disabled={answer.isPending}
+            onClick={() => answer.mutate(false)}
+          >
+            Нет
+          </Button>
+        </div>
+      </Notice>
+    </div>
+  );
+}
+
+/** Отметка «справочник сотрудников» в списке и как её снять (BH-47). */
+function DirectoryMark({ material }: { material: Material }) {
+  const answer = useDirectoryAnswer(material);
+  return (
+    <span className={tableStyles.sub}>
+      <Badge tone="ok">справочник</Badge>{" "}
+      <Button
+        variant="link"
+        size="sm"
+        disabled={answer.isPending}
+        onClick={() => answer.mutate(false)}
+      >
+        не использовать
+      </Button>
+    </span>
   );
 }
 

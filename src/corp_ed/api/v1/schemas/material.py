@@ -52,6 +52,26 @@ class MaterialUpdateRequest(RequestModel):
     но остаётся в «Источниках» (BH-41); false — вернуть в поиск."""
 
 
+class DirectoryAnswer(RequestModel):
+    """Ответ на «Использовать как справочник сотрудников?» (BH-47); false
+    — и снять отметку с документа."""
+
+    use: bool
+
+
+class DirectoryEntryResponse(BaseModel):
+    """Запись справочника, как её распознал код (domain.directory)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    role: str
+    unit: str
+    name: str
+    room: str
+    phone: str
+    email: str
+
+
 class EditionHintAnswer(RequestModel):
     """Ответ на подсказку «Этот документ заменяет «…»?» (BH-41)."""
 
@@ -83,6 +103,12 @@ class MaterialResponse(BaseModel):
     edition_hint: list[UUID] = Field(default_factory=list)
     """Подсказка при загрузке: какие документы этот, похоже, заменяет. Ждёт
     ответа администратора; только документы, которые ещё в поиске."""
+    directory_hint: int | None = None
+    """Подсказка при загрузке (BH-47): похоже на справочник сотрудников —
+    столько записей распознано. Ждёт ответа «Использовать?»."""
+    is_directory: bool = False
+    """Документ — справочник сотрудников: по нему ассистент ищет, кто
+    занимает должность и как с ним связаться."""
     created_at: datetime
 
 

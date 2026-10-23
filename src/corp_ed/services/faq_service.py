@@ -101,10 +101,13 @@ from corp_ed.prompts.faq import (
 )
 from corp_ed.repositories.chunk_repository import ChunkRepository
 from corp_ed.repositories.glossary_repository import GlossaryRepository
+from corp_ed.repositories.material_repository import MaterialRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
-from corp_ed.services.decision_loop import DecisionLoop, Verdict
+from corp_ed.services.decision_loop import DecisionLoop, DirectoryHit, Verdict
+from corp_ed.services.directory_service import Book, entries_of
+from corp_ed.services.directory_service import find as find_in_directory
 from corp_ed.services.general_answer import (
     CLARIFY_ADVICE,
     REFUSAL_ANSWER,
@@ -641,12 +644,17 @@ class FaqService:
         async def search(query: str, shown: list[ChunkMatch]) -> list[ChunkMatch]:
             return await self._scheme_search(query, viewer)
 
+        books = await self._directory_books(viewer)
+
+        async def directory(role: str, missing: str, question: str) -> DirectoryHit:
+            return find_in_directory(books, role, missing)
+
         loop = DecisionLoop(
             decide=decider.decide,
             search=search,
             speculate=speculate,
             general=general if mode is NotFoundMode.GENERAL else None,
-            directory=None,
+            directory=directory if books else None,
             budget=self.decision_budget,
         )
         verdict = await loop.run(question, context, spec_skip=spec_skip)
@@ -659,6 +667,21 @@ class FaqService:
         outcome.completions[:0] = verdict.completions
         outcome.verdict = verdict
         return outcome
+
+    async def _directory_books(self, viewer: UUID) -> list[Book]:
+        """Справочники компании, которые видит сотрудник (BH-47): документы,
+        отмеченные администратором, в поиске и доступные по правам папок."""
+        books = await MaterialRepository(self.session).directories()
+        if not books:
+            return []
+        visible = await self.chunk_repo.visible_material_ids(
+            [material_id for material_id, _, _ in books], viewer=viewer
+        )
+        return [
+            Book(material_id=material_id, title=title, entries=entries)
+            for material_id, title, content in books
+            if material_id in visible and (entries := entries_of(content))
+        ]
 
     async def _scheme_search(self, query: str, viewer: UUID) -> list[ChunkMatch]:
         """Добор по запросу решения (BH-46 п. 4): тот же поиск, что у вопроса
