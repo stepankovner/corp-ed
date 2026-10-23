@@ -41,7 +41,55 @@ groups:
           severity: critical
         annotations:
           summary: "Больше 20 % вопросов — ошибка модели (502)"
-          description: "Яндекс не отвечает или отвечает ошибками. Проверить status.yandex.cloud и баланс каталога."
+          description: "С запасной моделью (BH-50) это значит: отказали оба поставщика ответа или эмбеддинги. Проверить status.yandex.cloud, баланс каталога и тревоги Llm*/Embeddings*."
+
+      # Главный цикл (BH-52): резерв ответа, эмбеддинги, очередь загрузки,
+      # ключ и оплата. Состояние предохранителя: 0 — закрыт, 1 — проба,
+      # 2 — открыт; без резерва (CLOUDRU_* пусты) «в резерве» значит
+      # «Flash лежит, вопросы получают ошибку».
+      - alert: LlmAnswerOnBackup
+        expr: min_over_time(corp_ed_llm_breaker_state{provider="yandex", kind="chat"}[10m]) >= 1
+        labels:
+          severity: warning
+        annotations:
+          summary: "Flash не отвечает больше 10 минут — ответы пишет резерв"
+          description: "Проверить status.yandex.cloud и баланс каталога. Клиенты получают ответы gpt-oss-120b у Cloud.ru (если резерв включён) или ошибку."
+
+      - alert: LlmAnswerOnBackupLong
+        expr: min_over_time(corp_ed_llm_breaker_state{provider="yandex", kind="chat"}[60m]) >= 1
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flash не отвечает больше часа"
+          description: "Проверить status.yandex.cloud и баланс каталога; написать в поддержку Яндекса."
+
+      - alert: EmbeddingsDown
+        expr: |
+          corp_ed_llm_breaker_state{provider="yandex", kind="embedding"} == 2
+          or corp_ed_llm_probe_consecutive_failures{provider="yandex", kind="embedding"} >= 1
+        labels:
+          severity: critical
+        annotations:
+          summary: "Эмбеддинги Яндекса недоступны"
+          description: "Вопросы сотрудников получают ошибку, загрузка документов стоит в очереди. Проверить status.yandex.cloud и баланс каталога."
+
+      - alert: IngestWaitingProvider
+        expr: corp_ed_worker_oldest_queued_seconds{queue="ingest"} > 1800
+        labels:
+          severity: warning
+        annotations:
+          summary: "Загрузка документов стоит больше 30 минут"
+          description: "То же, что EmbeddingsDown; если эмбеддинги живы — воркер (WorkerHeartbeatStale)."
+
+      - alert: YandexConfigError
+        expr: |
+          sum(increase(corp_ed_llm_calls_total{provider="yandex", outcome=~"error_config|error_payment"}[5m])) > 0
+          or sum(increase(corp_ed_llm_probe_total{provider="yandex", outcome=~"error_config|error_payment"}[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Яндекс отклоняет ключ, права или оплату"
+          description: "Ключ, роль сервисного аккаунта, баланс каталога — сам Яндекс не починится."
 
       - alert: TLSCertificateExpiring
         expr: probe_ssl_earliest_cert_expiry{job="public"} - time() < 14 * 24 * 3600

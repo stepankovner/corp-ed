@@ -54,13 +54,6 @@ LLM_FALLBACK = Counter(
     "запасной, condense/gaps_label — шаг пропущен; reason — класс отказа",
     ["stage", "reason"],
 )
-LLM_BREAKER_OPEN = Gauge(
-    "corp_ed_llm_breaker_open",
-    "Предохранитель Яндекса открыт: 1 — chat сразу в резерв, embedding — "
-    "быстрая ошибка, загрузка документов ждёт",
-    ["kind"],
-)
-BREAKER_KINDS = ("chat", "embedding")
 FALLBACK_STAGES = ("answer", "general", "condense", "gaps_label")
 FALLBACK_REASONS = (
     "timeout",
@@ -70,17 +63,88 @@ FALLBACK_REASONS = (
     "breaker_open",
     "stream_broken",
 )
+
+# Главный цикл (BH-52): вызовы Flash, резерва и эмбеддингов, сроки,
+# предохранители и пробы. Метки — только перечни ниже.
+LLM_PROVIDERS = ("yandex", "cloudru")
+LLM_KINDS = ("chat", "embedding")
+LLM_CALL_STAGES = {
+    "chat": FALLBACK_STAGES,
+    "embedding": ("query", "document"),
+}
+LLM_OUTCOMES = (
+    "ok",
+    "timeout",
+    "error_fast",
+    "error_config",
+    "error_payment",
+    "busy",
+    "filtered",
+)
+LLM_CALLS = Counter(
+    "corp_ed_llm_calls_total",
+    "Вызовы модели ответа и эмбеддингов по исходу (BH-52)",
+    ["provider", "kind", "stage", "outcome"],
+)
+LLM_FIRST_CHUNK = Histogram(
+    "corp_ed_llm_first_chunk_seconds",
+    "Поток ответа: время до первого куска; при таймауте — срок",
+    ["provider"],
+    buckets=(0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 10),
+)
+LLM_CALL_DURATION = Histogram(
+    "corp_ed_llm_call_duration_seconds",
+    "Весь вызов модели или эмбеддинга",
+    ["provider", "kind"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 8, 15, 30),
+)
+LLM_BREAKER_STATE = Gauge(
+    "corp_ed_llm_breaker_state",
+    "Предохранитель Яндекса: 0 — закрыт, 1 — проба, 2 — открыт (chat — "
+    "ответы резервом, embedding — вопросы ошибкой, загрузка ждёт)",
+    ["provider", "kind"],
+)
+LLM_BREAKER_OPENED = Counter(
+    "corp_ed_llm_breaker_opened_total",
+    "Переходы предохранителя в «открыт»",
+    ["provider", "kind"],
+)
+LLM_PROBE = Counter(
+    "corp_ed_llm_probe_total",
+    "Пробные вызовы раз в 5 минут (при открытом предохранителе — раз в 2)",
+    ["provider", "kind", "outcome"],
+)
+LLM_PROBE_FAILURES = Gauge(
+    "corp_ed_llm_probe_consecutive_failures",
+    "Неудачные пробы подряд; успех — 0",
+    ["provider", "kind"],
+)
 # Все сочетания — с нуля при старте: тревога видит ряд и без отказов.
 for _stage in FALLBACK_STAGES:
     for _reason in FALLBACK_REASONS:
         LLM_FALLBACK.labels(_stage, _reason)
-for _kind in BREAKER_KINDS:
-    LLM_BREAKER_OPEN.labels(_kind).set(0)
+for _provider in LLM_PROVIDERS:
+    LLM_FIRST_CHUNK.labels(_provider)
+    for _kind in LLM_KINDS:
+        LLM_CALL_DURATION.labels(_provider, _kind)
+        LLM_BREAKER_OPENED.labels(_provider, _kind)
+        LLM_PROBE_FAILURES.labels(_provider, _kind).set(0)
+        for _outcome in LLM_OUTCOMES:
+            LLM_PROBE.labels(_provider, _kind, _outcome)
+            for _call_stage in LLM_CALL_STAGES[_kind]:
+                LLM_CALLS.labels(_provider, _kind, _call_stage, _outcome)
+for _kind in LLM_KINDS:
+    LLM_BREAKER_STATE.labels("yandex", _kind).set(0)
 
 WORKER_QUEUE = Gauge(
     "corp_ed_worker_queue_jobs",
     "Задачи в очередях воркера по статусу",
     ["queue", "status"],
+)
+WORKER_OLDEST_QUEUED = Gauge(
+    "corp_ed_worker_oldest_queued_seconds",
+    "Возраст самой старой задачи в очереди, с; пустая очередь — 0 (BH-52)",
+    ["queue"],
 )
 WORKER_JOBS = Counter(
     "corp_ed_worker_jobs_total",

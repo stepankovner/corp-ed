@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -121,6 +122,8 @@ from corp_ed.core.rate_limit import (
 )
 from corp_ed.core.readiness import readiness_failures
 from corp_ed.llm.errors import LLMError
+from corp_ed.llm.factory import build_prober
+from corp_ed.llm.probes import Prober
 from corp_ed.llm.throttle import InMemoryThrottle, RedisThrottle
 from corp_ed.services.chat_generation import (
     ChatRunner,
@@ -231,9 +234,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             # Свой PDF счёта и акта (когда банк его не отдал) вышел бы без
             # реквизитов продавца.
             logger.warning("billing_seller_requisites_missing")
+    # Пробные вызовы Flash, эмбеддингов и резерва (BH-52) — в процессе API,
+    # где живут предохранители.
+    probes_stop = asyncio.Event()
+    probes_task: asyncio.Task[None] | None = None
+    prober = _prober(app.state.http_client)
+    if prober is not None:
+        probes_task = asyncio.create_task(prober.run_forever(probes_stop))
     try:
         yield
     finally:
+        probes_stop.set()
+        if probes_task is not None:
+            # Начатую пробу не ждём: выкатка не должна стоять 8 с.
+            probes_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await probes_task
         # Выкатка: начатые ответы дописываются, пока есть время.
         await app.state.chat_runner.shutdown()
         await drain_team_notifier(app.state.team_notifier)
@@ -250,6 +266,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 # было ~16, остальным — «очень много вопросов» (docs/LOAD-TEST.md, D).
 QUERY_MAX_WAIT = 10.0
 ATTACHMENT_MAX_WAIT = 30.0
+
+
+def _prober(client: httpx.AsyncClient) -> Prober | None:
+    try:
+        settings = LLMSettings()
+    except ValidationError:
+        return None
+    return build_prober(client, settings)
 
 
 def _llm_limits() -> tuple[int, float, float]:

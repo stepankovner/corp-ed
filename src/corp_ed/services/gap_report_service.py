@@ -44,6 +44,7 @@ from corp_ed.domain.gaps import (
 from corp_ed.domain.models import GapCluster, Tenant
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.observe import llm_stage
 from corp_ed.prompts.gaps import (
     GAP_LABEL_SCHEMA,
     MAX_QUESTIONS,
@@ -359,12 +360,13 @@ class GapReportService:
                 continue
             questions = [row.question for row in draft.members[:MAX_QUESTIONS]]
             try:
-                completion = await self.llm.generate(
-                    build_gap_messages(questions),
-                    temperature=0,
-                    max_tokens=400,
-                    response_format=GAP_LABEL_SCHEMA,
-                )
+                with llm_stage("gaps_label"):
+                    completion = await self.llm.generate(
+                        build_gap_messages(questions),
+                        temperature=0,
+                        max_tokens=400,
+                        response_format=GAP_LABEL_SCHEMA,
+                    )
                 label = parse_gap_label(completion.content)
             except LLMError as exc:
                 logger.warning("gaps_label_failed", error=str(exc))

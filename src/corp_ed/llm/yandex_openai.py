@@ -11,6 +11,7 @@
 """
 
 import asyncio
+import contextlib
 import json
 import random
 import time
@@ -21,9 +22,11 @@ from typing import Any
 import httpx
 import structlog
 
+from corp_ed.core.metrics import LLM_FIRST_CHUNK
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.llm.errors import LLMError, classify
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.observe import current_stage, outcome_of, record_call
 from corp_ed.llm.retry import call_with_retry
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
 from corp_ed.llm.yandex_headers import auth_headers
@@ -169,6 +172,10 @@ class _StreamState:
         )
 
 
+def _outcome(completion: Completion) -> str:
+    return "filtered" if completion.finish_reason is FinishReason.FILTERED else "ok"
+
+
 class YandexOpenAIAdapter(LLMGateway):
     provider = "yandex"
 
@@ -221,10 +228,24 @@ class YandexOpenAIAdapter(LLMGateway):
         payload = self._payload(messages, temperature, max_tokens)
         if response_format is not None:
             payload["response_format"] = response_format
-        if self._concurrency is None:
-            return await self._complete(payload)
-        async with self._concurrency:
-            return await self._complete(payload)
+        stage = current_stage()
+        started = time.perf_counter()
+        try:
+            if self._concurrency is None:
+                completion = await self._complete(payload)
+            else:
+                async with self._concurrency:
+                    completion = await self._complete(payload)
+        except LLMError as exc:
+            self._record(stage, outcome_of(exc), started)
+            raise
+        self._record(stage, _outcome(completion), started)
+        return completion
+
+    def _record(self, stage: str | None, outcome: str, started: float) -> None:
+        record_call(
+            self.provider, "chat", stage, outcome, time.perf_counter() - started
+        )
 
     async def stream(
         self,
@@ -241,13 +262,27 @@ class YandexOpenAIAdapter(LLMGateway):
         stream_options) — тот же вызов без потока, одним куском.
         """
         payload = self._payload(messages, temperature, max_tokens)
-        if self._concurrency is None:
-            async for item in self._stream(payload, messages):
-                yield item
-            return
-        async with self._concurrency:
-            async for item in self._stream(payload, messages):
-                yield item
+        stage = current_stage()
+        started = time.perf_counter()
+        first = True
+        try:
+            async with contextlib.AsyncExitStack() as stack:
+                if self._concurrency is not None:
+                    await stack.enter_async_context(self._concurrency)
+                async for item in self._stream(payload, messages):
+                    if first and stage is not None:
+                        first = False
+                        LLM_FIRST_CHUNK.labels(self.provider).observe(
+                            time.perf_counter() - started
+                        )
+                    if isinstance(item, Completion):
+                        self._record(stage, _outcome(item), started)
+                    yield item
+        except LLMError as exc:
+            if first and stage is not None and exc.kind == "timeout":
+                LLM_FIRST_CHUNK.labels(self.provider).observe(self._read_timeout)
+            self._record(stage, outcome_of(exc), started)
+            raise
 
     def _url(self) -> str:
         return URL

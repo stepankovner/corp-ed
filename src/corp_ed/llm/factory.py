@@ -9,6 +9,7 @@ from corp_ed.llm.fake import DevAdapter
 from corp_ed.llm.fake_embedding import WordEmbeddingAdapter
 from corp_ed.llm.fallback import CircuitBreaker, FallbackGateway
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.probes import Prober
 from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.yandex import YandexAdapter
 from corp_ed.llm.yandex_embedding import YandexEmbeddingAdapter
@@ -130,3 +131,26 @@ def build_embedding_gateway(
         max_delay=settings.llm_retry_max_delay_seconds,
     )
     return BreakerEmbeddings(adapter, shared_embedding_breaker(settings))
+
+
+def build_prober(client: httpx.AsyncClient, settings: LLMSettings) -> Prober | None:
+    """Пробные вызовы для процесса API (BH-52); в режиме fake — нет.
+
+    Пробы идут мимо резерва и предохранителя-обёртки: прямо в адаптеры,
+    а исход пишут в те же предохранители, что у запросов сотрудников."""
+    if settings.llm_provider != "yandex-openai":
+        return None
+    chat = build_llm_gateway(client, settings)
+    if isinstance(chat, FallbackGateway):
+        primary, reserve = chat.primary, chat.reserve
+    else:
+        primary, reserve = chat, None
+    embeddings = build_embedding_gateway(client, settings)
+    inner = embeddings.inner if isinstance(embeddings, BreakerEmbeddings) else None
+    return Prober(
+        chat=primary,
+        chat_breaker=shared_breaker(settings),
+        embeddings=inner,
+        embedding_breaker=shared_embedding_breaker(settings),
+        reserve=reserve,
+    )
