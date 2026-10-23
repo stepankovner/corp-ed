@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from corp_ed.domain.decision import Route
+from corp_ed.domain.directory import Entry
 from corp_ed.llm.types import Message
 from corp_ed.prompts.faq import NOT_FOUND_ANSWER, SMALL_TALK_PREFIX
 from eval.decision_loop import run_decided
@@ -663,4 +664,118 @@ def test_recheck_mode_validated() -> None:
             answer=Script(),
             search=no_search,
             recheck="all",
+        )
+
+
+CFO = Entry(
+    role="Финансовый директор",
+    unit="",
+    name="Ярослава Игоревна Кукушкина",
+    room="402",
+    phone="1120",
+)
+
+
+def _cfo_directory(complete: bool = True):  # noqa: ANN202
+    def directory(role: str, missing: str) -> tuple[Sequence[Chunk], bool, list]:
+        block = Chunk("— " + CFO.text() + ".", "Оргструктура", ["Справочник"])
+        return [block], complete, [CFO]
+
+    return directory
+
+
+def _run_with_directory(mode: str, *, complete: bool = True, extra: int = 0):  # noqa: ANN202
+    partial = decision(
+        sufficiency="partial",
+        search_query="финансовый директор добавочный",
+        lookup_role="финансовый директор",
+        missing="добавочный финансового директора",
+    )
+    decide = Script(partial, *([decision()] * extra))
+    answer = Script("черновик", "Ответ [1].")
+    run = run_decided(
+        "Какой добавочный у того, кто возглавляет комиссию?",
+        [Chunk("Комиссию возглавляет финансовый директор."), Chunk("б")],
+        decide=decide,
+        answer=answer,
+        search=lambda q: [Chunk("в")],
+        directory=_cfo_directory(complete),
+        speculative=True,
+        directory_answer=mode,
+    )
+    return run, answer.seen[-1]
+
+
+def test_directory_answer_plain_keeps_entry_last() -> None:
+    run, messages = _run_with_directory("plain")
+    assert run.shown[-1].content.startswith("— Финансовый директор")
+    assert not run.directory_first and run.contact == ""
+    assert "Контакт по справочнику" not in messages[1].content
+
+
+def test_directory_answer_first_moves_entry_to_top() -> None:
+    """A1: выдержка справочника — первой; run.shown в том же порядке, что
+    и в промпте (номера [n] и источники совпадают)."""
+    run, messages = _run_with_directory("first")
+    assert run.directory_first
+    assert [b.content for b in run.shown][1:] == [
+        "Комиссию возглавляет финансовый директор.",
+        "б",
+    ]
+    assert run.shown[0].content.startswith("— Финансовый директор")
+    user = messages[1].content
+    assert user.index("[1] Оргструктура > Справочник") < user.index(
+        "Комиссию возглавляет"
+    )
+
+
+def test_directory_answer_contact_adds_line_with_excerpt_number() -> None:
+    """A2: строка контакта с номером выдержки справочника; запись остаётся
+    выдержкой на прежнем месте."""
+    run, messages = _run_with_directory("contact")
+    assert run.shown[-1].content.startswith("— Финансовый директор")
+    assert run.contact == (
+        "Контакт по справочнику: Финансовый директор — Ярослава Игоревна "
+        "Кукушкина, кабинет 402, доб. 1120; укажи его в ответе со ссылкой на "
+        "выдержку [3]."
+    )
+    assert messages[1].content.endswith("\n\n" + run.contact)
+
+
+def test_directory_answer_contact_only_on_complete_hit() -> None:
+    """Частичное попадание (нет запрошенного поля) — строки нет, добор как
+    раньше."""
+    run, messages = _run_with_directory("contact", complete=False, extra=1)
+    assert run.directory_partial == 1 and run.queries
+    assert run.contact == ""
+    assert "Контакт по справочнику" not in messages[1].content
+
+
+def test_directory_answer_contact_without_entries_from_old_search() -> None:
+    """Поиск справочника из двух элементов (без записей) — строки нет."""
+    partial = decision(
+        sufficiency="partial", search_query="ФИО", lookup_role="финансовый директор"
+    )
+    answer = Script("Кукушкина [2].")
+    run = run_decided(
+        "Кто?",
+        [Chunk("а")],
+        decide=Script(partial),
+        answer=answer,
+        search=no_search,
+        directory=lambda role, missing: ([Chunk("Финансовый директор — К.")], True),
+        directory_answer="contact",
+    )
+    assert run.directory_hits == 1 and run.contact == ""
+
+
+def test_directory_answer_mode_checked() -> None:
+    with pytest.raises(ValueError, match="directory_answer"):
+        run_decided(
+            "Кто?",
+            [Chunk("а")],
+            decide=Script(),
+            answer=Script(),
+            search=no_search,
+            directory_answer="code",
         )

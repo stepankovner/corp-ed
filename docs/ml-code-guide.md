@@ -633,6 +633,13 @@ sufficiency none — то же решение переспрашивается �
 `lookup_role`; причина — колонка `decision_recheck_reason` (`refusal`,
 `role`) и поле `recheck` в записи быстрого решения. Итоги — `ml-report.md`,
 «Перепроверка „хватает“ при названной роли».
+`decision_loop(directory_answer=…)` / `--decision-answer` (21.10): подача
+справочника в ответ — `plain` (запись последней), `first` (A1: выдержки
+справочника первыми, заголовок `DIRECTORY_HEADING_EXPLAINED`), `contact`
+(A2: строка `prompts/decision.contact_note` — contact-v1 — в конце сообщения
+пользователя при полном попадании с 1–2 записями; справочник отдаёт записи
+`Entry` третьим элементом). Колонки `decision_answer_mode`,
+`decision_contact`. Итоги — `ml-report.md`, «Шаг ответа после справочника».
 
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов
@@ -901,7 +908,7 @@ src/corp_ed/
   domain/small_talk.py     реплики и вопросы об ассистенте — правилом в коде
   domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4)
   prompts/decision.py      промпт решения decision-v5, схема для запроса, ответ по решению,
-                           ответ при другой редакции edition-v1
+                           ответ при другой редакции edition-v1, строка контакта contact-v1
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
   prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)

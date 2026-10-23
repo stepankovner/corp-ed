@@ -658,9 +658,16 @@ def test_directory_search_returns_context_blocks_with_source() -> None:
         "— Бухгалтерия — главный бухгалтер Олимпиада Сергеевна Брусникина.\n"
     )
     search = _directory_search("orgstruktura", text)
-    blocks, complete = search("финансовый директор", "ФИО и кабинет")
+    blocks, complete, entries = search("финансовый директор", "ФИО и кабинет")
     assert len(blocks) == 1
     assert "Кукушкина" in blocks[0].content
     assert blocks[0].match.title == "orgstruktura"
+    assert blocks[0].heading_path == ["Справочник"]
     assert complete
-    assert search("старший смены", "ФИО") == ([], False)
+    assert [e.name for e in entries] == ["Ярослава Игоревна Кукушкина"]
+    assert search("старший смены", "ФИО") == ([], False, [])
+    # A1: заголовок выдержки — с пояснением.
+    explained = _directory_search("orgstruktura", text, heading="Справочник: x")
+    assert explained("финансовый директор", "ФИО")[0][0].heading_path == [
+        "Справочник: x"
+    ]

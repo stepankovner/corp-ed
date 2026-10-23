@@ -28,6 +28,7 @@ from corp_ed.domain.decision import (
     note_end,
     quoted,
 )
+from corp_ed.domain.directory import Entry
 from corp_ed.llm.types import Message, Role
 from corp_ed.prompts.faq import (
     _SYSTEM_PROMPT,
@@ -317,15 +318,54 @@ def build_decision_messages(
     ]
 
 
+CONTACT_NOTE_VERSION = "contact-v1"
+"""Вариант A2 шага ответа (ml-report, «Шаг ответа после справочника»):
+строка контакта из записи справочника в конце сообщения пользователя."""
+CONTACT_NOTE_MAX_ENTRIES = 2
+"""Больше записей — неоднозначно (до починки T4-09 «директор» давал
+четырёх): строку не ставим, записи остаются только выдержкой."""
+
+
+def contact_note(entries: Sequence[Entry], number: int) -> str:
+    """Строка контакта для промпта ответа (A2), собранная кодом из записей
+    справочника; number — номер выдержки «Справочник» для ссылки [n].
+    Пусто, если записей нет или их больше CONTACT_NOTE_MAX_ENTRIES."""
+    if not entries or len(entries) > CONTACT_NOTE_MAX_ENTRIES:
+        return ""
+    texts = "; ".join(entry.text() for entry in entries)
+    if len(entries) == 1:
+        return (
+            f"Контакт по справочнику: {texts}; укажи его в ответе со ссылкой "
+            f"на выдержку [{number}]."
+        )
+    return (
+        f"Контакты по справочнику: {texts}; укажи нужный в ответе со ссылкой "
+        f"на выдержку [{number}]."
+    )
+
+
 def build_answer_messages(
-    question: str, matches: Sequence[SourceChunk], decision: Decision | None
+    question: str,
+    matches: Sequence[SourceChunk],
+    decision: Decision | None,
+    *,
+    contact: str = "",
 ) -> list[Message]:
     """Ответ по выдержкам отдельным вызовом: промпт faq-v2.7 (без правила
     поиска — искать решает шаг решения). При другом годе или редакции —
-    своя постановка задачи (edition-v1): правило 4 faq-v2.7 велит отказать."""
+    своя постановка задачи (edition-v1): правило 4 faq-v2.7 велит отказать.
+
+    contact (вариант A2, contact-v1) — строка contact_note: дописывается
+    отдельным абзацем в конец сообщения пользователя; системный промпт и
+    остальной текст — байт в байт faq-v2.7. Пусто — сообщения те же, что у
+    build_faq_messages. При другой редакции строка не ставится."""
     if decision is not None and decision.match == "other_edition":
         return build_edition_messages(question, matches, decision)
-    return build_faq_messages(question, matches)
+    messages = build_faq_messages(question, matches)
+    if not contact:
+        return messages
+    system, user = messages
+    return [system, Message(role=Role.USER, content=f"{user.content}\n\n{contact}")]
 
 
 def with_edition_note(answer: str, decision: Decision | None) -> str:
