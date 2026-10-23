@@ -1166,8 +1166,12 @@ class QaLog(TenantMixin, Base):
     question: Mapped[str] = mapped_column(Text)
     # Тот же вектор, что ушёл в поиск (не считать второй раз); по нему
     # кластеризуются пробелы. Размерность — как у chunks.
-    question_embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM))
-    embedding_model: Mapped[str] = mapped_column(String(64))
+    # NULL — эмбеддинг не считали: реплика правилом (BH-48). Отчёт о
+    # пробелах берёт только строки с вектором текущей модели.
+    question_embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(EMBEDDING_DIM)
+    )
+    embedding_model: Mapped[str | None] = mapped_column(String(64))
     prompt_version: Mapped[str] = mapped_column(String(32))
     # Пусто, если модель не вызывалась (строгий отказ без выдержек).
     llm_model: Mapped[str | None] = mapped_column(String(64))
@@ -1178,6 +1182,9 @@ class QaLog(TenantMixin, Base):
     # модель не звали) и почему резерв (NULL — ответила основная).
     answer_provider: Mapped[str | None] = mapped_column(String(16))
     answer_fallback_reason: Mapped[str | None] = mapped_column(String(32))
+    # Реплика правилом (BH-48): вид — greeting, thanks, bye, ack, about;
+    # NULL — сообщение шло обычным путём.
+    small_talk_rule: Mapped[str | None] = mapped_column(String(16))
     best_vector_distance: Mapped[float | None]
     best_fulltext_score: Mapped[float | None]
     answer_given: Mapped[bool]

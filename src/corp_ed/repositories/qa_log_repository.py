@@ -108,7 +108,11 @@ class QaLogRepository:
     async def newest_embedding_model(self, since: datetime) -> str | None:
         model: str | None = await self.session.scalar(
             select(QaLog.embedding_model)
-            .where(QaLog.tenant_id == require_tenant(), QaLog.created_at >= since)
+            .where(
+                QaLog.tenant_id == require_tenant(),
+                QaLog.created_at >= since,
+                QaLog.embedding_model.is_not(None),
+            )
             .order_by(QaLog.created_at.desc())
             .limit(1)
         )
@@ -150,4 +154,6 @@ class QaLogRepository:
             .order_by(QaLog.created_at.desc())
             .limit(limit)
         )
-        return result.all()
+        # Вектор есть: строки без него (реплики правилом, BH-48) отсеивает
+        # условие на embedding_model.
+        return result.all()  # type: ignore[return-value]

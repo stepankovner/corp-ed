@@ -29,6 +29,8 @@ from corp_ed.domain.models import QaLog, User
 from corp_ed.domain.query import expand_query
 from corp_ed.domain.rerank import RERANK_MAX_WORDS, rerank_allowed
 from corp_ed.domain.rerank import rerank as reorder
+from corp_ed.domain.small_talk import classify as classify_small_talk
+from corp_ed.domain.small_talk import reply as small_talk_reply
 from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.domain.types import (
@@ -85,6 +87,9 @@ from corp_ed.services.general_answer import (
 )
 
 logger = structlog.get_logger()
+
+SMALL_TALK_RULE_VERSION = "small-talk-rule"
+"""prompt_version в журнале у реплик правилом (BH-48): модель не звали."""
 
 FUSION_CANDIDATES = 50
 """Глубина каждой ветки перед слиянием RRF — как в замерах ML
@@ -233,6 +238,7 @@ class FaqService:
         near_margin: float = 0.0,
         search_step: bool = False,
         small_talk: bool = False,
+        small_talk_rule: bool = False,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -267,6 +273,8 @@ class FaqService:
         # «Не вопрос» в общем ответе (BH-45): выключен — промпт общего
         # ответа прежний байт в байт.
         self.small_talk = small_talk
+        # Реплики правилом (BH-48): до поиска и модели.
+        self.small_talk_rule = small_talk_rule
         if small_talk:
             self.prompt_version = SMALL_TALK_PROMPT_VERSION
         elif search_step:
@@ -355,6 +363,17 @@ class FaqService:
         """
         sink = sink or _SILENT
         usage = await self.credits.ensure_available(user)
+        kind = classify_small_talk(question) if self.small_talk_rule else None
+        if kind is not None:
+            return await self._rule_reply(
+                question,
+                kind,
+                user,
+                history=history,
+                conversation_id=conversation_id,
+                sink=sink,
+                commit=commit,
+            )
         tenant = await self.tenant_repo.get_by_id(user.tenant_id)
         mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
         await sink.stage("searching")
@@ -498,6 +517,68 @@ class FaqService:
             ),
             conversation_id=conversation_id,
             stopped=outcome.stopped,
+        )
+
+    async def _rule_reply(
+        self,
+        question: str,
+        kind: str,
+        user: User,
+        *,
+        history: list[Turn],
+        conversation_id: UUID | None,
+        sink: AnswerSink,
+        commit: bool,
+    ) -> FaqAnswer:
+        """Реплика без вопроса — шаблон ML (BH-48, domain/small_talk.py).
+
+        По исходному сообщению, до эмбеддинга, поиска и модели, и в
+        строгом режиме тоже: ответ одним куском, origin small_talk (без
+        плашки «ответа нет», без совета и источников), в отчёт о пробелах и
+        счёт вопросов не идёт. В журнале — вид реплики, без вектора и
+        токенов; кредитов не стоит (цена — решение Влада и Артёма).
+        """
+        content = small_talk_reply(kind)
+        await sink.origin(AnswerOrigin.SMALL_TALK)
+        await sink.delta(content)
+        entry = await self.qa_log_repo.add(
+            QaLog(
+                user_id=user.id,
+                question=mask_pii(question),
+                question_embedding=None,
+                embedding_model=None,
+                prompt_version=SMALL_TALK_RULE_VERSION,
+                answer_given=False,
+                origin=AnswerOrigin.SMALL_TALK.value,
+                source_chunk_ids=[],
+                conversation_id=conversation_id,
+                history_turns=len(history),
+                small_talk_rule=kind,
+            )
+        )
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
+        FAQ_ANSWERS.labels(AnswerOrigin.SMALL_TALK.value).inc()
+        logger.info("faq_small_talk_rule", qa_log_id=str(entry.id), kind=kind)
+        return FaqAnswer(
+            content=content,
+            answer_given=False,
+            origin=AnswerOrigin.SMALL_TALK,
+            sources=[],
+            log_id=entry.id,
+            diagnostics=AnswerDiagnostics(
+                model=None,
+                model_version=None,
+                prompt_version=SMALL_TALK_RULE_VERSION,
+                input_tokens=0,
+                output_tokens=0,
+                credits=0,
+                nearest_distance=None,
+                history_turns=len(history),
+            ),
+            conversation_id=conversation_id,
         )
 
     async def search(
