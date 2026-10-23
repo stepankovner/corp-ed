@@ -9,6 +9,13 @@
 client_secret — в учётные данные подключения; каждый сотрудник
 авторизует приложение сам.
 
+Папки, которые коллега открыл сотруднику лично, в его Диске не лежат:
+при указанном ID организации ядро спрашивает о них метод администратора
+(shared_with) токеном того сотрудника, кому метод отвечает, — значит,
+администратор организации Яндекс 360 должен сам подключиться к kronto.
+Документы такой папки kronto берёт из листинга владельца: владелец тоже
+должен быть подключён.
+
 Модули: disk — личный Диск сотрудника; shared_disks — общие диски
 организации, к которым у сотрудника есть доступ; wiki — страницы Вики
 из заданных разделов; tracker — задачи Трекера из очередей, доступных
@@ -35,6 +42,7 @@ from corp_ed.connectors.base import (
     AdapterOptions,
     FetchedContent,
     RemoteDocument,
+    SharedResource,
 )
 from corp_ed.connectors.common import (
     OAUTH_CALLBACK_PATH,
@@ -87,7 +95,11 @@ SPEC = KindSpec(
     mode=ConnectorMode.PER_USER,
     user_auth=UserAuth.OAUTH,
     modules=(
-        ModuleSpec(disk_module.MODULE_DISK, "Яндекс Диск сотрудника"),
+        ModuleSpec(
+            disk_module.MODULE_DISK,
+            "Яндекс Диск сотрудника; папки, открытые ему коллегами, — при ID "
+            "организации и подключённом администраторе организации",
+        ),
         ModuleSpec(
             disk_module.MODULE_SHARED_DISKS,
             "Общие диски организации (нужен ID организации)",
@@ -184,6 +196,19 @@ class YandexAdapter:
         if not identity:
             raise AdapterAuthError("user_unknown")
         self._user_id = str(identity)
+
+    async def shared_with(
+        self, modules: Sequence[str], user: str
+    ) -> list[SharedResource] | None:
+        """Папки и файлы, открытые сотруднику user (uid) лично; None — модуль
+        disk не выбран или нет ID организации. AdapterError("forbidden") —
+        токен не администратора организации."""
+        if disk_module.MODULE_DISK not in modules or not self._org_id:
+            return None
+        disk = disk_module.YandexDiskModule(
+            self._disk, max_bytes=self._max_bytes, org_id=self._org_id
+        )
+        return await disk.accessible(user)
 
     async def list(self, modules: Sequence[str]) -> AsyncIterator[RemoteDocument]:
         selected = set(modules)

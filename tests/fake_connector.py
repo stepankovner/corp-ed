@@ -15,6 +15,7 @@ from corp_ed.connectors.base import (
     FetchedContent,
     FetchedFile,
     RemoteDocument,
+    SharedResource,
 )
 from corp_ed.connectors.registry import (
     AdapterRegistry,
@@ -80,6 +81,7 @@ def doc(
     visibility: MaterialVisibility = MaterialVisibility.TENANT,
     emails: Sequence[str] = (),
     filename: str | None = None,
+    locator: str = "",
 ) -> RemoteDocument:
     return RemoteDocument(
         external_id=external_id,
@@ -89,6 +91,7 @@ def doc(
         kind=kind,
         module=module,
         filename=filename or f"{external_id}.txt",
+        locator=locator,
         visibility=visibility,
         allowed_emails=frozenset(emails),
     )
@@ -110,6 +113,14 @@ class FakeSource:
     fetch_calls: list[str] = field(default_factory=list)
     check_calls: list[str] = field(default_factory=list)
     listed_modules: list[list[str]] = field(default_factory=list)
+    # Открытое лично (shared_with): None — источник этого не умеет;
+    # иначе id сотрудника в источнике → что ему открыли.
+    shares: dict[str, list[SharedResource]] | None = None
+    # Токены, которым источник отвечает о чужих правах (администратор).
+    share_admins: set[str] = field(default_factory=set)
+    # Сбой источника при вопросе о правах: AdapterError(retryable=True).
+    shares_unavailable: bool = False
+    share_calls: list[tuple[str, str]] = field(default_factory=list)
 
     def add(self, document: RemoteDocument, text: str | None = None) -> RemoteDocument:
         self.documents.append(document)
@@ -141,6 +152,18 @@ class FakeAdapter:
             if visible is not None and document.external_id not in visible:
                 continue
             yield document
+
+    async def shared_with(
+        self, modules: Sequence[str], user: str
+    ) -> Sequence[SharedResource] | None:
+        self.source.share_calls.append((self.token, user))
+        if self.source.shares is None:
+            return None
+        if self.source.shares_unavailable:
+            raise AdapterError("http_503", retryable=True)
+        if self.token not in self.source.share_admins:
+            raise AdapterError("forbidden")
+        return list(self.source.shares.get(user, []))
 
     async def fetch(
         self, document: RemoteDocument, *, max_bytes: int
