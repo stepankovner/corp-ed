@@ -581,6 +581,27 @@ async def test_callback_with_bad_code_records_failure(
         assert event.actor_user_id == account_id
 
 
+async def test_callback_accepts_long_provider_codes(
+    oauth_api: httpx.AsyncClient,
+    admin_account: User,
+    account: User,
+    portal: FakePortal,
+) -> None:
+    # Код amoCRM — около тысячи символов: он должен дойти до обмена, а не
+    # упасть на проверке параметров (422 и голый JSON в браузере).
+    connector_id = await create_connector(oauth_api, admin_account, portal)
+    _, state = await start(oauth_api, account, connector_id)
+    response = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": "d" * 1000, "state": state}
+    )
+    assert redirect_query(response)["error_code"] == "invalid_grant"
+
+    too_long = await oauth_api.get(
+        f"{URL}/oauth/callback", params={"code": "d" * 5000, "state": state}
+    )
+    assert too_long.status_code == 422
+
+
 async def test_callback_with_wrong_app_secret_reports_config_error(
     oauth_api: httpx.AsyncClient, admin_account: User, account: User, portal: FakePortal
 ) -> None:

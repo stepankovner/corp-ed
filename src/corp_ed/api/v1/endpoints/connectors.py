@@ -245,7 +245,9 @@ async def oauth_callback(
     request: Request,
     service: Service,
     state: Annotated[str, Query(min_length=1, max_length=2048)],
-    code: Annotated[str | None, Query(max_length=256)] = None,
+    # Коды бывают длинными: у amoCRM — около тысячи символов (живая
+    # проверка 23.10), а 422 здесь оставляет сотрудника на голом JSON.
+    code: Annotated[str | None, Query(max_length=4096)] = None,
     error: Annotated[str | None, Query(max_length=128)] = None,
 ) -> Response:
     """Возврат браузера сотрудника с портала: код → токены → грант.
