@@ -193,8 +193,8 @@ Prometheus). Кого будить ночью на боевом — открыт
 
 **Два этапа (решение Артёма 22.10).** С первого дня с получателем —
 **пять** правил: 3 `DecisionProviderConfigError`, 4
-`DecisionProviderNoFunds`, 9 `DecisionAllLinksDown`, 1
-`DecisionFallbacksHigh` (только `on`) и 12 `MlNightlyEvalDropped`. Это
+`DecisionProviderNoFunds`, 7 `DecisionAllLinksDown`, 1
+`DecisionFallbacksHigh` (только `on`) и 10 `MlNightlyEvalDropped`. Это
 всё, что означает «система сломана или кончились деньги» и требует
 действия сразу. Остальные девять (p95, пробы, доли,
 сдвиг дистанций, тень, выброшенные) первую неделю теневого режима
