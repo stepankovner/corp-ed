@@ -9,8 +9,14 @@ from corp_ed.domain.models import GapCluster, User
 from corp_ed.domain.types import GapStatus
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.gap_repository import GapRepository
+from corp_ed.services.suggestion_service import FREQUENT_MIN_USERS
 
 SAMPLE_QUESTIONS = 5
+SAMPLE_MIN_USERS = FREQUENT_MIN_USERS
+"""Примеры вопросов пробела видны, только если тему спросили столько
+разных людей — порог тот же, что у частых вопросов (решение 22.10). Иначе
+в маленьком отделе по тексту вопроса легко узнать автора: маска убирает
+ФИО и контакты, но не смысл. Тема и счётчики видны всегда."""
 
 
 @dataclass(frozen=True)
@@ -67,7 +73,12 @@ class GapService:
 
     async def _with_samples(self, clusters: list[GapCluster]) -> list[GapReportItem]:
         samples = await self.repository.samples(
-            [cluster.id for cluster in clusters], per_cluster=SAMPLE_QUESTIONS
+            [
+                cluster.id
+                for cluster in clusters
+                if cluster.user_count >= SAMPLE_MIN_USERS
+            ],
+            per_cluster=SAMPLE_QUESTIONS,
         )
         return [
             GapReportItem(

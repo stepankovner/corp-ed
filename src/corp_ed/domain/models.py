@@ -106,7 +106,7 @@ class Tenant(Base):
             "mfa_policy IN ('any', 'strong')", name="ck_tenants_mfa_policy"
         ),
         CheckConstraint(
-            "chat_retention_months BETWEEN 1 AND 36",
+            "chat_retention_months BETWEEN 3 AND 12",
             name="ck_tenants_chat_retention_months",
         ),
         CheckConstraint(
@@ -256,6 +256,15 @@ class Account(Base):
         ForeignKey("tenants.id", ondelete="SET NULL")
     )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда учётка впервые стала членом какой-либо компании (решение
+    # 22.10). Не сбрасывается — ни уходом, ни удалением компании: учётки,
+    # хоть раз бывшие в компании, автоудаление не трогает. NULL — ещё не
+    # была (UserRepository.create ставит отметку).
+    joined_company_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Когда ушло письмо «учётку без компании скоро удалим»
+    # (services/companyless_service.py). Сбрасывается, если учётка снова
+    # не подходит под удаление (подала заявку, вступает в компанию).
+    deletion_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -612,6 +621,10 @@ class CompanyRequest(Base):
         CheckConstraint(
             "seats IS NULL OR seats > 0", name="ck_company_requests_seats_positive"
         ),
+        CheckConstraint(
+            "inn IS NULL OR inn ~ '^([0-9]{10}|[0-9]{12})$'",
+            name="ck_company_requests_inn",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -619,6 +632,10 @@ class CompanyRequest(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True
     )
     company_name: Mapped[str] = mapped_column(String(200))
+    # ИНН компании (решение 22.10): оферта считает акцептом заявку с
+    # названием и ИНН. Проверен по контрольным цифрам; NULL — заявки до
+    # 22.10.
+    inn: Mapped[str | None] = mapped_column(String(12))
     seats: Mapped[int | None]
     comment: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
@@ -1783,7 +1800,7 @@ class Connector(TenantMixin, Base):
     status: Mapped[str] = mapped_column(
         String(16), default="active", server_default="active"
     )
-    sync_interval_minutes: Mapped[int] = mapped_column(default=60, server_default="60")
+    sync_interval_minutes: Mapped[int] = mapped_column(default=30, server_default="30")
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error_code: Mapped[str | None] = mapped_column(String(64))
     created_by: Mapped[UUID | None] = mapped_column(

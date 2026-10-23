@@ -502,7 +502,9 @@ async def join_company(admin: User, user: User) -> None:
     )
     body = expect(
         await user.browser.post(
-            f"{API}/invites/accept", headers=user.auth, json={"secret": invite["token"]}
+            f"{API}/invites/accept",
+            headers=user.auth,
+            json={"secret": invite["token"], "terms": True},
         ),
         200,
     )
@@ -2005,10 +2007,12 @@ async def test_company_request_lifecycle(kronto: Kronto) -> None:
     )
     url = f"{API}/account/company-requests"
 
-    anonymous = await kronto.browser().post(url, json={"company_name": "ООО Ромашка"})
+    anonymous = await kronto.browser().post(
+        url, json={"company_name": "ООО Ромашка", "inn": "1234567894"}
+    )
     assert anonymous.status_code in (401, 403), show(anonymous)
     too_short = await user.browser.post(
-        url, headers=user.auth, json={"company_name": "А"}
+        url, headers=user.auth, json={"company_name": "А", "inn": "1234567894"}
     )
     assert too_short.status_code == 422, show(too_short)
 
@@ -2016,7 +2020,12 @@ async def test_company_request_lifecycle(kronto: Kronto) -> None:
         await user.browser.post(
             url,
             headers=user.auth,
-            json={"company_name": "ООО Ромашка", "seats": 15, "comment": "Хотим пилот"},
+            json={
+                "company_name": "ООО Ромашка",
+                "inn": "1234567894",
+                "seats": 15,
+                "comment": "Хотим пилот",
+            },
         ),
         201,
     )

@@ -12,6 +12,7 @@ from corp_ed.connectors.base import (
     AdapterError,
     FetchedFile,
     RemoteDocument,
+    SharedResource,
 )
 from corp_ed.connectors.registry import UserAuth, default_registry
 from corp_ed.connectors.yandex import KIND, SPEC
@@ -27,6 +28,7 @@ from tests.connectors.fake_yandex import (
     CLIENT_SECRET,
     DISK_API,
     DOWNLOAD_HOST,
+    LOGIN,
     OAUTH_SERVER,
     ORG_ID,
     REFRESH_TOKEN,
@@ -465,6 +467,55 @@ async def test_shared_disk_without_access_is_skipped(server: FakeYandex) -> None
         make_adapter(server, config={"org_id": ORG_ID}), ("shared_disks",)
     )
     assert documents == {}
+
+
+# --- открытое лично (admin/accessible-resources) -------------------------------
+
+
+async def test_shares_are_named_by_the_organization_admin(server: FakeYandex) -> None:
+    server.disk_admins.add(LOGIN)
+    server.accessible["1130000000000002"] = [
+        # Своя папка сотрудника, открытая им коллегам, — уже в его листинге.
+        {"uid": "1130000000000002", "path": "/disk/Зарплаты (закрыто)"},
+        {"uid": "1130000000000001", "path": "/disk/Общие", "public_hash": "h"},
+        {"uid": "1130000000000001", "path": "/disk/Приказы/Премии.docx"},
+        {"uid": "1130000000000001", "path": "disk:/Отдел/"},
+        {"uid": "1130000000000001", "path": "/disk"},
+        {"uid": "1130000000000001", "path": "vd:h4sh:disk:/x"},
+    ]
+    adapter = make_adapter(server, config={"org_id": ORG_ID})
+
+    shared = await adapter.shared_with(["disk"], "1130000000000002")
+
+    assert shared == [
+        SharedResource("1130000000000001", "disk:/Общие"),
+        SharedResource("1130000000000001", "disk:/Приказы/Премии.docx"),
+        SharedResource("1130000000000001", "disk:/Отдел"),
+    ]
+    calls = [
+        q
+        for p, q in server.calls
+        if p == "/v1/disk/public/resources/admin/accessible-resources"
+    ]
+    assert len(calls) == 3  # по две на страницу, ключ следующей — из ответа
+    assert calls[0] == {
+        "org_id": ORG_ID,
+        "user_id": "1130000000000002",
+        "include_group_access": "true",
+        "limit": "100",
+    }
+    assert calls[1]["iteration_key"] == "2"
+
+
+async def test_shares_need_an_admin_the_org_id_and_the_disk_module(
+    server: FakeYandex,
+) -> None:
+    with pytest.raises(AdapterError, match="forbidden"):
+        await make_adapter(server, config={"org_id": ORG_ID}).shared_with(["disk"], "1")
+    server.disk_admins.add(LOGIN)
+    assert await make_adapter(server).shared_with(["disk"], "1") is None
+    adapter = make_adapter(server, config={"org_id": ORG_ID})
+    assert await adapter.shared_with(["wiki"], "1") is None
 
 
 # --- OAuth -------------------------------------------------------------------

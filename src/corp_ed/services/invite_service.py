@@ -25,6 +25,7 @@ from uuid import UUID
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from corp_ed.core.config import get_registration_settings
 from corp_ed.core.exceptions import (
     InvalidInviteError,
     InviteEmailDomainError,
@@ -230,7 +231,11 @@ class InviteService:
 
     async def accept(self, account: Account, secret: str) -> JoinResult:
         """Вступить в компанию своей учёткой. Не коммитит: вызывающий
-        выдаёт токены сессии с этой компанией в той же транзакции."""
+        выдаёт токены сессии с этой компанией в той же транзакции.
+
+        Галочку пользовательского соглашения проверила схема запроса:
+        соглашение называет вступление в компанию его принятием (решение
+        22.10) — время и редакция пишутся в учётку, как при регистрации."""
         tenant, invite_id = await self._resolve(secret)
         with tenant_scope(tenant.id):
             invite = await self.invites.get_for_update(invite_id)
@@ -244,6 +249,8 @@ class InviteService:
             domains = list(tenant.email_domains or [])
             if domains and not any(email_in_domain(account.email, d) for d in domains):
                 raise InviteEmailDomainError(", @".join(domains), company=True)
+            account.terms_accepted_at = _now()
+            account.terms_version = get_registration_settings().terms_version
 
             member = await self.users.get_by_account(account.id)
             if member is not None and member.status is MemberStatus.ACTIVE:

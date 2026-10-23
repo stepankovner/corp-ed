@@ -194,6 +194,7 @@ async def list_requests(
             StaffRequestResponse(
                 id=item.id,
                 company_name=item.company_name,
+                inn=item.inn,
                 seats=item.seats,
                 comment=item.comment,
                 status=item.status,  # type: ignore[arg-type]

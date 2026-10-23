@@ -699,6 +699,12 @@
             "title": "Company Name",
             "type": "string"
           },
+          "inn": {
+            "maxLength": 12,
+            "minLength": 10,
+            "title": "Inn",
+            "type": "string"
+          },
           "seats": {
             "anyOf": [
               {
@@ -714,7 +720,8 @@
           }
         },
         "required": [
-          "company_name"
+          "company_name",
+          "inn"
         ],
         "title": "CompanyRequestCreate",
         "type": "object"
@@ -758,6 +765,17 @@
             "title": "Id",
             "type": "string"
           },
+          "inn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inn"
+          },
           "seats": {
             "anyOf": [
               {
@@ -783,6 +801,7 @@
         "required": [
           "id",
           "company_name",
+          "inn",
           "seats",
           "comment",
           "status",
@@ -811,12 +830,9 @@
             "anyOf": [
               {
                 "enum": [
-                  1,
                   3,
                   6,
-                  12,
-                  24,
-                  36
+                  12
                 ],
                 "type": "integer"
               },
@@ -3077,6 +3093,28 @@
           "status"
         ],
         "title": "IngestResponse",
+        "type": "object"
+      },
+      "InviteAcceptRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Secret",
+            "type": "string"
+          },
+          "terms": {
+            "const": true,
+            "title": "Terms",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "secret",
+          "terms"
+        ],
+        "title": "InviteAcceptRequest",
         "type": "object"
       },
       "InviteCreateRequest": {
@@ -7233,6 +7271,17 @@
             "title": "Id",
             "type": "string"
           },
+          "inn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inn"
+          },
           "seats": {
             "anyOf": [
               {
@@ -7270,6 +7319,7 @@
         "required": [
           "id",
           "company_name",
+          "inn",
           "seats",
           "comment",
           "status",
@@ -8869,7 +8919,7 @@
         ]
       },
       "post": {
-        "description": "Заявка «Подключить компанию»: одобряет команда Kronto.",
+        "description": "Заявка «Подключить компанию»: одобряет команда Kronto. 422\ninvalid_requisites с полем inn — ИНН с ошибкой в контрольных цифрах.",
         "operationId": "create_company_request_api_v1_account_company_requests_post",
         "requestBody": {
           "content": {
@@ -13540,13 +13590,13 @@
     },
     "/api/v1/invites/accept": {
       "post": {
-        "description": "Вступить в компанию своей учёткой. Вступил — сессия сразу\nпереключается на эту компанию; ждёт одобрения — сессия прежняя.",
+        "description": "Вступить в компанию своей учёткой. Вступил — сессия сразу\nпереключается на эту компанию; ждёт одобрения — сессия прежняя.\nterms — галочка пользовательского соглашения (обязательна).",
         "operationId": "accept_invite_api_v1_invites_accept_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/InviteSecretRequest"
+                "$ref": "#/components/schemas/InviteAcceptRequest"
               }
             }
           },

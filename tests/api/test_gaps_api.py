@@ -20,13 +20,15 @@ async def _build(
     session_maker: async_sessionmaker[AsyncSession],
     user: User,
 ) -> None:
-    """Два пробела: командировки (3 вопроса, 2 человека) и VPN (2)."""
+    """Два пробела: командировки (3 вопроса, 3 человека) и VPN (2 вопроса
+    одного человека — без примеров)."""
     tenant = await session.get(Tenant, user.tenant_id)
     assert tenant is not None
     other = await colleague(session, tenant, "b@test.com")
+    third = await colleague(session, tenant, "c@test.com")
     ask(session, user, "Как оформить командировку? Пишите ivan@corp.ru", topic(0))
     ask(session, other, "Суточные в командировке?", topic(0))
-    ask(session, user, "Командировка за границу?", topic(0))
+    ask(session, third, "Командировка за границу?", topic(0))
     ask(session, user, "Как подключить VPN?", topic(1))
     ask(session, user, "VPN не работает", topic(1))
     await session.commit()
@@ -46,10 +48,15 @@ async def test_admin_sees_gaps_by_priority(
     assert response.status_code == 200
     first, second = response.json()["clusters"]
     assert first["priority"] > second["priority"]
-    assert (first["question_count"], first["user_count"]) == (3, 2)
+    assert (first["question_count"], first["user_count"]) == (3, 3)
     assert first["status"] == "new"
     assert first["title"] == "Командировки"
     assert len(first["sample_questions"]) == 3
+    # Тему VPN спросил один человек: тема и счётчики видны, примеры — нет
+    # (решение 22.10, порог как у частых вопросов).
+    assert (second["question_count"], second["user_count"]) == (2, 1)
+    assert second["title"]
+    assert second["sample_questions"] == []
     assert set(first) == {
         "id",
         "title",

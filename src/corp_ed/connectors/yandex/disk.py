@@ -17,7 +17,13 @@
 - 401 → продление токена и один повтор; 429/503 → ожидание; 423
   (технические работы) → повтор позже; 403 → «forbidden» (код Яндекса
   в журнал), вложенная папка пропускается, корень — ошибка; 404 —
-  объект исчез.
+  объект исчез;
+- папки, открытые сотруднику лично («Общий доступ» в вебе), в его
+  disk:/ не лежат. Назвать их может только администратор организации:
+  public/resources/admin/accessible-resources?org_id=&user_id=
+  &include_group_access=true (scope cloud_api:disk.read, iteration_key
+  для следующей страницы) — uid владельца и путь на его Диске
+  («/disk/Общие»). Проверено на живой организации 23.10 (RISKS №38).
 
 Что сверить на живом Диске — RISKS №38.
 """
@@ -36,6 +42,7 @@ from corp_ed.connectors.base import (
     AdapterError,
     FetchedFile,
     RemoteDocument,
+    SharedResource,
 )
 from corp_ed.connectors.common import (
     Recorder,
@@ -60,6 +67,8 @@ MODULE_SHARED_DISKS = "shared_disks"
 PREFIX = "ydisk:"
 PAGE_LIMIT = 200
 DISCOVERY_LIMIT = 100
+ACCESSIBLE_LIMIT = 100
+MAX_ACCESSIBLE_PAGES = 50
 MAX_DEPTH = 32
 REQUEST_TIMEOUT = 30.0
 DOWNLOAD_TIMEOUT = 120.0
@@ -258,6 +267,45 @@ class YandexDiskModule:
         data = await self._client.download(href, max_bytes=max_bytes)
         return FetchedFile(data=data, filename=document.filename or document.title)
 
+    async def accessible(self, user: str) -> list[SharedResource]:
+        """Что коллеги открыли сотруднику лично (включая доступ через группы
+        и отделы): владелец и адрес на его Диске в форме листинга (disk:/…).
+
+        Свои папки сотрудника, открытые им кому-то, метод тоже отдаёт —
+        они и так в его листинге, поэтому отбрасываются. 403 — токен не
+        администратора организации (AdapterError("forbidden")).
+        """
+        found: list[SharedResource] = []
+        params: dict[str, Any] = {
+            "org_id": self._org_id,
+            "user_id": user,
+            "include_group_access": "true",
+            "limit": ACCESSIBLE_LIMIT,
+        }
+        for _ in range(MAX_ACCESSIBLE_PAGES):
+            page = await self._client.get(
+                "public/resources/admin/accessible-resources", params
+            )
+            items = [i for i in page.get("items") or [] if isinstance(i, dict)]
+            for item in items:
+                owner = str(item.get("uid") or "")
+                locator = _owner_locator(str(item.get("path") or ""))
+                if not owner or owner == user:
+                    continue
+                if locator is None:
+                    logger.info("yandex_disk_share_path_unknown")
+                    continue
+                found.append(SharedResource(owner=owner, locator=locator))
+            # Живой ответ 23.10 пишет ключ с опечаткой — принимаются оба.
+            key = page.get("iteration_key") or page.get("iteratation_key")
+            if not items or not isinstance(key, str) or not key:
+                return found
+            if key == params.get("iteration_key"):
+                return found
+            params["iteration_key"] = key
+        logger.warning("yandex_disk_shares_truncated", pages=MAX_ACCESSIBLE_PAGES)
+        return found
+
     async def _shared_disks(self) -> AsyncIterator[Mapping[str, Any]]:
         offset = 0
         while True:
@@ -380,6 +428,19 @@ def _qualify(path: str, vd_hash: str) -> str:
     if path.startswith("disk:"):
         return f"{VIRTUAL_PREFIX}{vd_hash}:{path}"
     return f"{VIRTUAL_PREFIX}{vd_hash}:disk:/{path.lstrip('/')}"
+
+
+def _owner_locator(path: str) -> str | None:
+    """Путь из accessible-resources («/disk/Общие») — в форму листинга
+    («disk:/Общие»), чтобы сравнивать с RemoteDocument.locator владельца."""
+    if path.startswith("disk:/"):
+        inner = path.removeprefix("disk:/").strip("/")
+    elif path.startswith("/disk/"):
+        inner = path.removeprefix("/disk/").strip("/")
+    else:
+        return None
+    # Корень целиком открыть нельзя; пустой путь — не повод отдать весь Диск.
+    return f"disk:/{inner}" if inner else None
 
 
 def _folder_url(path: str, vd_hash: str = "") -> str:

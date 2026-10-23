@@ -14,6 +14,7 @@ function companyRequest(overrides: Partial<CompanyRequest> = {}): CompanyRequest
   return {
     id: "r-1",
     company_name: "Северный ветер",
+    inn: "1234567894",
     seats: 25,
     comment: "Хотим начать с отдела продаж",
     status: "new",
@@ -122,6 +123,7 @@ describe("панель: заявки на компании", () => {
       "mailto:ivan@sever.ru",
     );
     expect(within(card).getByText("25 мест")).toBeInTheDocument();
+    expect(within(card).getByText("ИНН 1234567894")).toBeInTheDocument();
     expect(within(card).getByText("Хотим начать с отдела продаж")).toBeInTheDocument();
 
     await user.click(within(card).getByRole("button", { name: "Одобрить: Северный ветер" }));

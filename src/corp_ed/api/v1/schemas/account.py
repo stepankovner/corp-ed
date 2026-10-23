@@ -65,6 +65,9 @@ class LeaveCompanyRequest(RequestModel):
 
 class CompanyRequestCreate(RequestModel):
     company_name: str = Field(min_length=2, max_length=200)
+    inn: str = Field(min_length=10, max_length=12)
+    """ИНН компании: 10 цифр у организации, 12 — у ИП. Контрольные цифры
+    проверяет сервис — 422 invalid_requisites с полем inn."""
     seats: int | None = Field(default=None, ge=1, le=10_000)
     """Сколько сотрудников будут пользоваться — ориентир для тарифа."""
     comment: str | None = Field(default=None, max_length=2000)
@@ -75,6 +78,7 @@ class CompanyRequestResponse(BaseModel):
 
     id: UUID
     company_name: str
+    inn: str | None
     seats: int | None
     comment: str | None
     status: Literal["new", "approved", "rejected", "cancelled"]

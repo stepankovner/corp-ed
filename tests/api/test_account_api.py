@@ -758,18 +758,35 @@ async def test_company_request_lifecycle(
 
     created = await api.post(
         "/api/v1/account/company-requests",
-        json={"company_name": "ООО «Ромашка»", "seats": 25, "comment": "Пилот"},
+        json={
+            "company_name": "ООО «Ромашка»",
+            "inn": "1234567894",
+            "seats": 25,
+            "comment": "Пилот",
+        },
         headers=headers,
     )
     duplicate = await api.post(
         "/api/v1/account/company-requests",
-        json={"company_name": "Вторая"},
+        json={"company_name": "Вторая", "inn": "1234567894"},
         headers=headers,
     )
 
     assert created.status_code == 201
     assert created.json()["status"] == "new"
+    assert created.json()["inn"] == "1234567894"
     assert duplicate.status_code == 409
+    # ИНН проверяется по контрольным цифрам — ошибка у поля (решение 22.10).
+    bad_inn = await api.post(
+        "/api/v1/account/company-requests",
+        json={"company_name": "Третья", "inn": "1234567890"},
+        headers=headers,
+    )
+    assert bad_inn.status_code == 422
+    assert (bad_inn.json()["code"], bad_inn.json()["field"]) == (
+        "invalid_requisites",
+        "inn",
+    )
     # В Telegram — без названия и контактов.
     assert len(sent) == 1
     assert "Ромашка" not in sent[0] and "founder" not in sent[0]
@@ -802,7 +819,7 @@ async def test_company_request_can_be_cancelled_and_rejected(
     headers = await _registered_and_verified(api, session, "founder@acme.ru")
     first = await api.post(
         "/api/v1/account/company-requests",
-        json={"company_name": "Первая"},
+        json={"company_name": "Первая", "inn": "1234567894"},
         headers=headers,
     )
     cancelled = await api.post(
@@ -812,7 +829,7 @@ async def test_company_request_can_be_cancelled_and_rejected(
 
     second = await api.post(
         "/api/v1/account/company-requests",
-        json={"company_name": "Вторая"},
+        json={"company_name": "Вторая", "inn": "1234567894"},
         headers=headers,
     )
     from corp_ed.repositories.audit_repository import AuditRepository
@@ -832,7 +849,7 @@ async def test_foreign_company_request_cannot_be_cancelled(
     headers = await _registered_and_verified(api, session, "founder@acme.ru")
     created = await api.post(
         "/api/v1/account/company-requests",
-        json={"company_name": "Своя"},
+        json={"company_name": "Своя", "inn": "1234567894"},
         headers=headers,
     )
     assert account.account is not None

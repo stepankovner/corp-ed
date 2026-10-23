@@ -343,7 +343,9 @@ async def new_employee(
     assert response.status_code == 201, response.text
     secret = response.json()["code"]
     person = await register(kronto, f"{local}@{DOMAIN}", first=first, last=last)
-    response = await person.http.post(f"{API}/invites/accept", json={"secret": secret})
+    response = await person.http.post(
+        f"{API}/invites/accept", json={"secret": secret, "terms": True}
+    )
     assert response.status_code == 200, response.text
     body = response.json()
     if body.get("session"):
@@ -370,7 +372,7 @@ async def ask(client: httpx.AsyncClient, question: str) -> httpx.Response:
 async def create_request(
     person: Person, name: str, *, seats: int | None = None, comment: str | None = None
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {"company_name": name}
+    body: dict[str, Any] = {"company_name": name, "inn": "1234567894"}
     if seats is not None:
         body["seats"] = seats
     if comment is not None:
@@ -876,15 +878,21 @@ async def test_company_request_validation(kronto: Kronto) -> None:
     пустое и слишком длинное название, места вне 1–10 000, длинный
     комментарий, лишние поля; граничные значения проходят."""
     applicant = await register(kronto, f"maria@{DOMAIN}")
+    inn = "1234567894"
     bad_bodies: list[dict[str, Any]] = [
         {},
-        {"company_name": ""},
-        {"company_name": "Я"},
-        {"company_name": "Я" * 201},
-        {"company_name": "ООО Норма", "seats": 0},
-        {"company_name": "ООО Норма", "seats": 10001},
-        {"company_name": "ООО Норма", "comment": "х" * 2001},
-        {"company_name": "ООО Норма", "tariff": "extended"},
+        {"company_name": "", "inn": inn},
+        {"company_name": "Я", "inn": inn},
+        {"company_name": "Я" * 201, "inn": inn},
+        {"company_name": "ООО Норма", "inn": inn, "seats": 0},
+        {"company_name": "ООО Норма", "inn": inn, "seats": 10001},
+        {"company_name": "ООО Норма", "inn": inn, "comment": "х" * 2001},
+        {"company_name": "ООО Норма", "inn": inn, "tariff": "extended"},
+        # ИНН обязателен (решение 22.10), 10 или 12 цифр с верными
+        # контрольными.
+        {"company_name": "ООО Норма"},
+        {"company_name": "ООО Норма", "inn": "12345678901"},
+        {"company_name": "ООО Норма", "inn": "1234567890"},
     ]
     for body in bad_bodies:
         response = await applicant.http.post(

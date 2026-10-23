@@ -123,4 +123,11 @@ class UserRepository:
         self.session.add(user)
         await self.session.flush()
         await self.session.refresh(user)
+        if user.account_id is not None:
+            # Отметка «была в компании» — для автоудаления учёток без
+            # компании (решение 22.10): одна точка для всех путей вступления.
+            account = await self.session.get(Account, user.account_id)
+            if account is not None and account.joined_company_at is None:
+                account.joined_company_at = user.created_at
+                await self.session.flush()
         return user

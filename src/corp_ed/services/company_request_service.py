@@ -17,8 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from corp_ed.core.exceptions import (
     CompanyRequestExistsError,
     ConflictError,
+    InvalidBillingInputError,
     NotFoundError,
 )
+from corp_ed.domain.billing import InvalidRequisitesError, validate_inn
 from corp_ed.domain.models import Account, CompanyRequest, Tenant
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff
 from corp_ed.repositories.account_repository import AccountRepository
@@ -80,15 +82,23 @@ class CompanyRequestService:
         account: Account,
         *,
         company_name: str,
+        inn: str,
         seats: int | None,
         comment: str | None,
     ) -> CompanyRequest:
+        try:
+            inn = validate_inn(inn)
+        except InvalidRequisitesError as exc:
+            raise InvalidBillingInputError(
+                exc.message, code="invalid_requisites", field=exc.field
+            ) from exc
         if await self.requests.open_for_account(account.id) is not None:
             raise CompanyRequestExistsError()
         request = await self.requests.add(
             CompanyRequest(
                 account_id=account.id,
                 company_name=" ".join(company_name.split()),
+                inn=inn,
                 seats=seats,
                 comment=(comment or "").strip() or None,
             )

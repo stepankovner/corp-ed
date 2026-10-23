@@ -53,6 +53,7 @@ from corp_ed.prompts.gaps import (
 from corp_ed.repositories.gap_repository import GapRepository
 from corp_ed.repositories.qa_log_repository import CandidateRow, QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
+from corp_ed.services.gap_service import SAMPLE_MIN_USERS
 
 logger = structlog.get_logger()
 
@@ -62,6 +63,7 @@ REPORTED_KINDS = (MissKind.GAP, MissKind.MODEL_REFUSAL)
 мониторинг качества, в кластеры не идут."""
 
 MAX_TITLE_LENGTH = 200
+PLACEHOLDER_TITLE = "Тема без названия — подпишем после следующего отчёта"
 MAX_MISSING_LENGTH = 1000
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -373,9 +375,16 @@ class GapReportService:
 
     @staticmethod
     def _placeholder(draft: _Draft) -> None:
-        if not draft.title:
-            # Вопросы в qa_log уже после mask_pii.
-            draft.title = _clean(draft.members[0].question, MAX_TITLE_LENGTH)
+        if draft.title:
+            return
+        if len({row.user_id or row.id for row in draft.members}) < SAMPLE_MIN_USERS:
+            # Вопрос вместо названия — тот же пример вопроса, а примеры
+            # темы меньше чем от SAMPLE_MIN_USERS человек админ не видит
+            # (решение 22.10).
+            draft.title = PLACEHOLDER_TITLE
+            return
+        # Вопросы в qa_log уже после mask_pii.
+        draft.title = _clean(draft.members[0].question, MAX_TITLE_LENGTH)
 
     async def _save(
         self, drafts: list[_Draft], existing: list[_Existing], model: str | None

@@ -124,7 +124,12 @@ function GapCard({ gap }: { gap: Gap }) {
             <li key={question}>«{question}»</li>
           ))}
         </ul>
-      ) : null}
+      ) : (
+        <p className="muted" style={{ fontSize: "var(--fs-small)" }}>
+          Примеры вопросов видны, когда тему спросили три и больше сотрудников: иначе по тексту
+          легко узнать автора.
+        </p>
+      )}
       <div className={styles.cardFoot}>
         <Select
           compact
