@@ -6,6 +6,7 @@ import httpx
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
+from corp_ed.llm.observe import current_stage, outcome_of, record_call
 from corp_ed.llm.retry import call_with_retry
 from corp_ed.llm.throttle import Throttle
 from corp_ed.llm.types import EmbeddingResult
@@ -95,6 +96,11 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
     async def embed_query(self, text: str) -> EmbeddingResult:
         return await self._embed(text, "query", self._query_throttle)
 
+    @staticmethod
+    def _record(stage: str | None, outcome: str, started: float) -> None:
+        elapsed = time.perf_counter() - started
+        record_call("yandex", "embedding", stage, outcome, elapsed)
+
     async def _embed(
         self, text: str, kind: str, throttle: Throttle | None
     ) -> EmbeddingResult:
@@ -129,15 +135,22 @@ class YandexEmbeddingAdapter(EmbeddingGateway):
             timings.append(int((time.perf_counter() - started) * 1000))
             return response
 
-        response = await call_with_retry(
-            do_request,
-            max_attempts=(self._query_attempts or self._max_attempts)
-            if short
-            else self._max_attempts,
-            base_delay=self._base_delay,
-            retry_on_timeout=not short,
-            max_delay=self._max_delay if short else None,
-        )
+        stage = current_stage() and ("query" if kind == "query" else "document")
+        started = time.perf_counter()
+        try:
+            response = await call_with_retry(
+                do_request,
+                max_attempts=(self._query_attempts or self._max_attempts)
+                if short
+                else self._max_attempts,
+                base_delay=self._base_delay,
+                retry_on_timeout=not short,
+                max_delay=self._max_delay if short else None,
+            )
+        except LLMError as exc:
+            self._record(stage, outcome_of(exc), started)
+            raise
+        self._record(stage, "ok", started)
 
         try:
             body = response.json()

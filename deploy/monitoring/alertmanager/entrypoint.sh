@@ -52,7 +52,7 @@ templates:
   - /etc/alertmanager/telegram.tmpl
 route:
   receiver: $receiver
-  group_by: [alertname, job, queue, reason]
+  group_by: [alertname, job, queue, reason, kind]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
@@ -63,7 +63,7 @@ route:
 inhibit_rules:
   # Стенд не отвечает целиком — частные тревоги про него не нужны.
   - source_matchers: ['alertname="NotReady"']
-    target_matchers: ['alertname=~"ModelErrors|ErrorBudgetBurn.*|AnswersDegraded"']
+    target_matchers: ['alertname=~"ModelErrors|ErrorBudgetBurn.*|AnswersDegraded|Llm.*|Embeddings.*|YandexConfigError|IngestWaitingProvider"']
 receivers:
   - name: none$receivers
 CONFIG

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import RagSettings
 from corp_ed.core.exceptions import NotFoundError
+from corp_ed.core.metrics import WORKER_OLDEST_QUEUED
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.models import (
     Chunk,
@@ -35,6 +36,7 @@ from corp_ed.worker import (
     ERROR_PROVIDER,
     PROVIDER_MAX_DELAY,
     IngestWorker,
+    _update_queue_metrics,
     heartbeat,
     provider_delay,
     retry_delay,
@@ -456,3 +458,21 @@ async def _drain(maker: async_sessionmaker[AsyncSession]) -> None:
     worker = _worker(maker, FakeEmbeddingAdapter())
     while await worker.run_once():
         pass
+
+
+async def test_oldest_queued_job_age_is_exported(
+    session: AsyncSession,
+    session_maker: async_sessionmaker[AsyncSession],
+    tenant_ctx: Tenant,
+) -> None:
+    # BH-52: документ, который ждёт поставщика, виден по возрасту очереди.
+    await _material(session, tenant_ctx)
+    await session.execute(
+        update(IngestJob).values(created_at=datetime.now(UTC) - timedelta(hours=1))
+    )
+    await session.commit()
+
+    await _update_queue_metrics(session_maker)
+
+    assert WORKER_OLDEST_QUEUED.labels("ingest")._value.get() >= 3600
+    assert WORKER_OLDEST_QUEUED.labels("sync")._value.get() == 0

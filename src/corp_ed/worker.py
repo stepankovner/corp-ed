@@ -57,7 +57,12 @@ from corp_ed.core.database import get_session_maker
 from corp_ed.core.exceptions import NotFoundError
 from corp_ed.core.logging import configure_logging
 from corp_ed.core.mail import build_sender
-from corp_ed.core.metrics import WORKER_HEARTBEAT, WORKER_JOBS, WORKER_QUEUE
+from corp_ed.core.metrics import (
+    WORKER_HEARTBEAT,
+    WORKER_JOBS,
+    WORKER_OLDEST_QUEUED,
+    WORKER_QUEUE,
+)
 from corp_ed.core.outbound import OutboundClient, outbound_http_client
 from corp_ed.core.readiness import WORKER_HEARTBEAT_KEY, WORKER_HEARTBEAT_TTL
 from corp_ed.core.secrets import SecretBox
@@ -438,6 +443,16 @@ _QUEUE_COUNTS = {
 """Очереди не под RLS (воркер берёт задачу до того, как знает компанию),
 поэтому счёт по всем компаниям — одним запросом без tenant_scope."""
 
+_QUEUE_OLDEST = {
+    queue: text(
+        "SELECT coalesce(extract(epoch FROM now() - min(created_at)), 0) "  # noqa: S608 — имена таблиц из кода
+        f"FROM {table} WHERE status = 'QUEUED'"
+    )
+    for queue, table in (("ingest", "ingest_jobs"), ("sync", "connector_sync_jobs"))
+}
+"""Возраст самой старой задачи в очереди (BH-52): документ, ждущий
+поставщика эмбеддингов, виден тревогой IngestWaitingProvider."""
+
 
 async def _update_queue_metrics(
     session_maker: async_sessionmaker[AsyncSession],
@@ -448,6 +463,10 @@ async def _update_queue_metrics(
                 queue: (await session.execute(query)).all()
                 for queue, query in _QUEUE_COUNTS.items()
             }
+            oldest = {
+                queue: float((await session.execute(query)).scalar_one())
+                for queue, query in _QUEUE_OLDEST.items()
+            }
     except SQLAlchemyError:
         logger.warning("worker_queue_metrics_failed")
         return
@@ -457,6 +476,8 @@ async def _update_queue_metrics(
     for queue, rows in counts.items():
         for status, count in rows:
             WORKER_QUEUE.labels(queue, str(status).lower()).set(count)
+    for queue, seconds in oldest.items():
+        WORKER_OLDEST_QUEUED.labels(queue).set(seconds)
 
 
 def _ingest_throttle(redis: Redis | None, rate: float) -> Throttle:

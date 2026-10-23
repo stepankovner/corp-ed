@@ -27,7 +27,7 @@ from typing import Any
 
 import structlog
 
-from corp_ed.core.metrics import LLM_BREAKER_OPEN
+from corp_ed.core.metrics import LLM_BREAKER_OPENED, LLM_BREAKER_STATE
 from corp_ed.llm.errors import ErrorKind, LLMError
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.throttle import ThrottleBusyError
@@ -42,7 +42,12 @@ _OPEN_AT_ONCE: frozenset[ErrorKind] = frozenset({"error_config", "error_payment"
 
 
 class CircuitBreaker:
-    """Предохранитель основной модели (BH-50, п. 6 контракта)."""
+    """Предохранитель Яндекса (BH-50 п. 6, BH-51): chat или embedding.
+
+    Состояния — как в corp_ed_llm_breaker_state: closed (0), probe (1) —
+    срок вышел, ждём исхода пробы, open (2). Пробой служит первый вызов
+    после срока или пробный вызов (llm/probes.py, BH-52).
+    """
 
     def __init__(
         self,
@@ -58,22 +63,29 @@ class CircuitBreaker:
         self._streak = 0
         self._opened_at: float | None = None
 
+    def state(self) -> str:
+        if self._opened_at is None:
+            return "closed"
+        if self._clock() - self._opened_at < self.open_seconds:
+            return "open"
+        return "probe"
+
     def is_open(self) -> bool:
         """Открыт и срок не вышел: основную не зовём."""
-        if self._opened_at is None:
-            return False
-        return self._clock() - self._opened_at < self.open_seconds
+        return self.state() == "open"
 
     def allow_primary(self) -> bool:
         """Звать ли основную: закрыт — да; открыт — нет; срок вышел — проба."""
-        return not self.is_open()
+        state = self.state()
+        self._publish(state)
+        return state != "open"
 
     def record_success(self) -> None:
         if self._opened_at is not None:
             logger.info("llm_breaker_closed", kind=self.kind)
         self._streak = 0
         self._opened_at = None
-        LLM_BREAKER_OPEN.labels(self.kind).set(0)
+        self._publish("closed")
 
     def record_failure(self, kind: ErrorKind) -> None:
         self._streak += 1
@@ -85,8 +97,15 @@ class CircuitBreaker:
                     reason=kind,
                     streak=self._streak,
                 )
+                LLM_BREAKER_OPENED.labels("yandex", self.kind).inc()
             self._opened_at = self._clock()
-            LLM_BREAKER_OPEN.labels(self.kind).set(1)
+            self._publish("open")
+
+    def _publish(self, state: str) -> None:
+        LLM_BREAKER_STATE.labels("yandex", self.kind).set(_STATE_VALUE[state])
+
+
+_STATE_VALUE = {"closed": 0, "probe": 1, "open": 2}
 
 
 class FallbackGateway(LLMGateway):

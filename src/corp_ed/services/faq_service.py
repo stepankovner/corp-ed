@@ -43,6 +43,7 @@ from corp_ed.domain.types import (
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
+from corp_ed.llm.observe import llm_stage
 from corp_ed.llm.reranker import Reranker, RerankerError, rerank_passage
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
 from corp_ed.prompts.dialogue import (
@@ -767,16 +768,17 @@ class FaqService:
             return _Condensed(question=question, completion=None)
         await self._release()
         try:
-            completion = await asyncio.wait_for(
-                self.llm_gateway.generate(
-                    messages=build_condense_messages(
-                        history, question, max_turns=self.history_turns
+            with llm_stage("condense"):
+                completion = await asyncio.wait_for(
+                    self.llm_gateway.generate(
+                        messages=build_condense_messages(
+                            history, question, max_turns=self.history_turns
+                        ),
+                        temperature=0.0,
+                        max_tokens=CONDENSE_MAX_TOKENS,
                     ),
-                    temperature=0.0,
-                    max_tokens=CONDENSE_MAX_TOKENS,
-                ),
-                timeout=self.condense_timeout,
-            )
+                    timeout=self.condense_timeout,
+                )
         except (LLMError, TimeoutError) as exc:
             logger.warning("faq_condense_failed", error=type(exc).__name__)
             FAQ_DEGRADED.labels("condense").inc()
@@ -1032,12 +1034,13 @@ class FaqService:
         if step != "off":
             # faq-v2.9: строка «Дополнительный поиск: …» клиенту не видна.
             gate = _SearchGate(gate)
-        streamed = await self._consume(
-            self.llm_gateway.stream(messages, temperature=self.temperature),
-            messages,
-            sink=sink,
-            gate=gate,
-        )
+        with llm_stage("answer"):
+            streamed = await self._consume(
+                self.llm_gateway.stream(messages, temperature=self.temperature),
+                messages,
+                sink=sink,
+                gate=gate,
+            )
         _count_fallback("answer", streamed.completion)
         return streamed
 
@@ -1067,7 +1070,8 @@ class FaqService:
             return _Outcome(
                 content=REFUSAL_ANSWER, origin=AnswerOrigin.NONE, sources=[]
             )
-        return await self._general_answer(question, reason=reason, sink=sink)
+        with llm_stage("general"):
+            return await self._general_answer(question, reason=reason, sink=sink)
 
     @staticmethod
     def _filtered(completion: Completion, *, reason: str) -> _Outcome:
