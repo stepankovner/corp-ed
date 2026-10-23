@@ -66,6 +66,7 @@ from corp_ed.domain.directory import (
     Substitute,
     covers,
     format_entries,
+    head_for_role,
     lookup,
     lookup_substitute,
     parse_directory,
@@ -435,7 +436,7 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
 
 Found = list[Entry] | list[Substitute]
 DirectorySearch = Callable[
-    [str, str], tuple[list[ContextBlock[OfflineMatch]], bool, Found]
+    ..., tuple[list[ContextBlock[OfflineMatch]], bool, Found, str]
 ]
 
 
@@ -445,6 +446,7 @@ def _directory_search(
     *,
     heading: str = DIRECTORY_HEADING,
     substitution: bool = False,
+    asker_unit: bool = False,
 ) -> DirectorySearch:
     """Поиск по справочнику оргструктуры (decision-v4): записи — одной
     выдержкой (как блок контекста, чтобы источники ответа видели документ);
@@ -455,21 +457,30 @@ def _directory_search(
     говорят о замещении — сначала пары «отсутствующий → замещающий»
     (lookup_substitute), нет пар — обычный lookup. Текст вопроса сюда не
     доходит (сигнатура (role, missing)) — T4-04 так не ловится, см.
-    ml-report, «Замещение в справочнике»."""
+    ml-report, «Замещение в справочнике».
+
+    asker_unit (--decision-asker-unit, 23.10): третий аргумент — текст
+    вопроса; общая роль при отделе спрашивающего или «руководитель
+    <подразделения>» — глава подразделения (head_for_role) вместо обычного
+    lookup (тот по «руководитель» находит чужих руководителей). Замещение —
+    тогда для главы. Четвёртый элемент — что нашли (HeadMatch.note), иначе
+    пусто."""
     entries = parse_directory(markdown)
     deputies = sum(1 for entry in entries if entry.deputy)
     print(f"Справочник: «{title}», записей {len(entries)}, с замещающим {deputies}")
 
     def search(
-        role: str, missing: str
-    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, Found]:
+        role: str, missing: str, question: str = ""
+    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, Found, str]:
         found: Found = []
+        head = head_for_role(entries, role, question) if asker_unit else None
+        note = head.note() if head else ""
         if substitution and substitution_requested(f"{role}\n{missing}"):
-            found = lookup_substitute(entries, role)
+            found = lookup_substitute(entries, head.head.who() if head else role)
         if not found:
-            found = lookup(entries, role)
+            found = [head.head] if head else lookup(entries, role)
         if not found:
-            return [], False, []
+            return [], False, [], note
         complete = covers(found, requested_fields(missing))
         content = format_entries(found)
         match = OfflineMatch(
@@ -482,7 +493,7 @@ def _directory_search(
             match=match,
             kind="chunk",
         )
-        return [block], complete, found
+        return [block], complete, found, note
 
     return search
 
@@ -770,6 +781,14 @@ def _parser() -> argparse.ArgumentParser:
         "справочник; полное попадание — ответ, промах — прежний отказ",
     )
     parser.add_argument(
+        "--decision-asker-unit",
+        action="store_true",
+        help="23.10: с --decision-directory — общая роль («руководитель») при "
+        "отделе спрашивающего в вопросе («Я в ОКП») или «руководитель "
+        "<подразделения>» — глава подразделения, как бы ни называлась "
+        "должность (колонка decision_asker_unit)",
+    )
+    parser.add_argument(
         "--decision-only",
         action="store_true",
         help="этап 1: только первое решение по найденным выдержкам — без "
@@ -919,6 +938,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.decision_directory_on_refusal and not args.decision_directory:
         print("--decision-directory-on-refusal: только с --decision-directory")
         return 2
+    if args.decision_asker_unit and not args.decision_directory:
+        print("--decision-asker-unit: только с --decision-directory")
+        return 2
     hedge, hedge_model = "", ""
     if args.decision_hedge:
         hedge, _, hedge_model = args.decision_hedge.partition(":")
@@ -998,6 +1020,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if args.decision_answer == "first"
                 else DIRECTORY_HEADING,
                 substitution=args.decision_substitution,
+                asker_unit=args.decision_asker_unit,
             )
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
@@ -1282,6 +1305,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 directory_answer=args.decision_answer,
                 refusal_parallel=args.decision_refusal_parallel,
                 directory_on_refusal=args.decision_directory_on_refusal,
+                asker_unit=args.decision_asker_unit,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1476,6 +1500,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if decided
                     else ""
                 ),
+                "decision_asker_unit": "; ".join(decided.asker_unit) if decided else "",
                 "decision_rechecked": decided.rechecked > 0 if decided else "",
                 "decision_recheck_reason": ",".join(decided.recheck_reasons)
                 if decided
@@ -1678,6 +1703,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + (f"-chain-{fallback}" if args.decision_fallback else "")
         + ("-dor" if args.decision_directory_on_refusal else "")
+        + ("-au" if args.decision_asker_unit else "")
         + (f"-hedge-{hedge}" if args.decision_hedge else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"

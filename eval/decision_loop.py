@@ -67,6 +67,14 @@ recheck="refusals" — прежний вариант R. Причина пере�
 (route без справочника), а не ответ по тому, что есть. Перепроверка и общий
 ответ параллельно — по отказу в самом решении, а не по маршруту: при
 попадании общий ответ выброшен (wasted_general).
+
+Отдел спрашивающего (ml-report, «Отдел спрашивающего в поиске по
+справочнику», 23.10; по умолчанию выключено): asker_unit=True — справочник
+зовётся с текстом вопроса третьим аргументом, directory(role, missing,
+question); общая роль («руководитель») при отделе спрашивающего в вопросе
+или роль «руководитель <подразделения>» — глава подразделения
+(corp_ed.domain.directory.head_for_role). Что нашли — четвёртый элемент
+ответа справочника, в DecidedRun.asker_unit.
 """
 
 import re
@@ -138,6 +146,10 @@ class DecidedRun:
     """Спекулятивных ответов выброшено (их токены — в calls)."""
     directory_hits: int = 0
     """Справочник дал записи (decision-v4) — ответ сразу, без второго решения."""
+    asker_unit: list[str] = field(default_factory=list)
+    """Глава подразделения вместо общей роли (asker_unit=True): по строке на
+    обращение к справочнику, где сработало («ОКП (вопрос) → руководитель
+    Имя»)."""
     directory_misses: int = 0
     """Справочник ничего не дал — векторный добор, как раньше."""
     directory_partial: int = 0
@@ -405,12 +417,13 @@ def run_decided(
     merged: bool = False,
     rule: bool = False,
     speculative: bool = False,
-    directory: Callable[[str, str], tuple[Any, ...]] | None = None,
+    directory: Callable[..., tuple[Any, ...]] | None = None,
     decide_fast: Ask | None = None,
     recheck: str = "refusals",
     directory_answer: str = "plain",
     refusal_parallel: bool = False,
     directory_on_refusal: bool = False,
+    asker_unit: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -433,6 +446,7 @@ def run_decided(
         directory_answer=directory_answer,
         refusal_parallel=refusal_parallel,
         directory_on_refusal=directory_on_refusal,
+        asker_unit=asker_unit,
         max_extra=max_extra,
         max_excerpts=max_excerpts,
     )
@@ -453,12 +467,13 @@ def _run_decided(
     merged: bool = False,
     rule: bool = False,
     speculative: bool = False,
-    directory: Callable[[str, str], tuple[Any, ...]] | None = None,
+    directory: Callable[..., tuple[Any, ...]] | None = None,
     decide_fast: Ask | None = None,
     recheck: str = "refusals",
     directory_answer: str = "plain",
     refusal_parallel: bool = False,
     directory_on_refusal: bool = False,
+    asker_unit: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -553,9 +568,15 @@ def _run_decided(
             role = lookup_role(decision)
             assert role is not None
             seen = {_key(block) for block in shown}
-            result = directory(role, decision.missing)
+            result = (
+                directory(role, decision.missing, question)
+                if asker_unit
+                else directory(role, decision.missing)
+            )
             blocks, complete = result[0], bool(result[1])
             entries = list(result[2]) if len(result) > 2 else []
+            if len(result) > 3 and result[3]:
+                run.asker_unit.append(str(result[3]))
             found = [b for b in blocks if _key(b) not in seen]
             if found:
                 # Записи справочника — выдержкой сверх лимита (они короткие,

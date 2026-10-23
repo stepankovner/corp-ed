@@ -25,6 +25,13 @@ T3-05) отвечаются не строкой справочника, а це�
 `lookup_substitute` (пары `Substitute`: отсутствующий + замещающий);
 `lookup` не меняется. Когда звать её — решает вызывающий по тексту
 роли, «чего не хватает» и вопроса (`substitution_requested`).
+
+Отдел спрашивающего (фаза 0, 23.10). Общая роль из решения
+(«руководитель», «непосредственный руководитель») при отделе,
+названном в вопросе («Я в ОКП», «выхожу в бухгалтерию»), — глава этого
+подразделения (`head_for_role`: `is_generic_role`, `asker_unit`,
+`role_unit`, `unit_head`), как бы ни называлась его должность
+(офис-менеджер, главный бухгалтер). `lookup` не меняется.
 """
 
 import re
@@ -541,3 +548,394 @@ def covers(entries: Sequence[Entry | Substitute], fields: frozenset[str]) -> boo
     if not entries:
         return False
     return any(all(getattr(entry, field) for field in fields) for entry in entries)
+
+
+# Отдел спрашивающего (фаза 0, 23.10; ml-report, «Отдел спрашивающего в
+# поиске по справочнику»). Фаза 2, T7: в 9 из 18 провалов решение писало
+# общую роль («руководитель», «непосредственный руководитель»), хотя отдел
+# спрашивающего назван в вопросе («Я в ОКП», «выхожу в бухгалтерию»), а
+# поиск по «руководитель» находил чужих руководителей (ЦУП и ОКП). Подвид:
+# роль с отделом («руководитель административно-хозяйственной службы»), а
+# глава в справочнике называется иначе (офис-менеджер, главный бухгалтер).
+
+GENERIC_ROLES: tuple[str, ...] = (
+    "руководитель",
+    "непосредственный руководитель",
+    "прямой руководитель",
+    "линейный руководитель",
+    "руководитель подразделения",
+    "руководитель структурного подразделения",
+    "руководитель подразделения-инициатора",
+    "руководитель отдела",
+    "руководитель службы",
+    "начальник",
+    "непосредственный начальник",
+    "начальник отдела",
+    "начальник подразделения",
+    "начальник службы",
+)
+"""Общие роли: «чей» руководитель — не сказано. Сравнение — по набору основ
+без притяжательных («мой руководитель», «руководителя моего подразделения»,
+«непосредственного руководителя»). «Подразделения-инициатора» по основе
+совпадает с «подразделения» (первые 5 букв)."""
+
+HEAD_TITLES: tuple[str, ...] = (
+    "руководитель",
+    "начальник",
+    "директор",
+    "заведующий",
+    "управляющий",
+    "главный бухгалтер",
+    "главный инженер",
+    "офис-менеджер",
+)
+"""Должности главы подразделения — по порядку старшинства: должность
+записи начинается с одной из них. «Главный» — только с профессией
+(«главный специалист» — не глава). Офис-менеджер — глава АХС стенда."""
+
+_POSSESSIVE = frozenset(
+    [
+        "мой",
+        "моя",
+        "мое",
+        "моего",
+        "моей",
+        "моему",
+        "моем",
+        "мою",
+        "мои",
+        "моих",
+        "наш",
+        "наша",
+        "наше",
+        "нашего",
+        "нашей",
+        "нашему",
+        "нашем",
+        "нашу",
+        "наши",
+        "наших",
+        "свой",
+        "своя",
+        "свое",
+        "своего",
+        "своей",
+        "своему",
+        "своем",
+        "свою",
+    ]
+)
+# Слова о себе: после них (через «мост») — подразделение спрашивающего.
+_ASKER = (
+    frozenset(
+        [
+            "я",
+            "мы",
+            "работаю",
+            "работаем",
+            "тружусь",
+            "трудимся",
+            "числюсь",
+            "числимся",
+            "выхожу",
+            "выходим",
+            "выйду",
+            "устроился",
+            "устроилась",
+            "устраиваюсь",
+            "перевели",
+            "перевелся",
+            "перевелась",
+            "перевожусь",
+        ]
+    )
+    | _POSSESSIVE
+)
+# Что может стоять между словом о себе и подразделением: предлоги, «на
+# работу», наречия, должность спрашивающего («Я специалист ЦУП», «Я
+# сотрудник АХС», «работаю менеджером в ОКП»). Остальное рвёт связь:
+# «Я написал в бухгалтерию» — не про отдел спрашивающего.
+_BRIDGE_WORDS = (
+    frozenset(
+        [
+            "в",
+            "во",
+            "из",
+            "на",
+            "по",
+            "у",
+            "работу",
+            "работе",
+            "сейчас",
+            "теперь",
+            "уже",
+            "тоже",
+            "недавно",
+            "только",
+            "как",
+            "отдел",
+            "отделе",
+            "отдела",
+            "служба",
+            "службе",
+            "службы",
+            "подразделение",
+            "подразделении",
+            "подразделения",
+        ]
+    )
+    | _ASKER
+)
+_BRIDGE_STEMS = frozenset(
+    [
+        "специ",
+        "сотру",
+        "работ",
+        "менед",
+        "бухга",
+        "эконо",
+        "инжен",
+        "юрист",
+        "юриск",
+        "анали",
+        "логис",
+        "кладо",
+        "водит",
+        "опера",
+        "секре",
+        "ассис",
+        "помощ",
+        "прогр",
+        "разра",
+        "стаже",
+        "нович",
+        "касси",
+        "курье",
+        "офис-",
+        "старш",
+        "ведущ",
+        "главн",
+        "младш",
+        "новый",
+        "новая",
+        "новен",
+    ]
+)
+_ASKER_WINDOW = 5
+"""Слово о себе — не дальше 5 слов до подразделения."""
+_CLAUSE = re.compile(r"[.!?;]+")
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[\w-]+", _normalize(text))
+
+
+def _content(word: str) -> bool:
+    return word not in _STOP and len(word) > 2 and not word.isdigit()
+
+
+def _role_stems(role: str) -> frozenset[str]:
+    return frozenset(
+        _stem(word)
+        for word in _words(role)
+        if _content(word) and word not in _POSSESSIVE
+    )
+
+
+_GENERIC = frozenset(_role_stems(role) for role in GENERIC_ROLES)
+
+
+def is_generic_role(role: str) -> bool:
+    """Общая ли роль: «руководитель», «непосредственный руководитель»,
+    «руководитель подразделения», «начальник», «мой руководитель» — во
+    всех падежах (по основам). «Руководитель ОКП», «главный бухгалтер»,
+    «руководитель казначейства» — не общие."""
+    return _role_stems(role) in _GENERIC
+
+
+def _units(entries: Sequence[Entry]) -> list[str]:
+    """Подразделения справочника — поле `Entry.unit`, без повторов. Строки
+    без имени («— Отдел персонала — подчиняется …») разбор пишет ролью без
+    подразделения — их здесь нет."""
+    out: list[str] = []
+    for entry in entries:
+        if entry.unit and entry.unit not in out:
+            out.append(entry.unit)
+    return out
+
+
+def _unit_pattern(unit: str) -> tuple[list[str], list[str]]:
+    """Основы названия по порядку и аббревиатуры (из скобок или по первым
+    буквам)."""
+    words = [w for w in _words(_PAREN.sub(" ", unit)) if _content(w)]
+    abbrs = [a for part in _PAREN.findall(unit) for a in _words(part)]
+    # Аббревиатуры нет в скобках — по первым буквам слов названия, если их
+    # не меньше трёх: «Административно-хозяйственная служба» → «АХС».
+    initials = "".join(p[0] for w in words for p in w.split("-") if p)
+    if len(words) > 1 and len(initials) >= 3 and initials not in abbrs:
+        abbrs.append(initials)
+    return [_stem(w) for w in words], abbrs
+
+
+def _mentions(words: list[str], entries: Sequence[Entry]) -> list[tuple[int, str]]:
+    """(позиция первого слова, подразделение) для каждого упоминания.
+    Название — все его содержательные слова подряд по основам
+    («в административно-хозяйственной службе», «бухгалтер» → «Бухгалтерия»);
+    аббревиатура — слово целиком или с окончанием до 2 букв («ЦУПе»)."""
+    content = [i for i, w in enumerate(words) if _content(w)]
+    stems = [_stem(words[i]) for i in content]
+    out = []
+    for unit in _units(entries):
+        name, abbrs = _unit_pattern(unit)
+        for i, word in enumerate(words):
+            if any(
+                word == a or (word.startswith(a) and len(word) - len(a) <= 2)
+                for a in abbrs
+                if len(a) >= 2
+            ):
+                out.append((i, unit))
+        if not name:
+            continue
+        for j in range(len(stems) - len(name) + 1):
+            if stems[j : j + len(name)] == name:
+                out.append((content[j], unit))
+    return sorted(out)
+
+
+def unit_mentions(text: str, entries: Sequence[Entry]) -> list[str]:
+    """Все подразделения справочника, названные в тексте, по порядку (без
+    контекста: «Сколько сотрудников работает в ЦУП?» — тоже ЦУП)."""
+    out: list[str] = []
+    for clause in _CLAUSE.split(text):
+        for _, unit in _mentions(_words(clause), entries):
+            if unit not in out:
+                out.append(unit)
+    return out
+
+
+def _about_asker(words: list[str], at: int) -> bool:
+    """Перед подразделением — слово о себе через «мост» и без «не»
+    («Работаю региональным менеджером (не в ОКП)» — не ОКП)."""
+    if at and (
+        words[at - 1] == "не"
+        or (at > 1 and words[at - 2] == "не" and words[at - 1] in {"в", "во", "из"})
+    ):
+        return False
+    k = at - 1
+    while k >= 0 and at - k <= _ASKER_WINDOW:
+        word = words[k]
+        if word in _ASKER:
+            return True
+        if word not in _BRIDGE_WORDS and _stem(word) not in _BRIDGE_STEMS:
+            return False
+        k -= 1
+    return False
+
+
+def asker_unit(question: str, entries: Sequence[Entry]) -> str | None:
+    """Подразделение спрашивающего из текста вопроса или None.
+
+    Только подразделения справочника (`Entry.unit`) и только в контексте
+    «о себе» в той же фразе: «Я в ОКП», «Я специалист ЦУП», «Работаю в
+    бухгалтерии», «выхожу на работу в бухгалтерию», «Я бухгалтер» (основа
+    «бухга» — «Бухгалтерия»), «Я из административно-хозяйственной службы».
+    Не про спрашивающего: «Кто согласует закупку для ОКП?», «Сколько
+    сотрудников работает в ЦУП?», «(не в ОКП)». Два разных подразделения
+    «о себе» — None (не угадываем)."""
+    found: set[str] = set()
+    for clause in _CLAUSE.split(question):
+        words = _words(clause)
+        for at, unit in _mentions(words, entries):
+            if _about_asker(words, at):
+                found.add(unit)
+    return found.pop() if len(found) == 1 else None
+
+
+def _title_of(role: str, title: str) -> bool:
+    """Должность начинается с должности главы (по основам; «ИТ-директор» —
+    «директор» после дефиса)."""
+    have = [_stem(w) for w in _words(role) if _content(w)]
+    want = [_stem(w) for w in _words(title)]
+    if have[: len(want)] == want:
+        return True
+    first = _words(role)[:1]
+    return (
+        len(want) == 1
+        and bool(first)
+        and "-" in first[0]
+        and _stem(first[0].rsplit("-", 1)[1]) == want[0]
+    )
+
+
+def unit_head(entries: Sequence[Entry], unit: str) -> Entry | None:
+    """Глава подразделения: запись этого подразделения, чья должность — из
+    `HEAD_TITLES` (первая по старшинству, если такая ровно одна); если ни
+    одной — единственная запись подразделения. Несколько записей одного
+    уровня или ни одной подходящей — None.
+
+    Где не сработает: глава называется иначе («координатор», «старший
+    специалист») при нескольких записях; единственная запись — не глава
+    (рядовой специалист); строки подразделения без имени (разбор не
+    пишет их подразделением); две записи «руководитель» в одном отделе."""
+    key = _normalize(unit)
+    members = [e for e in entries if e.unit and _normalize(e.unit) == key]
+    for title in HEAD_TITLES:
+        heads = [e for e in members if _title_of(e.role, title)]
+        if len(heads) == 1:
+            return heads[0]
+        if heads:
+            return None
+    return members[0] if len(members) == 1 else None
+
+
+def role_unit(role: str, entries: Sequence[Entry]) -> str | None:
+    """Подразделение, названное в самой роли, если остальное в роли — общая
+    роль: «руководитель ОКП», «непосредственный руководитель
+    административно-хозяйственной службы», «руководитель бухгалтерии».
+    «Заместитель руководителя ЦУП», «главный бухгалтер» — None."""
+    units = unit_mentions(role, entries)
+    if len(units) != 1:
+        return None
+    name, abbrs = _unit_pattern(units[0])
+    rest = _role_stems(role) - set(name) - {_stem(a) for a in abbrs}
+    return units[0] if rest in _GENERIC else None
+
+
+@dataclass(frozen=True)
+class HeadMatch:
+    """Глава подразделения вместо общей роли: какое подразделение, откуда
+    оно («role» — названо в роли, «question» — отдел спрашивающего) и
+    запись главы."""
+
+    unit: str
+    source: str
+    head: Entry
+
+    def note(self) -> str:
+        """Для журнала: «Бухгалтерия (вопрос) → главный бухгалтер Имя»."""
+        where = "вопрос" if self.source == "question" else "роль"
+        return f"{self.unit} ({where}) → {self.head.role} {self.head.name}".strip()
+
+
+def head_for_role(
+    entries: Sequence[Entry], role: str, question: str
+) -> HeadMatch | None:
+    """Глава подразделения для общей роли или None (дальше — как было).
+
+    1. Роль сама называет подразделение и в остальном общая («руководитель
+       АХС») — глава этого подразделения, как бы ни называлась должность.
+    2. Роль общая («руководитель», «непосредственный руководитель») и в
+       вопросе есть отдел спрашивающего (`asker_unit`) — его глава.
+    Роль не общая («директор по персоналу», «главный бухгалтер»,
+    «руководитель казначейства») — None: подразделение спрашивающего в
+    неё не подставляется. Подразделения нет в справочнике, отдел в
+    вопросе не про спрашивающего, главу не определить — None."""
+    unit, source = role_unit(role, entries), "role"
+    if unit is None:
+        if not is_generic_role(role):
+            return None
+        unit, source = asker_unit(question, entries), "question"
+        if unit is None:
+            return None
+    head = unit_head(entries, unit)
+    return HeadMatch(unit=unit, source=source, head=head) if head else None
