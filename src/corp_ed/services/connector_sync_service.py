@@ -632,6 +632,9 @@ class ConnectorSyncService:
                 for external, recipient in recipients.items():
                     resources = await lookup(run.modules, external)
                     if resources is None:
+                        # Источник умеет, но не при этих настройках (у
+                        # Яндекса — нет ID организации или модуля disk).
+                        log.info("connector_shares_not_applicable")
                         return _Shares()
                     found[recipient] = resources
             except (AdapterAuthError, AdapterConfigError):
