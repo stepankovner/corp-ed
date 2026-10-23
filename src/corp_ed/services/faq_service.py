@@ -21,22 +21,31 @@ from corp_ed.core.exceptions import (
     ServiceUnavailableError,
 )
 from corp_ed.core.metrics import (
+    DECISION_BRANCH,
+    DECISION_FALLBACK,
+    DECISION_QUESTION_DURATION,
+    DECISION_QUESTIONS,
+    DECISION_SPECULATIVE_TOTAL,
+    DECISION_STAGE_DURATION,
     FAQ_ANSWERS,
     FAQ_BEST_DISTANCE,
+    FAQ_DECISION_MODE,
     FAQ_DEGRADED,
     FAQ_FEEDBACK,
     LLM_FALLBACK,
 )
+from corp_ed.domain.agent import drop_citations
 from corp_ed.domain.context import select_context
+from corp_ed.domain.decision import Route, mismatch_note
 from corp_ed.domain.fulltext import to_fulltext_query
 from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
 from corp_ed.domain.gaps import mask_pii
-from corp_ed.domain.models import QaLog, User
+from corp_ed.domain.models import QaLog, Tenant, User
 from corp_ed.domain.query import expand_query
 from corp_ed.domain.rerank import RERANK_MAX_WORDS, rerank_allowed
 from corp_ed.domain.rerank import rerank as reorder
 from corp_ed.domain.small_talk import classify as classify_small_talk
-from corp_ed.domain.small_talk import reply as small_talk_reply
+from corp_ed.domain.small_talk import reply as rule_template
 from corp_ed.domain.threshold import relevance_limit
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.domain.types import (
@@ -44,16 +53,26 @@ from corp_ed.domain.types import (
     AnswerDiagnostics,
     AnswerOrigin,
     ChunkMatch,
+    DecisionMode,
     FaqAnswer,
     NotFoundMode,
     Retriever,
 )
+from corp_ed.llm.decision_client import HedgedDecider
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.observe import llm_stage
 from corp_ed.llm.reranker import Reranker, RerankerError, rerank_passage
 from corp_ed.llm.types import Completion, FinishReason, Message, Usage
+from corp_ed.prompts.decision import (
+    CONTACT_NOTE_VERSION,
+    DECISION_PROMPT_VERSION,
+    EDITION_ANSWER_PROMPT_VERSION,
+    build_answer_messages,
+    with_edition_note,
+    with_other_subject_note,
+)
 from corp_ed.prompts.dialogue import (
     CONDENSE_PROMPT_VERSION,
     Turn,
@@ -76,6 +95,7 @@ from corp_ed.prompts.faq import (
     is_not_found,
     normalize_citations,
     search_request,
+    small_talk_reply,
     split_general_answer,
     strip_search_request,
 )
@@ -84,7 +104,9 @@ from corp_ed.repositories.glossary_repository import GlossaryRepository
 from corp_ed.repositories.qa_log_repository import QaLogRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.services.credit_service import CreditService
+from corp_ed.services.decision_loop import DecisionLoop, Verdict
 from corp_ed.services.general_answer import (
+    CLARIFY_ADVICE,
     REFUSAL_ANSWER,
     GeneralAnswerSource,
     ModelKnowledgeSource,
@@ -171,6 +193,10 @@ class _Outcome:
     completions: list[Completion] = field(default_factory=list)
     stopped: bool = False
     """Сотрудник остановил ответ: content — то, что успело прийти."""
+    prompt_version: str | None = None
+    """Промпт ответа, если не тот, что по настройкам (схема BH-46)."""
+    verdict: Verdict | None = None
+    """Что решила схема (BH-46) — в журнал; None — прежний путь."""
 
 
 @dataclass(frozen=True)
@@ -245,6 +271,9 @@ class FaqService:
         search_step: bool = False,
         small_talk: bool = False,
         small_talk_rule: bool = False,
+        decider: HedgedDecider | None = None,
+        decision_mode: DecisionMode = DecisionMode.OFF,
+        decision_budget: float = 6.0,
     ) -> None:
         self.chunk_repo = chunk_repo
         self.qa_log_repo = qa_log_repo
@@ -281,6 +310,11 @@ class FaqService:
         self.small_talk = small_talk
         # Реплики правилом (BH-48): до поиска и модели.
         self.small_talk_rule = small_talk_rule
+        # Схема «решение до ответа» (BH-46): поставщики решения (None — без
+        # ключа Cloud.ru схемы нет), умолчание режима и бюджет шага.
+        self.decider = decider
+        self.decision_mode = decision_mode
+        self.decision_budget = decision_budget
         if small_talk:
             self.prompt_version = SMALL_TALK_PROMPT_VERSION
         elif search_step:
@@ -370,8 +404,16 @@ class FaqService:
         sink = sink or _SILENT
         started = time.perf_counter()
         usage = await self.credits.ensure_available(user)
-        kind = classify_small_talk(question) if self.small_talk_rule else None
+        tenant = await self.tenant_repo.get_by_id(user.tenant_id)
+        mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
+        scheme = self._decision_mode(tenant)
+        FAQ_DECISION_MODE.labels(scheme.value).inc()
+        # Со схемой правило реплик — её шаг 0 (BH-48), и без своей настройки.
+        rule = self.small_talk_rule or scheme is DecisionMode.ON
+        kind = classify_small_talk(question) if rule else None
         if kind is not None:
+            if scheme is DecisionMode.ON:
+                DECISION_QUESTIONS.labels("on", "rule").inc()
             return await self._rule_reply(
                 question,
                 kind,
@@ -382,8 +424,6 @@ class FaqService:
                 commit=commit,
                 started=started,
             )
-        tenant = await self.tenant_repo.get_by_id(user.tenant_id)
-        mode = NotFoundMode(tenant.not_found_mode) if tenant else DEFAULT_NOT_FOUND_MODE
         await sink.stage("searching")
         condensed = await self._condense(history, question)
         standalone = condensed.question
@@ -412,15 +452,28 @@ class FaqService:
         )
 
         await self._release()
-        outcome = await self._answer(
-            question,
-            context,
-            mode,
-            history=history,
-            standalone=standalone,
-            sink=sink,
-            second=second,
-        )
+        search_ms = _elapsed_ms(started)
+        if scheme is DecisionMode.ON:
+            outcome = await self._decided(
+                standalone,
+                context,
+                mode,
+                viewer=user.id,
+                attached=attached,
+                nearest=nearest,
+                sink=sink,
+            )
+            second = None
+        else:
+            outcome = await self._answer(
+                question,
+                context,
+                mode,
+                history=history,
+                standalone=standalone,
+                sink=sink,
+                second=second,
+            )
         search_query = second.query if second else None
 
         # Переписывание — такой же вызов модели, его токены оплачиваются.
@@ -450,7 +503,7 @@ class FaqService:
                 question=mask_pii(question),
                 question_embedding=embedded.embedding,
                 embedding_model=embedded.model,
-                prompt_version=self.prompt_version,
+                prompt_version=outcome.prompt_version or self.prompt_version,
                 llm_model=model,
                 llm_model_version=last.model_version if last else None,
                 answer_provider=(last.provider or None) if last else None,
@@ -476,8 +529,11 @@ class FaqService:
                 attachment_chunks=len(attached),
                 search_query=mask_pii(search_query) if search_query else None,
                 latency_ms=_elapsed_ms(started),
+                **_decision_columns(outcome.verdict, scheme, search_ms),
             )
         )
+        if outcome.verdict is not None:
+            _observe_decision(outcome.verdict, search_ms, _elapsed_ms(started))
         if nearest is not None and not attached:
             FAQ_BEST_DISTANCE.observe(nearest)
         await self.credits.note_spend(usage, credits)
@@ -530,6 +586,256 @@ class FaqService:
             stopped=outcome.stopped,
         )
 
+    def _decision_mode(self, tenant: Tenant | None) -> DecisionMode:
+        """Режим схемы для вопроса: поле компании, иначе умолчание окружения.
+        Без поставщиков решения (нет ключа Cloud.ru) — off в любом режиме.
+        shadow пока идёт прежним путём (теневой цикл — отдельным PR)."""
+        wanted = (
+            DecisionMode(tenant.decision_mode)
+            if tenant is not None and tenant.decision_mode
+            else self.decision_mode
+        )
+        if wanted is DecisionMode.ON and self.decider is not None:
+            return DecisionMode.ON
+        return DecisionMode.OFF
+
+    async def _decided(
+        self,
+        question: str,
+        context: list[ChunkMatch],
+        mode: NotFoundMode,
+        *,
+        viewer: UUID,
+        attached: list[ChunkMatch],
+        nearest: float | None,
+        sink: AnswerSink,
+    ) -> _Outcome:
+        """Ответ по схеме «решение до ответа» (BH-46, режим on).
+
+        До вердикта сотрудник видит только этап «Ищу в документах…»: ни
+        текста запроса, ни решения (решение Артёма §7 п. 6). Вердикт —
+        services/decision_loop.py; дальше ответ потоком, общий ответ с
+        оговоркой или реплика. BH-43…BH-45 на этом пути не действуют: ответ
+        — build_answer_messages (faq-v2.7), общий ответ — без правила реплик.
+        """
+        assert self.decider is not None  # noqa: S101 — режим on только с ним
+        decider = self.decider
+        # Отсечение спекуляции (фаза 1, решение Артёма 22.10): вопрос прошёл
+        # только шлюз BH-37 — спекулятивный ответ не запускаем.
+        spec_skip = (
+            "gate" if nearest is not None and nearest > self.max_distance else ""
+        )
+
+        async def speculate(shown: list[ChunkMatch]) -> Completion:
+            with llm_stage("answer"):
+                return await self.llm_gateway.generate(
+                    build_faq_messages(question, shown), temperature=self.temperature
+                )
+
+        async def general() -> Completion:
+            with llm_stage("general"):
+                return await self.llm_gateway.generate(
+                    build_general_messages(question), temperature=self.temperature
+                )
+
+        async def search(query: str, shown: list[ChunkMatch]) -> list[ChunkMatch]:
+            return await self._scheme_search(query, viewer)
+
+        loop = DecisionLoop(
+            decide=decider.decide,
+            search=search,
+            speculate=speculate,
+            general=general if mode is NotFoundMode.GENERAL else None,
+            directory=None,
+            budget=self.decision_budget,
+        )
+        verdict = await loop.run(question, context, spec_skip=spec_skip)
+        if verdict.route is Route.SMALL_TALK:
+            outcome = await self._scheme_small_talk(question, verdict, mode, sink)
+        elif verdict.route in (Route.NOT_FOUND, Route.OTHER_SUBJECT):
+            outcome = await self._scheme_not_found(question, verdict, mode, sink)
+        else:
+            outcome = await self._scheme_answer(question, verdict, mode, sink)
+        outcome.completions[:0] = verdict.completions
+        outcome.verdict = verdict
+        return outcome
+
+    async def _scheme_search(self, query: str, viewer: UUID) -> list[ChunkMatch]:
+        """Добор по запросу решения (BH-46 п. 4): тот же поиск, что у вопроса
+        — словарь, эмбеддинг, права, порог BH-37 по ближайшему для запроса,
+        реранкер. Новые выдержки и их число отбирает цикл."""
+        search_text = await self._search_text(query)
+        await self._release()
+        embedded = await self.embedding_gateway.embed_query(search_text)
+        found = await self._retrieve(
+            search_text,
+            embedded.embedding,
+            limit=self._fetch_limit(self.limit),
+            retriever=self.retriever,
+            viewer=viewer,
+        )
+        _, chosen = await self._choose(search_text, found)
+        await self._release()
+        return chosen
+
+    async def _scheme_answer(
+        self, question: str, verdict: Verdict, mode: NotFoundMode, sink: AnswerSink
+    ) -> _Outcome:
+        """Маршрут ANSWER и откат (BH-46 п. 5, «Откат»): спекулятивный ответ,
+        если годится, иначе новый вызов потоком. Отказ модели — п. 6."""
+        shown, decision = verdict.shown, verdict.decision
+        edition = decision is not None and decision.match == "other_edition"
+        prompt = (
+            EDITION_ANSWER_PROMPT_VERSION
+            if edition
+            else (
+                f"{PROMPT_VERSION}+{CONTACT_NOTE_VERSION}"
+                if verdict.contact
+                else PROMPT_VERSION
+            )
+        )
+        await sink.stage("writing")
+        completions: list[Completion] = []
+        stopped = False
+        if verdict.spec is not None:
+            text = verdict.spec.content.strip()
+            if not is_not_found(text):
+                await sink.delta(text)
+        else:
+            messages = build_answer_messages(
+                question, shown, decision, contact=verdict.contact
+            )
+            if edition:
+                # Другая редакция: оговорку правит код по всему первому
+                # предложению — ветка редкая и медленная, без потока.
+                with llm_stage("answer"):
+                    completion = await self.llm_gateway.generate(
+                        messages, temperature=self.temperature
+                    )
+            else:
+                with llm_stage("answer"):
+                    streamed = await self._consume(
+                        self.llm_gateway.stream(messages, temperature=self.temperature),
+                        messages,
+                        sink=sink,
+                        gate=_RefusalGate(),
+                    )
+                completion, stopped = streamed.completion, streamed.stopped
+                _count_fallback("answer", completion)
+            completions.append(completion)
+            if completion.finish_reason is FinishReason.FILTERED and not stopped:
+                await sink.reset()
+                outcome = self._filtered(completion, reason="documents")
+                outcome.completions = completions
+                outcome.prompt_version = prompt
+                return outcome
+            text = completion.content.strip()
+        if not stopped and is_not_found(text):
+            # Отказ модели по выдержкам — как «ответа нет» (п. 6).
+            await sink.reset()
+            outcome = await self._scheme_not_found(question, verdict, mode, sink)
+            outcome.completions[:0] = completions
+            return outcome
+        content = normalize_citations(with_edition_note(text, decision), shown)
+        if edition:
+            await sink.delta(content)
+        return _Outcome(
+            content=content,
+            origin=AnswerOrigin.DOCUMENTS,
+            sources=shown,
+            completions=completions,
+            stopped=stopped,
+            prompt_version=prompt,
+        )
+
+    async def _scheme_not_found(
+        self, question: str, verdict: Verdict, mode: NotFoundMode, sink: AnswerSink
+    ) -> _Outcome:
+        """Ответа по документам нет (BH-46 п. 6): общий ответ без правила
+        реплик с оговоркой «В документах — «X», а не «Y».» сразу после
+        пометки, или отказ в строгом режиме — с той же оговоркой."""
+        decision = verdict.decision
+        note = mismatch_note(decision) if decision and decision.match == "other" else ""
+        if mode is NotFoundMode.STRICT:
+            await sink.origin(AnswerOrigin.NONE)
+            if note:
+                await sink.delta(note)
+            refusal = with_other_subject_note(NOT_FOUND_ANSWER, decision)
+            return _Outcome(
+                content=f"{refusal}\n\n{CLARIFY_ADVICE}",
+                origin=AnswerOrigin.NONE,
+                sources=[],
+            )
+        await sink.origin(AnswerOrigin.GENERAL_KNOWLEDGE)
+        if note:
+            await sink.delta(f"{note}\n")
+        completions: list[Completion] = []
+        stopped = False
+        if verdict.general is not None:
+            completion = verdict.general
+            visible = _GeneralPrefixGate().feed(completion.content)
+            if visible:
+                await sink.delta(visible)
+        else:
+            messages = build_general_messages(question)
+            with llm_stage("general"):
+                streamed = await self._consume(
+                    self.llm_gateway.stream(messages, temperature=self.temperature),
+                    messages,
+                    sink=sink,
+                    gate=_GeneralPrefixGate(),
+                )
+            completion, stopped = streamed.completion, streamed.stopped
+            _count_fallback("general", completion)
+            completions.append(completion)
+        if completion.finish_reason is FinishReason.FILTERED and not stopped:
+            await sink.reset()
+            outcome = self._filtered(completion, reason="general")
+            outcome.completions = completions
+            return outcome
+        noted = with_other_subject_note(
+            ensure_general_prefix(completion.content), decision
+        )
+        content = (
+            noted
+            if stopped or noted.endswith(CLARIFY_ADVICE)
+            else f"{noted}\n\n{CLARIFY_ADVICE}"
+        )
+        return _Outcome(
+            content=content,
+            origin=AnswerOrigin.GENERAL_KNOWLEDGE,
+            sources=[],
+            completions=completions,
+            stopped=stopped,
+        )
+
+    async def _scheme_small_talk(
+        self, question: str, verdict: Verdict, mode: NotFoundMode, sink: AnswerSink
+    ) -> _Outcome:
+        """Реплика, которую не знает правило (маршрут SMALL_TALK): общий
+        промпт с правилом реплик; модель сочла это вопросом — как «ответа
+        нет». Без пометки, совета и источников, не в пробелы (как BH-45)."""
+        with llm_stage("general"):
+            completion = await self.llm_gateway.generate(
+                build_general_messages(question, small_talk=True),
+                temperature=self.temperature,
+            )
+        reply = small_talk_reply(completion.content.strip())
+        if reply is None:
+            outcome = await self._scheme_not_found(question, verdict, mode, sink)
+            outcome.completions[:0] = [completion]
+            return outcome
+        content = drop_citations(reply)
+        await sink.origin(AnswerOrigin.SMALL_TALK)
+        await sink.delta(content)
+        return _Outcome(
+            content=content,
+            origin=AnswerOrigin.SMALL_TALK,
+            sources=[],
+            completions=[completion],
+            prompt_version=SMALL_TALK_PROMPT_VERSION,
+        )
+
     async def _rule_reply(
         self,
         question: str,
@@ -550,7 +856,7 @@ class FaqService:
         счёт вопросов не идёт. В журнале — вид реплики, без вектора и
         токенов; кредитов не стоит (цена — решение Влада и Артёма).
         """
-        content = small_talk_reply(kind)
+        content = rule_template(kind)
         await sink.origin(AnswerOrigin.SMALL_TALK)
         await sink.delta(content)
         entry = await self.qa_log_repo.add(
@@ -1577,6 +1883,71 @@ class _OriginOnDecision:
         if self.sent is not None:
             await self._sink.reset()
         await self.origin(origin)
+
+
+def _masked(value: object) -> object:
+    """Строки решения — после mask_pii, как вопрос: «чего не хватает» и
+    запрос добора повторяют его слова (152-ФЗ)."""
+    if isinstance(value, str):
+        return mask_pii(value)
+    if isinstance(value, list):
+        return [_masked(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _masked(item) for key, item in value.items()}
+    return value
+
+
+def _decision_columns(
+    verdict: Verdict | None, scheme: DecisionMode, search_ms: int
+) -> dict[str, object]:
+    """Колонки журнала схемы (BH-46, имена стенда offline_e2e)."""
+    if verdict is None:
+        return {"decision_mode": scheme.value}
+    trace = verdict.trace()
+    trace["search_ms"] = search_ms
+    trace["decision_prompt_version"] = DECISION_PROMPT_VERSION
+    return {
+        "decision_mode": scheme.value,
+        "decision_route": verdict.route.value,
+        "decision": _masked(verdict.decisions),
+        "decision_calls": verdict.calls,
+        "decision_input_tokens": verdict.input_tokens,
+        "decision_output_tokens": verdict.output_tokens,
+        "decision_latency_ms": verdict.decision_ms + verdict.recheck_ms,
+        "decision_trace": _masked(trace),
+    }
+
+
+def _observe_decision(verdict: Verdict, search_ms: int, total_ms: int) -> None:
+    """Метрики схемы на вопрос (BH-49 часть «А»)."""
+    route = "fallback" if verdict.fallback else verdict.route.value
+    DECISION_QUESTIONS.labels("on", route).inc()
+    DECISION_QUESTION_DURATION.labels("on", route).observe(total_ms / 1000)
+    if verdict.fallback:
+        DECISION_FALLBACK.labels("on", verdict.fallback).inc()
+    if verdict.spec_skip:
+        DECISION_SPECULATIVE_TOTAL.labels("on", "skipped", verdict.spec_skip).inc()
+    for reason in verdict.wasted:
+        DECISION_SPECULATIVE_TOTAL.labels("on", "wasted", reason).inc()
+    if verdict.spec is not None:
+        DECISION_SPECULATIVE_TOTAL.labels("on", "used", "none").inc()
+    for result in verdict.recheck_results:
+        DECISION_BRANCH.labels("on", "recheck", result).inc()
+    for result in verdict.directory:
+        DECISION_BRANCH.labels("on", "directory", result).inc()
+    for result in verdict.extra_results:
+        DECISION_BRANCH.labels("on", "extra_search", result).inc()
+    stages = {
+        "search": search_ms,
+        "decision": verdict.decision_ms,
+        "recheck": verdict.recheck_ms,
+        "directory": verdict.directory_ms,
+        "extra_search": verdict.extra_search_ms,
+        "total": total_ms,
+    }
+    for stage, ms in stages.items():
+        if ms:
+            DECISION_STAGE_DURATION.labels("on", stage).observe(ms / 1000)
 
 
 def _elapsed_ms(started: float) -> int:
