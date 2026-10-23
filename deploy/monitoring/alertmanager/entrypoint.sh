@@ -52,18 +52,22 @@ templates:
   - /etc/alertmanager/telegram.tmpl
 route:
   receiver: $receiver
-  group_by: [alertname, job, queue, reason, kind]
+  group_by: [alertname, job, queue, reason, kind, provider, suite]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
   routes:
+    # Тревоги на наблюдении (observe="true", BH-49): видны в Alertmanager и
+    # Grafana, но никуда не шлются, пока не ясны нормальные уровни.
+    - matchers: ['observe="true"']
+      receiver: none
     - matchers: ['severity="critical"']
       receiver: $receiver
       repeat_interval: 1h
 inhibit_rules:
   # Стенд не отвечает целиком — частные тревоги про него не нужны.
   - source_matchers: ['alertname="NotReady"']
-    target_matchers: ['alertname=~"ModelErrors|ErrorBudgetBurn.*|AnswersDegraded|Llm.*|Embeddings.*|YandexConfigError|IngestWaitingProvider"']
+    target_matchers: ['alertname=~"ModelErrors|ErrorBudgetBurn.*|AnswersDegraded|Llm.*|Embeddings.*|YandexConfigError|IngestWaitingProvider|Decision.*|MlGeneral.*|MlDistance.*"']
 receivers:
   - name: none$receivers
 CONFIG

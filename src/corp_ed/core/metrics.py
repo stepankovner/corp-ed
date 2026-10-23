@@ -20,6 +20,7 @@ from prometheus_client import (
     Counter,
     Gauge,
     Histogram,
+    Info,
     generate_latest,
 )
 from starlette.requests import Request
@@ -135,6 +136,53 @@ for _provider in LLM_PROVIDERS:
                 LLM_CALLS.labels(_provider, _kind, _call_stage, _outcome)
 for _kind in LLM_KINDS:
     LLM_BREAKER_STATE.labels("yandex", _kind).set(0)
+
+# Качество ответов без схемы решения (BH-49, ml-monitoring.md № 17–19).
+FAQ_BEST_DISTANCE = Histogram(
+    "corp_ed_faq_best_distance",
+    "Ближайший фрагмент по вектору; без вопросов с выдержками из вложения",
+    buckets=(
+        0.30,
+        0.35,
+        0.40,
+        0.43,
+        0.46,
+        0.49,
+        0.51,
+        0.53,
+        0.55,
+        0.57,
+        0.59,
+        0.62,
+        0.65,
+        0.70,
+        0.75,
+        0.80,
+        0.90,
+        1.0,
+    ),
+)
+FEEDBACK_VOTES = ("up", "down")
+FEEDBACK_REASON_LABELS = (
+    "inaccurate",
+    "incomplete",
+    "outdated",
+    "wrong_source",
+    "other",
+    "none",
+)
+FAQ_FEEDBACK = Counter(
+    "corp_ed_faq_feedback_total",
+    "Оценки ответов; снятие оценки не вычитается",
+    ["vote", "feedback_reason"],
+)
+for _vote in FEEDBACK_VOTES:
+    for _feedback_reason in FEEDBACK_REASON_LABELS:
+        FAQ_FEEDBACK.labels(_vote, _feedback_reason)
+ML_BUILD = Info(
+    "corp_ed_ml_build",
+    "Версии промптов и моделей, с которыми работает API",
+)
 
 WORKER_QUEUE = Gauge(
     "corp_ed_worker_queue_jobs",
