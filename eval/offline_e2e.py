@@ -492,9 +492,8 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
 
 
 Found = list[Entry] | list[Substitute]
-DirectorySearch = Callable[
-    ..., tuple[list[ContextBlock[OfflineMatch]], bool, Found, str]
-]
+DirectorySearch = Callable[..., tuple[Any, ...]]
+"""(блоки, все поля есть, записи, пометка[, точна ли запись — с guard])."""
 
 
 def _directory_search(
@@ -504,6 +503,7 @@ def _directory_search(
     heading: str = DIRECTORY_HEADING,
     substitution: bool = False,
     asker_unit: bool = False,
+    guard: bool = False,
 ) -> DirectorySearch:
     """Поиск по справочнику оргструктуры (decision-v4): записи — одной
     выдержкой (как блок контекста, чтобы источники ответа видели документ);
@@ -523,14 +523,17 @@ def _directory_search(
     тогда для главы. Четвёртый элемент — что нашли (HeadMatch.note; с
     «(= lookup)», если запись та же, что дал бы lookup), иначе пусто.
     Общая роль без отдела спрашивающего (или без определимой главы) —
-    промах с причиной в четвёртом элементе (generic_role_miss)."""
+    промах с причиной в четвёртом элементе (generic_role_miss).
+
+    guard (--decision-refusal-guard, 23.10): пятым элементом — точна ли
+    запись (глава найдена по отделу или lookup дал ровно одну запись) для
+    защищённого справочника до отказа; без guard ответ — четыре элемента,
+    как было."""
     entries = parse_directory(markdown)
     deputies = sum(1 for entry in entries if entry.deputy)
     print(f"Справочник: «{title}», записей {len(entries)}, с замещающим {deputies}")
 
-    def search(
-        role: str, missing: str, question: str = ""
-    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, Found, str]:
+    def search(role: str, missing: str, question: str = "") -> tuple[Any, ...]:
         found: Found = []
         head = head_for_role(entries, role, question) if asker_unit else None
         note = head.note() if head else ""
@@ -539,17 +542,18 @@ def _directory_search(
             # (решение Артёма 23.10); дальше прежний маршрут.
             miss = generic_role_miss(entries, role, question)
             if miss:
-                return [], False, [], miss
+                return ([], False, [], miss, False)[: 5 if guard else 4]
         if head and lookup(entries, role) == [head.head]:
             # «руководитель ОКП»: глава та же, что и у lookup, — записи не
             # меняются; в колонке видно, что срабатывание пустое.
             note += " (= lookup)"
         if substitution and substitution_requested(f"{role}\n{missing}"):
             found = lookup_substitute(entries, head.head.who() if head else role)
+        exact = head is not None or len(lookup(entries, role)) == 1
         if not found:
             found = [head.head] if head else lookup(entries, role)
         if not found:
-            return [], False, [], note
+            return ([], False, [], note, False)[: 5 if guard else 4]
         complete = covers(found, requested_fields(missing))
         content = format_entries(found)
         match = OfflineMatch(
@@ -562,7 +566,7 @@ def _directory_search(
             match=match,
             kind="chunk",
         )
-        return [block], complete, found, note
+        return ([block], complete, found, note, exact)[: 5 if guard else 4]
 
     return search
 
@@ -850,6 +854,14 @@ def _parser() -> argparse.ArgumentParser:
         "справочник; полное попадание — ответ, промах — прежний отказ",
     )
     parser.add_argument(
+        "--decision-refusal-guard",
+        action="store_true",
+        help="23.10: с --decision-directory-on-refusal — отказ идёт в "
+        "справочник, только если просят контакт (ФИО / кабинет / телефон / "
+        "почту) и запись точная (глава по отделу или одна запись lookup); "
+        "иначе прежний отказ (колонка decision_refusal_guard)",
+    )
+    parser.add_argument(
         "--decision-asker-unit",
         action="store_true",
         help="23.10: с --decision-directory — общая роль («руководитель») при "
@@ -1023,6 +1035,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.decision_directory_on_refusal and not args.decision_directory:
         print("--decision-directory-on-refusal: только с --decision-directory")
         return 2
+    if args.decision_refusal_guard and not args.decision_directory_on_refusal:
+        print("--decision-refusal-guard: только с --decision-directory-on-refusal")
+        return 2
     if args.decision_asker_unit and not args.decision_directory:
         print("--decision-asker-unit: только с --decision-directory")
         return 2
@@ -1123,6 +1138,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else DIRECTORY_HEADING,
                 substitution=args.decision_substitution,
                 asker_unit=args.decision_asker_unit,
+                guard=args.decision_refusal_guard,
             )
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
@@ -1411,6 +1427,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 refusal_parallel=args.decision_refusal_parallel,
                 directory_on_refusal=args.decision_directory_on_refusal,
                 asker_unit=args.decision_asker_unit,
+                refusal_guard=args.decision_refusal_guard,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1613,6 +1630,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else ""
                 ),
                 "decision_asker_unit": "; ".join(decided.asker_unit) if decided else "",
+                "decision_refusal_guard": (
+                    "; ".join(decided.refusal_guard) if decided else ""
+                ),
                 "decision_rechecked": decided.rechecked > 0 if decided else "",
                 "decision_recheck_reason": ",".join(decided.recheck_reasons)
                 if decided
@@ -1821,6 +1841,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
         + (f"-chain-{fallback}" if args.decision_fallback else "")
         + ("-dor" if args.decision_directory_on_refusal else "")
+        + ("-g" if args.decision_refusal_guard else "")
         + ("-au" if args.decision_asker_unit else "")
         + (f"-hedge-{hedge}" if args.decision_hedge else "")
         + ("-only" if args.decision_only else "")

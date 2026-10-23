@@ -3,6 +3,7 @@
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
@@ -18,6 +19,7 @@ from corp_ed.prompts.faq import (
 from eval.decision_loop import (
     DEFAULT_GATES,
     SPECULATION_GATES,
+    contact_requested,
     run_decided,
     speculation_skip,
 )
@@ -1236,3 +1238,170 @@ def test_directory_on_refusal_rechecks_and_runs_general_in_parallel() -> None:
     assert run.route is Route.ANSWER and run.directory_hits == 1
     assert run.general is None and run.wasted_general == 1
     assert sorted(answer.calls) == ["faq", "general"]
+
+
+# --- Защищённый справочник до отказа (--decision-refusal-guard, 23.10) ---
+
+
+def exact_head(
+    role: str, missing: str, question: str = ""
+) -> tuple[Sequence[Chunk], bool, list[str], str, bool]:
+    """Справочник с guard: глава найдена по отделу — запись точная."""
+    return (
+        [Chunk("ЦУП — руководитель Мирон Аркадьевич Черепашкин, кабинет 118.")],
+        True,
+        [],
+        "Центр учёта поставок (ЦУП) (вопрос) → руководитель Черепашкин",
+        True,
+    )
+
+
+def test_refusal_guard_a_case_reaches_directory_and_answers() -> None:
+    # T8-11: «Я специалист ЦУП… в каком кабинете руководитель моего
+    # подразделения?» — v7 пишет «руководитель ЦУП», решение — «про другое»
+    # (оргструктуры в выдержках нет). Контакт просят, запись точная —
+    # справочник и ответ по записи.
+    question = (
+        "Я специалист ЦУП. В каком кабинете сидит руководитель моего подразделения?"
+    )
+    other = decision(
+        sufficiency="none",
+        match="other",
+        subject="руководитель ЦУП",
+        excerpts_subject="отпуска",
+        missing="кабинет руководителя ЦУП",
+        lookup_role="руководитель ЦУП",
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(other),
+        answer=Script("Руководитель ЦУП — Черепашкин, кабинет 118 [2]."),
+        search=no_search,
+        directory=exact_head,
+        directory_on_refusal=True,
+        asker_unit=True,
+        refusal_guard=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+    assert run.refusal_guard == [] and "118" in run.text
+    assert run.asker_unit and not run.needs_general
+
+
+def test_refusal_guard_c_case_without_contact_keeps_refusal() -> None:
+    # Вопрос вне документов: ни вопрос, ни «чего не хватает» контакт не
+    # просят — справочник не зовётся, прежний отказ и общий ответ.
+    calls: list[str] = []
+
+    def directory(role: str, missing: str) -> tuple[Any, ...]:
+        calls.append(role)
+        return exact_head(role, missing)
+
+    run = run_decided(
+        "Я в ОКП. Как часто у нас утверждают план продаж?",
+        [Chunk("а")],
+        decide=Script(
+            decision(
+                sufficiency="none",
+                missing="периодичность утверждения плана",
+                lookup_role="руководитель ОКП",
+            )
+        ),
+        answer=Script(),
+        search=no_search,
+        directory=directory,
+        directory_on_refusal=True,
+        refusal_guard=True,
+    )
+    assert calls == [] and run.route is Route.NOT_FOUND and run.needs_general
+    assert run.refusal_guard == ["нет контакта: руководитель ОКП"]
+
+
+def test_refusal_guard_inexact_entry_keeps_refusal() -> None:
+    # Контакт просят, но запись не точная (lookup дал несколько, или
+    # справочник без guard не сказал, что точная) — прежний отказ, записи
+    # в выдержки не попадают.
+    def several(
+        role: str, missing: str
+    ) -> tuple[Sequence[Chunk], bool, list[str], str, bool]:
+        return [Chunk("ЦУП — руководитель…; ОКП — руководитель…")], True, [], "", False
+
+    def four(role: str, missing: str) -> tuple[Sequence[Chunk], bool, list[str], str]:
+        return [Chunk("ЦУП — руководитель…")], True, [], ""
+
+    for directory in (several, four):
+        run = run_decided(
+            "Назови фамилию руководителя.",
+            [Chunk("а")],
+            decide=Script(decision(sufficiency="none", lookup_role="руководитель")),
+            answer=Script(),
+            search=no_search,
+            directory=directory,
+            directory_on_refusal=True,
+            refusal_guard=True,
+        )
+        assert run.route is Route.NOT_FOUND and run.directory_misses == 1
+        assert run.refusal_guard == ["не точно: руководитель"]
+        assert [c.content for c in run.shown] == ["а"]
+
+
+def test_refusal_guard_limit_out_of_docs_with_contact_passes() -> None:
+    # Предел защиты (сухая проверка T8-26 / T8-28): вопрос вне документов,
+    # который просит фамилию, при точной записи главы проходит обе
+    # проверки — справочник и ответ по записи. Защита этого не ловит.
+    question = "Я из АХС. Кто подписывает мне заявку на спецодежду? Назови фамилию."
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(
+            decision(sufficiency="none", missing="фамилия", lookup_role="руководитель")
+        ),
+        answer=Script("Подписывает руководитель службы — Черепашкин [2]."),
+        search=no_search,
+        directory=exact_head,
+        directory_on_refusal=True,
+        asker_unit=True,
+        refusal_guard=True,
+    )
+    assert run.route is Route.ANSWER and run.refusal_guard == []
+
+
+def test_refusal_guard_leaves_partial_route_and_default_untouched() -> None:
+    # «Не хватает» с ролью — обычный маршрут справочника, защита не нужна:
+    # запись без признака точности всё равно идёт в выдержки.
+    def four(role: str, missing: str) -> tuple[Sequence[Chunk], bool, list[str], str]:
+        return [Chunk("ЦУП — руководитель Черепашкин, кабинет 118.")], True, [], ""
+
+    partial = decision(sufficiency="partial", lookup_role="руководитель ЦУП")
+    run = run_decided(
+        "Где сидит руководитель ЦУП?",
+        [Chunk("а")],
+        decide=Script(partial),
+        answer=Script("Кабинет 118 [2]."),
+        search=no_search,
+        directory=four,
+        directory_on_refusal=True,
+        refusal_guard=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+    assert run.refusal_guard == []
+    # Без guard — прежнее поведение справочника до отказа (запись без
+    # признака точности — попадание).
+    run = run_decided(
+        "Назови фамилию руководителя.",
+        [Chunk("а")],
+        decide=Script(decision(sufficiency="none", lookup_role="руководитель")),
+        answer=Script("Черепашкин [2]."),
+        search=no_search,
+        directory=four,
+        directory_on_refusal=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+
+
+def test_contact_requested() -> None:
+    assert contact_requested("Кто согласует?", "ФИО и кабинет")
+    assert contact_requested("В каком кабинете руководитель?", "—")
+    assert contact_requested("Какой e-mail у руководителя?", "—")
+    assert not contact_requested("Кто согласует перевод?", "порядок согласования")
+    assert not contact_requested("Как войти в личный кабинет?", "—")

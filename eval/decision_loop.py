@@ -75,6 +75,17 @@ question); общая роль («руководитель») при отдел�
 или роль «руководитель <подразделения>» — глава подразделения
 (corp_ed.domain.directory.head_for_role). Что нашли — четвёртый элемент
 ответа справочника, в DecidedRun.asker_unit.
+
+Защищённый справочник до отказа (ml-report, «Приёмка: отдел
+спрашивающего (T8, 23.10)»; по умолчанию выключено): refusal_guard=True
+(только вместе с directory_on_refusal) — отказ решения идёт в справочник,
+только если (а) вопрос или «чего не хватает» просят контакт
+(contact_requested) и (б) запись точная: справочник пятым элементом
+ответа говорит, что глава найдена по отделу или lookup дал ровно одну
+запись. Иначе — прежний отказ, причина в DecidedRun.refusal_guard.
+Обычный маршрут «partial → справочник» защита не трогает. Предел (сухая
+проверка на T8): вопросы вне документов вида «Я из АХС, кто подписывает
+заявку — руководитель службы? Назови фамилию» проходят обе проверки.
 """
 
 import re
@@ -94,6 +105,7 @@ from corp_ed.domain.decision import (
     route,
     search_query,
 )
+from corp_ed.domain.directory import requested_fields
 from corp_ed.domain.small_talk import rule_reply
 from corp_ed.llm.types import Message
 from corp_ed.prompts.decision import (
@@ -150,6 +162,9 @@ class DecidedRun:
     """Глава подразделения вместо общей роли (asker_unit=True): по строке на
     обращение к справочнику, где сработало («ОКП (вопрос) → руководитель
     Имя»)."""
+    refusal_guard: list[str] = field(default_factory=list)
+    """Защищённый справочник до отказа (refusal_guard=True): по строке на
+    отказ, не пропущенный в справочник («нет контакта» / «не точно»)."""
     directory_misses: int = 0
     """Справочник ничего не дал — векторный добор, как раньше."""
     directory_partial: int = 0
@@ -270,6 +285,16 @@ def speculation_skip(
         ):
             return rule
     return None
+
+
+def contact_requested(question: str, missing: str) -> bool:
+    """Просят ли контакт (ФИО / кабинет / телефон / добавочный / почту):
+    по «чего не хватает» решения (requested_fields) или по самому вопросу
+    (правило contact отсечения спекуляции)."""
+    return bool(requested_fields(missing)) or (
+        speculation_skip(question, 0, None, rules=("contact",), max_distance=0.0)
+        is not None
+    )
 
 
 def _recheck_reason(decision: Decision | None, step: Route, mode: str) -> str | None:
@@ -424,6 +449,7 @@ def run_decided(
     refusal_parallel: bool = False,
     directory_on_refusal: bool = False,
     asker_unit: bool = False,
+    refusal_guard: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -447,6 +473,7 @@ def run_decided(
         refusal_parallel=refusal_parallel,
         directory_on_refusal=directory_on_refusal,
         asker_unit=asker_unit,
+        refusal_guard=refusal_guard,
         max_extra=max_extra,
         max_excerpts=max_excerpts,
     )
@@ -474,6 +501,7 @@ def _run_decided(
     refusal_parallel: bool = False,
     directory_on_refusal: bool = False,
     asker_unit: bool = False,
+    refusal_guard: bool = False,
     max_extra: int = MAX_EXTRA_SEARCHES,
     max_excerpts: int = MAX_EXCERPTS,
 ) -> DecidedRun:
@@ -568,11 +596,25 @@ def _run_decided(
             role = lookup_role(decision)
             assert role is not None
             seen = {_key(block) for block in shown}
-            result = (
-                directory(role, decision.missing, question)
-                if asker_unit
-                else directory(role, decision.missing)
-            )
+            # Защищённый справочник до отказа: (а) — до вызова, (б) — по
+            # пятому элементу ответа справочника; иначе прежний отказ.
+            guarded = refusal_guard and is_refusal(decision)
+            blocked = ""
+            result: tuple[Any, ...]
+            if guarded and not contact_requested(question, decision.missing):
+                blocked = "нет контакта"
+                result = ([], False, [], "")
+            else:
+                result = (
+                    directory(role, decision.missing, question)
+                    if asker_unit
+                    else directory(role, decision.missing)
+                )
+                if guarded and not (len(result) > 4 and result[4]):
+                    blocked = "не точно"
+            if blocked:
+                run.refusal_guard.append(f"{blocked}: {role}")
+                result = ([], False, [], *result[3:4])
             blocks, complete = result[0], bool(result[1])
             entries = list(result[2]) if len(result) > 2 else []
             if len(result) > 3 and result[3]:

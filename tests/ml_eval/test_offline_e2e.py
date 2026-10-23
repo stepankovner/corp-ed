@@ -708,6 +708,31 @@ def test_directory_search_asker_unit() -> None:
     assert [e.room for e in entries] == ["10"] and note == ""
 
 
+def test_directory_search_guard_reports_exact_entry() -> None:
+    """--decision-refusal-guard: пятый элемент — точна ли запись (глава по
+    отделу или ровно одна запись lookup); без guard — четыре, как было."""
+    text = (
+        "— Центр учёта поставок (ЦУП) — руководитель Корней Маркович Ложкин, кабинет 11.\n"  # noqa: E501
+        "— Отдел корпоративных продаж (ОКП) — руководитель Нонна Глебовна Пряжкина, кабинет 30.\n"  # noqa: E501
+    )
+    question = "Я в ОКП. Как фамилия моего руководителя?"
+    plain = offline_e2e._directory_search("orgstruktura", text)
+    assert len(plain("руководитель ОКП", "фамилия")) == 4
+    guarded = offline_e2e._directory_search("orgstruktura", text, guard=True)
+    assert guarded("руководитель ОКП", "фамилия")[4] is True
+    # Общая роль: lookup даёт двоих — не точно; глава по отделу — точно.
+    result = guarded("руководитель", "фамилия")
+    assert len(result[2]) == 2 and result[4] is False
+    au = offline_e2e._directory_search(
+        "orgstruktura", text, asker_unit=True, guard=True
+    )
+    result = au("руководитель", "фамилия", question)
+    assert [e.room for e in result[2]] == ["30"] and result[4] is True
+    miss = au("руководитель", "фамилия", "Кто подписывает приказ?")
+    assert miss[:3] == ([], False, []) and miss[4] is False
+    assert guarded("старший смены", "ФИО") == ([], False, [], "", False)
+
+
 @pytest.mark.parametrize(
     "flags",
     [
