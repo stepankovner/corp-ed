@@ -184,6 +184,156 @@ ML_BUILD = Info(
     "Версии промптов и моделей, с которыми работает API",
 )
 
+# Шаг решения до ответа (BH-46, BH-49 часть «А», ml-monitoring.md 1.1–1.2).
+# Перечни меток — других значений не бывает; все сочетания — при старте.
+DECISION_MODES = ("off", "shadow", "on")
+DECISION_ROUTES = (
+    "answer",
+    "directory",
+    "search",
+    "not_found",
+    "other_subject",
+    "small_talk",
+    "rule",
+    "fallback",
+)
+DECISION_PROVIDERS = ("cloudru", "yandex", "mws")
+DECISION_EFFORTS = ("low", "medium", "none")
+DECISION_CALL_KINDS = ("first", "recheck", "after_search")
+DECISION_OUTCOMES = (
+    "ok",
+    "invalid",
+    "timeout",
+    "error_fast",
+    "error_config",
+    "error_payment",
+)
+DECISION_FALLBACK_REASONS = ("timeout", "invalid", "provider_error")
+DECISION_FAILOVER_REASONS = (
+    "hedge",
+    "error_fast",
+    "error_config",
+    "error_payment",
+    "invalid",
+)
+DECISION_STAGES = (
+    "search",
+    "decision",
+    "recheck",
+    "directory",
+    "extra_search",
+    "answer",
+    "total",
+)
+DECISION_SPECULATIVE = {
+    "used": ("none",),
+    "wasted": (
+        "small_talk",
+        "other_subject",
+        "not_found",
+        "shown_changed",
+        "other_edition",
+    ),
+    "skipped": ("gate", "contact"),
+}
+DECISION_BRANCHES = {
+    "recheck": (
+        "refusal_confirmed",
+        "refusal_flipped",
+        "role_confirmed",
+        "role_flipped",
+    ),
+    "directory": ("hit", "partial", "miss", "absent"),
+    "extra_search": ("new", "empty", "repeated", "limit"),
+    "shadow": ("agree_answer", "agree_refusal", "scheme_refused", "pipeline_refused"),
+}
+_DECISION_SECONDS = (0.25, 0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15)
+_QUESTION_SECONDS = (0.05, 0.1, 0.25, 0.5, 1, 2, 3, 4, 5, 7, 9, 12, 15, 20, 30)
+FAQ_DECISION_MODE = Counter(
+    "corp_ed_faq_decision_mode_total",
+    "Вопросы по режиму схемы решения компании",
+    ["mode"],
+)
+DECISION_QUESTIONS = Counter(
+    "corp_ed_decision_questions_total",
+    "Итоговый маршрут схемы решения",
+    ["mode", "route"],
+)
+DECISION_CALLS = Counter(
+    "corp_ed_decision_calls_total",
+    "Вызовы модели решения по звену, усилию, месту в цикле и исходу",
+    ["provider", "effort", "call", "outcome"],
+)
+DECISION_CALL_DURATION = Histogram(
+    "corp_ed_decision_call_duration_seconds",
+    "Вызов модели решения; при таймауте — срок",
+    ["provider", "effort"],
+    buckets=_DECISION_SECONDS,
+)
+DECISION_FALLBACK = Counter(
+    "corp_ed_decision_fallback_total",
+    "Откат: решения нет, ответ по выдержкам без него",
+    ["mode", "reason"],
+)
+DECISION_FAILOVER = Counter(
+    "corp_ed_decision_failover_total",
+    "Вызов решения ушёл дублёру: hedge — по задержке, остальное — по ошибке",
+    ["reason"],
+)
+DECISION_STAGE_DURATION = Histogram(
+    "corp_ed_decision_stage_duration_seconds",
+    "Время по веткам цикла решения на вопрос; total — весь ответ",
+    ["mode", "stage"],
+    buckets=_QUESTION_SECONDS,
+)
+DECISION_QUESTION_DURATION = Histogram(
+    "corp_ed_decision_question_duration_seconds",
+    "Время ответа по итоговому маршруту",
+    ["mode", "route"],
+    buckets=_QUESTION_SECONDS,
+)
+DECISION_SPECULATIVE_TOTAL = Counter(
+    "corp_ed_decision_speculative_total",
+    "Спекулятивный ответ: взят, выброшен или не запускался",
+    ["mode", "outcome", "reason"],
+)
+DECISION_BRANCH = Counter(
+    "corp_ed_decision_branch_total",
+    "Исходы веток: перепроверка, справочник, добор, тень",
+    ["mode", "kind", "result"],
+)
+DECISION_TOKENS = Counter(
+    "corp_ed_decision_tokens_total",
+    "Токены вызовов решения",
+    ["provider", "direction"],
+)
+for _mode in DECISION_MODES:
+    FAQ_DECISION_MODE.labels(_mode)
+for _mode in ("shadow", "on"):
+    for _decision_route in DECISION_ROUTES:
+        DECISION_QUESTIONS.labels(_mode, _decision_route)
+        DECISION_QUESTION_DURATION.labels(_mode, _decision_route)
+    for _reason in DECISION_FALLBACK_REASONS:
+        DECISION_FALLBACK.labels(_mode, _reason)
+    for _stage in DECISION_STAGES:
+        DECISION_STAGE_DURATION.labels(_mode, _stage)
+    for _outcome, _reasons in DECISION_SPECULATIVE.items():
+        for _reason in _reasons:
+            DECISION_SPECULATIVE_TOTAL.labels(_mode, _outcome, _reason)
+    for _kind, _results in DECISION_BRANCHES.items():
+        for _result in _results:
+            DECISION_BRANCH.labels(_mode, _kind, _result)
+for _provider in DECISION_PROVIDERS:
+    for _direction in ("input", "output"):
+        DECISION_TOKENS.labels(_provider, _direction)
+    for _effort in DECISION_EFFORTS:
+        DECISION_CALL_DURATION.labels(_provider, _effort)
+        for _call in DECISION_CALL_KINDS:
+            for _outcome in DECISION_OUTCOMES:
+                DECISION_CALLS.labels(_provider, _effort, _call, _outcome)
+for _reason in DECISION_FAILOVER_REASONS:
+    DECISION_FAILOVER.labels(_reason)
+
 WORKER_QUEUE = Gauge(
     "corp_ed_worker_queue_jobs",
     "Задачи в очередях воркера по статусу",

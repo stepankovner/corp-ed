@@ -26,7 +26,7 @@ from corp_ed.domain.models import (
     User,
     UserRole,
 )
-from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, DecisionMode, NotFoundMode
 from corp_ed.repositories.audit_repository import AuditRepository
 from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
@@ -372,6 +372,58 @@ def test_cli_not_found_mode() -> None:
     assert strict.not_found_mode == "strict"
     with pytest.raises(SystemExit):
         _parser().parse_args(["set-not-found-mode", "--code", "acme", "--mode", "x"])
+
+
+async def test_set_decision_mode_is_audited_and_resets_to_default(
+    session: AsyncSession,
+) -> None:
+    service = _service(session)
+    await service.provision(
+        company_code="acme",
+        name="A",
+        admin_email="a@b.ru",
+        admin_full_name=None,
+        admin_password=ADMIN_PASSWORD,
+        seats=30,
+    )
+
+    tenant = await service.set_decision_mode("acme", DecisionMode.SHADOW)
+    assert tenant.decision_mode == "shadow"
+    tenant = await service.set_decision_mode("acme", None)
+    assert tenant.decision_mode is None
+
+    events = (
+        await session.execute(
+            select(AuditEvent.details)
+            .where(AuditEvent.action == "tenant.decision_mode_changed")
+            .order_by(AuditEvent.created_at)
+        )
+    ).scalars()
+    assert list(events) == [
+        {"from": None, "to": "shadow"},
+        {"from": "shadow", "to": None},
+    ]
+
+
+async def test_database_rejects_unknown_decision_mode(
+    session: AsyncSession, tenant_ctx: Tenant
+) -> None:
+    with pytest.raises(IntegrityError):
+        await session.execute(
+            update(Tenant).where(Tenant.id == tenant_ctx.id).values(decision_mode="x")
+        )
+    await session.rollback()
+
+
+def test_cli_decision_mode() -> None:
+    args = _parser().parse_args(["set-decision-mode", "--code", "acme", "--mode", "on"])
+    assert args.mode == "on"
+    default = _parser().parse_args(
+        ["set-decision-mode", "--code", "acme", "--mode", "default"]
+    )
+    assert default.mode == "default"
+    with pytest.raises(SystemExit):
+        _parser().parse_args(["set-decision-mode", "--code", "acme", "--mode", "x"])
 
 
 def test_cli_help_needs_no_settings() -> None:

@@ -132,6 +132,10 @@ class LLMSettings(BaseSettings):
     cloudru_base_url: str = ""
     cloudru_api_key: SecretStr = SecretStr("")
     llm_fallback_model: str = "openai/gpt-oss-120b"
+    # Шаг решения (BH-46): основной — gpt-oss-120b у Cloud.ru (тот же ключ,
+    # что у резерва), дублёр — Qwen3.6 у Яндекса (ключ и каталог Flash).
+    llm_decision_model: str = "openai/gpt-oss-120b"
+    llm_decision_hedge_model: str = "qwen3.6-35b-a3b"
     # Предохранитель: столько отказов подряд — и столько секунд все вызовы
     # сразу в резерв (стартовые значения ML, уточнить по журналу).
     llm_breaker_failures: int = Field(default=3, ge=1, le=20)
@@ -227,6 +231,17 @@ class RagSettings(BaseSettings):
     # шаблон ML до поиска и модели, и в строгом режиме тоже. false —
     # прежний путь (с BH-45, если он включён).
     faq_small_talk_rule: bool = False
+    # Схема «решение до ответа» (BH-46): умолчание режима для компаний без
+    # своего (tenants.decision_mode). off — прежний путь байт в байт;
+    # shadow и on отправляют выдержки Cloud.ru — только после договора.
+    faq_decision_mode: Literal["off", "shadow", "on"] = "off"
+    # Один бюджет на весь шаг решения (первое решение, перепроверка, решение
+    # после добора), с: по истечении — откат на ответ без решения.
+    faq_decision_budget_seconds: float = Field(default=6.0, gt=0, le=30)
+    # Задержка дубля в Qwen у Яндекса по типу вызова: low — p85 худшего
+    # окна (≈ 3 с, фаза 2); на перепроверке medium дубля нет (пусто).
+    faq_decision_hedge_low_seconds: float | None = Field(default=3.0, gt=0)
+    faq_decision_hedge_medium_seconds: float | None = Field(default=None, gt=0)
     context_max_tokens: int = Field(gt=0)
     # Для FAQ 0: при 0.3 ответ на один и тот же вопрос по одним и тем же
     # выдержкам переключался «ответил ↔ отказал» (замер ML 24.09, BH-8).
