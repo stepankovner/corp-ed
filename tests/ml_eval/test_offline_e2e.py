@@ -12,6 +12,7 @@ from eval.offline_e2e import (
     OfflineMatch,
     citation_numbers,
     gate_by_best_distance,
+    gate_by_coverage,
     invalid_citations,
     relevant_matches,
     section_citations,
@@ -658,16 +659,229 @@ def test_directory_search_returns_context_blocks_with_source() -> None:
         "— Бухгалтерия — главный бухгалтер Олимпиада Сергеевна Брусникина.\n"
     )
     search = _directory_search("orgstruktura", text)
-    blocks, complete, entries = search("финансовый директор", "ФИО и кабинет")
+    blocks, complete, entries, note = search("финансовый директор", "ФИО и кабинет")
     assert len(blocks) == 1
     assert "Кукушкина" in blocks[0].content
     assert blocks[0].match.title == "orgstruktura"
     assert blocks[0].heading_path == ["Справочник"]
     assert complete
     assert [e.name for e in entries] == ["Ярослава Игоревна Кукушкина"]
-    assert search("старший смены", "ФИО") == ([], False, [])
+    assert note == ""
+    assert search("старший смены", "ФИО") == ([], False, [], "")
     # A1: заголовок выдержки — с пояснением.
     explained = _directory_search("orgstruktura", text, heading="Справочник: x")
     assert explained("финансовый директор", "ФИО")[0][0].heading_path == [
         "Справочник: x"
     ]
+
+
+def test_directory_search_asker_unit() -> None:
+    """--decision-asker-unit: общая роль и отдел спрашивающего — глава
+    подразделения вместо всех «руководителей»; без флага — как было."""
+    text = (
+        "— Центр учёта поставок (ЦУП) — руководитель Корней Маркович Ложкин, кабинет 11.\n"  # noqa: E501
+        "— Отдел корпоративных продаж (ОКП) — руководитель Нонна Глебовна Пряжкина, кабинет 30.\n"  # noqa: E501
+        "— Административно-хозяйственная служба — офис-менеджер Фёкла Ивановна Метёлкина, кабинет 10.\n"  # noqa: E501
+    )
+    question = "Я в ОКП. Кто как мой непосредственный руководитель согласует?"
+    plain = offline_e2e._directory_search("orgstruktura", text)
+    _, _, entries, note = plain("руководитель", "фамилия", question)
+    assert len(entries) == 2 and note == ""
+    search = offline_e2e._directory_search("orgstruktura", text, asker_unit=True)
+    blocks, complete, entries, note = search("руководитель", "фамилия", question)
+    assert [e.name for e in entries] == ["Нонна Глебовна Пряжкина"]
+    assert complete and "Пряжкина" in blocks[0].content
+    assert note.startswith("Отдел корпоративных продаж (ОКП) (вопрос) →")
+    # Роль с отделом, глава — офис-менеджер; вопрос не нужен.
+    _, _, entries, note = search("руководитель АХС", "кабинет")
+    assert [e.room for e in entries] == ["10"] and "(роль)" in note
+    # Общая роль без отдела (T7-19) — промах с причиной, а не чужие
+    # руководители; без флага — как было (оба руководителя).
+    miss = search("руководитель", "кабинет", "Чьим приказом вносятся изменения?")
+    assert miss == ([], False, [], "промах: общая роль без отдела спрашивающего")
+    assert len(plain("руководитель", "кабинет", "Чьим приказом?")[2]) == 2
+    # Глава та же, что у lookup, — пометка «(= lookup)».
+    _, _, entries, note = search("руководитель ОКП", "фамилия")
+    assert [e.room for e in entries] == ["30"] and note.endswith("(= lookup)")
+    # Роль не общая — обычный lookup, пометки нет.
+    _, _, entries, note = search("офис-менеджер", "кабинет", question)
+    assert [e.room for e in entries] == ["10"] and note == ""
+
+
+def test_directory_search_guard_reports_exact_entry() -> None:
+    """--decision-refusal-guard: пятый элемент — точна ли запись (глава по
+    отделу или ровно одна запись lookup); без guard — четыре, как было."""
+    text = (
+        "— Центр учёта поставок (ЦУП) — руководитель Корней Маркович Ложкин, кабинет 11.\n"  # noqa: E501
+        "— Отдел корпоративных продаж (ОКП) — руководитель Нонна Глебовна Пряжкина, кабинет 30.\n"  # noqa: E501
+    )
+    question = "Я в ОКП. Как фамилия моего руководителя?"
+    plain = offline_e2e._directory_search("orgstruktura", text)
+    assert len(plain("руководитель ОКП", "фамилия")) == 4
+    guarded = offline_e2e._directory_search("orgstruktura", text, guard=True)
+    assert guarded("руководитель ОКП", "фамилия")[4] is True
+    # Общая роль: lookup даёт двоих — не точно; глава по отделу — точно.
+    result = guarded("руководитель", "фамилия")
+    assert len(result[2]) == 2 and result[4] is False
+    au = offline_e2e._directory_search(
+        "orgstruktura", text, asker_unit=True, guard=True
+    )
+    result = au("руководитель", "фамилия", question)
+    assert [e.room for e in result[2]] == ["30"] and result[4] is True
+    miss = au("руководитель", "фамилия", "Кто подписывает приказ?")
+    assert miss[:3] == ([], False, []) and miss[4] is False
+    assert guarded("старший смены", "ФИО") == ([], False, [], "", False)
+
+
+@pytest.mark.parametrize(
+    "flags",
+    [
+        # gated — только со спекуляцией; правила — из списка
+        ["--decision-speculate", "gated", "--decision-gate", "contact"],
+        ["--decision-speculative", "--decision-gate", "contact"],
+        [
+            "--decision-speculative",
+            "--decision-speculate",
+            "gated",
+            "--decision-gate",
+            "magic",
+        ],
+        # параллельный общий ответ — только с быстрым решением и general
+        ["--decision-refusal-parallel"],
+        [
+            "--decision-refusal-parallel",
+            "--decision-fast-extra",
+            '{"reasoning_effort": "low"}',
+            "--not-found",
+            "strict",
+        ],
+        # таймаут — только у OpenAI-совместимых поставщиков решения
+        ["--decision-timeout", "8"],
+        # отдел спрашивающего — только со справочником
+        ["--decision-asker-unit"],
+    ],
+)
+def test_phase1_flags_validated(
+    flags: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["--corpus", "c", "--dataset", "d", "--decision", "separate", *flags]
+    assert offline_e2e.main(argv) == 2
+    assert "--decision-" in capsys.readouterr().out
+
+
+def test_phase1_defaults_keep_old_behaviour() -> None:
+    args = offline_e2e._parser().parse_args(["--corpus", "c", "--dataset", "d"])
+    assert (args.decision_speculate, args.decision_gate) == ("always", "")
+    assert not args.decision_refusal_parallel and args.decision_timeout == 0.0
+
+
+# --- BH-51 (а): поиск только по словам, порог по покрытию ----------------------
+
+
+def test_gate_by_coverage_looks_at_the_best_ranked_fragment() -> None:
+    matches = [
+        OfflineMatch("a", "Д", distance=None, coverage=0.5),
+        OfflineMatch("b", "Д", distance=None, coverage=1.0),
+    ]
+
+    # Решает лучший по рангу, а не лучший по покрытию; прошёл — вся выдача.
+    assert gate_by_coverage(matches, 0.5) == matches
+    assert gate_by_coverage(matches, 0.6) == []
+    assert gate_by_coverage([], 0.0) == []
+
+
+def test_fulltext_mode_never_embeds_and_gates_by_coverage(
+    setup: tuple[Path, Path, _FakeYandex],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus, dataset, fake = setup
+
+    def no_embeddings(*args: object, **kwargs: object) -> None:
+        raise AssertionError("fulltext: эмбеддинги вопроса не нужны")
+
+    monkeypatch.setattr(offline_e2e, "vector_rankings", no_embeddings)
+
+    rows = {
+        row["id"]: row
+        for row in _run(
+            corpus,
+            dataset,
+            tmp_path / "out",
+            "--retriever",
+            "fulltext",
+            "--fulltext-coverage",
+            "0.6",
+            "--not-found",
+            "strict",
+        )  # fmt: skip
+    }
+
+    # q1 «сколько дней отпуска»: 2 из 3 лексем во фрагменте — проходит;
+    # q3 «перенести отпуск»: 1 из 2 — ниже порога; q2 — ни одного слова.
+    assert float(rows["q1"]["best_coverage"]) == pytest.approx(2 / 3, abs=1e-4)
+    assert rows["q1"]["n_sources"] == "1" and rows["q1"]["best_distance"] == ""
+    assert float(rows["q3"]["best_coverage"]) == pytest.approx(0.5)
+    assert rows["q3"]["answer"] == NOT_FOUND_ANSWER and rows["q3"]["n_found"] == "1"
+    assert rows["q2"]["n_found"] == "0" and rows["q2"]["best_coverage"] == ""
+    assert len(fake.prompts) == 1
+
+    rows = {
+        row["id"]: row
+        for row in _run(
+            corpus,
+            dataset,
+            tmp_path / "out0",
+            "--retriever",
+            "fulltext",
+            "--fulltext-coverage",
+            "0",
+            "--not-found",
+            "strict",
+        )  # fmt: skip
+    }
+    # Порог 0 — проходит всё, что нашлось хоть по одному слову.
+    assert (rows["q1"]["n_sources"], rows["q3"]["n_sources"]) == ("1", "1")
+    assert rows["q2"]["n_sources"] == "0"
+
+
+def test_fulltext_second_search_goes_by_words_with_the_same_gate(
+    setup: tuple[Path, Path, _FakeYandex],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+    monkeypatch.setattr(offline_e2e, "vector_rankings", None)
+    fake.answers = {
+        "уже сделан": "Перенос — по заявлению [2].",
+        "Сколько дней": "Дополнительный поиск: перенос отпуска по заявлению",
+    }
+
+    rows = _run(
+        corpus, dataset, tmp_path / "out", "--retriever", "fulltext",
+        "--fulltext-coverage", "0.6", "--limit", "1",
+        "--chunk-tokens", "20", "--overlap-tokens", "0", "--not-found", "strict",
+    )  # fmt: skip
+
+    assert rows[0]["search_query"] == "перенос отпуска по заявлению"
+    assert rows[0]["search_added"] == "1"
+    assert rows[0]["n_sources"] == "2"
+    assert "Дополнительный поиск уже сделан" in fake.prompts[-1]
+
+
+def test_fulltext_flags_validated(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    corpus, dataset, _ = setup
+    base = ["--corpus", str(corpus), "--dataset", str(dataset), "--dry-run"]
+
+    assert offline_e2e.main([*base, "--retriever", "fulltext"]) == 2
+    assert offline_e2e.main([*base, "--fulltext-coverage", "0.5"]) == 2
+    assert offline_e2e.main([*base, "--fulltext-rank", "cd"]) == 2
+    assert (
+        offline_e2e.main(
+            [*base, "--retriever", "fulltext", "--fulltext-coverage", "0.5", "--agent"]
+        )
+        == 2
+    )

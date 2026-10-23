@@ -3,14 +3,27 @@
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
 from corp_ed.domain.decision import Route
 from corp_ed.domain.directory import Entry
 from corp_ed.llm.types import Message
-from corp_ed.prompts.faq import NOT_FOUND_ANSWER, SMALL_TALK_PREFIX
-from eval.decision_loop import run_decided
+from corp_ed.prompts.faq import (
+    NOT_FOUND_ANSWER,
+    SMALL_TALK_PREFIX,
+    build_faq_messages,
+    build_general_messages,
+)
+from eval.decision_loop import (
+    DEFAULT_GATES,
+    SPECULATION_GATES,
+    contact_requested,
+    run_decided,
+    speculation_skip,
+)
+from eval.providers import CallTimeoutError
 from eval.yandex import Completion
 
 
@@ -406,6 +419,68 @@ def test_directory_miss_falls_back_to_search() -> None:
     assert run.text == "Ответ [2]."
 
 
+@pytest.mark.parametrize("asker", [False, True])
+def test_directory_gets_question_with_asker_unit(asker: bool) -> None:
+    """asker_unit=True: справочник получает текст вопроса третьим
+    аргументом, пометка «что нашли» — в run.asker_unit; без флага — вызов
+    с двумя аргументами, как было."""
+    partial = decision(
+        sufficiency="partial", search_query="ФИО", lookup_role="руководитель"
+    )
+    question = "Я в ОКП. Кто мой руководитель?"
+    seen: list[tuple[str, ...]] = []
+
+    def directory(*args: str) -> tuple[Sequence[Chunk], bool, list[Entry], str]:
+        seen.append(args)
+        note = "ОКП (вопрос) → руководитель Пряжкина" if len(args) > 2 else ""
+        return [Chunk("ОКП — руководитель Пряжкина.")], True, [], note
+
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(partial),
+        answer=Script("Пряжкина [2]."),
+        search=no_search,
+        directory=directory,
+        asker_unit=asker,
+    )
+    if asker:
+        assert seen == [("руководитель", "—", question)]
+        assert run.asker_unit == ["ОКП (вопрос) → руководитель Пряжкина"]
+    else:
+        assert seen == [("руководитель", "—")]
+        assert run.asker_unit == []
+    assert run.directory_hits == 1 and run.text == "Пряжкина [2]."
+
+
+def test_directory_generic_role_miss_goes_on_as_before() -> None:
+    """Промах «общая роль без отдела» — как любой промах: добор вектором,
+    причина — в run.asker_unit."""
+    partial = decision(
+        sufficiency="partial",
+        search_query="приказ генерального директора кабинет",
+        lookup_role="руководитель",
+    )
+    run = run_decided(
+        "Чьим приказом вносятся изменения и в каком кабинете?",
+        [Chunk("а")],
+        decide=Script(partial, decision()),
+        answer=Script("Генеральный директор, кабинет 401 [2]."),
+        search=lambda q: [Chunk("Генеральный директор — кабинет 401.")],
+        directory=lambda role, missing, question: (
+            [],
+            False,
+            [],
+            "промах: общая роль без отдела спрашивающего",
+        ),
+        asker_unit=True,
+    )
+    assert run.directory_misses == 1 and run.directory_hits == 0
+    assert run.queries == ["приказ генерального директора кабинет"]
+    assert run.asker_unit == ["промах: общая роль без отдела спрашивающего"]
+    assert run.text == "Генеральный директор, кабинет 401 [2]."
+
+
 def test_directory_partial_adds_entry_and_searches() -> None:
     """Роль нашлась, но без запрошенной почты — запись в выдержки и добор."""
     partial = decision(
@@ -779,3 +854,554 @@ def test_directory_answer_mode_checked() -> None:
             search=no_search,
             directory_answer="code",
         )
+
+
+# --- Фаза 1: отсечение спекуляции, параллельный общий ответ, таймаут ---
+
+
+def test_speculation_skip_rules() -> None:
+    def skip(question: str, excerpts: int = 3, best: float | None = 0.5, *rules: str):
+        return speculation_skip(
+            question, excerpts, best, rules=rules, max_distance=0.59
+        )
+
+    assert skip("Назови ФИО и кабинет", 3, 0.5, "contact") == "contact"
+    assert skip("Какой добавочный телефон у бухгалтерии?", 3, 0.5, "contact")
+    assert skip("Сколько дней отпуска?", 3, 0.5, "contact") is None
+    assert skip("Кто согласует закупку?", 3, 0.5, "who") == "who"
+    assert skip("Кому писать заявление?", 3, 0.5, "who") == "who"
+    assert skip("Сколько дней отпуска?", 3, 0.5, "who") is None
+    assert skip("Сколько дней отпуска?", 3, 0.65, "gate") == "gate"
+    assert skip("Сколько дней отпуска?", 3, 0.59, "gate") is None
+    assert skip("Сколько дней отпуска?", 3, None, "gate") is None
+    assert skip("Сколько дней отпуска?", 1, 0.5, "single") == "single"
+    # Первое сработавшее правило — по порядку списка.
+    assert skip("Кто (ФИО)?", 1, 0.65, "single", "contact") == "single"
+    assert skip("Сколько?", 3, 0.5) is None
+    with pytest.raises(ValueError):
+        skip("Сколько?", 3, 0.5, "magic")
+
+
+def test_wasted_reasons_recorded() -> None:
+    run = run_decided(
+        "Кто (ФИО)?",
+        [Chunk("а")],
+        decide=Script(
+            decision(sufficiency="partial", search_query="ФИО директора"), decision()
+        ),
+        answer=Script("черновик [1]", "Кукушкина [2]."),
+        search=lambda q: [Chunk("б")],
+        speculative=True,
+    )
+    assert run.wasted_reasons == ["search"]
+    assert [label for label, _ in run.steps] == ["spec", "decide", "decide", "answer"]
+
+
+class ByPrompt:
+    """Подделка ответа: общий ответ (build_general_messages) и ответ по
+    выдержкам различает по сообщениям — вызовы идут из разных потоков."""
+
+    def __init__(self, question: str, *, general: Completion, faq: Completion) -> None:
+        self.general_messages = build_general_messages(question)
+        self.general, self.faq = general, faq
+        self.calls: list[str] = []
+
+    def __call__(self, messages: list[Message]) -> Completion:
+        if messages == self.general_messages:
+            self.calls.append("general")
+            return self.general
+        self.calls.append("faq")
+        return self.faq
+
+
+def test_refusal_parallel_general_used_when_recheck_confirms() -> None:
+    question = "Есть ли в компании ипотека?"
+    nothing = decision(sufficiency="none")
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет. Обычно…", 2000.0),
+        faq=timed("черновик", 1500.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Timed((nothing, 3000.0)),
+        decide_fast=Timed((nothing, 1000.0)),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+        refusal_parallel=True,
+    )
+    assert run.route is Route.NOT_FOUND and run.needs_general
+    assert run.general is not None and run.general.text.startswith("В документах")
+    assert run.wasted_general == 0 and run.wasted == 1
+    assert sorted(answer.calls) == ["faq", "general"]
+    # low + max(medium, общий) = 1000 + 3000; спекулятивный — параллельно.
+    assert run.wall_ms == 4000.0
+    assert run.general in run.calls
+    labels = [label for label, _ in run.steps]
+    assert labels[:1] == ["spec"] and labels[1:] == ["fast", "recheck", "general∥"]
+
+
+def test_refusal_parallel_general_wasted_when_recheck_flips() -> None:
+    question = "Кто согласует закупку?"
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет.", 4000.0),
+        faq=timed("Согласует директор [1].", 1000.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Timed((decision(), 2000.0)),
+        decide_fast=Timed((decision(sufficiency="none"), 1000.0)),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+        refusal_parallel=True,
+    )
+    assert run.route is Route.ANSWER and run.text == "Согласует директор [1]."
+    assert run.general is None and run.wasted_general == 1
+    # Время — по самому долгому из пары (общий ответ 4 с): плата за параллель.
+    assert run.wall_ms == 5000.0
+    assert len(run.calls) == 4  # спекулятивный, low, medium, общий
+
+
+def test_refusal_parallel_only_on_refusal_routes() -> None:
+    # «хватает + роль» (R2) и отказ без быстрого решения — общий не запускается.
+    question = "Кто согласует?"
+    answer = ByPrompt(
+        question,
+        general=timed("общий", 1.0),
+        faq=timed("Директор [1].", 1.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(decision()),
+        decide_fast=Script(decision(lookup_role="финансовый директор")),
+        answer=answer,
+        search=no_search,
+        recheck="refusals+role",
+        refusal_parallel=True,
+    )
+    assert "general" not in answer.calls and run.wasted_general == 0
+    run = run_decided(
+        "Есть ли ипотека?",
+        [Chunk("а")],
+        decide=Script(decision(sufficiency="none")),
+        answer=Script(),
+        search=no_search,
+        refusal_parallel=True,
+    )
+    assert run.general is None and run.route is Route.NOT_FOUND
+
+
+class Late:
+    """Подделка решения, которое не уложилось в таймаут."""
+
+    def __init__(self, elapsed_ms: float = 8000.0) -> None:
+        self.elapsed_ms = elapsed_ms
+        self.calls = 0
+
+    def __call__(self, messages: list[Message]) -> Completion:
+        self.calls += 1
+        raise CallTimeoutError("cloudru", self.elapsed_ms)
+
+
+def test_timeout_on_fast_falls_back_to_speculative_answer() -> None:
+    slow = Script()
+    run = run_decided(
+        "Сколько дней отпуска?",
+        [Chunk("а")],
+        decide=slow,
+        decide_fast=Late(),
+        answer=Timed(("28 дней [1].", 1500.0)),
+        search=no_search,
+        speculative=True,
+    )
+    assert run.timeout and run.timeout_reason == "fast"
+    assert run.text == "28 дней [1]." and run.wasted == 0 and run.invalid == 0
+    assert slow.seen == [] and run.decision_calls == []
+    assert run.wall_ms == 8000.0
+    assert run.steps == [("spec", 1500.0), ("fast!timeout", 8000.0)]
+
+
+def test_timeout_without_speculation_calls_answer() -> None:
+    answer = Script("28 дней [1].")
+    run = run_decided(
+        "Сколько дней отпуска?",
+        [Chunk("а")],
+        decide=Late(),
+        answer=answer,
+        search=no_search,
+    )
+    assert run.timeout_reason == "fast" and run.route is Route.ANSWER
+    assert run.text == "28 дней [1]." and len(answer.seen) == 1
+    # Обычный ответ — faq-v2.7 по выдержкам (без строки контакта).
+    assert answer.seen[0] == build_faq_messages("Сколько дней отпуска?", [Chunk("а")])
+
+
+def test_timeout_without_excerpts_is_not_found() -> None:
+    run = run_decided(
+        "Есть ли ипотека?",
+        [],
+        decide=Late(),
+        answer=Script(),
+        search=no_search,
+    )
+    assert run.timeout and run.route is Route.NOT_FOUND and run.needs_general
+
+
+def test_timeout_on_recheck_keeps_parallel_general_if_needed() -> None:
+    question = "Есть ли ипотека?"
+    late = Late(8000.0)
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет.", 2000.0),
+        faq=timed(NOT_FOUND_ANSWER, 1000.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=late,
+        decide_fast=Timed((decision(sufficiency="none"), 1000.0)),
+        answer=answer,
+        search=no_search,
+        speculative=True,
+        refusal_parallel=True,
+    )
+    # Перепроверка не уложилась — откат на спекулятивный ответ; он — отказ,
+    # и готовый общий ответ пригодился.
+    assert run.timeout_reason == "recheck" and late.calls == 1
+    assert run.needs_general and run.general is not None and run.wasted_general == 0
+    assert run.wall_ms == 9000.0  # low + max(8000, 2000)
+    assert run.decisions[-1] == {"timeout": "recheck"}
+
+
+def test_default_gates_are_known_rules() -> None:
+    assert DEFAULT_GATES == ("gate",)  # 22.10: contact — только в shadow
+    assert set(DEFAULT_GATES) <= set(SPECULATION_GATES)
+
+
+def test_contact_rule_ignores_mail_service_and_personal_account() -> None:
+    def contact(question: str) -> str | None:
+        return speculation_skip(question, 3, 0.4, rules=("contact",), max_distance=0.59)
+
+    assert contact("Назови ФИО и адрес его почты.") == "contact"
+    assert contact("На какой адрес почты сообщить о конфликте?") == "contact"
+    assert contact("Какая у него электронная почта?") == "contact"
+    assert contact("Какой максимальный размер почтового ящика?") is None
+    assert contact("Перестала работать корпоративная почта, какой приоритет?") is None
+    assert contact("Статус в личном кабинете не появляется. Что делать?") is None
+    assert contact("Можно ли подписать договор от имени компании?") is None
+    assert contact("В какой комнате сидят айтишники?") == "contact"
+
+
+def office(role: str, missing: str) -> tuple[Sequence[Chunk], bool]:
+    return [Chunk("ОКП — руководитель Таисия Олеговна Пастилова, кабинет 301.")], True
+
+
+def test_directory_on_refusal_hit_answers_with_entry() -> None:
+    # T6-01 / T6-07: «ничего» при названной роли — справочник, попадание —
+    # ответ по выдержкам с записью, а не отказ.
+    none_role = decision(sufficiency="none", lookup_role="руководитель ОКП")
+    answer = Script("Руководитель ОКП — Пастилова, кабинет 301 [2].")
+    run = run_decided(
+        "Кто руководитель ОКП и где кабинет?",
+        [Chunk("а")],
+        decide=Script(none_role),
+        answer=answer,
+        search=no_search,
+        directory=office,
+        directory_on_refusal=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+    assert run.text.startswith("Руководитель ОКП") and not run.needs_general
+    assert run.shown[-1].content.startswith("ОКП — руководитель")
+
+
+def test_directory_on_refusal_miss_keeps_refusal() -> None:
+    # Промах справочника при «ничего» — прежний отказ, а не ответ по тому,
+    # что есть (при «не хватает» промах ведёт к добору / ответу).
+    for record, expected in (
+        (
+            decision(sufficiency="none", lookup_role="директор по качеству"),
+            Route.NOT_FOUND,
+        ),
+        (
+            decision(
+                match="other",
+                subject="Старт-ИИ-2",
+                excerpts_subject="Старт-ИИ-1",
+                lookup_role="куратор программы",
+            ),
+            Route.OTHER_SUBJECT,
+        ),
+    ):
+        calls: list[str] = []
+
+        def miss(
+            role: str, missing: str, calls: list[str] = calls
+        ) -> tuple[Sequence[Chunk], bool]:
+            calls.append(role)
+            return [], False
+
+        run = run_decided(
+            "Кто куратор?",
+            [Chunk("а")],
+            decide=Script(record),
+            answer=Script(),
+            search=no_search,
+            directory=miss,
+            directory_on_refusal=True,
+        )
+        assert calls and run.directory_misses == 1
+        assert run.route is expected and run.needs_general
+
+
+def test_directory_on_refusal_partial_hit_keeps_refusal() -> None:
+    # Запись есть, но без запрошенного поля — тоже прежний отказ.
+    def partial(role: str, missing: str) -> tuple[Sequence[Chunk], bool]:
+        return [Chunk("ОКП — руководитель Пастилова.")], False
+
+    run = run_decided(
+        "Какой телефон у руководителя ОКП?",
+        [Chunk("а")],
+        decide=Script(decision(sufficiency="none", lookup_role="руководитель ОКП")),
+        answer=Script(),
+        search=no_search,
+        directory=partial,
+        directory_on_refusal=True,
+    )
+    assert run.directory_partial == 1 and run.route is Route.NOT_FOUND
+
+
+def test_directory_on_refusal_off_by_default_and_out_of_docs_miss() -> None:
+    # По умолчанию справочник при отказе не спрашивается; вопрос вне
+    # документов с ролью (группа C T7) при промахе — отказ и общий ответ.
+    calls: list[str] = []
+
+    def directory(role: str, missing: str) -> tuple[Sequence[Chunk], bool]:
+        calls.append(role)
+        return [], False
+
+    none_role = decision(sufficiency="none", lookup_role="генеральный директор")
+    run = run_decided(
+        "Когда у генерального директора день рождения?",
+        [Chunk("а")],
+        decide=Script(none_role),
+        answer=Script(),
+        search=no_search,
+        directory=directory,
+    )
+    assert calls == [] and run.route is Route.NOT_FOUND
+    run = run_decided(
+        "Когда у генерального директора день рождения?",
+        [Chunk("а")],
+        decide=Script(none_role),
+        answer=Script(),
+        search=no_search,
+        directory=directory,
+        directory_on_refusal=True,
+    )
+    assert calls == ["генеральный директор"] and run.needs_general
+
+
+def test_directory_on_refusal_rechecks_and_runs_general_in_parallel() -> None:
+    # «Про другое» с ролью: маршрут — справочник, но это отказ — перепроверка
+    # и общий ответ параллельно; попадание — общий ответ выброшен.
+    question = "Кто руководитель ОКП?"
+    other = decision(
+        match="other",
+        subject="ОКП",
+        excerpts_subject="ЦУП",
+        lookup_role="руководитель ОКП",
+    )
+    answer = ByPrompt(
+        question,
+        general=timed("В документах компании ответа нет.", 2000.0),
+        faq=timed("Пастилова, кабинет 301 [2].", 1000.0),
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Timed((other, 3000.0)),
+        decide_fast=Timed((other, 1000.0)),
+        answer=answer,
+        search=no_search,
+        directory=office,
+        refusal_parallel=True,
+        directory_on_refusal=True,
+    )
+    assert run.rechecked == 1 and run.recheck_reasons == ["refusal"]
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+    assert run.general is None and run.wasted_general == 1
+    assert sorted(answer.calls) == ["faq", "general"]
+
+
+# --- Защищённый справочник до отказа (--decision-refusal-guard, 23.10) ---
+
+
+def exact_head(
+    role: str, missing: str, question: str = ""
+) -> tuple[Sequence[Chunk], bool, list[str], str, bool]:
+    """Справочник с guard: глава найдена по отделу — запись точная."""
+    return (
+        [Chunk("ЦУП — руководитель Мирон Аркадьевич Черепашкин, кабинет 118.")],
+        True,
+        [],
+        "Центр учёта поставок (ЦУП) (вопрос) → руководитель Черепашкин",
+        True,
+    )
+
+
+def test_refusal_guard_a_case_reaches_directory_and_answers() -> None:
+    # T8-11: «Я специалист ЦУП… в каком кабинете руководитель моего
+    # подразделения?» — v7 пишет «руководитель ЦУП», решение — «про другое»
+    # (оргструктуры в выдержках нет). Контакт просят, запись точная —
+    # справочник и ответ по записи.
+    question = (
+        "Я специалист ЦУП. В каком кабинете сидит руководитель моего подразделения?"
+    )
+    other = decision(
+        sufficiency="none",
+        match="other",
+        subject="руководитель ЦУП",
+        excerpts_subject="отпуска",
+        missing="кабинет руководителя ЦУП",
+        lookup_role="руководитель ЦУП",
+    )
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(other),
+        answer=Script("Руководитель ЦУП — Черепашкин, кабинет 118 [2]."),
+        search=no_search,
+        directory=exact_head,
+        directory_on_refusal=True,
+        asker_unit=True,
+        refusal_guard=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+    assert run.refusal_guard == [] and "118" in run.text
+    assert run.asker_unit and not run.needs_general
+
+
+def test_refusal_guard_c_case_without_contact_keeps_refusal() -> None:
+    # Вопрос вне документов: ни вопрос, ни «чего не хватает» контакт не
+    # просят — справочник не зовётся, прежний отказ и общий ответ.
+    calls: list[str] = []
+
+    def directory(role: str, missing: str) -> tuple[Any, ...]:
+        calls.append(role)
+        return exact_head(role, missing)
+
+    run = run_decided(
+        "Я в ОКП. Как часто у нас утверждают план продаж?",
+        [Chunk("а")],
+        decide=Script(
+            decision(
+                sufficiency="none",
+                missing="периодичность утверждения плана",
+                lookup_role="руководитель ОКП",
+            )
+        ),
+        answer=Script(),
+        search=no_search,
+        directory=directory,
+        directory_on_refusal=True,
+        refusal_guard=True,
+    )
+    assert calls == [] and run.route is Route.NOT_FOUND and run.needs_general
+    assert run.refusal_guard == ["нет контакта: руководитель ОКП"]
+
+
+def test_refusal_guard_inexact_entry_keeps_refusal() -> None:
+    # Контакт просят, но запись не точная (lookup дал несколько, или
+    # справочник без guard не сказал, что точная) — прежний отказ, записи
+    # в выдержки не попадают.
+    def several(
+        role: str, missing: str
+    ) -> tuple[Sequence[Chunk], bool, list[str], str, bool]:
+        return [Chunk("ЦУП — руководитель…; ОКП — руководитель…")], True, [], "", False
+
+    def four(role: str, missing: str) -> tuple[Sequence[Chunk], bool, list[str], str]:
+        return [Chunk("ЦУП — руководитель…")], True, [], ""
+
+    for directory in (several, four):
+        run = run_decided(
+            "Назови фамилию руководителя.",
+            [Chunk("а")],
+            decide=Script(decision(sufficiency="none", lookup_role="руководитель")),
+            answer=Script(),
+            search=no_search,
+            directory=directory,
+            directory_on_refusal=True,
+            refusal_guard=True,
+        )
+        assert run.route is Route.NOT_FOUND and run.directory_misses == 1
+        assert run.refusal_guard == ["не точно: руководитель"]
+        assert [c.content for c in run.shown] == ["а"]
+
+
+def test_refusal_guard_limit_out_of_docs_with_contact_passes() -> None:
+    # Предел защиты (сухая проверка T8-26 / T8-28): вопрос вне документов,
+    # который просит фамилию, при точной записи главы проходит обе
+    # проверки — справочник и ответ по записи. Защита этого не ловит.
+    question = "Я из АХС. Кто подписывает мне заявку на спецодежду? Назови фамилию."
+    run = run_decided(
+        question,
+        [Chunk("а")],
+        decide=Script(
+            decision(sufficiency="none", missing="фамилия", lookup_role="руководитель")
+        ),
+        answer=Script("Подписывает руководитель службы — Черепашкин [2]."),
+        search=no_search,
+        directory=exact_head,
+        directory_on_refusal=True,
+        asker_unit=True,
+        refusal_guard=True,
+    )
+    assert run.route is Route.ANSWER and run.refusal_guard == []
+
+
+def test_refusal_guard_leaves_partial_route_and_default_untouched() -> None:
+    # «Не хватает» с ролью — обычный маршрут справочника, защита не нужна:
+    # запись без признака точности всё равно идёт в выдержки.
+    def four(role: str, missing: str) -> tuple[Sequence[Chunk], bool, list[str], str]:
+        return [Chunk("ЦУП — руководитель Черепашкин, кабинет 118.")], True, [], ""
+
+    partial = decision(sufficiency="partial", lookup_role="руководитель ЦУП")
+    run = run_decided(
+        "Где сидит руководитель ЦУП?",
+        [Chunk("а")],
+        decide=Script(partial),
+        answer=Script("Кабинет 118 [2]."),
+        search=no_search,
+        directory=four,
+        directory_on_refusal=True,
+        refusal_guard=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+    assert run.refusal_guard == []
+    # Без guard — прежнее поведение справочника до отказа (запись без
+    # признака точности — попадание).
+    run = run_decided(
+        "Назови фамилию руководителя.",
+        [Chunk("а")],
+        decide=Script(decision(sufficiency="none", lookup_role="руководитель")),
+        answer=Script("Черепашкин [2]."),
+        search=no_search,
+        directory=four,
+        directory_on_refusal=True,
+    )
+    assert run.route is Route.ANSWER and run.directory_hits == 1
+
+
+def test_contact_requested() -> None:
+    assert contact_requested("Кто согласует?", "ФИО и кабинет")
+    assert contact_requested("В каком кабинете руководитель?", "—")
+    assert contact_requested("Какой e-mail у руководителя?", "—")
+    assert not contact_requested("Кто согласует перевод?", "порядок согласования")
+    assert not contact_requested("Как войти в личный кабинет?", "—")

@@ -84,8 +84,36 @@ class BM25Index:
             result.append(score)
         return result
 
-    def search(self, query: str, limit: int) -> list[tuple[int, float]]:
-        """Индексы документов и скоры, по убыванию; нулевые скоры не возвращаются."""
-        scored = [(i, s) for i, s in enumerate(self.scores(query)) if s > 0]
+    def cover_density_scores(self, query: str) -> list[float]:
+        """Подобие ts_rank_cd продукта для запроса «слово1 or слово2 …».
+
+        У запроса через OR каждое вхождение любой лексемы вопроса — отдельное
+        «покрытие» длины 1; при весе D по умолчанию (0,1) и нормировке 0
+        ts_rank_cd = 0,1 × число таких вхождений во фрагменте: без редкости
+        слов и без длины фрагмента (длинный фрагмент с частыми словами
+        выигрывает). Точное совпадение с PostgreSQL не проверено — сверка
+        через /faq/search с retriever=fulltext (BH-51).
+        """
+        terms = set(tokenize(query))
+        return [
+            0.1 * sum(counts.get(term, 0) for term in terms) for counts in self._docs
+        ]
+
+    def lexemes(self, index: int) -> set[str]:
+        """Лексемы документа — как tsvector_to_array(chunks.fts) продукта."""
+        return set(self._docs[index])
+
+    def search(
+        self, query: str, limit: int, *, rank: str = "bm25"
+    ) -> list[tuple[int, float]]:
+        """Индексы документов и скоры, по убыванию; нулевые скоры не возвращаются.
+
+        rank="cd" — подобие ts_rank_cd (cover_density_scores); при равных
+        скорах порядок — по индексу документа (продукт: по Chunk.id).
+        """
+        values = (
+            self.cover_density_scores(query) if rank == "cd" else self.scores(query)
+        )
+        scored = [(i, s) for i, s in enumerate(values) if s > 0]
         scored.sort(key=lambda pair: pair[1], reverse=True)
         return scored[:limit]

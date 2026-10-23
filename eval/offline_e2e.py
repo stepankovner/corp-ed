@@ -15,14 +15,19 @@ Flash через OpenAI-совместимый API, text-embeddings-v2 с раз
 
 Шаги повторяют бэкенд (docs/backend-handoff.md, BH-3 и BH-7):
 1. top-limit чанков: по косинусному расстоянию (<семейство>-query → doc)
-   или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
+   или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1),
+   или только по словам, без эмбеддинга вопроса (--retriever fulltext,
+   BH-51 (а): запасной путь при отказе эмбеддингов; ранжирование — BM25,
+   оценка сверху, или --fulltext-rank cd — подобие ts_rank_cd продукта);
    --multi-query N (M6): модель переписывает вопрос N способами
    (prompts.multi_query, mq-v1), ищем по всем и сливаем RRF
    (fuse_query_rankings); порог тогда — по лучшему расстоянию исходного
    вопроса;
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается
    (как faq_service сейчас); для гибрида — по лучшему векторному
-   кандидату (контракт M1). Не осталось ни одного — ответ по выдержкам не
+   кандидату (контракт M1); для fulltext — по покрытию лучшего фрагмента
+   (`lexeme_coverage` ≥ --fulltext-coverage: в модель идёт вся выдача,
+   иначе ничего). Не осталось ни одного — ответ по выдержкам не
    вызывается: общий ответ с пометкой (general, Р1 — по умолчанию) или
    фраза отказа (strict);
 3. select_context — бюджет контекста в токенах; --context sections|window —
@@ -63,12 +68,18 @@ from corp_ed.domain.directory import (
     DIRECTORY_HEADING,
     DIRECTORY_HEADING_EXPLAINED,
     Entry,
+    Substitute,
     covers,
     format_entries,
+    generic_role_miss,
+    head_for_role,
     lookup,
+    lookup_substitute,
     parse_directory,
     requested_fields,
+    substitution_requested,
 )
+from corp_ed.domain.fulltext import lexeme_coverage
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
 from corp_ed.domain.rerank import RerankOrder, rerank_allowed
@@ -103,6 +114,7 @@ from eval.bench import (
     rerank_text,
     vector_rankings,
 )
+from eval.bm25 import tokenize
 from eval.corpus import (
     BenchChunk,
     ChunkingConfig,
@@ -112,10 +124,13 @@ from eval.corpus import (
 )
 from eval.datasets import EvalItem, load_dataset, select_split
 from eval.decision_loop import (
+    DEFAULT_GATES,
     DIRECTORY_ANSWER_MODES,
     RECHECK_MODES,
+    SPECULATION_GATES,
     DecidedRun,
     run_decided,
+    speculation_skip,
 )
 from eval.doc_context import add_doc_context_arguments, with_doc_context
 from eval.metrics import percentile
@@ -140,7 +155,8 @@ from eval.yandex import (
 )
 
 NotFoundMode = Literal["strict", "general"]
-Retriever = Literal["vector", "hybrid"]
+Retriever = Literal["vector", "hybrid", "fulltext"]
+FulltextRank = Literal["bm25", "cd"]
 ContextMode = Literal["chunks", "sections", "window"]
 
 _CITATION = re.compile(r"\[(\d+)\]")
@@ -161,15 +177,21 @@ class OfflineMatch:
     """Косинусное расстояние; None — чанк нашёл только BM25 (гибрид)."""
     section_id: str = ""
     """Ключ секции в section_corpus — для select_sections (M2)."""
+    coverage: float | None = None
+    """--retriever fulltext: доля лексем вопроса в embed_text чанка
+    (`lexeme_coverage`); у других режимов — None."""
 
     @classmethod
-    def from_chunk(cls, chunk: BenchChunk, distance: float | None) -> "OfflineMatch":
+    def from_chunk(
+        cls, chunk: BenchChunk, distance: float | None, coverage: float | None = None
+    ) -> "OfflineMatch":
         return cls(
             content=chunk.llm_text,
             title=chunk.material,
             heading_path=chunk.heading_path,
             distance=distance,
             section_id=chunk.section_id,
+            coverage=coverage,
         )
 
 
@@ -212,6 +234,17 @@ def gate_by_best_distance(
     if best_distance is None or best_distance > max_distance:
         return []
     return list(matches)
+
+
+def gate_by_coverage(
+    matches: Sequence[OfflineMatch], min_coverage: float
+) -> list[OfflineMatch]:
+    """BH-51 (а): поиск только по словам. Лучший по рангу фрагмент покрывает
+    не меньше min_coverage лексем вопроса — в модель идёт вся выдача (до
+    limit), иначе ничего: «ответа в документах нет»."""
+    if not matches or matches[0].coverage is None:
+        return []
+    return list(matches) if matches[0].coverage >= min_coverage else []
 
 
 def build_context(
@@ -271,8 +304,12 @@ def retrieve(
     near_margin: float = 0.0,
     rerank_order: RerankOrder = "score",
     rerank_max_words: int | None = None,
+    fulltext_rank: FulltextRank = "bm25",
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
+
+    retriever="fulltext" (BH-51 (а)) — эмбеддинги не вызываются вовсе:
+    расстояний нет (None), у чанков — покрытие лексем вопроса.
 
     paraphrases (M6) — переформулировки каждого вопроса: выдачи по ним
     сливаются с выдачей по вопросу (fuse_query_rankings). Расстояние у
@@ -297,6 +334,8 @@ def retrieve(
         and rerank_max_distance is None
     ):
         raise ValueError("с gate_distance нужен rerank_max_distance — порог продукта")
+    if retriever == "fulltext" and (reranker is not None or paraphrases):
+        raise ValueError("fulltext: без реранкера и переформулировок")
     groups = [list(group) for group in paraphrases] if paraphrases else []
     flat = [*questions, *(query for group in groups for query in group)]
     depth = (
@@ -316,8 +355,27 @@ def retrieve(
         workers=workers,
         embedding_model=embedding_model,
         embedding_dim=embedding_dim,
+        fulltext_rank=fulltext_rank,
     )
     results: list[tuple[list[OfflineMatch], float | None]] = []
+    if retriever == "fulltext":
+        lexemes: dict[int, set[str]] = {}
+
+        def coverage(question: str, i: int) -> float:
+            if i not in lexemes:
+                lexemes[i] = set(tokenize(chunks[i].embed_text))
+            return lexeme_coverage(tokenize(question), lexemes[i])
+
+        return [
+            (
+                [
+                    OfflineMatch.from_chunk(chunks[i], None, coverage(question, i))
+                    for i in ranked[k][0][:limit]
+                ],
+                None,
+            )
+            for k, question in enumerate(questions)
+        ]
     offset = len(questions)
     for index in range(len(questions)):
         ranking, distance_of = ranked[index]
@@ -376,10 +434,16 @@ def rank_queries(
     workers: int,
     embedding_model: str,
     embedding_dim: int | None,
+    fulltext_rank: FulltextRank = "bm25",
 ) -> list[tuple[list[int], dict[int, float]]]:
     """Для каждого запроса: индексы чанков по убыванию и расстояния векторной
     ветки (у гибрида — после RRF вектора и BM25; расстояния только у тех,
-    кого нашёл вектор)."""
+    кого нашёл вектор; у fulltext расстояний нет — эмбеддинги не зовём)."""
+    if retriever == "fulltext":
+        return [
+            (ranking, {})
+            for ranking in bm25_rankings(chunks, queries, depth, rank=fulltext_rank)
+        ]
     vec_rank, vec_dist = vector_rankings(
         chunks, queries, depth, workers, embedding_model, embedding_dim
     )
@@ -427,27 +491,69 @@ def _sources_json(matches: Sequence[OfflineMatch]) -> str:
     )
 
 
-DirectorySearch = Callable[
-    [str, str], tuple[list[ContextBlock[OfflineMatch]], bool, list[Entry]]
-]
+Found = list[Entry] | list[Substitute]
+DirectorySearch = Callable[..., tuple[Any, ...]]
+"""(блоки, все поля есть, записи, пометка[, точна ли запись — с guard])."""
 
 
 def _directory_search(
-    title: str, markdown: str, *, heading: str = DIRECTORY_HEADING
+    title: str,
+    markdown: str,
+    *,
+    heading: str = DIRECTORY_HEADING,
+    substitution: bool = False,
+    asker_unit: bool = False,
+    guard: bool = False,
 ) -> DirectorySearch:
     """Поиск по справочнику оргструктуры (decision-v4): записи — одной
     выдержкой (как блок контекста, чтобы источники ответа видели документ);
     третьим элементом — сами записи (для строки контакта, вариант A2).
-    heading — заголовок выдержки (A1 — DIRECTORY_HEADING_EXPLAINED)."""
-    entries = parse_directory(markdown)
-    print(f"Справочник: «{title}», записей {len(entries)}")
+    heading — заголовок выдержки (A1 — DIRECTORY_HEADING_EXPLAINED).
 
-    def search(
-        role: str, missing: str
-    ) -> tuple[list[ContextBlock[OfflineMatch]], bool, list[Entry]]:
-        found = lookup(entries, role)
+    substitution (--decision-substitution): если роль или «чего не хватает»
+    говорят о замещении — сначала пары «отсутствующий → замещающий»
+    (lookup_substitute), нет пар — обычный lookup. Текст вопроса сюда не
+    доходит (сигнатура (role, missing)) — T4-04 так не ловится, см.
+    ml-report, «Замещение в справочнике».
+
+    asker_unit (--decision-asker-unit, 23.10): третий аргумент — текст
+    вопроса; общая роль при отделе спрашивающего или «руководитель
+    <подразделения>» — глава подразделения (head_for_role) вместо обычного
+    lookup (тот по «руководитель» находит чужих руководителей). Замещение —
+    тогда для главы. Четвёртый элемент — что нашли (HeadMatch.note; с
+    «(= lookup)», если запись та же, что дал бы lookup), иначе пусто.
+    Общая роль без отдела спрашивающего (или без определимой главы) —
+    промах с причиной в четвёртом элементе (generic_role_miss).
+
+    guard (--decision-refusal-guard, 23.10): пятым элементом — точна ли
+    запись (глава найдена по отделу или lookup дал ровно одну запись) для
+    защищённого справочника до отказа; без guard ответ — четыре элемента,
+    как было."""
+    entries = parse_directory(markdown)
+    deputies = sum(1 for entry in entries if entry.deputy)
+    print(f"Справочник: «{title}», записей {len(entries)}, с замещающим {deputies}")
+
+    def search(role: str, missing: str, question: str = "") -> tuple[Any, ...]:
+        found: Found = []
+        head = head_for_role(entries, role, question) if asker_unit else None
+        note = head.note() if head else ""
+        if asker_unit and head is None:
+            # Общая роль без главы — промах, а не чужие руководители
+            # (решение Артёма 23.10); дальше прежний маршрут.
+            miss = generic_role_miss(entries, role, question)
+            if miss:
+                return ([], False, [], miss, False)[: 5 if guard else 4]
+        if head and lookup(entries, role) == [head.head]:
+            # «руководитель ОКП»: глава та же, что и у lookup, — записи не
+            # меняются; в колонке видно, что срабатывание пустое.
+            note += " (= lookup)"
+        if substitution and substitution_requested(f"{role}\n{missing}"):
+            found = lookup_substitute(entries, head.head.who() if head else role)
+        exact = head is not None or len(lookup(entries, role)) == 1
         if not found:
-            return [], False, []
+            found = [head.head] if head else lookup(entries, role)
+        if not found:
+            return ([], False, [], note, False)[: 5 if guard else 4]
         complete = covers(found, requested_fields(missing))
         content = format_entries(found)
         match = OfflineMatch(
@@ -460,9 +566,30 @@ def _directory_search(
             match=match,
             kind="chunk",
         )
-        return [block], complete, found
+        return ([block], complete, found, note, exact)[: 5 if guard else 4]
 
     return search
+
+
+FALLBACK_MODEL = {"mws": "gpt-oss-120b", "cloudru": "openai/gpt-oss-120b"}
+"""Модель второго звена по умолчанию (у MWS — идентификатор деплоймента)."""
+
+
+def parse_fallback(value: str) -> tuple[str, str]:
+    """«mws» или «mws:gpt-oss-120b» → (поставщик, модель)."""
+    provider, _, model = value.partition(":")
+    return provider, model or FALLBACK_MODEL.get(provider, "")
+
+
+def parse_breaker(value: str) -> tuple[int, float, float]:
+    """«N,W,M» → (сбоев подряд, окно с, сколько с звено открыто)."""
+    parts = [p.strip() for p in value.split(",")]
+    if len(parts) != 3:
+        raise ValueError(f"--decision-breaker: нужно N,W,M, а не {value!r}")
+    threshold, window, cooldown = int(parts[0]), float(parts[1]), float(parts[2])
+    if threshold < 1 or window <= 0 or cooldown <= 0:
+        raise ValueError(f"--decision-breaker: N ≥ 1, W и M > 0, а не {value!r}")
+    return threshold, window, cooldown
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -628,11 +755,119 @@ def _parser() -> argparse.ArgumentParser:
         help="попытка 3: ответ Flash по первым выдержкам параллельно с решением",
     )
     parser.add_argument(
+        "--decision-speculate",
+        choices=("always", "gated"),
+        default="always",
+        help="фаза 1: always — спекулятивный ответ на каждом вопросе с выдержками "
+        "(как было); gated — не запускать его, если сработало правило "
+        "--decision-gate (признаки до решения)",
+    )
+    parser.add_argument(
+        "--decision-gate",
+        default="",
+        help="фаза 1: правила отсечения спекуляции через запятую — "
+        + ", ".join(SPECULATION_GATES)
+        + "; пусто при gated — "
+        + ",".join(DEFAULT_GATES)
+        + " (см. eval.decision_loop.DEFAULT_GATES)",
+    )
+    parser.add_argument(
+        "--decision-refusal-parallel",
+        action="store_true",
+        help="фаза 1: при отказе low («ничего» / «про другое») общий ответ — "
+        "параллельно с перепроверкой на medium; перепроверка вернула не отказ — "
+        "общий ответ выброшен (decision_wasted_general)",
+    )
+    parser.add_argument(
+        "--decision-timeout",
+        type=float,
+        default=0.0,
+        help="фаза 1: таймаут (с) на каждый вызов решения и перепроверки, без "
+        "повторов; по истечении — обычный ответ (спекулятивный или вызов Flash). "
+        "0 — без таймаута (как было: httpx 60 с и до 5 попыток)",
+    )
+    parser.add_argument(
+        "--decision-fallback",
+        default="",
+        help="22.10, BH-46 «Поставщики решения»: второе звено цепочки решения — "
+        "«mws» или «mws:<модель>» (у MWS модель — идентификатор деплоймента); "
+        "сбой первого (5xx, 429, обрыв, таймаут, ошибка настройки) — сразу второе "
+        "с остатком --decision-timeout; одна попытка на звено, без повторов "
+        "клиента; оба недоступны — обычный путь ответа. Журнал — колонки "
+        "decision_chain*",
+    )
+    parser.add_argument(
+        "--decision-link-timeout",
+        type=float,
+        default=0.0,
+        help="с --decision-fallback: потолок (с) одного звена; без него первое "
+        "звено может занять весь --decision-timeout",
+    )
+    parser.add_argument(
+        "--decision-breaker",
+        default="5,60,120",
+        help="с --decision-fallback: предохранитель звена N,W,M — N сбоев подряд "
+        "за W с — звено пропускается M с, потом одна проба (ориентир handoff)",
+    )
+    parser.add_argument(
+        "--decision-hedge",
+        default="",
+        help="фаза 2, BH-46 п. 2–3: дублирующий запрос шага решения — "
+        "«<поставщик>:<модель>» дублёра, например yandex:qwen3.6-35b-a3b; "
+        "основной (--decision-provider mws или cloudru) молчит "
+        "--decision-hedge-delay с, ответил с ошибкой или не по схеме — тот же "
+        "запрос дублёру; первый годный побеждает, токены проигравшего — "
+        "decision_hedge_wasted_tokens. Не вместе с --decision-fallback",
+    )
+    parser.add_argument(
+        "--decision-hedge-delay",
+        type=float,
+        default=2.0,
+        help="с --decision-hedge: через сколько секунд без ответа основного "
+        "уходит дубль (handoff BH-46: 2 с)",
+    )
+    parser.add_argument(
+        "--decision-hedge-extra",
+        default='{"reasoning_effort": "none"}',
+        help="с --decision-hedge: JSON полей запроса дублёра (вместо полей "
+        "основного; у Qwen — только reasoning_effort none)",
+    )
+    parser.add_argument(
         "--decision-directory",
         action="store_true",
         help="decision-v4: справочник оргструктуры как таблица — поиск по должности "
         "кодом вместо векторного добора (документ корпуса с «оргструктур» / "
         "«контакт» / «справочник» в названии)",
+    )
+    parser.add_argument(
+        "--decision-substitution",
+        action="store_true",
+        help="фаза 0, 21.10: с --decision-directory — при словах о замещении в "
+        "роли или «чего не хватает» в выдержку пара «отсутствующий → "
+        "замещающий» (абзацы «Замещение» и «Подчинённость» оргструктуры)",
+    )
+    parser.add_argument(
+        "--decision-directory-on-refusal",
+        action="store_true",
+        help="фаза 2, план §10.4: с --decision-directory — отказ решения "
+        "(«ничего» / «про другое») при названной lookup_role сначала идёт в "
+        "справочник; полное попадание — ответ, промах — прежний отказ",
+    )
+    parser.add_argument(
+        "--decision-refusal-guard",
+        action="store_true",
+        help="23.10: с --decision-directory-on-refusal — отказ идёт в "
+        "справочник, только если просят контакт (ФИО / кабинет / телефон / "
+        "почту) и запись точная (глава по отделу или одна запись lookup); "
+        "иначе прежний отказ (колонка decision_refusal_guard)",
+    )
+    parser.add_argument(
+        "--decision-asker-unit",
+        action="store_true",
+        help="23.10: с --decision-directory — общая роль («руководитель») при "
+        "отделе спрашивающего в вопросе («Я в ОКП») или «руководитель "
+        "<подразделения>» — глава подразделения, как бы ни называлась "
+        "должность (колонка decision_asker_unit)",
     )
     parser.add_argument(
         "--decision-only",
@@ -654,7 +889,23 @@ def _parser() -> argparse.ArgumentParser:
         "компании», и когда выдержек нет, и когда модель по ним отказала; "
         "strict — только фраза отказа",
     )
-    parser.add_argument("--retriever", choices=("vector", "hybrid"), default="vector")
+    parser.add_argument(
+        "--retriever", choices=("vector", "hybrid", "fulltext"), default="vector"
+    )
+    parser.add_argument(
+        "--fulltext-coverage",
+        type=float,
+        default=None,
+        help="fulltext (BH-51 (а)): порог «нашли» — доля лексем вопроса (словарь "
+        "russian) в лучшем по рангу фрагменте; обязателен с --retriever fulltext",
+    )
+    parser.add_argument(
+        "--fulltext-rank",
+        choices=("bm25", "cd"),
+        default="bm25",
+        help="fulltext: ранжирование — bm25 (оценка сверху) или cd (подобие "
+        "ts_rank_cd продукта: 0,1 × число вхождений слов вопроса)",
+    )
     parser.add_argument(
         "--weights", default="1.0,0.5", help="hybrid: вектор,полнотекст (RRF)"
     )
@@ -671,7 +922,15 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    from eval.providers import OpenAICompatibleClient
+    from eval.providers import (
+        ChainEvent,
+        ChainLink,
+        CircuitBreaker,
+        DecisionChain,
+        HedgedDecider,
+        HedgeEvent,
+        OpenAICompatibleClient,
+    )
     from eval.yandex import YandexClient
 
     llm_extra = json.loads(args.llm_extra) if args.llm_extra else None
@@ -716,6 +975,107 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.decision_answer != "plain" and not args.decision_directory:
         print("--decision-answer: только с --decision-directory")
         return 2
+    gates = [g.strip() for g in args.decision_gate.split(",") if g.strip()]
+    if args.decision_speculate == "gated" and not gates:
+        gates = list(DEFAULT_GATES)
+    if args.decision_speculate == "gated" and not args.decision_speculative:
+        print("--decision-speculate gated: только с --decision-speculative")
+        return 2
+    if gates and args.decision_speculate != "gated":
+        print("--decision-gate: только с --decision-speculate gated")
+        return 2
+    if any(g not in SPECULATION_GATES for g in gates):
+        print(f"--decision-gate: правила из {', '.join(SPECULATION_GATES)}")
+        return 2
+    if args.decision_refusal_parallel and not (
+        args.decision_fast_extra and args.not_found == "general"
+    ):
+        print(
+            "--decision-refusal-parallel: только с --decision-fast-extra и "
+            "--not-found general"
+        )
+        return 2
+    if args.decision_timeout and (
+        args.decision == "off"
+        or (args.decision_provider or args.llm_provider) not in ("mws", "cloudru")
+    ):
+        # Таймаут без повторов сделан у OpenAI-совместимых поставщиков
+        # (eval.providers); у клиента Яндекса его нет.
+        print("--decision-timeout: только с --decision-provider mws или cloudru")
+        return 2
+    fallback, fallback_model, breaker = "", "", (5, 60.0, 120.0)
+    if args.decision_fallback:
+        primary = args.decision_provider or args.llm_provider
+        fallback, fallback_model = parse_fallback(args.decision_fallback)
+        if (
+            args.decision == "off"
+            or primary not in ("mws", "cloudru")
+            or fallback not in ("mws", "cloudru")
+            or fallback == primary
+            or not fallback_model
+            or args.decision_only
+        ):
+            print(
+                "--decision-fallback: только с --decision и --decision-provider "
+                "mws или cloudru, без --decision-only (там отката нет); второе "
+                "звено — другой из них"
+            )
+            return 2
+        try:
+            breaker = parse_breaker(args.decision_breaker)
+        except ValueError as exc:
+            print(exc)
+            return 2
+    elif args.decision_link_timeout:
+        print("--decision-link-timeout: только с --decision-fallback")
+        return 2
+    if args.decision_substitution and not args.decision_directory:
+        print("--decision-substitution: только с --decision-directory")
+        return 2
+    if args.decision_directory_on_refusal and not args.decision_directory:
+        print("--decision-directory-on-refusal: только с --decision-directory")
+        return 2
+    if args.decision_refusal_guard and not args.decision_directory_on_refusal:
+        print("--decision-refusal-guard: только с --decision-directory-on-refusal")
+        return 2
+    if args.decision_asker_unit and not args.decision_directory:
+        print("--decision-asker-unit: только с --decision-directory")
+        return 2
+    hedge, hedge_model = "", ""
+    if args.decision_hedge:
+        hedge, _, hedge_model = args.decision_hedge.partition(":")
+        if (
+            args.decision == "off"
+            or args.decision_only
+            or args.decision_fallback
+            or (args.decision_provider or args.llm_provider) not in ("mws", "cloudru")
+            or hedge not in ("yandex", "mws", "cloudru")
+            or hedge == (args.decision_provider or args.llm_provider)
+            or not hedge_model
+            or args.decision_hedge_delay < 0
+        ):
+            print(
+                "--decision-hedge: «<поставщик>:<модель>» другого поставщика, "
+                "только с --decision и --decision-provider mws или cloudru, без "
+                "--decision-only и --decision-fallback; задержка ≥ 0"
+            )
+            return 2
+    elif args.decision_hedge_delay != 2.0:
+        print("--decision-hedge-delay: только с --decision-hedge")
+        return 2
+    if (retriever == "fulltext") != (args.fulltext_coverage is not None):
+        print("--fulltext-coverage: обязателен с --retriever fulltext и только с ним")
+        return 2
+    if args.fulltext_rank != "bm25" and retriever != "fulltext":
+        print("--fulltext-rank: только с --retriever fulltext")
+        return 2
+    if retriever == "fulltext" and (
+        args.multi_query or args.agent or args.decision != "off"
+    ):
+        # Доборы агента и схемы решения по словам (BH-51 п. 4) в eval не
+        # сделаны: замер 23.10 — только конвейер со вторым шагом поиска.
+        print("--retriever fulltext: без --multi-query, --agent и --decision")
+        return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
@@ -738,6 +1098,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.rerank
         else ""
     )
+    if retriever == "fulltext":
+        embedder = f"-c{args.fulltext_coverage}" + (
+            "-cd" if args.fulltext_rank == "cd" else ""
+        )
     config = args.config or (
         f"offline-{args.model}-{chunking.name}-{retriever}{embedder}"
         f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}{mq_name}{rr_name}"
@@ -772,6 +1136,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 heading=DIRECTORY_HEADING_EXPLAINED
                 if args.decision_answer == "first"
                 else DIRECTORY_HEADING,
+                substitution=args.decision_substitution,
+                asker_unit=args.decision_asker_unit,
+                guard=args.decision_refusal_guard,
             )
     sections = section_corpus(documents, chunking) if context_mode != "chunks" else {}
     items: list[EvalItem] = load_dataset(args.dataset)
@@ -824,6 +1191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         near_margin=args.near_margin,
         rerank_order=args.rerank_order,
         rerank_max_words=args.rerank_max_words,
+        fulltext_rank=args.fulltext_rank,
     )
     retrieved = retrieve(chunks, [item.question for item in items], **search_options)
 
@@ -888,10 +1256,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             extra=llm_extra,
         )
 
-    decision_client: YandexClient | OpenAICompatibleClient | None = None
+    decision_client: YandexClient | OpenAICompatibleClient | DecisionChain | None = None
     decision_extra = json.loads(args.decision_extra) if args.decision_extra else None
     decision_provider = args.decision_provider or args.llm_provider
-    if args.decision != "off" and not args.dry_run:
+    if args.decision_hedge and not args.dry_run:
+        # Фаза 2: дублирующий запрос — основной с одной попыткой (быстрая
+        # ошибка — сразу дублёру), дублёр Яндекса со своими повторами клиента.
+        decision_client = HedgedDecider(
+            OpenAICompatibleClient.from_env(decision_provider, max_attempts=1),
+            args.decision_model or args.model,
+            YandexClient.from_env()
+            if hedge == "yandex"
+            else OpenAICompatibleClient.from_env(hedge, max_attempts=1),
+            hedge_model,
+            delay=args.decision_hedge_delay,
+            hedge_extra=json.loads(args.decision_hedge_extra)
+            if args.decision_hedge_extra
+            else {},
+            valid=lambda text: parse_decision(text) is not None,
+            primary_name=decision_provider,
+            hedge_name=hedge,
+        )
+    elif args.decision_fallback and not args.dry_run:
+        # Цепочка Cloud.ru → MWS (или наоборот): одна попытка на звено.
+        decision_client = DecisionChain(
+            [
+                ChainLink(
+                    provider,
+                    OpenAICompatibleClient.from_env(provider, max_attempts=1),
+                    model,
+                    CircuitBreaker(*breaker),
+                )
+                for provider, model in (
+                    (decision_provider, args.decision_model or args.model),
+                    (fallback, fallback_model),
+                )
+            ],
+            link_timeout=args.decision_link_timeout or None,
+        )
+    elif args.decision != "off" and not args.dry_run:
         decision_client = (
             client
             if decision_provider == args.llm_provider
@@ -908,6 +1311,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ) -> Completion:
         assert decision_client is not None
         extra = extra or decision_extra
+        # Фаза 1: таймаут — только у поставщиков eval.providers (проверено
+        # при разборе флагов).
+        timeout = {"timeout": args.decision_timeout} if args.decision_timeout else {}
         return decision_client.complete(
             messages,
             model=args.decision_model or args.model,
@@ -915,6 +1321,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_tokens=args.decision_max_tokens,
             api="openai",
             response_format=decision_format,
+            **timeout,
             **(
                 {"extra": extra}
                 if extra
@@ -933,13 +1340,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return decide(messages, fast_extra)
 
     rows: list[dict[str, object]] = []
+    chain_log: list[ChainEvent] = []
+    hedge_log: list[HedgeEvent] = []
     for number, (item, (found, best)) in enumerate(
         zip(items, retrieved, strict=True), start=1
     ):
         # С multi-query у чанка из переформулировки нет расстояния до вопроса,
         # поэтому порог — по лучшему расстоянию исходного вопроса (как M1).
         relevant = (
-            relevant_matches(
+            gate_by_coverage(found, args.fulltext_coverage)
+            if args.fulltext_coverage is not None
+            else relevant_matches(
                 found,
                 args.max_distance,
                 gate_distance=args.gate_distance,
@@ -967,6 +1378,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         decided: DecidedRun | None = None
         decision_calls: list[Completion] = []
         first_decision = ""
+        initial_count = len(selected)
+        spec_skip = (
+            speculation_skip(
+                item.question,
+                len(selected),
+                best,
+                rules=gates,
+                max_distance=args.max_distance,
+            )
+            if args.decision_speculate == "gated" and selected
+            else None
+        )
         if args.decision_only and not args.dry_run:
             calls.append(
                 decide(
@@ -996,11 +1419,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reasoning=args.decision_reasoning,
                 merged=args.decision == "merged",
                 rule=args.decision_rule,
-                speculative=args.decision_speculative,
+                speculative=args.decision_speculative and spec_skip is None,
                 directory=directory_search,
                 decide_fast=decide_fast if fast_extra else None,
                 recheck=args.decision_recheck,
                 directory_answer=args.decision_answer,
+                refusal_parallel=args.decision_refusal_parallel,
+                directory_on_refusal=args.decision_directory_on_refusal,
+                asker_unit=args.decision_asker_unit,
+                refusal_guard=args.decision_refusal_guard,
             )
             calls.extend(decided.calls)
             decision_calls.extend(decided.decision_calls)
@@ -1034,21 +1461,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             # faq-v2.9: модель просит второй шаг поиска — тот же поиск по её
             # запросу, новые фрагменты (до SEARCH_MORE_LIMIT) — после прежних.
             query = search_request(raw)
-            if query is not None and retriever == "vector" and not args.multi_query:
+            if query is not None and (
+                retriever == "fulltext"
+                or (retriever == "vector" and not args.multi_query)
+            ):
                 hop_query = query
                 more, more_best = search_more(query)
                 known = {match.content for match in relevant}
-                added = [
-                    match
-                    for match in relevant_matches(
+                # BH-51 (а): второй шаг по словам — тот же порог покрытия.
+                passed = (
+                    gate_by_coverage(more, args.fulltext_coverage)
+                    if args.fulltext_coverage is not None
+                    else relevant_matches(
                         more,
                         args.max_distance,
                         gate_distance=args.gate_distance,
                         near_margin=args.near_margin,
                         nearest=more_best,
                     )
-                    if match.content not in known
-                ][:SEARCH_MORE_LIMIT]
+                )
+                added = [match for match in passed if match.content not in known][
+                    :SEARCH_MORE_LIMIT
+                ]
                 hop_added = len(added)
                 raw = NOT_FOUND_ANSWER
                 if added:
@@ -1094,10 +1528,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         ):
             # Решение: ответа по документам нет — общий ответ с пометкой; на
             # реплики решение отвечает само, поэтому промпт общего ответа
-            # прежний (без правила реплик).
-            calls.append(ask(build_general_messages(item.question)))
+            # прежний (без правила реплик). Фаза 1: готов параллельно с
+            # перепроверкой — второй раз не просим (он уже в calls и wall_ms).
+            if decided.general is None:
+                calls.append(ask(build_general_messages(item.question)))
+            general_text = (decided.general or calls[-1]).text.strip()
             answer = with_other_subject_note(
-                ensure_general_prefix(calls[-1].text.strip()), decided.decision
+                ensure_general_prefix(general_text), decided.decision
             )
             general = True
         elif mode == "general" and not args.dry_run and needs_general:
@@ -1118,13 +1555,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         latency = (
             decided.wall_ms if decided is not None else sum(c.latency_ms for c in calls)
         )
-        if decided is not None and general:
+        if decided is not None and general and decided.general is None:
             latency += calls[-1].latency_ms  # общий ответ — после цикла
+            decided.steps.append(("general", calls[-1].latency_ms))
         tokens_in = sum(c.input_tokens for c in calls)
         tokens_out = sum(c.output_tokens for c in calls)
         reasoning = sum(c.reasoning_tokens for c in calls)
         finish = calls[-1].finish_reason if calls else ""
 
+        chain_events: list[ChainEvent] = (
+            decision_client.drain()
+            if isinstance(decision_client, DecisionChain)
+            else []
+        )
+        chain_log.extend(chain_events)
+        # Фаза 2: дубль — события вызовов решения этого вопроса (drain ждёт
+        # проигравших, их токены — в цену; на время ответа это не влияет).
+        hedge_events: list[HedgeEvent] = (
+            decision_client.drain()
+            if isinstance(decision_client, HedgedDecider)
+            else []
+        )
+        hedge_log.extend(hedge_events)
+        by_model: dict[str, list[int]] = {}
+        for c in decision_calls:
+            tokens = by_model.setdefault(c.model, [0, 0])
+            tokens[0] += c.input_tokens
+            tokens[1] += c.output_tokens
         answered = is_answered(answer, answer_given=bool(selected))
         rows.append(
             {
@@ -1172,6 +1629,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if decided
                     else ""
                 ),
+                "decision_asker_unit": "; ".join(decided.asker_unit) if decided else "",
+                "decision_refusal_guard": (
+                    "; ".join(decided.refusal_guard) if decided else ""
+                ),
                 "decision_rechecked": decided.rechecked > 0 if decided else "",
                 "decision_recheck_reason": ",".join(decided.recheck_reasons)
                 if decided
@@ -1186,6 +1647,64 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if decided
                 else "",
                 "decision_contact": decided.contact if decided else "",
+                # Фаза 1: признаки до решения и время по шагам — для разбора.
+                "decision_initial": initial_count if decided else "",
+                "decision_spec_skip": spec_skip or "",
+                "decision_wasted_reason": ",".join(decided.wasted_reasons)
+                if decided
+                else "",
+                "decision_steps": json.dumps(
+                    [[label, round(ms)] for label, ms in decided.steps],
+                    ensure_ascii=False,
+                )
+                if decided
+                else "",
+                "decision_general_parallel": decided.general is not None
+                if decided
+                else "",
+                "decision_wasted_general": decided.wasted_general if decided else "",
+                "decision_timeout": decided.timeout if decided else "",
+                "decision_timeout_reason": decided.timeout_reason if decided else "",
+                # Цепочка поставщиков (--decision-fallback): по вызову решения —
+                # звено, исход, код, состояние предохранителя до вызова, мс.
+                "decision_chain": json.dumps(
+                    [e.as_list() for e in chain_events], ensure_ascii=False
+                )
+                if chain_events
+                else "",
+                "decision_chain_used": ",".join(
+                    e.provider for e in chain_events if e.outcome == "ok"
+                ),
+                "decision_chain_alert": ",".join(
+                    f"{e.provider}:{e.status}" for e in chain_events if e.alert
+                ),
+                # Дубль (--decision-hedge): был ли, кто выиграл (по вызовам
+                # с дублем), токены не взятых ответов; полный журнал по
+                # вызовам — decision_hedge (HedgeEvent.as_list).
+                "decision_hedged": any(e.hedged for e in hedge_events)
+                if hedge_events
+                else "",
+                "decision_hedge_winner": ",".join(
+                    e.winner or "none" for e in hedge_events if e.hedged
+                ),
+                "decision_hedge_wasted_tokens": sum(
+                    sum(t) for e in hedge_events for t in e.wasted.values()
+                )
+                if hedge_events
+                else "",
+                "decision_hedge_abandoned": sum(e.abandoned for e in hedge_events)
+                if hedge_events
+                else "",
+                "decision_hedge": json.dumps(
+                    [e.as_list() for e in hedge_events], ensure_ascii=False
+                )
+                if hedge_events
+                else "",
+                # Токены решения по моделям (взятые в решение вызовы; у дубля
+                # модели разные — цена по каждой своя).
+                "decision_tokens_by_model": json.dumps(by_model, ensure_ascii=False)
+                if by_model
+                else "",
                 "general_after_refusal": general and bool(selected),
                 "refusal_paraphrase": looks_like_refusal(answer),
                 "n_sources": len(selected),
@@ -1213,6 +1732,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "faithful": "",
                 "comment": "",
                 "best_distance": "" if best is None else round(best, 4),
+                # fulltext: покрытие лучшего по рангу фрагмента (порог BH-51).
+                "best_coverage": (
+                    round(found[0].coverage, 4)
+                    if found and found[0].coverage is not None
+                    else ""
+                ),
                 "n_found": len(found),
                 "n_relevant": len(relevant),
                 "citations": len(citation_numbers(answer)),
@@ -1270,6 +1795,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"выход {extra['mq_output_tokens']}; из кэша "
             f"{sum(p.cached for p in paraphrased)} из {len(paraphrased)}"
         )
+    if chain_log:
+        tally: dict[str, int] = {}
+        for event in chain_log:
+            key = f"{event.provider}:{event.outcome}"
+            tally[key] = tally.get(key, 0) + 1
+        alerts = sorted({f"{e.provider}:{e.status}" for e in chain_log if e.alert})
+        print(
+            "Цепочка решения: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(tally.items()))
+            + (f"; ТРЕВОГА (настройка): {', '.join(alerts)}" if alerts else "")
+        )
+    if hedge_log:
+        hedged = [e for e in hedge_log if e.hedged]
+        wins = {w: sum(e.winner == w for e in hedged) for w in ("primary", "hedge")}
+        print(
+            f"Дубль решения: вызовов {len(hedge_log)}, с дублем {len(hedged)} "
+            f"(выиграл основной {wins['primary']}, дублёр {wins['hedge']}, "
+            f"никто {len(hedged) - wins['primary'] - wins['hedge']}); причины "
+            + ", ".join(
+                f"{t} {sum(e.trigger == t for e in hedged)}"
+                for t in ("delay", "error", "invalid")
+            )
+            + f"; не дождались проигравших {sum(e.abandoned for e in hedge_log)}"
+            + (
+                "; ТРЕВОГА (настройка основного)"
+                if any(e.alert for e in hedge_log)
+                else ""
+            )
+        )
     path = results_path(args.out, config, "e2e", date.today())
     write_csv(path, rows)
     prompt_version = (
@@ -1285,6 +1839,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.decision_answer
         ]
         + (f"-{decision_provider}" if decision_provider != args.llm_provider else "")
+        + (f"-chain-{fallback}" if args.decision_fallback else "")
+        + ("-dor" if args.decision_directory_on_refusal else "")
+        + ("-g" if args.decision_refusal_guard else "")
+        + ("-au" if args.decision_asker_unit else "")
+        + (f"-hedge-{hedge}" if args.decision_hedge else "")
         + ("-only" if args.decision_only else "")
         if args.decision != "off"
         else SMALL_TALK_PROMPT_VERSION

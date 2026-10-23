@@ -253,6 +253,12 @@ ChunkDraft(
 - `to_fulltext_query(text)` — «Сколько дней отпуска?» → «Сколько or дней or
   отпуска». Без этого `websearch_to_tsquery` в Postgres требует **все**
   слова вопроса сразу и почти ничего не находит.
+- `lexeme_coverage(question, fragment)` — доля лексем вопроса (словарь
+  russian), которые есть во фрагменте; пусто — 0. Порог «нашли» для поиска
+  только по словам (BH-51 (а)); лексемы считает вызывающий — продукт
+  `tsvector_to_array`, eval `bm25.tokenize`. Замер 23.10: как порог ответа
+  не годится (`ml-report.md`, «Полнотекстовый поиск при отказе
+  эмбеддингов»), как сигнал для отчёта о пробелах — да.
 - `rrf_merge(rankings, weights, k=60)` — очки чанка = Σ вес / (60 + место в
   списке). Веса 1.0 (вектор) и 0.5 (полнотекст) — оптимум Битрикс24, у нас
   тоже не хуже прочих. **Порог по очкам RRF ставить нельзя**: лучший всегда
@@ -527,6 +533,13 @@ FKP, STSH, поток Data, сноски — как у Word); разбор св�
 Без `gate_distance` поведение прежнее. Стенд 106 → 114 из 140, вне
 документов 45 из 45 с пометкой.
 
+Числа 0,59 / 0,70 / 0,05 — для v2@768. У bge-m3 (`--embedding-model
+cloudru:BAAI/bge-m3`) шкала сжата: 0,48 / 0,555 / 0,10 (23.10, `ml-report.md`,
+«bge-m3 как основа и резерв поиска»). Скрипты замера — `sandbox/stand/
+bge_threshold.py` (эмбеддинги и сухой подбор порогов), `run_bge.sh` (прогоны),
+`bge_subset.py` (ответ v2 при том же контексте), `bge_compare.py`
+(сравнение), `bge_latency_probe.py` (время эмбеддинга вопроса).
+
 ### 3.15. `ingest/pdf.py` — PDF без AGPL (П-12, BH-39)
 
 pymupdf4llm под AGPL нельзя держать в закрытом репозитории без лицензии,
@@ -640,6 +653,63 @@ sufficiency none — то же решение переспрашивается �
 пользователя при полном попадании с 1–2 записями; справочник отдаёт записи
 `Entry` третьим элементом). Колонки `decision_answer_mode`,
 `decision_contact`. Итоги — `ml-report.md`, «Шаг ответа после справочника».
+Фаза 1 (21.10, план §10.2 п. 1–2, §10.1 п. 3; по умолчанию выключено):
+`decision_loop.speculation_skip` / `--decision-speculate gated
+--decision-gate <правила>` — спекулятивный ответ не запускается по
+признакам до решения (`contact`, `who`, `gate`, `single`;
+`SPECULATION_GATES`); `decision_loop(refusal_parallel=True)` /
+`--decision-refusal-parallel` — при отказе low общий ответ идёт
+параллельно с перепроверкой (`DecidedRun.general`, `wasted_general`);
+`--decision-timeout <с>` — таймаут каждого вызова решения
+(`providers.OpenAICompatibleClient.complete(timeout=…)`, без повторов,
+`CallTimeoutError`), откат на обычный ответ (`DecidedRun.timeout_reason`).
+Колонки `decision_steps` (время каждого вызова), `decision_initial`,
+`decision_spec_skip`, `decision_wasted_reason`, `decision_general_parallel`,
+`decision_wasted_general`, `decision_timeout(_reason)`. Итоги — `ml-report.md`,
+«Фаза 1: хвост отказов, отсечение спекуляции, таймаут».
+
+`--decision-substitution` (21.10, фаза 0): с `--decision-directory` — если в
+роли или «чего не хватает» есть слова о замещении (`substitution_requested`),
+справочник отдаёт пары `Substitute` «отсутствующий → замещающий»
+(`lookup_substitute`; замещающий — `Entry.deputy` из явных фраз или, при
+правиле «вопросы решает вышестоящий руководитель», из «Подчинённости»);
+нет пар — обычный `lookup`. `format_entries`, `covers`, `contact_note`
+принимают пары (поля — замещающего; строка `contact-sub-v1`). Итоги —
+`ml-report.md`, «Замещение в справочнике».
+
+Фаза 2 (23.10, `ml-report.md`, «Фаза 2: совместная приёмка»):
+`--decision-directory-on-refusal` (с `--decision-directory`) — отказ решения
+(`domain.decision.is_refusal`: «про другое» при названном в вопросе или
+«ничего» не при другой редакции) с названной `lookup_role` идёт в справочник
+(`route(..., directory_on_refusal=True)` → `DIRECTORY`); полное попадание —
+ответ, промах или запись без поля — прежний отказ; перепроверка и
+параллельный общий ответ — по отказу в решении. `--decision-hedge
+<поставщик:модель>` (основной — mws / cloudru), `--decision-hedge-delay`
+(2 с), `--decision-hedge-extra` (`{"reasoning_effort": "none"}`) —
+дублирующий запрос `providers.HedgedDecider`: основной с одной попыткой,
+дубль через delay или сразу при быстрой ошибке / ответе не по схеме, первый
+годный побеждает, время — с ожиданием; проигравший не отменяется, его
+токены — в `decision_hedge` (по моделям), `drain()` его дожидается. Не вместе
+с `--decision-fallback`. Колонки `decision_hedged`, `decision_hedge_winner`,
+`decision_hedge_wasted_tokens`, `decision_hedge_abandoned`, `decision_hedge`,
+`decision_tokens_by_model`; тесты — `tests/ml_eval/test_decision_hedge.py`.
+
+Отдел спрашивающего (23.10, `ml-report.md`, «Отдел спрашивающего в поиске по
+справочнику»): `--decision-asker-unit` (с `--decision-directory`) —
+справочник получает текст вопроса третьим аргументом
+(`decision_loop(asker_unit=True)`). Общая роль (`is_generic_role`,
+`GENERIC_ROLES`) при отделе спрашивающего в вопросе (`asker_unit`: только
+«о себе» — «я / мы / работаю / выхожу …» через «мост», без «не») или роль
+«руководитель <подразделения>» (`role_unit`) дают главу подразделения
+(`unit_head`: `HEAD_TITLES`, иначе единственная запись) — одну её запись
+вместо всего, что даёт `lookup`. Сборка — `head_for_role` → `HeadMatch`.
+Общая роль без главы — промах (`generic_role_miss`, решение Артёма 23.10):
+`lookup` не зовётся, причина — в колонке. Колонка `decision_asker_unit`
+(«(= lookup)» — записи те же), версия `-au`; разбор —
+`sandbox/stand/asker_unit_audit.py`. Промпт решения `decision-v7`
+(`prompts/decision.py`): к правилу `lookup_role` дописана строка
+`LOOKUP_OWN_HEAD` («свой руководитель → "руководитель <подразделение>"»);
+`_FIELDS = _FIELDS_V6 + LOOKUP_OWN_HEAD`, sha-тест сверяет остальное с v6.
 
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов
@@ -710,7 +780,7 @@ sufficiency none — то же решение переспрашивается �
 |---|---|
 | `python -m eval.run_eval retrieval / e2e / score` | **официальные числа** через API бэкенда: поиск (`/faq/search`), ответы (`/faq/ask`), подсчёт после ручной разметки `correct` 0/1/2 |
 | `python -m eval.bench` | офлайн-стенд поиска: сам режет корпус (v1/v2, любые размеры, с крошками или без), ищет BM25, вектором или гибридом. `--rerank [модель]` — реранкер поверх вектора (`--rerank-depth`, `--rerank-quantize` — int8, `--rerank-trust-remote-code` — модели со своим кодом) |
-| `python -m eval.offline_e2e` | весь `/faq/ask` в памяти: поиск → порог → бюджет → промпт (`faq-v2.9`, второй шаг поиска) → модель → нормализация ссылок → общий ответ. `--not-found strict/general`, `--max-distance`, `--gate-distance` (BH-37), `--rerank…`, `--llm-extra '{"reasoning_effort": "none"}'` — лишние поля запроса к модели; `--small-talk` — `faq-v2.10` (BH-45); `--agent` — агент с инструментом поиска (3.17); `--llm-provider mws/cloudru` — модель другого поставщика |
+| `python -m eval.offline_e2e` | весь `/faq/ask` в памяти: поиск → порог → бюджет → промпт (`faq-v2.9`, второй шаг поиска) → модель → нормализация ссылок → общий ответ. `--not-found strict/general`, `--max-distance`, `--gate-distance` (BH-37), `--rerank…`, `--llm-extra '{"reasoning_effort": "none"}'` — лишние поля запроса к модели; `--small-talk` — `faq-v2.10` (BH-45); `--agent` — агент с инструментом поиска (3.17); `--llm-provider mws/cloudru` — модель другого поставщика; `--retriever fulltext --fulltext-coverage c` — только по словам, без эмбеддинга вопроса (BH-51 (а)), `--fulltext-rank cd` — подобие `ts_rank_cd` продукта вместо BM25, колонка `best_coverage` |
 | `python -m eval.bench_reranker` | задержка реранкера на CPU: N кандидатов, M прогонов, медиана и p95; `--quantize`, `--trust-remote-code` |
 | `python -m eval.compare A.csv B.csv` | «B лучше A или шум?»: CI + p-value, сколько вопросов стало лучше и хуже |
 | `python -m eval.threshold …_retrieval.csv` | два распределения расстояний (по корпусу / вне), гистограмма, кандидаты порога |
@@ -765,6 +835,12 @@ text-embeddings-v2 768, порог 0.59 (с 30.09), режим «общий от
   bge-m3 из открытых весов: векторы совпадают с поставщиками, можно
   сверять без денег. Ошибки различаются: неверный ключ — MWS 500,
   Cloud.ru 400.
+  Цепочка решения (22.10, BH-46 «Поставщики решения»): `DecisionChain`
+  (звенья по порядку, одна попытка на звено, остаток срока следующему),
+  `CircuitBreaker` (N сбоев за W с → звено пропускается M с, потом одна
+  проба), `classify_failure` (виды сбоев и ошибки настройки с тревогой);
+  в `offline_e2e` — `--decision-fallback mws`, колонки `decision_chain*`;
+  тесты — `tests/ml_eval/test_decision_chain.py`.
 - **Реранкер** (`eval/rerank.py`, только стенд): кросс-энкодер
   sentence-transformers в отдельном окружении, баллы в
   `eval/.cache/rerank.json`, ключ — модель + длина пары + вопрос +
@@ -893,7 +969,7 @@ src/corp_ed/
   domain/split.py          нарезка v2, крошки, два текста, разделы
   domain/context.py        бюджет контекста, small-to-big
   domain/query.py          словарь сокращений (M5), слияние переформулировок (M6)
-  domain/fulltext.py       запрос для полнотекстового поиска (M1)
+  domain/fulltext.py       запрос для полнотекстового поиска (M1), покрытие лексем (BH-51)
   domain/fusion.py         RRF (M1)
   domain/gaps.py           отчёт о пробелах: классификация, кластеры, приоритет, ПДн
   domain/rerank.py         реранкер (M3): какие кандидаты отдать модели, порядок по баллам
@@ -906,9 +982,12 @@ src/corp_ed/
   prompts/agent.py         промпт агента agent-v1 и инструмент search_documents (прототип)
   domain/decision.py       решение до ответа: pydantic-схема Decision, маршрут, оговорка
   domain/small_talk.py     реплики и вопросы об ассистенте — правилом в коде
-  domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4)
-  prompts/decision.py      промпт решения decision-v5, схема для запроса, ответ по решению,
-                           ответ при другой редакции edition-v1, строка контакта contact-v1
+  domain/directory.py      справочник «должность → человек, кабинет, почта»: разбор и поиск кодом (decision-v4),
+                           замещение: Entry.deputy, substitution_requested, lookup_substitute, Substitute
+                           отдел спрашивающего: is_generic_role, asker_unit, unit_head, role_unit, head_for_role,
+                           generic_role_miss
+  prompts/decision.py      промпт решения decision-v7, схема для запроса, ответ по решению,
+                           ответ при другой редакции edition-v1, строка контакта contact-v1 / contact-sub-v1
   prompts/dialogue.py      память диалога: переписывание вопроса condense-v1, история dialogue-v1
   prompts/gaps.py          промпт подписи кластера gaps-v1
   prompts/multi_query.py   промпт переформулировок mq-v1 (M6, только стенд)
@@ -926,8 +1005,15 @@ tests/                     test_preprocess, test_split, test_split_document, tes
 docs/                      ml-summary, ml-code-guide (этот файл), ml-report, ml-plan,
                            backend-handoff, ml-golden-guide, ml-alice-protocol,
                            ml-vs-alice, ml-formats, ml-holdout-protocol,
-                           ml-agent-plan; этап всего проекта — ROADMAP
+                           ml-agent-plan, ml-monitoring (мониторинг ML: метрики
+                           corp_ed_decision_*, тревоги, ночной прогон, выборки для
+                           улучшений — BH-49) и ml-monitoring-dashboard.json (строки
+                           дашборда Grafana); этап всего проекта — ROADMAP
 ```
 
 Остальное в `src/` (API, сервисы, репозитории, LLM-адаптеры, миграции) —
 бэкенд, см. его документацию и `docs/DECISIONS.md`.
+
+`docs/ml-providers.md` (22.10) — условия поставщиков шага решения по
+официальным страницам: Cloud.ru, MWS, Selectel — модель, оплата, 152-ФЗ,
+SLA, лимиты, снятие моделей; вопросы для переговоров.

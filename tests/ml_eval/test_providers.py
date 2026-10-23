@@ -1,6 +1,7 @@
 """Другие поставщики моделей в eval (план резерва 15.10) — без сети и без весов."""
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import pytest
 
 from corp_ed.llm.types import Message, Role
 from eval.providers import (
+    CallTimeoutError,
     LocalEmbedder,
     OpenAICompatibleClient,
     ProviderError,
@@ -193,3 +195,64 @@ def test_chat_with_tools_returns_tool_calls() -> None:
     (call,) = completion.tool_calls
     assert (call.id, call.name) == ("call_1", "search_documents")
     assert json.loads(call.arguments) == {"query": "отпуск"}
+
+
+def test_complete_timeout_is_not_retried() -> None:
+    # Фаза 1: таймаут шага решения — один заход, без повторов (раньше таймаут
+    # чтения как TransportError повторялся до 5 раз).
+    seen: list[Any] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions.get("timeout"))
+        raise httpx.ReadTimeout("slow", request=request)
+
+    client = _client(httpx.MockTransport(handler))
+    with pytest.raises(CallTimeoutError) as error:
+        client.complete(
+            [Message(role=Role.USER, content="вопрос")], model="m", timeout=8.0
+        )
+    assert len(seen) == 1 and isinstance(error.value, TimeoutError)
+    # Срок запроса — остаток таймаута, не общие 60 с клиента.
+    assert 0 < seen[0]["read"] <= 8.0
+    assert error.value.elapsed_ms >= 0
+
+
+def test_complete_without_timeout_still_retries_transport_errors() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "ок"}}], "usage": {}}
+        )
+
+    completion = _client(httpx.MockTransport(handler)).complete(
+        [Message(role=Role.USER, content="вопрос")], model="m"
+    )
+    assert completion.text == "ок" and calls["n"] == 2
+
+
+def test_complete_timeout_stops_retrying_server_errors() -> None:
+    # 500 повторяется, но пауза — не дольше срока; срок вышел — CallTimeoutError.
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(500, text="fail")
+
+    client = OpenAICompatibleClient(
+        "cloudru",
+        "https://api.example/v1/",
+        "key",
+        http=httpx.Client(transport=httpx.MockTransport(handler)),
+        base_delay=10.0,
+        sleep=time.sleep,
+    )
+    started = time.perf_counter()
+    with pytest.raises(CallTimeoutError):
+        client.complete(
+            [Message(role=Role.USER, content="вопрос")], model="m", timeout=0.05
+        )
+    assert calls["n"] == 1 and time.perf_counter() - started < 2.0
