@@ -664,6 +664,23 @@ sufficiency none — то же решение переспрашивается �
 принимают пары (поля — замещающего; строка `contact-sub-v1`). Итоги —
 `ml-report.md`, «Замещение в справочнике».
 
+Фаза 2 (23.10, `ml-report.md`, «Фаза 2: совместная приёмка»):
+`--decision-directory-on-refusal` (с `--decision-directory`) — отказ решения
+(`domain.decision.is_refusal`: «про другое» при названном в вопросе или
+«ничего» не при другой редакции) с названной `lookup_role` идёт в справочник
+(`route(..., directory_on_refusal=True)` → `DIRECTORY`); полное попадание —
+ответ, промах или запись без поля — прежний отказ; перепроверка и
+параллельный общий ответ — по отказу в решении. `--decision-hedge
+<поставщик:модель>` (основной — mws / cloudru), `--decision-hedge-delay`
+(2 с), `--decision-hedge-extra` (`{"reasoning_effort": "none"}`) —
+дублирующий запрос `providers.HedgedDecider`: основной с одной попыткой,
+дубль через delay или сразу при быстрой ошибке / ответе не по схеме, первый
+годный побеждает, время — с ожиданием; проигравший не отменяется, его
+токены — в `decision_hedge` (по моделям), `drain()` его дожидается. Не вместе
+с `--decision-fallback`. Колонки `decision_hedged`, `decision_hedge_winner`,
+`decision_hedge_wasted_tokens`, `decision_hedge_abandoned`, `decision_hedge`,
+`decision_tokens_by_model`; тесты — `tests/ml_eval/test_decision_hedge.py`.
+
 Итоги приёмок 20.10 — `ml-report.md`, «Попытка 2 — итоги», «Попытка 3 —
 итоги»: качество выше конвейера, время — главный провал (цепочка доборов
 и скорость поставщика решения).
