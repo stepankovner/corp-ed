@@ -20,7 +20,7 @@ from corp_ed.core.exceptions import (
     NotFoundError,
     ServiceUnavailableError,
 )
-from corp_ed.core.metrics import FAQ_ANSWERS, FAQ_DEGRADED
+from corp_ed.core.metrics import FAQ_ANSWERS, FAQ_DEGRADED, LLM_FALLBACK
 from corp_ed.domain.context import select_context
 from corp_ed.domain.fulltext import to_fulltext_query
 from corp_ed.domain.fusion import DEFAULT_RRF_K, rrf_merge
@@ -406,6 +406,11 @@ class FaqService:
         # Модель ответа, а не переписывания: по ней метрики журнала.
         last = outcome.completions[-1] if outcome.completions else None
         model = last.model if last else None
+        # Кто ответил и почему резерв (BH-50): причина — первого перехода.
+        fallback_reason = next(
+            (c.fallback_reason for c in outcome.completions if c.fallback_reason),
+            None,
+        )
         answer_given = outcome.origin is AnswerOrigin.DOCUMENTS
         attached_ids = {match.id for match in attached}
 
@@ -420,6 +425,8 @@ class FaqService:
                 prompt_version=self.prompt_version,
                 llm_model=model,
                 llm_model_version=last.model_version if last else None,
+                answer_provider=(last.provider or None) if last else None,
+                answer_fallback_reason=fallback_reason,
                 best_vector_distance=nearest,
                 best_fulltext_score=found.best_fulltext,
                 answer_given=answer_given,
@@ -457,6 +464,7 @@ class FaqService:
             nearest=nearest,
             prompt_version=self.prompt_version,
             model=model,
+            fallback=fallback_reason,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             latency_ms=sum(c.latency_ms for c in completions),
@@ -750,6 +758,13 @@ class FaqService:
         """
         if not history:
             return _Condensed(question=question, completion=None)
+        if self.llm_gateway.primary_down():
+            # Яндекс лежит (BH-50): резерв ради уточнения — лишние секунды,
+            # ищем по исходному вопросу, как при сбое переписывания.
+            logger.info("faq_condense_skipped", reason="breaker_open")
+            LLM_FALLBACK.labels("condense", "breaker_open").inc()
+            FAQ_DEGRADED.labels("condense").inc()
+            return _Condensed(question=question, completion=None)
         await self._release()
         try:
             completion = await asyncio.wait_for(
@@ -1017,12 +1032,14 @@ class FaqService:
         if step != "off":
             # faq-v2.9: строка «Дополнительный поиск: …» клиенту не видна.
             gate = _SearchGate(gate)
-        return await self._consume(
+        streamed = await self._consume(
             self.llm_gateway.stream(messages, temperature=self.temperature),
             messages,
             sink=sink,
             gate=gate,
         )
+        _count_fallback("answer", streamed.completion)
+        return streamed
 
     async def _fallback(
         self,
@@ -1099,6 +1116,7 @@ class FaqService:
             gate=_GeneralPrefixGate(),
         )
         completion = streamed.completion
+        _count_fallback("general", completion)
         if streamed.stopped:
             return _Outcome(
                 content=ensure_general_prefix(completion.content),
@@ -1149,6 +1167,7 @@ class FaqService:
             gate=gate,
         )
         completion = streamed.completion
+        _count_fallback("general", completion)
         if completion.finish_reason is FinishReason.FILTERED and not streamed.stopped:
             await sink.reset()
             return self._filtered(completion, reason="general")
@@ -1459,6 +1478,12 @@ class _OriginOnDecision:
         if self.sent is not None:
             await self._sink.reset()
         await self.origin(origin)
+
+
+def _count_fallback(stage: str, completion: Completion) -> None:
+    """Ответ дала запасная модель (BH-50) — в метрику с этапом и причиной."""
+    if completion.fallback_reason:
+        LLM_FALLBACK.labels(stage, completion.fallback_reason).inc()
 
 
 async def _single(completion: Completion) -> AsyncGenerator[str | Completion, None]:

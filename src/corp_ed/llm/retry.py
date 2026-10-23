@@ -14,7 +14,16 @@ async def call_with_retry(
     do_request: Callable[[], Awaitable[httpx.Response]],
     max_attempts: int = 3,
     base_delay: float = 1.0,
+    *,
+    retry_on_timeout: bool = True,
+    max_delay: float | None = None,
 ) -> httpx.Response:
+    """Вызов с повторами на повторяемых ошибках.
+
+    retry_on_timeout=False — таймаут не повторять (BH-50: при запасной
+    модели ждать второй раз дороже, чем уйти в резерв). max_delay —
+    потолок паузы между повторами.
+    """
     if max_attempts < 1:
         raise ValueError("max_attempts must be >= 1")
 
@@ -23,7 +32,11 @@ async def call_with_retry(
     for attempt in range(max_attempts):
         try:
             response = await do_request()
-        except (httpx.TimeoutException, httpx.TransportError) as exc:
+        except httpx.TimeoutException as exc:
+            last_error = LLMError(f"timeout: {exc}", retryable=True, kind="timeout")
+            if not retry_on_timeout:
+                raise last_error from exc
+        except httpx.TransportError as exc:
             last_error = LLMError(f"transport: {exc}", retryable=True)
         else:
             error = classify(response)
@@ -37,6 +50,8 @@ async def call_with_retry(
         if attempt < max_attempts - 1:
             # Джиттер паузы между повторами, не криптография.
             delay = base_delay * (2**attempt) + random.uniform(0, 1)  # noqa: S311
+            if max_delay is not None:
+                delay = min(delay, max_delay)
             logger.warning(
                 "llm_retry",
                 attempt=attempt + 1,
