@@ -68,7 +68,7 @@ groups:
           severity: warning
         annotations:
           summary: "Задачи {{ $labels.queue }} падают"
-          description: "За час {{ $value | humanize }} задач завершились ошибкой."
+          description: "За час {{ $value | humanize }} задач завершились ошибкой. В ingest это ошибки самих документов: при сбое поставщика эмбеддингов задачи ждут в очереди (BH-51)."
 
       - alert: QueueBacklog
         expr: corp_ed_worker_queue_jobs{job="worker", status="queued"} > 50
