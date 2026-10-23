@@ -23,6 +23,7 @@ PostgreSQL выкинет сам по словарю russian, а ts_rank_cd по
 """
 
 import re
+from collections.abc import Container, Iterable
 
 _WORD = re.compile(r"[\w]+(?:[-.][\w]+)*", re.UNICODE)
 _OPERATOR_WORDS = {"or", "and", "not"}
@@ -45,3 +46,26 @@ def to_fulltext_query(text: str) -> str:
         seen.add(key)
         words.append(word)
     return " or ".join(words)
+
+
+def lexeme_coverage(question: Iterable[str], fragment: Container[str]) -> float:
+    """Покрытие: доля лексем вопроса, которые есть в фрагменте (0…1).
+
+    Порог «нашли» для поиска только по словам (BH-51 (а), замер ML 23.10):
+    у лучшего по рангу фрагмента покрытие не ниже порога — выдержки идут в
+    модель, ниже — «ответа в документах нет». В отличие от ts_rank_cd не
+    зависит от длины фрагмента и числа повторов слова, поэтому порог из
+    офлайн-замера переносится в продукт как есть.
+
+    Лексемы считает вызывающий — словарём russian (стоп-слова выброшены,
+    основы — стеммер Snowball), повторы не важны:
+    - продукт: question = tsvector_to_array(to_tsvector('russian', :q)),
+      fragment = tsvector_to_array(chunks.fts);
+    - eval: eval.bm25.tokenize.
+
+    Вопрос без лексем (одни знаки или стоп-слова) — 0: искать нечем.
+    """
+    terms = set(question)
+    if not terms:
+        return 0.0
+    return sum(1 for term in terms if term in fragment) / len(terms)

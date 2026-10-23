@@ -77,12 +77,16 @@ def _retrieved(chunk: BenchChunk, distance: float | None) -> RetrievedChunk:
 
 
 def bm25_rankings(
-    chunks: Sequence[BenchChunk], queries: Sequence[str], limit: int
+    chunks: Sequence[BenchChunk], queries: Sequence[str], limit: int, rank: str = "bm25"
 ) -> list[list[int]]:
+    """Полнотекстовая выдача по embed_text (как chunks.fts продукта).
+
+    rank — bm25 (оценка сверху) или cd (подобие ts_rank_cd продукта).
+    """
     from eval.bm25 import BM25Index
 
     index = BM25Index([chunk.embed_text for chunk in chunks])
-    return [[i for i, _ in index.search(query, limit)] for query in queries]
+    return [[i for i, _ in index.search(query, limit, rank=rank)] for query in queries]
 
 
 def vector_rankings(

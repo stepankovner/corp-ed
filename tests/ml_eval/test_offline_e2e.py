@@ -12,6 +12,7 @@ from eval.offline_e2e import (
     OfflineMatch,
     citation_numbers,
     gate_by_best_distance,
+    gate_by_coverage,
     invalid_citations,
     relevant_matches,
     section_citations,
@@ -711,3 +712,115 @@ def test_phase1_defaults_keep_old_behaviour() -> None:
     args = offline_e2e._parser().parse_args(["--corpus", "c", "--dataset", "d"])
     assert (args.decision_speculate, args.decision_gate) == ("always", "")
     assert not args.decision_refusal_parallel and args.decision_timeout == 0.0
+
+
+# --- BH-51 (а): поиск только по словам, порог по покрытию ----------------------
+
+
+def test_gate_by_coverage_looks_at_the_best_ranked_fragment() -> None:
+    matches = [
+        OfflineMatch("a", "Д", distance=None, coverage=0.5),
+        OfflineMatch("b", "Д", distance=None, coverage=1.0),
+    ]
+
+    # Решает лучший по рангу, а не лучший по покрытию; прошёл — вся выдача.
+    assert gate_by_coverage(matches, 0.5) == matches
+    assert gate_by_coverage(matches, 0.6) == []
+    assert gate_by_coverage([], 0.0) == []
+
+
+def test_fulltext_mode_never_embeds_and_gates_by_coverage(
+    setup: tuple[Path, Path, _FakeYandex],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus, dataset, fake = setup
+
+    def no_embeddings(*args: object, **kwargs: object) -> None:
+        raise AssertionError("fulltext: эмбеддинги вопроса не нужны")
+
+    monkeypatch.setattr(offline_e2e, "vector_rankings", no_embeddings)
+
+    rows = {
+        row["id"]: row
+        for row in _run(
+            corpus,
+            dataset,
+            tmp_path / "out",
+            "--retriever",
+            "fulltext",
+            "--fulltext-coverage",
+            "0.6",
+            "--not-found",
+            "strict",
+        )  # fmt: skip
+    }
+
+    # q1 «сколько дней отпуска»: 2 из 3 лексем во фрагменте — проходит;
+    # q3 «перенести отпуск»: 1 из 2 — ниже порога; q2 — ни одного слова.
+    assert float(rows["q1"]["best_coverage"]) == pytest.approx(2 / 3, abs=1e-4)
+    assert rows["q1"]["n_sources"] == "1" and rows["q1"]["best_distance"] == ""
+    assert float(rows["q3"]["best_coverage"]) == pytest.approx(0.5)
+    assert rows["q3"]["answer"] == NOT_FOUND_ANSWER and rows["q3"]["n_found"] == "1"
+    assert rows["q2"]["n_found"] == "0" and rows["q2"]["best_coverage"] == ""
+    assert len(fake.prompts) == 1
+
+    rows = {
+        row["id"]: row
+        for row in _run(
+            corpus,
+            dataset,
+            tmp_path / "out0",
+            "--retriever",
+            "fulltext",
+            "--fulltext-coverage",
+            "0",
+            "--not-found",
+            "strict",
+        )  # fmt: skip
+    }
+    # Порог 0 — проходит всё, что нашлось хоть по одному слову.
+    assert (rows["q1"]["n_sources"], rows["q3"]["n_sources"]) == ("1", "1")
+    assert rows["q2"]["n_sources"] == "0"
+
+
+def test_fulltext_second_search_goes_by_words_with_the_same_gate(
+    setup: tuple[Path, Path, _FakeYandex],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    corpus, dataset, fake = setup
+    _two_chunk_corpus(corpus, dataset)
+    monkeypatch.setattr(offline_e2e, "vector_rankings", None)
+    fake.answers = {
+        "уже сделан": "Перенос — по заявлению [2].",
+        "Сколько дней": "Дополнительный поиск: перенос отпуска по заявлению",
+    }
+
+    rows = _run(
+        corpus, dataset, tmp_path / "out", "--retriever", "fulltext",
+        "--fulltext-coverage", "0.6", "--limit", "1",
+        "--chunk-tokens", "20", "--overlap-tokens", "0", "--not-found", "strict",
+    )  # fmt: skip
+
+    assert rows[0]["search_query"] == "перенос отпуска по заявлению"
+    assert rows[0]["search_added"] == "1"
+    assert rows[0]["n_sources"] == "2"
+    assert "Дополнительный поиск уже сделан" in fake.prompts[-1]
+
+
+def test_fulltext_flags_validated(
+    setup: tuple[Path, Path, _FakeYandex], tmp_path: Path
+) -> None:
+    corpus, dataset, _ = setup
+    base = ["--corpus", str(corpus), "--dataset", str(dataset), "--dry-run"]
+
+    assert offline_e2e.main([*base, "--retriever", "fulltext"]) == 2
+    assert offline_e2e.main([*base, "--fulltext-coverage", "0.5"]) == 2
+    assert offline_e2e.main([*base, "--fulltext-rank", "cd"]) == 2
+    assert (
+        offline_e2e.main(
+            [*base, "--retriever", "fulltext", "--fulltext-coverage", "0.5", "--agent"]
+        )
+        == 2
+    )

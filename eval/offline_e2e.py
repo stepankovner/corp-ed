@@ -15,14 +15,19 @@ Flash через OpenAI-совместимый API, text-embeddings-v2 с раз
 
 Шаги повторяют бэкенд (docs/backend-handoff.md, BH-3 и BH-7):
 1. top-limit чанков: по косинусному расстоянию (<семейство>-query → doc)
-   или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1);
+   или гибрид вектор + BM25 через RRF (--retriever hybrid, предпросмотр M1),
+   или только по словам, без эмбеддинга вопроса (--retriever fulltext,
+   BH-51 (а): запасной путь при отказе эмбеддингов; ранжирование — BM25,
+   оценка сверху, или --fulltext-rank cd — подобие ts_rank_cd продукта);
    --multi-query N (M6): модель переписывает вопрос N способами
    (prompts.multi_query, mq-v1), ищем по всем и сливаем RRF
    (fuse_query_rankings); порог тогда — по лучшему расстоянию исходного
    вопроса;
 2. порог: для вектора — каждый чанк дальше max_distance отбрасывается
    (как faq_service сейчас); для гибрида — по лучшему векторному
-   кандидату (контракт M1). Не осталось ни одного — ответ по выдержкам не
+   кандидату (контракт M1); для fulltext — по покрытию лучшего фрагмента
+   (`lexeme_coverage` ≥ --fulltext-coverage: в модель идёт вся выдача,
+   иначе ничего). Не осталось ни одного — ответ по выдержкам не
    вызывается: общий ответ с пометкой (general, Р1 — по умолчанию) или
    фраза отказа (strict);
 3. select_context — бюджет контекста в токенах; --context sections|window —
@@ -72,6 +77,7 @@ from corp_ed.domain.directory import (
     requested_fields,
     substitution_requested,
 )
+from corp_ed.domain.fulltext import lexeme_coverage
 from corp_ed.domain.fusion import rrf_merge
 from corp_ed.domain.query import fuse_query_rankings
 from corp_ed.domain.rerank import RerankOrder, rerank_allowed
@@ -106,6 +112,7 @@ from eval.bench import (
     rerank_text,
     vector_rankings,
 )
+from eval.bm25 import tokenize
 from eval.corpus import (
     BenchChunk,
     ChunkingConfig,
@@ -146,7 +153,8 @@ from eval.yandex import (
 )
 
 NotFoundMode = Literal["strict", "general"]
-Retriever = Literal["vector", "hybrid"]
+Retriever = Literal["vector", "hybrid", "fulltext"]
+FulltextRank = Literal["bm25", "cd"]
 ContextMode = Literal["chunks", "sections", "window"]
 
 _CITATION = re.compile(r"\[(\d+)\]")
@@ -167,15 +175,21 @@ class OfflineMatch:
     """Косинусное расстояние; None — чанк нашёл только BM25 (гибрид)."""
     section_id: str = ""
     """Ключ секции в section_corpus — для select_sections (M2)."""
+    coverage: float | None = None
+    """--retriever fulltext: доля лексем вопроса в embed_text чанка
+    (`lexeme_coverage`); у других режимов — None."""
 
     @classmethod
-    def from_chunk(cls, chunk: BenchChunk, distance: float | None) -> "OfflineMatch":
+    def from_chunk(
+        cls, chunk: BenchChunk, distance: float | None, coverage: float | None = None
+    ) -> "OfflineMatch":
         return cls(
             content=chunk.llm_text,
             title=chunk.material,
             heading_path=chunk.heading_path,
             distance=distance,
             section_id=chunk.section_id,
+            coverage=coverage,
         )
 
 
@@ -218,6 +232,17 @@ def gate_by_best_distance(
     if best_distance is None or best_distance > max_distance:
         return []
     return list(matches)
+
+
+def gate_by_coverage(
+    matches: Sequence[OfflineMatch], min_coverage: float
+) -> list[OfflineMatch]:
+    """BH-51 (а): поиск только по словам. Лучший по рангу фрагмент покрывает
+    не меньше min_coverage лексем вопроса — в модель идёт вся выдача (до
+    limit), иначе ничего: «ответа в документах нет»."""
+    if not matches or matches[0].coverage is None:
+        return []
+    return list(matches) if matches[0].coverage >= min_coverage else []
 
 
 def build_context(
@@ -277,8 +302,12 @@ def retrieve(
     near_margin: float = 0.0,
     rerank_order: RerankOrder = "score",
     rerank_max_words: int | None = None,
+    fulltext_rank: FulltextRank = "bm25",
 ) -> list[tuple[list[OfflineMatch], float | None]]:
     """Для каждого вопроса: top-limit чанков и лучшее векторное расстояние.
+
+    retriever="fulltext" (BH-51 (а)) — эмбеддинги не вызываются вовсе:
+    расстояний нет (None), у чанков — покрытие лексем вопроса.
 
     paraphrases (M6) — переформулировки каждого вопроса: выдачи по ним
     сливаются с выдачей по вопросу (fuse_query_rankings). Расстояние у
@@ -303,6 +332,8 @@ def retrieve(
         and rerank_max_distance is None
     ):
         raise ValueError("с gate_distance нужен rerank_max_distance — порог продукта")
+    if retriever == "fulltext" and (reranker is not None or paraphrases):
+        raise ValueError("fulltext: без реранкера и переформулировок")
     groups = [list(group) for group in paraphrases] if paraphrases else []
     flat = [*questions, *(query for group in groups for query in group)]
     depth = (
@@ -322,8 +353,27 @@ def retrieve(
         workers=workers,
         embedding_model=embedding_model,
         embedding_dim=embedding_dim,
+        fulltext_rank=fulltext_rank,
     )
     results: list[tuple[list[OfflineMatch], float | None]] = []
+    if retriever == "fulltext":
+        lexemes: dict[int, set[str]] = {}
+
+        def coverage(question: str, i: int) -> float:
+            if i not in lexemes:
+                lexemes[i] = set(tokenize(chunks[i].embed_text))
+            return lexeme_coverage(tokenize(question), lexemes[i])
+
+        return [
+            (
+                [
+                    OfflineMatch.from_chunk(chunks[i], None, coverage(question, i))
+                    for i in ranked[k][0][:limit]
+                ],
+                None,
+            )
+            for k, question in enumerate(questions)
+        ]
     offset = len(questions)
     for index in range(len(questions)):
         ranking, distance_of = ranked[index]
@@ -382,10 +432,16 @@ def rank_queries(
     workers: int,
     embedding_model: str,
     embedding_dim: int | None,
+    fulltext_rank: FulltextRank = "bm25",
 ) -> list[tuple[list[int], dict[int, float]]]:
     """Для каждого запроса: индексы чанков по убыванию и расстояния векторной
     ветки (у гибрида — после RRF вектора и BM25; расстояния только у тех,
-    кого нашёл вектор)."""
+    кого нашёл вектор; у fulltext расстояний нет — эмбеддинги не зовём)."""
+    if retriever == "fulltext":
+        return [
+            (ranking, {})
+            for ranking in bm25_rankings(chunks, queries, depth, rank=fulltext_rank)
+        ]
     vec_rank, vec_dist = vector_rankings(
         chunks, queries, depth, workers, embedding_model, embedding_dim
     )
@@ -789,7 +845,23 @@ def _parser() -> argparse.ArgumentParser:
         "компании», и когда выдержек нет, и когда модель по ним отказала; "
         "strict — только фраза отказа",
     )
-    parser.add_argument("--retriever", choices=("vector", "hybrid"), default="vector")
+    parser.add_argument(
+        "--retriever", choices=("vector", "hybrid", "fulltext"), default="vector"
+    )
+    parser.add_argument(
+        "--fulltext-coverage",
+        type=float,
+        default=None,
+        help="fulltext (BH-51 (а)): порог «нашли» — доля лексем вопроса (словарь "
+        "russian) в лучшем по рангу фрагменте; обязателен с --retriever fulltext",
+    )
+    parser.add_argument(
+        "--fulltext-rank",
+        choices=("bm25", "cd"),
+        default="bm25",
+        help="fulltext: ранжирование — bm25 (оценка сверху) или cd (подобие "
+        "ts_rank_cd продукта: 0,1 × число вхождений слов вопроса)",
+    )
     parser.add_argument(
         "--weights", default="1.0,0.5", help="hybrid: вектор,полнотекст (RRF)"
     )
@@ -941,6 +1013,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.decision_hedge_delay != 2.0:
         print("--decision-hedge-delay: только с --decision-hedge")
         return 2
+    if (retriever == "fulltext") != (args.fulltext_coverage is not None):
+        print("--fulltext-coverage: обязателен с --retriever fulltext и только с ним")
+        return 2
+    if args.fulltext_rank != "bm25" and retriever != "fulltext":
+        print("--fulltext-rank: только с --retriever fulltext")
+        return 2
+    if retriever == "fulltext" and (
+        args.multi_query or args.agent or args.decision != "off"
+    ):
+        # Доборы агента и схемы решения по словам (BH-51 п. 4) в eval не
+        # сделаны: замер 23.10 — только конвейер со вторым шагом поиска.
+        print("--retriever fulltext: без --multi-query, --agent и --decision")
+        return 2
     if args.rerank and (retriever != "vector" or args.multi_query):
         print("--rerank: только с --retriever vector и без --multi-query")
         return 2
@@ -963,6 +1048,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.rerank
         else ""
     )
+    if retriever == "fulltext":
+        embedder = f"-c{args.fulltext_coverage}" + (
+            "-cd" if args.fulltext_rank == "cd" else ""
+        )
     config = args.config or (
         f"offline-{args.model}-{chunking.name}-{retriever}{embedder}"
         f"-k{args.limit}-d{args.max_distance}-{mode}{context_name}{mq_name}{rr_name}"
@@ -1050,6 +1139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         near_margin=args.near_margin,
         rerank_order=args.rerank_order,
         rerank_max_words=args.rerank_max_words,
+        fulltext_rank=args.fulltext_rank,
     )
     retrieved = retrieve(chunks, [item.question for item in items], **search_options)
 
@@ -1206,7 +1296,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         # С multi-query у чанка из переформулировки нет расстояния до вопроса,
         # поэтому порог — по лучшему расстоянию исходного вопроса (как M1).
         relevant = (
-            relevant_matches(
+            gate_by_coverage(found, args.fulltext_coverage)
+            if args.fulltext_coverage is not None
+            else relevant_matches(
                 found,
                 args.max_distance,
                 gate_distance=args.gate_distance,
@@ -1315,21 +1407,28 @@ def main(argv: Sequence[str] | None = None) -> int:
             # faq-v2.9: модель просит второй шаг поиска — тот же поиск по её
             # запросу, новые фрагменты (до SEARCH_MORE_LIMIT) — после прежних.
             query = search_request(raw)
-            if query is not None and retriever == "vector" and not args.multi_query:
+            if query is not None and (
+                retriever == "fulltext"
+                or (retriever == "vector" and not args.multi_query)
+            ):
                 hop_query = query
                 more, more_best = search_more(query)
                 known = {match.content for match in relevant}
-                added = [
-                    match
-                    for match in relevant_matches(
+                # BH-51 (а): второй шаг по словам — тот же порог покрытия.
+                passed = (
+                    gate_by_coverage(more, args.fulltext_coverage)
+                    if args.fulltext_coverage is not None
+                    else relevant_matches(
                         more,
                         args.max_distance,
                         gate_distance=args.gate_distance,
                         near_margin=args.near_margin,
                         nearest=more_best,
                     )
-                    if match.content not in known
-                ][:SEARCH_MORE_LIMIT]
+                )
+                added = [match for match in passed if match.content not in known][
+                    :SEARCH_MORE_LIMIT
+                ]
                 hop_added = len(added)
                 raw = NOT_FOUND_ANSWER
                 if added:
@@ -1575,6 +1674,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "faithful": "",
                 "comment": "",
                 "best_distance": "" if best is None else round(best, 4),
+                # fulltext: покрытие лучшего по рангу фрагмента (порог BH-51).
+                "best_coverage": (
+                    round(found[0].coverage, 4)
+                    if found and found[0].coverage is not None
+                    else ""
+                ),
                 "n_found": len(found),
                 "n_relevant": len(relevant),
                 "citations": len(citation_numbers(answer)),

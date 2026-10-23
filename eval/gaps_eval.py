@@ -37,6 +37,7 @@ from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
+from corp_ed.domain.fulltext import lexeme_coverage
 from corp_ed.domain.gaps import (
     GapThresholds,
     MissKind,
@@ -57,14 +58,13 @@ from eval.yandex import (
 
 def fulltext_coverage(question: str, index: BM25Index, texts: Sequence[str]) -> float:
     """Доля основ слов вопроса в лучшем по BM25 чанке (0 — ничего)."""
-    terms = set(tokenize(question))
+    terms = tokenize(question)
     if not terms:
         return 0.0
     hits = index.search(question, 1)
     if not hits or hits[0][1] <= 0:
         return 0.0
-    best = set(tokenize(texts[hits[0][0]]))
-    return len(terms & best) / len(terms)
+    return lexeme_coverage(terms, set(tokenize(texts[hits[0][0]])))
 
 
 def purity(labels: Sequence[int], truth: Sequence[str]) -> float:
