@@ -48,6 +48,31 @@ FAQ_DEGRADED = Counter(
     "Ответ дан, но без части пайплайна: condense, rerank, dialogue_store",
     ["reason"],
 )
+LLM_FALLBACK = Counter(
+    "corp_ed_llm_fallback_total",
+    "Основная модель не ответила (BH-50): этап answer/general — ответ "
+    "запасной, condense/gaps_label — шаг пропущен; reason — класс отказа",
+    ["stage", "reason"],
+)
+LLM_BREAKER_OPEN = Gauge(
+    "corp_ed_llm_breaker_open",
+    "Предохранитель основной модели открыт: 1 — вызовы идут сразу в резерв",
+)
+FALLBACK_STAGES = ("answer", "general", "condense", "gaps_label")
+FALLBACK_REASONS = (
+    "timeout",
+    "error_fast",
+    "error_config",
+    "error_payment",
+    "breaker_open",
+    "stream_broken",
+)
+# Все сочетания — с нуля при старте: тревога видит ряд и без отказов.
+for _stage in FALLBACK_STAGES:
+    for _reason in FALLBACK_REASONS:
+        LLM_FALLBACK.labels(_stage, _reason)
+LLM_BREAKER_OPEN.set(0)
+
 WORKER_QUEUE = Gauge(
     "corp_ed_worker_queue_jobs",
     "Задачи в очередях воркера по статусу",

@@ -1174,6 +1174,10 @@ class QaLog(TenantMixin, Base):
     # Версия из ответа провайдера (BH-26): алиас /latest молча меняет
     # модель, а метрики по журналу должны быть привязаны к настоящей.
     llm_model_version: Mapped[str | None] = mapped_column(String(128))
+    # Запасная модель ответа (BH-50): кто ответил (yandex | cloudru; NULL —
+    # модель не звали) и почему резерв (NULL — ответила основная).
+    answer_provider: Mapped[str | None] = mapped_column(String(16))
+    answer_fallback_reason: Mapped[str | None] = mapped_column(String(32))
     best_vector_distance: Mapped[float | None]
     best_fulltext_score: Mapped[float | None]
     answer_given: Mapped[bool]

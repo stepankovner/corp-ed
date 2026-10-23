@@ -1006,7 +1006,7 @@ async def _gaps(company_code: str | None) -> int:
     async with httpx.AsyncClient() as client:
         service = GapReportService(
             get_session_maker(),
-            build_llm_gateway(client, llm_settings),
+            build_llm_gateway(client, llm_settings, reserve=False),
             GapsSettings(),  # type: ignore[call-arg]
             # Вопрос, дошедший до модели, — её отказ, а не промах поиска:
             # порог «отвечать» (BH-37), а не порог выдержек.

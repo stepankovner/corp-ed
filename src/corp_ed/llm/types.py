@@ -36,6 +36,11 @@ class Completion:
     model_version: str
     model: str
     latency_ms: int
+    provider: str = ""
+    """Кто ответил: yandex, cloudru (BH-50); пусто — тестовая модель."""
+    fallback_reason: str | None = None
+    """Ответ запасной модели — почему основная не ответила (ErrorKind или
+    breaker_open); None — ответила основная."""
 
 
 @dataclass(frozen=True)

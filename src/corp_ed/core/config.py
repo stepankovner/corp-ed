@@ -116,6 +116,31 @@ class LLMSettings(BaseSettings):
     llm_fake_latency_ms: int = Field(default=0, ge=0, le=60000)
     llm_fake_quotas: bool = False
 
+    # Сроки основной модели (BH-50): до первого куска и между кусками,
+    # весь поток, весь вызов без потока — секунды. Повтор — только на
+    # быструю ошибку (5xx, 429, обрыв), таймаут не повторяем; пауза не
+    # дольше llm_retry_max_delay_seconds. Было: 60 с чтения × 3 попытки —
+    # до ≈ 3 минут на этап, nginx рвал ответ через 90 с.
+    llm_read_timeout_seconds: float = Field(default=8.0, gt=0, le=120)
+    llm_stream_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    llm_max_attempts: int = Field(default=2, ge=1, le=5)
+    llm_retry_max_delay_seconds: float = Field(default=0.5, ge=0, le=10)
+
+    # Запасная модель ответа (BH-50): Cloud.ru Foundation Models,
+    # OpenAI-совместимый API. Пусто — резерва нет. Включать — после
+    # договора поручения с Cloud.ru (152-ФЗ, раздел 5 handoff).
+    cloudru_base_url: str = ""
+    cloudru_api_key: SecretStr = SecretStr("")
+    llm_fallback_model: str = "openai/gpt-oss-120b"
+    # Предохранитель: столько отказов подряд — и столько секунд все вызовы
+    # сразу в резерв (стартовые значения ML, уточнить по журналу).
+    llm_breaker_failures: int = Field(default=3, ge=1, le=20)
+    llm_breaker_open_seconds: float = Field(default=120.0, gt=0, le=3600)
+
+    @property
+    def fallback_enabled(self) -> bool:
+        return bool(self.cloudru_base_url and self.cloudru_api_key.get_secret_value())
+
     # Эмбеддинги — пара моделей <семейство>-doc / <семейство>-query.
     # Смена семейства без переиндексации смешает в выдаче векторы двух
     # моделей: расстояния несравнимы, порог отказа теряет смысл.

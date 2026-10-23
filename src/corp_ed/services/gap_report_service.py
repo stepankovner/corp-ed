@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import GapsSettings
 from corp_ed.core.exceptions import ConflictError
+from corp_ed.core.metrics import LLM_FALLBACK
 from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.gaps import (
     ClusterQuestion,
@@ -341,11 +342,17 @@ class GapReportService:
         Узнанный кластер с актуальной подписью не переподписывается:
         название в отчёте не прыгает каждую ночь, и LLM не платим зря.
         Сбой модели — не сбой отчёта: кластер получает временное название
-        из вопроса и будет подписан в следующий запуск.
+        из вопроса и будет подписан в следующий запуск. Предохранитель
+        основной модели открыт (BH-50) — модель не зовём совсем: каждый
+        кластер иначе ждал бы срок.
         """
         labeled = 0
         for draft in drafts:
             if draft.prompt_version == PROMPT_VERSION:
+                continue
+            if self.llm.primary_down():
+                LLM_FALLBACK.labels("gaps_label", "breaker_open").inc()
+                self._placeholder(draft)
                 continue
             if labeled >= self.settings.max_labels_per_run:
                 self._placeholder(draft)

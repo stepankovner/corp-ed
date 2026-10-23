@@ -15,6 +15,7 @@ import json
 import random
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from dataclasses import replace
 from typing import Any
 
 import httpx
@@ -169,6 +170,8 @@ class _StreamState:
 
 
 class YandexOpenAIAdapter(LLMGateway):
+    provider = "yandex"
+
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -180,7 +183,16 @@ class YandexOpenAIAdapter(LLMGateway):
         max_attempts: int = 3,
         base_delay: float = 1.0,
         read_timeout: float = 60.0,
+        retry_on_timeout: bool = True,
+        max_delay: float | None = None,
+        call_timeout: float | None = None,
+        stream_timeout: float | None = None,
     ):
+        """Сроки (BH-50): read_timeout — до первого куска и между кусками;
+        call_timeout — весь вызов без потока вместе с повторами;
+        stream_timeout — весь поток. retry_on_timeout=False — таймаут не
+        повторять, max_delay — потолок паузы между повторами. По умолчанию
+        — прежние 60 с × 3 попытки; короткие сроки задаёт фабрика."""
         self._client = client
         self._folder_id = folder_id
         self._api_key = api_key
@@ -193,6 +205,10 @@ class YandexOpenAIAdapter(LLMGateway):
         self._max_attempts = max_attempts
         self._base_delay = base_delay
         self._read_timeout = read_timeout
+        self._retry_on_timeout = retry_on_timeout
+        self._max_delay = max_delay
+        self._call_timeout = call_timeout
+        self._stream_timeout = stream_timeout
 
     async def generate(
         self,
@@ -233,11 +249,17 @@ class YandexOpenAIAdapter(LLMGateway):
             async for item in self._stream(payload, messages):
                 yield item
 
+    def _url(self) -> str:
+        return URL
+
+    def _model_ref(self) -> str:
+        return model_uri(self._folder_id, self._model)
+
     def _payload(
         self, messages: list[Message], temperature: float, max_tokens: int
     ) -> dict[str, Any]:
         return {
-            "model": model_uri(self._folder_id, self._model),
+            "model": self._model_ref(),
             "messages": [
                 {"role": m.role.value, "content": m.content} for m in messages
             ],
@@ -257,17 +279,36 @@ class YandexOpenAIAdapter(LLMGateway):
         async def do_request() -> httpx.Response:
             started = time.perf_counter()
             response = await self._client.post(
-                URL, json=payload, headers=self._headers(), timeout=self._timeout()
+                self._url(),
+                json=payload,
+                headers=self._headers(),
+                timeout=self._timeout(),
             )
             timings.append(int((time.perf_counter() - started) * 1000))
             return response
 
-        response = await self._call(do_request)
+        if self._call_timeout is None:
+            response = await self._call(do_request)
+        else:
+            try:
+                async with asyncio.timeout(self._call_timeout):
+                    response = await self._call(do_request)
+            except TimeoutError as exc:
+                raise LLMError(
+                    f"no answer in {self._call_timeout} s",
+                    retryable=True,
+                    kind="timeout",
+                ) from exc
         try:
             body = response.json()
         except ValueError as exc:
-            raise LLMError("chat response is not JSON", retryable=False) from exc
-        return parse_chat_response(body, model=self._model, latency_ms=timings[-1])
+            raise LLMError(
+                "chat response is not JSON", retryable=False, kind="error_fast"
+            ) from exc
+        completion = parse_chat_response(
+            body, model=self._model, latency_ms=timings[-1]
+        )
+        return replace(completion, provider=self.provider)
 
     async def _stream(
         self, payload: dict[str, Any], messages: list[Message]
@@ -284,22 +325,45 @@ class YandexOpenAIAdapter(LLMGateway):
             return
 
         parsed = _StreamState()
+        shown = False
         try:
             async for line in response.aiter_lines():
                 piece = parsed.feed(line)
                 if piece:
+                    shown = True
                     yield piece
                 if parsed.done:
                     break
+                if (
+                    self._stream_timeout is not None
+                    and time.perf_counter() - started > self._stream_timeout
+                ):
+                    raise LLMError(
+                        f"stream longer than {self._stream_timeout} s",
+                        retryable=False,
+                        kind="stream_broken" if shown else "timeout",
+                    )
+        except httpx.TimeoutException as exc:
+            # До первого куска — молчание поставщика; после — обрыв.
+            raise LLMError(
+                f"stream timeout: {exc}",
+                retryable=False,
+                kind="stream_broken" if shown else "timeout",
+            ) from exc
         except httpx.HTTPError as exc:
-            raise LLMError(f"stream broken: {exc}", retryable=False) from exc
+            raise LLMError(
+                f"stream broken: {exc}",
+                retryable=False,
+                kind="stream_broken" if shown else "error_fast",
+            ) from exc
         finally:
             await response.aclose()
-        yield parsed.completion(
+        completion = parsed.completion(
             messages,
             model=self._model,
             latency_ms=int((time.perf_counter() - started) * 1000),
         )
+        yield replace(completion, provider=self.provider)
 
     async def _open_stream(self, payload: dict[str, Any]) -> httpx.Response | None:
         """Открытый поток со статусом 200; None — провайдер не принял поток."""
@@ -307,14 +371,18 @@ class YandexOpenAIAdapter(LLMGateway):
         for attempt in range(self._max_attempts):
             request = self._client.build_request(
                 "POST",
-                URL,
+                self._url(),
                 json=payload,
                 headers=self._headers(),
                 timeout=self._timeout(),
             )
             try:
                 response = await self._client.send(request, stream=True)
-            except (httpx.TimeoutException, httpx.TransportError) as exc:
+            except httpx.TimeoutException as exc:
+                error = LLMError(f"timeout: {exc}", retryable=True, kind="timeout")
+                if not self._retry_on_timeout:
+                    raise error from exc
+            except httpx.TransportError as exc:
                 error = LLMError(f"transport: {exc}", retryable=True)
             else:
                 if response.status_code == 200:
@@ -330,6 +398,8 @@ class YandexOpenAIAdapter(LLMGateway):
             if attempt < self._max_attempts - 1:
                 # Джиттер паузы между повторами, не криптография.
                 delay = self._base_delay * (2**attempt) + random.uniform(0, 1)  # noqa: S311
+                if self._max_delay is not None:
+                    delay = min(delay, self._max_delay)
                 logger.warning("llm_retry", attempt=attempt + 1, error=str(error))
                 await asyncio.sleep(delay)
         if error is None:
@@ -344,4 +414,49 @@ class YandexOpenAIAdapter(LLMGateway):
             do_request,
             max_attempts=self._max_attempts,
             base_delay=self._base_delay,
+            retry_on_timeout=self._retry_on_timeout,
+            max_delay=self._max_delay,
         )
+
+
+class CloudRuAdapter(YandexOpenAIAdapter):
+    """Запасная модель ответа (BH-50): Cloud.ru Foundation Models,
+    OpenAI-совместимый /chat/completions.
+
+    Тот же разбор ответа и потока, те же сроки, что у Flash. Отличия:
+    адрес и ключ (Bearer сервисного аккаунта), имя модели уходит как есть
+    («openai/gpt-oss-120b»), reasoning_effort=low. Размышления модели,
+    если придут отдельным полем, сотруднику не показываются: в поток идёт
+    только delta.content. Заголовка Яндекса об отказе от логирования здесь
+    нет — у Cloud.ru запросы своих моделей не логируются (ml-providers.md).
+    """
+
+    provider = "cloudru"
+
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        base_url: str,
+        api_key: str,
+        model: str = "openai/gpt-oss-120b",
+        **options: Any,
+    ):
+        super().__init__(client, folder_id="", api_key=api_key, model=model, **options)
+        self._base_url = base_url.rstrip("/")
+
+    def _url(self) -> str:
+        return f"{self._base_url}/chat/completions"
+
+    def _model_ref(self) -> str:
+        return self._model
+
+    def _payload(
+        self, messages: list[Message], temperature: float, max_tokens: int
+    ) -> dict[str, Any]:
+        return {
+            **super()._payload(messages, temperature, max_tokens),
+            "reasoning_effort": "low",
+        }
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self._api_key}"}
