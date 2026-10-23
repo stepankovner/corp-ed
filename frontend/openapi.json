@@ -2225,6 +2225,60 @@
         "title": "DepartmentResponse",
         "type": "object"
       },
+      "DirectoryAnswer": {
+        "additionalProperties": false,
+        "description": "Ответ на «Использовать как справочник сотрудников?» (BH-47); false\n— и снять отметку с документа.",
+        "properties": {
+          "use": {
+            "title": "Use",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "use"
+        ],
+        "title": "DirectoryAnswer",
+        "type": "object"
+      },
+      "DirectoryEntryResponse": {
+        "description": "Запись справочника, как её распознал код (domain.directory).",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "phone": {
+            "title": "Phone",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "room": {
+            "title": "Room",
+            "type": "string"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "unit",
+          "name",
+          "room",
+          "phone",
+          "email"
+        ],
+        "title": "DirectoryEntryResponse",
+        "type": "object"
+      },
       "EditionHintAnswer": {
         "additionalProperties": false,
         "description": "Ответ на подсказку «Этот документ заменяет «…»?» (BH-41).",
@@ -3842,6 +3896,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "directory_hint": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Directory Hint"
+          },
           "edition_hint": {
             "items": {
               "format": "uuid",
@@ -3878,6 +3943,11 @@
               }
             ],
             "title": "Indexed At"
+          },
+          "is_directory": {
+            "default": false,
+            "title": "Is Directory",
+            "type": "boolean"
           },
           "source_filename": {
             "anyOf": [
@@ -14114,6 +14184,116 @@
           }
         ],
         "summary": "Update Material",
+        "tags": [
+          "materials"
+        ]
+      }
+    },
+    "/api/v1/materials/{material_id}/directory": {
+      "get": {
+        "description": "Записи справочника сотрудников, распознанные в документе (BH-47):\nпоказать перед «Использовать?» и проверить, что берёт ассистент.",
+        "operationId": "directory_entries_api_v1_materials__material_id__directory_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DirectoryEntryResponse"
+                  },
+                  "title": "Response Directory Entries Api V1 Materials  Material Id  Directory Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Directory Entries",
+        "tags": [
+          "materials"
+        ]
+      },
+      "post": {
+        "description": "«Использовать как справочник сотрудников?» (BH-47): да — ассистент\nищет по документу, кто занимает должность и как связаться; нет — не\nищет. Подсказка снимается в обоих случаях.",
+        "operationId": "answer_directory_api_v1_materials__material_id__directory_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Material Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectoryAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaterialResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Answer Directory",
         "tags": [
           "materials"
         ]

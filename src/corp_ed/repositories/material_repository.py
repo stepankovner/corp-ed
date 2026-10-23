@@ -50,6 +50,20 @@ class MaterialRepository:
         )
         return {row.id: row.title for row in rows}
 
+    async def directories(self) -> list[tuple[UUID, str, str]]:
+        """Справочники компании (BH-47): id, название, текст документов,
+        которые администратор отметил справочником и которые в поиске."""
+        rows = await self.session.execute(
+            select(Material.id, Material.title, Material.content)
+            .where(
+                Material.tenant_id == require_tenant(),
+                Material.is_directory.is_(True),
+                Material.superseded_at.is_(None),
+            )
+            .order_by(Material.created_at)
+        )
+        return [(row.id, row.title, row.content) for row in rows]
+
     async def get_by_sha256(self, sha256: str) -> Material | None:
         """Дубль среди РУЧНЫХ загрузок: документ коннектора с тем же
         содержимым — другой документ с другой ссылкой."""

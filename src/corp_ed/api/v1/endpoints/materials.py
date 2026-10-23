@@ -12,6 +12,8 @@ from corp_ed.api.v1.rate_limits import (
 )
 from corp_ed.api.v1.schemas.material import (
     MAX_TITLE_LENGTH,
+    DirectoryAnswer,
+    DirectoryEntryResponse,
     EditionHintAnswer,
     IngestResponse,
     MaterialCreateRequest,
@@ -215,6 +217,32 @@ async def answer_edition_hint(
     material = await service.answer_edition_hint(
         current_user, material_id, accept=data.accept
     )
+    return await _one(service, material)
+
+
+@router.get("/{material_id}/directory", response_model=list[DirectoryEntryResponse])
+async def directory_entries(
+    material_id: UUID,
+    service: Annotated[MaterialService, Depends(get_material_service)],
+    current_user: AdminUser,
+) -> list[DirectoryEntryResponse]:
+    """Записи справочника сотрудников, распознанные в документе (BH-47):
+    показать перед «Использовать?» и проверить, что берёт ассистент."""
+    entries = await service.directory_entries(material_id)
+    return [DirectoryEntryResponse.model_validate(entry) for entry in entries]
+
+
+@router.post("/{material_id}/directory", response_model=MaterialResponse)
+async def answer_directory(
+    material_id: UUID,
+    data: DirectoryAnswer,
+    service: Annotated[MaterialService, Depends(get_material_service)],
+    current_user: AdminUser,
+) -> MaterialResponse:
+    """«Использовать как справочник сотрудников?» (BH-47): да — ассистент
+    ищет по документу, кто занимает должность и как связаться; нет — не
+    ищет. Подсказка снимается в обоих случаях."""
+    material = await service.answer_directory(current_user, material_id, use=data.use)
     return await _one(service, material)
 
 

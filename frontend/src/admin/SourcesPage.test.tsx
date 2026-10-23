@@ -30,6 +30,7 @@ function material(overrides: Partial<Material> = {}): Material {
     indexed_at: "2026-09-01T10:00:00Z",
     created_at: "2026-09-01T09:00:00Z",
     visibility: "tenant",
+    is_directory: false,
     ...overrides,
   };
 }
@@ -501,6 +502,69 @@ describe("источники", () => {
     const filter = within(screen.getByRole("group", { name: "Статус" }));
     expect(filter.getByRole("button", { name: /^Заменены/ })).toHaveTextContent("Заменены 1");
     expect(filter.getByRole("button", { name: /^Готовы/ })).toHaveTextContent("Готовы 1");
+  });
+
+  it("справочник сотрудников: подсказка со списком распознанного, «Использовать» ставит отметку", async () => {
+    const user = userEvent.setup();
+    const { state } = mockSources({
+      materials: [material({ id: "m-org", title: "Оргструктура", directory_hint: 2 })],
+    });
+    const answers: unknown[] = [];
+    server.use(
+      http.get("/api/v1/materials/:id/directory", () =>
+        HttpResponse.json([
+          {
+            role: "Финансовый директор",
+            unit: "",
+            name: "Кукушкина Ярослава Игоревна",
+            room: "402",
+            phone: "1120",
+            email: "kukushkina@example.ru",
+          },
+          {
+            role: "главный бухгалтер",
+            unit: "Бухгалтерия",
+            name: "",
+            room: "",
+            phone: "",
+            email: "",
+          },
+        ]),
+      ),
+      http.post("/api/v1/materials/:id/directory", async ({ request, params }) => {
+        const body = (await request.json()) as { use: boolean };
+        answers.push(body);
+        state.materials = state.materials.map((m) =>
+          m.id === params.id ? { ...m, directory_hint: null, is_directory: body.use } : m,
+        );
+        return HttpResponse.json(state.materials.find((m) => m.id === params.id));
+      }),
+    );
+    renderApp("/admin/sources/files");
+
+    const question = await screen.findByText(
+      "«Оргструктура» похоже на справочник сотрудников: 2 записи. Использовать?",
+    );
+    const hint = question.closest('[role="status"]') as HTMLElement;
+    await user.click(within(hint).getByRole("button", { name: "Показать распознанное" }));
+    const list = await within(hint).findByRole("list", { name: "Распознанные записи" });
+    expect(
+      within(list).getByText(
+        "Финансовый директор — Кукушкина Ярослава Игоревна, кабинет 402, доб. 1120, kukushkina@example.ru",
+      ),
+    ).toBeInTheDocument();
+    expect(within(list).getByText("Бухгалтерия — главный бухгалтер")).toBeInTheDocument();
+
+    await user.click(within(hint).getByRole("button", { name: "Использовать" }));
+    await waitFor(() => expect(question).not.toBeInTheDocument());
+    expect(answers).toEqual([{ use: true }]);
+    const table = screen.getByRole("table", { name: "Документы" });
+    const org = row(table, "Оргструктура");
+    expect(await org.findByText("справочник")).toBeInTheDocument();
+
+    await user.click(org.getByRole("button", { name: "не использовать" }));
+    await waitFor(() => expect(org.queryByText("справочник")).not.toBeInTheDocument());
+    expect(answers).toEqual([{ use: true }, { use: false }]);
   });
 
   it("помечает документ заменённым вручную и возвращает в ответы", async () => {
