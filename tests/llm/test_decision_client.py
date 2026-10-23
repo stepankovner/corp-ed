@@ -304,6 +304,7 @@ def test_decision_metric_labels_come_only_from_the_lists() -> None:
         "corp_ed_decision_fallback": {"reason": set(m.DECISION_FALLBACK_REASONS)},
         "corp_ed_decision_failover": {"reason": set(m.DECISION_FAILOVER_REASONS)},
         "corp_ed_decision_calls": {"outcome": set(m.DECISION_OUTCOMES)},
+        "corp_ed_decision_probe": {"outcome": set(m.DECISION_OUTCOMES)},
         "corp_ed_decision_speculative": {
             "outcome": set(m.DECISION_SPECULATIVE),
             "reason": {r for rs in m.DECISION_SPECULATIVE.values() for r in rs},

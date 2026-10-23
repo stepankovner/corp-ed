@@ -1,9 +1,11 @@
 """Пробные вызовы главного цикла (BH-52).
 
 Раз в 5 минут — короткий вызов Flash и эмбеддинг вопроса, раз в 15 —
-резерв у Cloud.ru (если включён). Без персональных данных, в qa_log не
-пишутся, кредиты клиентов не тратят, в corp_ed_llm_calls_total не идут —
-у них свой счётчик corp_ed_llm_probe_total. Проба — тот же механизм, что
+Cloud.ru: короткое решение по фиксированному вопросу (BH-46 «Поставщики»
+п. 5, ключ и баланс) или, если шага решения нет, — вызов резерва ответа
+(та же модель и тот же ключ — вторая проба не нужна). Без персональных
+данных, в qa_log не пишутся, кредиты клиентов не тратят, в
+corp_ed_llm_calls_total не идут — у них свои счётчики проб. Проба — тот же механизм, что
 выход предохранителя из «открыт»: пока он не закрыт, проба идёт через 2
 минуты, а не через 5; успех закрывает, неудача — ещё срок.
 
@@ -15,21 +17,34 @@ import asyncio
 import contextlib
 import time
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import structlog
 
-from corp_ed.core.metrics import LLM_PROBE, LLM_PROBE_FAILURES
+from corp_ed.core.metrics import (
+    DECISION_PROBE,
+    DECISION_PROBE_DURATION,
+    DECISION_PROBE_FAILURES,
+    LLM_PROBE,
+    LLM_PROBE_FAILURES,
+)
+from corp_ed.domain.decision import parse_decision
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.fallback import CircuitBreaker
 from corp_ed.llm.gateway import LLMGateway
 from corp_ed.llm.observe import llm_stage, outcome_of
 from corp_ed.llm.types import FinishReason, Message, Role
+from corp_ed.prompts.decision import build_decision_messages, decision_response_format
+
+if TYPE_CHECKING:
+    from corp_ed.llm.decision_client import DecisionLeg
 
 logger = structlog.get_logger()
 
 PROBE_MESSAGES = [Message(role=Role.USER, content="Ответь одним словом: да")]
 PROBE_TEXT = "проверка связи"
+DECISION_PROBE_QUESTION = "Сколько дней ежегодного отпуска?"
 EVERY = 300.0
 WHILE_OPEN = 120.0
 RESERVE_EVERY = 900.0
@@ -71,6 +86,7 @@ class Prober:
         embeddings: EmbeddingGateway | None = None,
         embedding_breaker: CircuitBreaker | None = None,
         reserve: LLMGateway | None = None,
+        decision: "DecisionLeg | None" = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._clock = clock
@@ -89,7 +105,11 @@ class Prober:
                     embedding_breaker,
                 )
             )
-        if reserve is not None:
+        if decision is not None:
+            self.targets.append(
+                _Target("cloudru", "decision", _decision(decision), RESERVE_EVERY, None)
+            )
+        elif reserve is not None:
             self.targets.append(
                 _Target("cloudru", "chat", _chat(reserve), RESERVE_EVERY, None)
             )
@@ -111,6 +131,7 @@ class Prober:
                 await asyncio.wait_for(stop.wait(), timeout=TICK)
 
     async def _probe(self, target: _Target) -> None:
+        started = self._clock()
         try:
             with llm_stage(None):
                 outcome = await target.call()
@@ -121,7 +142,13 @@ class Prober:
         else:
             if target.breaker is not None:
                 target.breaker.record_success()
-        LLM_PROBE.labels(target.provider, target.kind, outcome).inc()
+        if target.kind == "decision":
+            DECISION_PROBE.labels(target.provider, outcome).inc()
+            DECISION_PROBE_DURATION.labels(target.provider).observe(
+                self._clock() - started
+            )
+        else:
+            LLM_PROBE.labels(target.provider, target.kind, outcome).inc()
         if outcome == "ok":
             target.failures = 0
         elif outcome != "busy":
@@ -133,13 +160,29 @@ class Prober:
                 outcome=outcome,
                 streak=target.failures,
             )
-        LLM_PROBE_FAILURES.labels(target.provider, target.kind).set(target.failures)
+        if target.kind == "decision":
+            DECISION_PROBE_FAILURES.labels(target.provider).set(target.failures)
+        else:
+            LLM_PROBE_FAILURES.labels(target.provider, target.kind).set(target.failures)
 
 
 def _chat(gateway: LLMGateway) -> Callable[[], Awaitable[str]]:
     async def call() -> str:
         completion = await gateway.generate(PROBE_MESSAGES, temperature=0, max_tokens=5)
         return "filtered" if completion.finish_reason is FinishReason.FILTERED else "ok"
+
+    return call
+
+
+def _decision(leg: "DecisionLeg") -> Callable[[], Awaitable[str]]:
+    async def call() -> str:
+        completion = await leg.complete(
+            build_decision_messages(DECISION_PROBE_QUESTION, []),
+            effort="low",
+            response_format=decision_response_format(reasoning=False, answer=False),
+            timeout=15.0,
+        )
+        return "ok" if parse_decision(completion.content) is not None else "invalid"
 
     return call
 

@@ -149,12 +149,23 @@ def build_prober(client: httpx.AsyncClient, settings: LLMSettings) -> Prober | N
         primary, reserve = chat, None
     embeddings = build_embedding_gateway(client, settings)
     inner = embeddings.inner if isinstance(embeddings, BreakerEmbeddings) else None
+    decision = (
+        cloudru_leg(
+            client,
+            settings.cloudru_base_url,
+            settings.cloudru_api_key.get_secret_value(),
+            settings.llm_decision_model,
+        )
+        if settings.fallback_enabled
+        else None
+    )
     return Prober(
         chat=primary,
         chat_breaker=shared_breaker(settings),
         embeddings=inner,
         embedding_breaker=shared_embedding_breaker(settings),
         reserve=reserve,
+        decision=decision,
     )
 
 
