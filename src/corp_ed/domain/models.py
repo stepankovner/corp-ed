@@ -95,6 +95,10 @@ class Tenant(Base):
             name="ck_tenants_not_found_mode",
         ),
         CheckConstraint(
+            "decision_mode IN ('off', 'shadow', 'on')",
+            name="ck_tenants_decision_mode",
+        ),
+        CheckConstraint(
             "tariff IN ('base', 'extended', 'enterprise')",
             name="ck_tenants_tariff",
         ),
@@ -132,6 +136,9 @@ class Tenant(Base):
         default=DEFAULT_NOT_FOUND_MODE.value,
         server_default=DEFAULT_NOT_FOUND_MODE.value,
     )
+    # Схема «решение до ответа» (BH-46, DecisionMode): NULL — умолчание
+    # окружения RAG_FAQ_DECISION_MODE. Меняет команда через CLI.
+    decision_mode: Mapped[str | None] = mapped_column(String(8))
     # Тариф (domain/tariffs.py, решение 30.09): сколько подключений и
     # какие системы. Задаёт команда через CLI.
     tariff: Mapped[str] = mapped_column(

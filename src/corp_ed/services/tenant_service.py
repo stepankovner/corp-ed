@@ -22,7 +22,7 @@ from corp_ed.domain.models import (
     UserRole,
 )
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
-from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, DecisionMode, NotFoundMode
 from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.connector_repository import ConnectorRepository
@@ -332,6 +332,35 @@ class TenantService:
         await self.session.commit()
         logger.info(
             "tenant_not_found_mode_changed", tenant_id=str(tenant.id), mode=mode.value
+        )
+        return tenant
+
+    async def set_decision_mode(
+        self, company_code: str, mode: DecisionMode | None
+    ) -> Tenant:
+        """Режим схемы «решение до ответа» компании (BH-46); None — как в
+        окружении (RAG_FAQ_DECISION_MODE). Действует со следующего вопроса.
+
+        Порядок включения (handoff BH-46, «Теневой режим»): shadow у всех
+        после договора с Cloud.ru → on у внутреннего тенанта → on у всех.
+        """
+        tenant = await self.tenant_repo.get_by_company_code(company_code)
+        if tenant is None:
+            raise ConflictError(f"Компании с кодом '{company_code}' нет")
+        previous = tenant.decision_mode
+        tenant.decision_mode = mode.value if mode is not None else None
+        self.audit.record(
+            AuditAction.TENANT_DECISION_MODE_CHANGED,
+            tenant_id=tenant.id,
+            target_type="tenant",
+            target_id=tenant.id,
+            details={"from": previous, "to": tenant.decision_mode},
+        )
+        await self.session.commit()
+        logger.info(
+            "tenant_decision_mode_changed",
+            tenant_id=str(tenant.id),
+            mode=tenant.decision_mode,
         )
         return tenant
 

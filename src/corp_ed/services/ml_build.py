@@ -1,8 +1,9 @@
 """Версии промптов и моделей в метрике corp_ed_ml_build_info (BH-49).
 
 Одна строка, значения — константы ML и настройки: на графике видно, с
-какой выкатки поехало. Модели шага решения (BH-46) — пусто, пока схема
-не встроена.
+какой выкатки поехало. Шаг решения (BH-46): основной Cloud.ru, дублёр —
+Qwen у Яндекса (MWS — замеренный резерв, не подключён); decision_mode —
+умолчание окружения, у компаний может быть своё.
 """
 
 from corp_ed.core.config import LLMSettings, RagSettings
@@ -29,9 +30,10 @@ def ml_build(llm: LLMSettings, rag: RagSettings) -> dict[str, str]:
         "contact_prompt": CONTACT_NOTE_VERSION,
         "embedding_model": f"{llm.embedding_model}@{llm.embedding_dim}",
         "answer_model": llm.llm_model,
-        "decision_model_cloudru": "",
-        "decision_model_mws": "",
-        "decision_effort": "",
+        "decision_model_cloudru": llm.llm_decision_model,
+        "decision_model_yandex": llm.llm_decision_hedge_model,
+        "decision_effort": "low+recheck",
+        "decision_mode": rag.faq_decision_mode,
     }
 
 

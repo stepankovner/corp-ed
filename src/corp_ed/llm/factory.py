@@ -2,7 +2,9 @@ import asyncio
 
 import httpx
 
-from corp_ed.core.config import LLMSettings
+from corp_ed.core.config import LLMSettings, RagSettings
+from corp_ed.domain.decision import parse_decision
+from corp_ed.llm.decision_client import HedgedDecider, cloudru_leg, yandex_leg
 from corp_ed.llm.embedding_breaker import BreakerEmbeddings
 from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.fake import DevAdapter
@@ -153,4 +155,35 @@ def build_prober(client: httpx.AsyncClient, settings: LLMSettings) -> Prober | N
         embeddings=inner,
         embedding_breaker=shared_embedding_breaker(settings),
         reserve=reserve,
+    )
+
+
+def build_decider(
+    client: httpx.AsyncClient, settings: LLMSettings, rag: RagSettings
+) -> HedgedDecider | None:
+    """Поставщики шага решения (BH-46): Cloud.ru основным, Qwen у Яндекса —
+    дублёр. Без ключа Cloud.ru схемы нет (None): режимы shadow и on
+    работают как off — выдержки уходят Cloud.ru только по договору."""
+    if settings.llm_provider != "yandex-openai" or not settings.fallback_enabled:
+        return None
+    primary = cloudru_leg(
+        client,
+        settings.cloudru_base_url,
+        settings.cloudru_api_key.get_secret_value(),
+        settings.llm_decision_model,
+    )
+    hedge = yandex_leg(
+        client,
+        settings.yc_folder_id,
+        settings.yc_api_key.get_secret_value(),
+        settings.llm_decision_hedge_model,
+    )
+    return HedgedDecider(
+        primary,
+        hedge,
+        delays={
+            "low": rag.faq_decision_hedge_low_seconds,
+            "medium": rag.faq_decision_hedge_medium_seconds,
+        },
+        valid=lambda text: parse_decision(text) is not None,
     )

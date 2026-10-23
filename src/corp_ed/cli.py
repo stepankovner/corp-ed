@@ -14,6 +14,7 @@
                                        # приложение-аутентификатор служебной учётке
     python -m corp_ed.cli set-seats --code acme --seats 80 [--yes]
     python -m corp_ed.cli set-not-found-mode --code acme --mode general
+    python -m corp_ed.cli set-decision-mode --code acme --mode off|shadow|on|default
     python -m corp_ed.cli set-tariff --code acme --tariff extended \
         [--connector-limit 50 | --default-connector-limit]
     python -m corp_ed.cli suspend-tenant --code acme
@@ -98,7 +99,7 @@ from corp_ed.core.tenant_context import tenant_scope
 from corp_ed.domain.leads import CALL_TIMEZONE, LeadStatus
 from corp_ed.domain.models import Account, Passkey, StaffMember
 from corp_ed.domain.tariffs import DEFAULT_TARIFF, Tariff, plan_for
-from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, NotFoundMode
+from corp_ed.domain.types import DEFAULT_NOT_FOUND_MODE, DecisionMode, NotFoundMode
 from corp_ed.llm.factory import build_llm_gateway
 from corp_ed.repositories.account_repository import AccountRepository
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
@@ -220,6 +221,17 @@ def _parser() -> argparse.ArgumentParser:
     not_found.add_argument("--code", required=True)
     not_found.add_argument(
         "--mode", required=True, choices=[mode.value for mode in NotFoundMode]
+    )
+
+    decision = commands.add_parser(
+        "set-decision-mode",
+        help="схема «решение до ответа» (BH-46): off, shadow, on или default",
+    )
+    decision.add_argument("--code", required=True)
+    decision.add_argument(
+        "--mode",
+        required=True,
+        choices=[*(mode.value for mode in DecisionMode), "default"],
     )
 
     for name in ("suspend-tenant", "resume-tenant"):
@@ -646,6 +658,14 @@ async def _run(args: argparse.Namespace) -> int:
                 args.code, NotFoundMode(args.mode)
             )
             print(f"{tenant.company_code}: not_found_mode={tenant.not_found_mode}")
+            return 0
+
+        if args.command == "set-decision-mode":
+            tenant = await service.set_decision_mode(
+                args.code, None if args.mode == "default" else DecisionMode(args.mode)
+            )
+            shown = tenant.decision_mode or "default (RAG_FAQ_DECISION_MODE)"
+            print(f"{tenant.company_code}: decision_mode={shown}")
             return 0
 
         tenant = await service.set_active(

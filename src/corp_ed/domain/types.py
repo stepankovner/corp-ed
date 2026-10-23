@@ -69,6 +69,21 @@ class Retriever(StrEnum):
     HYBRID = "hybrid"
 
 
+class DecisionMode(StrEnum):
+    """Схема «решение до ответа» (BH-46): режим компании.
+
+    OFF — прежний путь байт в байт; SHADOW — сотрудник получает ответ
+    прежнего пути, схема идёт в фоне и пишет журнал; ON — ответ схемы.
+    Поле компании (tenants.decision_mode) перекрывает умолчание окружения
+    RAG_FAQ_DECISION_MODE; меняет команда через `cli set-decision-mode`.
+    SHADOW и ON отправляют выдержки Cloud.ru — только после договора.
+    """
+
+    OFF = "off"
+    SHADOW = "shadow"
+    ON = "on"
+
+
 class NotFoundMode(StrEnum):
     """Что делать, когда в документах ответа нет (Р1, BH-24).
 
