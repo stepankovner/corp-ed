@@ -1,8 +1,122 @@
-# Тревоги ML (BH-49, проект — docs/ml-monitoring.md раздел 2). Сейчас — две,
-# не зависящие от шага решения (BH-46): 8 и 9. Метка observe="true" — пишутся
-# в Prometheus без получателя (alertmanager/entrypoint.sh): первую неделю
-# смотрим нормальные уровни, потом включаем по одной (решение Артёма 22.10).
+# Тревоги ML (BH-49, проект — docs/ml-monitoring.md раздел 2). С получателем
+# с первого дня — пять (решение Артёма 22.10): ошибка настройки поставщика
+# решения, 402 «нет денег», оба поставщика недоступны, откаты > 20 % в on,
+# ночной прогон ниже порога. Остальные — с меткой observe="true": пишутся в
+# Prometheus без получателя (alertmanager/entrypoint.sh), первую неделю тени
+# смотрим нормальные уровни, потом включаем по одной.
+#
+# Отличия от черновика ML: дублёр решения — Qwen у Яндекса (provider="yandex"),
+# не MWS; предохранителя решения нет («не на старте», BH-46 п. 6), поэтому
+# DecisionBreakerOpen нет, а «оба поставщика недоступны» — по откатам с
+# причиной provider_error (оба звена упали).
 groups:
+  - name: ml-decision
+    rules:
+      # 1. Доля откатов схемы за 15 мин (только on)
+      - alert: DecisionFallbacksHigh
+        expr: |
+          sum(increase(corp_ed_decision_fallback_total{mode="on"}[15m]))
+          / sum(increase(corp_ed_decision_questions_total{mode="on", route!="rule"}[15m])) > 0.2
+          and sum(increase(corp_ed_decision_questions_total{mode="on", route!="rule"}[15m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Схема ответа откатывается на конвейер: {{ $value | humanizePercentage }} за 15 мин"
+          description: "Поставщик решения тормозит или отвечает ошибками. Панель «Поставщики моделей»."
+      - alert: DecisionFallbacksElevated
+        expr: |
+          sum by (mode) (increase(corp_ed_decision_fallback_total[15m]))
+          / sum by (mode) (increase(corp_ed_decision_questions_total{route!="rule"}[15m])) > 0.05
+          and sum by (mode) (increase(corp_ed_decision_questions_total{route!="rule"}[15m])) >= 20
+        for: 15m
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "Откатов схемы больше 5 % ({{ $labels.mode }})"
+      # 2. Ошибка настройки у поставщика — сразу
+      - alert: DecisionProviderConfigError
+        expr: |
+          sum by (provider) (increase(corp_ed_decision_calls_total{outcome="error_config"}[5m])) > 0
+          or sum by (provider) (increase(corp_ed_decision_probe_total{outcome="error_config"}[20m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.provider }}: ошибка настройки (ключ, права, модель)"
+          description: "400/401/403/404. Вопросы идут через второе звено; код — в журнале (qa_log.decision)."
+      # 3. Нет денег (Cloud.ru 402)
+      - alert: DecisionProviderNoFunds
+        expr: |
+          sum by (provider) (increase(corp_ed_decision_calls_total{outcome="error_payment"}[5m])) > 0
+          or sum by (provider) (increase(corp_ed_decision_probe_total{outcome="error_payment"}[20m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.provider }}: 402 — на счёте нет денег"
+      # 4. Медленный вызов решения (low) 30 мин
+      - alert: DecisionCallSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le, provider)
+            (rate(corp_ed_decision_call_duration_seconds_bucket{effort="low"}[30m]))) > 4
+        for: 30m
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "{{ $labels.provider }}: p95 решения low {{ $value | humanize }} с (норма до 1,8–3,0 с)"
+      # 5. Ответ схемы дольше критерия Артёма (p95 ≤ 12 с)
+      - alert: DecisionAnswerSlow
+        expr: |
+          histogram_quantile(0.95, sum by (le)
+            (rate(corp_ed_decision_stage_duration_seconds_bucket{mode="on", stage="total"}[30m]))) > 12
+          and sum(increase(corp_ed_decision_stage_duration_seconds_count{mode="on", stage="total"}[30m])) >= 20
+        for: 30m
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "p95 ответа схемы {{ $value | humanize }} с — выше 12 с"
+      # 6. Пробный вызов Cloud.ru не прошёл 2 раза подряд
+      - alert: DecisionProbeFailing
+        expr: corp_ed_decision_probe_consecutive_failures >= 2
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "{{ $labels.provider }}: пробный вызов не прошёл {{ $value }} раза подряд"
+          description: "Баланс, ключ, модель. Исход — corp_ed_decision_probe_total."
+      # 7. Оба поставщика не ответили — схема откатывается
+      - alert: DecisionAllLinksDown
+        expr: sum(increase(corp_ed_decision_fallback_total{reason="provider_error"}[10m])) >= 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "Оба поставщика решения не отвечают — вопросы идут без схемы"
+          description: "Cloud.ru и Qwen у Яндекса упали на одних и тех же вопросах. Тревоги DecisionProvider*, Llm*."
+      # 11. Тень: схема отказывает там, где конвейер ответил
+      - alert: DecisionShadowDisagreement
+        expr: |
+          sum(increase(corp_ed_decision_branch_total{kind="shadow", result="scheme_refused"}[1d]))
+          / sum(increase(corp_ed_decision_branch_total{kind="shadow"}[1d])) > 0.05
+          and sum(increase(corp_ed_decision_branch_total{kind="shadow"}[1d])) >= 50
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "Тень: схема отказала, а конвейер ответил — {{ $value | humanizePercentage }} за сутки"
+      # 12. Выброшенные спекулятивные ответы — цена
+      - alert: DecisionSpeculativeWasteHigh
+        expr: |
+          sum(increase(corp_ed_decision_speculative_total{outcome="wasted"}[1d]))
+          / sum(increase(corp_ed_decision_speculative_total{outcome=~"used|wasted"}[1d])) > 0.5
+          and sum(increase(corp_ed_decision_speculative_total[1d])) >= 50
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "Выброшено {{ $value | humanizePercentage }} спекулятивных ответов за сутки"
+
   - name: ml-quality
     rules:
       # 8. Рост доли общих ответов и отказов: 6 ч против 7 сут
@@ -37,3 +151,21 @@ groups:
         annotations:
           summary: "Медиана ближайшей дистанции сдвинулась на {{ $value | humanize }} за неделю"
           description: "Сменилась модель эмбеддингов или корпус — пороги 0,59 / 0,70 могли устареть. Сказать ML."
+
+      # 10. Ночной прогон ML (метрики пишет скрипт ML в textfile; расписание —
+      # решение команды): итог ниже порога — с получателем, «ни разу не было
+      # итога» — на наблюдении, пока прогон не настроен.
+      - alert: MlNightlyEvalDropped
+        expr: corp_ed_ml_eval_score < on (suite, metric) corp_ed_ml_eval_threshold
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ночной прогон {{ $labels.suite }}: {{ $labels.metric }} = {{ $value }} ниже порога"
+      - alert: MlNightlyEvalNeverRan
+        expr: absent(corp_ed_ml_eval_score{suite="regress"})
+        for: 26h
+        labels:
+          severity: warning
+          observe: "true"
+        annotations:
+          summary: "Ночной прогон ML ни разу не дал итога"

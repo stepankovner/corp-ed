@@ -302,6 +302,22 @@ DECISION_BRANCH = Counter(
     "Исходы веток: перепроверка, справочник, добор, тень",
     ["mode", "kind", "result"],
 )
+DECISION_PROBE = Counter(
+    "corp_ed_decision_probe_total",
+    "Пробный вызов решения у Cloud.ru раз в 15 минут (ключ, баланс)",
+    ["provider", "outcome"],
+)
+DECISION_PROBE_DURATION = Histogram(
+    "corp_ed_decision_probe_duration_seconds",
+    "Время пробного вызова решения",
+    ["provider"],
+    buckets=_DECISION_SECONDS,
+)
+DECISION_PROBE_FAILURES = Gauge(
+    "corp_ed_decision_probe_consecutive_failures",
+    "Неудачные пробы решения подряд; успех — 0",
+    ["provider"],
+)
 DECISION_TOKENS = Counter(
     "corp_ed_decision_tokens_total",
     "Токены вызовов решения",
@@ -333,6 +349,10 @@ for _provider in DECISION_PROVIDERS:
                 DECISION_CALLS.labels(_provider, _effort, _call, _outcome)
 for _reason in DECISION_FAILOVER_REASONS:
     DECISION_FAILOVER.labels(_reason)
+DECISION_PROBE_DURATION.labels("cloudru")
+DECISION_PROBE_FAILURES.labels("cloudru").set(0)
+for _outcome in DECISION_OUTCOMES:
+    DECISION_PROBE.labels("cloudru", _outcome)
 
 WORKER_QUEUE = Gauge(
     "corp_ed_worker_queue_jobs",

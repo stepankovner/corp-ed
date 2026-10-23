@@ -29,7 +29,7 @@ from corp_ed.llm.errors import LLMError
 from corp_ed.llm.fallback import CircuitBreaker
 from corp_ed.llm.observe import llm_stage
 from corp_ed.llm.probes import EVERY, WHILE_OPEN, Prober
-from corp_ed.llm.types import Message, Role
+from corp_ed.llm.types import FinishReason, Message, Role
 from corp_ed.llm.yandex_openai import YandexOpenAIAdapter
 from tests.llm.test_embedding_breaker import Script
 from tests.llm.test_fallback import Clock, Provider
@@ -207,3 +207,63 @@ def test_llm_metric_labels_come_only_from_the_lists() -> None:
                 assert SECRET_QUESTION not in value
                 seen += 1
     assert seen > 0
+
+
+class DecisionLegFake:
+    """Звено решения Cloud.ru для пробы: ответы по очереди."""
+
+    name = "cloudru"
+    model = "openai/gpt-oss-120b"
+
+    def __init__(self, *answers: Any) -> None:
+        self.answers = list(answers)
+        self.calls = 0
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        effort: str,
+        response_format: dict[str, Any],
+        timeout: float,
+    ) -> Any:
+        from tests.llm.test_fallback import _completion
+
+        self.calls += 1
+        answer = self.answers.pop(0)
+        if isinstance(answer, LLMError):
+            raise answer
+        return _completion(answer, "cloudru", FinishReason.COMPLETED)
+
+
+async def test_decision_probe_every_15_minutes_replaces_the_reserve_probe() -> None:
+    from corp_ed.core.metrics import DECISION_PROBE, DECISION_PROBE_FAILURES
+    from corp_ed.llm.probes import RESERVE_EVERY
+    from tests.test_decision_loop import decision
+
+    clock = Clock()
+    leg = DecisionLegFake(
+        decision(),
+        LLMError("402", retryable=False, kind="error_payment", status=402),
+        "{",
+    )
+    reserve = Provider("cloudru")
+    prober = Prober(reserve=reserve, decision=leg, clock=clock)
+    ok = DECISION_PROBE.labels("cloudru", "ok")._value.get()
+    payment = DECISION_PROBE.labels("cloudru", "error_payment")._value.get()
+
+    await prober.run_once()
+    clock.now += EVERY
+    await prober.run_once()
+    assert leg.calls == 1
+    clock.now += RESERVE_EVERY
+    await prober.run_once()
+    clock.now += RESERVE_EVERY
+    await prober.run_once()
+
+    # Решение — проба ключа и баланса Cloud.ru; вторая (резерв) не нужна.
+    assert reserve.calls == 0 and leg.calls == 3
+    assert DECISION_PROBE.labels("cloudru", "ok")._value.get() == ok + 1
+    assert DECISION_PROBE.labels("cloudru", "error_payment")._value.get() == payment + 1
+    # Ответ не по схеме — тоже неудача: две подряд.
+    assert DECISION_PROBE_FAILURES.labels("cloudru")._value.get() == 2
