@@ -1,5 +1,5 @@
 {
-  "_comment": "Новые строки дашборда ML (docs/ml-monitoring.md, BH-49): дописать элементы panels в конец panels в deploy/monitoring/grafana/dashboards/kronto.json. id 23-52, y от 57 (после строки «Логи»).",
+  "_comment": "Новые строки дашборда ML (docs/ml-monitoring.md, BH-49): дописать элементы panels в конец panels в deploy/monitoring/grafana/dashboards/kronto.json. id 23-52, y от 57 (после строки «Логи»). 24.10: сверка с кодом (PR #151-#161) — панели 25, 31, 35-41, 43 поправлены, скопировать заново.",
   "panels": [
     {
       "id": 23,
@@ -72,7 +72,7 @@
       "id": 25,
       "type": "stat",
       "title": "Доля откатов схемы, 15 мин",
-      "description": "Решения нет (таймаут, невалидный JSON, ошибка поставщика, оба звена выключены) — ответ конвейером. Норма 0",
+      "description": "Решения нет (бюджет 6 с истёк, ответ не по схеме, оба звена упали) — ответ по выдержкам без решения. Норма 0",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -393,7 +393,7 @@
       "id": 31,
       "type": "timeseries",
       "title": "Откаты по причине",
-      "description": "timeout — 7 с истекли; invalid — ответ не прошёл схему; provider_error — ошибка поставщика; all_links_open — оба звена выключены",
+      "description": "timeout — бюджет 6 с истёк (звенья висят или бюджет съели живые вызовы); invalid — ответ не прошёл схему; provider_error — оба звена упали быстрой ошибкой",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -543,8 +543,8 @@
     {
       "id": 35,
       "type": "stat",
-      "title": "Предохранитель Cloud.ru",
-      "description": "Основное звено решения. Открыт — вопросы идут сразу ко второму звену",
+      "title": "Доля решений дублёра (Qwen у Яндекса), час",
+      "description": "Решения, где выиграл Qwen: дубль по задержке (low 3 с) или сразу при ошибке Cloud.ru. По задумке 5–15 %; около 100 % — Cloud.ru лежит или висит",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -562,12 +562,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(corp_ed_decision_breaker_state{provider=\"cloudru\"})"
+          "expr": "sum(increase(corp_ed_decision_calls_total{provider=\"yandex\", outcome=\"ok\"}[1h])) / sum(increase(corp_ed_decision_calls_total{provider!=\"mws\", outcome=\"ok\"}[1h]))"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -577,33 +577,14 @@
               },
               {
                 "color": "orange",
-                "value": 1
+                "value": 0.15
               },
               {
                 "color": "red",
-                "value": 2
+                "value": 0.5
               }
             ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "закрыт",
-                  "color": "green"
-                },
-                "1": {
-                  "text": "проба",
-                  "color": "orange"
-                },
-                "2": {
-                  "text": "открыт",
-                  "color": "red"
-                }
-              }
-            }
-          ]
+          }
         },
         "overrides": []
       },
@@ -623,8 +604,8 @@
     {
       "id": 36,
       "type": "stat",
-      "title": "Предохранитель MWS",
-      "description": "Второе звено решения",
+      "title": "Ошибки ключа и оплаты поставщиков решения, час",
+      "description": "error_config (400/401/403/404) и error_payment (402) у Cloud.ru и Qwen: вопрос берёт другое звено, тревога — сразу. Норма 0",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -642,7 +623,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(corp_ed_decision_breaker_state{provider=\"mws\"})"
+          "expr": "sum(increase(corp_ed_decision_calls_total{outcome=~\"error_config|error_payment\"}[1h]))"
         }
       ],
       "fieldConfig": {
@@ -656,34 +637,11 @@
                 "value": null
               },
               {
-                "color": "orange",
-                "value": 1
-              },
-              {
                 "color": "red",
-                "value": 2
+                "value": 1
               }
             ]
-          },
-          "mappings": [
-            {
-              "type": "value",
-              "options": {
-                "0": {
-                  "text": "закрыт",
-                  "color": "green"
-                },
-                "1": {
-                  "text": "проба",
-                  "color": "orange"
-                },
-                "2": {
-                  "text": "открыт",
-                  "color": "red"
-                }
-              }
-            }
-          ]
+          }
         },
         "overrides": []
       },
@@ -704,7 +662,7 @@
       "id": 37,
       "type": "stat",
       "title": "Пробный вызов Cloud.ru: неудач подряд",
-      "description": "Проба раз в 5 минут; тревога — от 2",
+      "description": "Проба шага решения Cloud.ru раз в 15 минут (она же проверяет ключ резерва ответа BH-50); тревога — от 2",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -764,8 +722,8 @@
     {
       "id": 38,
       "type": "stat",
-      "title": "Пробный вызов MWS: неудач подряд",
-      "description": "Резерв, которым не пользуются, умирает тихо — проба это ловит",
+      "title": "Переходы к дублёру, сутки",
+      "description": "Дубль — штатный: hedge на 5–15 % вызовов low, остальное — ошибка или ответ не по схеме у Cloud.ru. Без порога; причины — панель «Переходы к дублёру по причине»",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -783,7 +741,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max(corp_ed_decision_probe_consecutive_failures{provider=\"mws\"})"
+          "expr": "sum(increase(corp_ed_decision_failover_total[1d]))"
         }
       ],
       "fieldConfig": {
@@ -793,16 +751,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 2
               }
             ]
           }
@@ -826,7 +776,7 @@
       "id": 39,
       "type": "timeseries",
       "title": "Вызовы решения по исходу",
-      "description": "ok; invalid — не по схеме; timeout; error_fast — 5xx, 429, обрыв; error_config — ключ, права, модель; error_payment — нет денег (402)",
+      "description": "ok; invalid — не по схеме; timeout; error_fast — 5xx, 429, обрыв; error_config — ключ, права, модель; error_payment — нет денег (402). Cloud.ru, проигравший дубль, здесь не виден (исход cancelled — просьба 24.10)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -844,7 +794,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (provider, outcome) (rate(corp_ed_decision_calls_total[5m]))",
+          "expr": "sum by (provider, outcome) (rate(corp_ed_decision_calls_total{provider!=\"mws\"}[5m]))",
           "legendFormat": "{{provider}} {{outcome}}"
         }
       ],
@@ -872,7 +822,7 @@
       "id": 40,
       "type": "timeseries",
       "title": "Время вызова решения",
-      "description": "Проба 20.10 (Cloud.ru): low p95 1,5–1,8 с, medium p95 3,5–4,8 с; таймаут 7 с",
+      "description": "Проба 20.10 (Cloud.ru): low p95 1,5–1,8 с, medium p95 3,5–4,8 с; Qwen (none) ≈ 0,4–0,7 с; бюджет шага 6 с. Отменённые звенья не наблюдаются — p95 Cloud.ru обрезан",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -890,7 +840,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.5, sum by (le, provider, effort) (rate(corp_ed_decision_call_duration_seconds_bucket[10m])))",
+          "expr": "histogram_quantile(0.5, sum by (le, provider, effort) (rate(corp_ed_decision_call_duration_seconds_bucket{provider!=\"mws\"}[10m])))",
           "legendFormat": "медиана {{provider}} {{effort}}"
         },
         {
@@ -899,7 +849,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, provider, effort) (rate(corp_ed_decision_call_duration_seconds_bucket[10m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, provider, effort) (rate(corp_ed_decision_call_duration_seconds_bucket{provider!=\"mws\"}[10m])))",
           "legendFormat": "p95 {{provider}} {{effort}}"
         }
       ],
@@ -926,8 +876,8 @@
     {
       "id": 41,
       "type": "timeseries",
-      "title": "Переходы ко второму звену",
-      "description": "error_fast, error_config, error_payment — по ошибке первого звена; breaker_open — первое выключено предохранителем",
+      "title": "Переходы к дублёру по причине",
+      "description": "hedge — Cloud.ru не ответил за задержку (low 3 с); error_fast, error_config, error_payment — ошибка Cloud.ru, дубль сразу; invalid — Cloud.ru ответил не по схеме",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1037,7 +987,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (provider, direction) (increase(corp_ed_decision_tokens_total[1h]))",
+          "expr": "sum by (provider, direction) (increase(corp_ed_decision_tokens_total{provider!=\"mws\"}[1h]))",
           "legendFormat": "{{provider}} {{direction}}"
         }
       ],
