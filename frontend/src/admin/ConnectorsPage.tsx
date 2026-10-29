@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import { errorMessage } from "../api/errors";
+import { KIND_ARTICLE } from "../help/connectorArticles";
 import { describeCode } from "../lib/codes";
 import { formatDateTime, formatRelative } from "../lib/format";
 import { useDocumentTitle } from "../lib/title";
@@ -27,7 +28,9 @@ import {
 import {
   CONNECTOR_STATUS,
   filled,
+  defaultName,
   grantsLabel,
+  MODE_HINT,
   MODE_LABEL,
   secretFields,
   useKinds,
@@ -57,6 +60,12 @@ export function ConnectorsPage() {
     tariff.data?.systems_limit != null && tariff.data.systems >= tariff.data.systems_limit;
   const [creating, setCreating] = useState(false);
   const kindTitle = (kind: string) => kinds.data?.find((k) => k.kind === kind)?.title ?? kind;
+  // Ключи администратора нужны не всем: в Kaiten или Облако Mail.ru каждый
+  // входит своим ключом, у подключения своих нет — и «не заданы» не про него.
+  const needsKeys = (kind: string) => {
+    const spec = kinds.data?.find((k) => k.kind === kind);
+    return spec ? secretFields(spec).length > 0 : false;
+  };
   const perUser = connectors.data?.some((connector) => connector.mode === "per_user") ?? false;
 
   return (
@@ -64,8 +73,8 @@ export function ConnectorsPage() {
       <div className={styles.tabHead}>
         <div className={styles.tabIntro}>
           <p>
-            kronto сам забирает документы из этих систем и обновляет их по расписанию: Битрикс24,
-            Яндекс 360, Confluence.
+            kronto сам забирает документы из подключённых систем — Битрикс24, Яндекс 360, Kaiten,
+            Confluence и других — и обновляет их по расписанию.
           </p>
           {tariff.data ? (
             <p>
@@ -115,7 +124,7 @@ export function ConnectorsPage() {
                         </p>
                       </div>
                       <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
-                        {!connector.credentials_set_at ? (
+                        {!connector.credentials_set_at && needsKeys(connector.kind) ? (
                           <Badge tone="warn">ключи не заданы</Badge>
                         ) : null}
                         <Badge tone={status.tone}>{status.label}</Badge>
@@ -167,7 +176,7 @@ function CreateConnectorDialog({ kinds, onClose }: { kinds: Kind[]; onClose: () 
       open
       onOpenChange={(open) => !open && onClose()}
       title={kind ? kind.title : "Новое подключение"}
-      description={kind ? MODE_LABEL[kind.mode] : "Выберите систему, из которой брать документы."}
+      description={kind ? MODE_HINT[kind.mode] : "Выберите систему, из которой брать документы."}
     >
       {kind ? (
         <ConnectorForm
@@ -212,7 +221,7 @@ function ConnectorForm({
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [name, setName] = useState(kind.title);
+  const [name, setName] = useState(defaultName(kind));
   const [modules, setModules] = useState(kind.modules.map((module) => module.name));
   const [config, setConfig] = useState<Record<string, string>>({});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
@@ -273,6 +282,13 @@ function ConnectorForm({
   return (
     <form className={pageStyles.form} onSubmit={submit}>
       {create.isError ? <Notice kind="error">{errorMessage(create.error)}</Notice> : null}
+      {KIND_ARTICLE[kind.kind] ? (
+        <p style={{ fontSize: "var(--fs-small)" }}>
+          <a href={`/help#${KIND_ARTICLE[kind.kind]}`} target="_blank" rel="noopener noreferrer">
+            Подробная инструкция: что сделать в {defaultName(kind)} и что вписать сюда
+          </a>
+        </p>
+      ) : null}
       <OAuthInstructions kind={kind} />
       <TextField
         label="Название"

@@ -738,12 +738,12 @@ test("гость: сайт из готового HTML, песочница отв
       .getByText("Положение о служебных командировках"),
   ).toBeVisible();
 
+  // Своего поля нет — только готовые вопросы (решение 28.10).
+  await expect(page.getByLabel("Ваш вопрос")).toHaveCount(0);
   // Документы песочницы индексирует воркер (cli demo setup при подготовке):
   // пока не готовы — честный отказ, спрашиваем ещё раз.
-  const input = page.getByLabel("Ваш вопрос");
   await expect(async () => {
-    await input.fill("Какие суточные в командировке?");
-    await page.getByRole("button", { name: "Спросить" }).click();
+    await page.getByRole("button", { name: "Какие суточные в командировке?" }).click();
     await expect(
       page.getByRole("button", { name: /Положение о служебных командировках/ }).last(),
     ).toBeVisible({ timeout: 5_000 });

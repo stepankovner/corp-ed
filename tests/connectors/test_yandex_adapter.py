@@ -151,6 +151,7 @@ async def test_check_reads_uid(server: FakeYandex) -> None:
     await adapter.check()
     # uid — идентификатор сотрудника в API Яндекс 360; логин может смениться.
     assert adapter.external_user_id == UID
+    assert adapter.external_account == LOGIN  # человеку — логин
 
 
 async def test_oversized_api_response_is_an_adapter_error(

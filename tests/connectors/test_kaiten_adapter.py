@@ -87,7 +87,8 @@ def test_spec_is_per_user_with_personal_token() -> None:
     assert SPEC.kind == KIND == "kaiten"
     assert SPEC.mode is ConnectorMode.PER_USER
     assert SPEC.user_auth is UserAuth.FIELDS and not SPEC.oauth
-    assert SPEC.preview and SPEC.base
+    # Проверен живьём 23 и 28.10 — в каталоге без CONNECTOR_PREVIEW_KINDS.
+    assert not SPEC.preview and SPEC.base
     assert [m.name for m in SPEC.modules] == ["documents", "card_files"]
     assert [(f.name, f.required) for f in SPEC.config_fields] == [
         ("base_url", True),
@@ -105,13 +106,10 @@ def test_spec_checks_space_ids() -> None:
     assert SPEC.config_check({"spaces": "12,abc"}) == "spaces_invalid"
 
 
-def test_kind_is_offered_only_when_enabled(server: FakeKaiten) -> None:
-    hidden = default_registry(settings())
-    assert "kaiten" not in [spec.kind for spec in hidden.kinds()]
-    assert hidden.spec("kaiten").preview
-    enabled = default_registry(settings(preview_kinds="kaiten"))
-    assert "kaiten" in [spec.kind for spec in enabled.kinds()]
-    adapter = enabled.build(
+def test_kind_is_in_the_catalog(server: FakeKaiten) -> None:
+    registry = default_registry(settings())
+    assert "kaiten" in [spec.kind for spec in registry.kinds()]
+    adapter = registry.build(
         "kaiten", {"base_url": server.base}, {"token": ANNA_TOKEN}, server.client()
     )
     assert isinstance(adapter, KaitenAdapter)
@@ -148,6 +146,7 @@ async def test_check_remembers_kaiten_user(server: FakeKaiten) -> None:
     adapter = make_adapter(server)
     await adapter.check()
     assert adapter.external_user_id == str(ANNA_ID)
+    assert adapter.external_account == "Сотрудник"  # почты нет — имя
 
 
 async def test_rejected_token_is_an_auth_error(server: FakeKaiten) -> None:

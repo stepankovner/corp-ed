@@ -20,8 +20,8 @@ const SEARCH_MS = 700;
 
 /**
  * Заготовленное демо на главной: четыре вопроса вымышленной компании и
- * ответы с источниками. Ничего не отправляет на сервер — свой вопрос
- * задают в песочнице (/demo), там отвечает настоящий kronto.
+ * ответы с источниками. Ничего не отправляет на сервер — настоящий
+ * kronto отвечает в песочнице (/demo), тоже на готовые вопросы.
  */
 export function DemoPreview() {
   const [scenarioId, setScenarioId] = useState(SCENARIOS[0]?.id ?? "");
@@ -140,7 +140,7 @@ export function DemoPreview() {
       <div className={styles.foot}>
         <p className="muted">Ответы в этом примере заготовлены заранее.</p>
         <Link to="/demo" className={buttonClass("dark", "sm")}>
-          Задать свой вопрос в песочнице <ArrowRight size={16} aria-hidden />
+          Спросить настоящий kronto в песочнице <ArrowRight size={16} aria-hidden />
         </Link>
       </div>
     </div>

@@ -97,6 +97,22 @@ describe("где ищет ассистент", () => {
 });
 
 describe("подключение своего аккаунта", () => {
+  it("подключённый аккаунт — видно, под какой учёткой системы", async () => {
+    signedIn();
+    server.use(
+      http.get("/api/v1/connectors/mine", () =>
+        HttpResponse.json([
+          { ...BITRIX, grant_status: "active", account: "info@krontoai.ru" },
+          { ...NEXTCLOUD, id: "c-6", name: "Nextcloud без учётки" },
+        ]),
+      ),
+    );
+    renderApp("/settings/connections");
+    expect(await screen.findByText("Аккаунт: info@krontoai.ru")).toBeInTheDocument();
+    // Не подключён — строки нет.
+    expect(screen.getAllByText(/^Аккаунт:/)).toHaveLength(1);
+  });
+
   it("адрес входа не http(s) — не переходим, объясняем", async () => {
     signedIn();
     let started = false;

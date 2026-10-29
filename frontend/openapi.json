@@ -4745,6 +4745,17 @@
       "MyConnectorResponse": {
         "description": "Коннектор режима per_user глазами сотрудника: подключён ли он сам.",
         "properties": {
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
           "credential_fields": {
             "items": {
               "$ref": "#/components/schemas/FieldSpecResponse"

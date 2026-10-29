@@ -178,15 +178,20 @@ async def test_kinds_describe_bitrix24_oauth(
     assert response.status_code == 200
     by_kind = {k["kind"]: k for k in response.json()}
     assert set(by_kind) == {
+        "amocrm",
         "bitrix24",
         "confluence",
+        "kaiten",
+        "mailru_cloud",
         "nextcloud",
         "nextcloud_oauth",
         "outline",
         "owncloud",
         "seafile",
+        "vk_workspace_disk",
         "webdav",
         "yandex360",
+        "yonote",
     }
     spec = by_kind["bitrix24"]
     confluence = by_kind["confluence"]
@@ -227,6 +232,7 @@ async def test_employee_cannot_paste_tokens_into_oauth_kind(
             "name": "Портал",
             "grant_status": None,
             "grant_error_code": None,
+            "account": None,
             "oauth": True,
             "credential_fields": [],
         }

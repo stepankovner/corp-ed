@@ -188,7 +188,7 @@ async def test_off_until_setup(api: httpx.AsyncClient) -> None:
     assert info.status_code == 503
     assert info.json()["code"] == "demo_off"
 
-    ask = await _ask(api, "Как оформить командировку?")
+    ask = await _ask(api, "Как оформить командировку на объект?")
     assert ask.status_code == 503
     assert ask.json()["code"] == "demo_off"
 
@@ -283,7 +283,9 @@ async def test_honeypot_answers_without_model_or_log(
     tenant = await _setup(session_maker)
     await _index_first_document(session_maker, tenant)
 
-    response = await _ask(api, "Какие суточные?", website="https://spam.example")
+    response = await _ask(
+        api, "Какие суточные в командировке?", website="https://spam.example"
+    )
 
     assert response.status_code == 200
     assert response.json()["origin"] == "none"
@@ -303,8 +305,10 @@ async def test_honeypot_does_not_spend_the_daily_limit(
     await _setup(session_maker)
     monkeypatch.setattr(demo_endpoints, "DEMO_PER_DAY", replace(DEMO_PER_DAY, limit=1))
 
-    bot = await _ask(api, "Какие суточные?", website="https://spam.example")
-    person = await _ask(api, "Какие суточные?")
+    bot = await _ask(
+        api, "Какие суточные в командировке?", website="https://spam.example"
+    )
+    person = await _ask(api, "Какие суточные в командировке?")
 
     assert bot.status_code == 200
     assert person.status_code == 200, person.text
@@ -336,7 +340,7 @@ async def test_sandbox_refuses_a_company_with_real_members(
             )
             await session.commit()
 
-    response = await _ask(api, "Какие суточные?")
+    response = await _ask(api, "Какие суточные в командировке?")
 
     assert response.status_code == 503
     assert response.json()["code"] == "demo_off"
@@ -345,15 +349,20 @@ async def test_sandbox_refuses_a_company_with_real_members(
         await DemoService(session_maker, SETTINGS).setup()
 
 
-async def test_question_is_short_and_body_strict(
+async def test_only_listed_questions_and_strict_body(
     api: httpx.AsyncClient, session_maker: async_sessionmaker[AsyncSession]
 ) -> None:
     await _setup(session_maker)
 
     assert (await _ask(api, "д" * 301)).status_code == 422
     assert (await _ask(api, "  а  ")).status_code == 422
+    # Свой вопрос посетителя не принимается — только из списка (28.10).
+    own = await _ask(api, "Мой телефон +79161234567, перезвоните")
+    assert own.status_code == 422
+    assert "из списка" in own.text
     extra = await api.post(
-        "/api/v1/demo/ask", json={"question": "Какие суточные?", "tenant_id": "x"}
+        "/api/v1/demo/ask",
+        json={"question": "Какие суточные в командировке?", "tenant_id": "x"},
     )
     assert extra.status_code == 422
 
@@ -364,8 +373,10 @@ async def test_limit_per_ip(
     await _setup(session_maker)
 
     for _ in range(10):
-        assert (await _ask(api, "Сколько дней удалёнки?")).status_code == 200
-    response = await _ask(api, "Сколько дней удалёнки?")
+        assert (
+            await _ask(api, "Сколько дней удалёнки положено проектировщикам?")
+        ).status_code == 200
+    response = await _ask(api, "Сколько дней удалёнки положено проектировщикам?")
 
     assert response.status_code == 429
     assert "Retry-After" in response.headers
@@ -379,7 +390,7 @@ async def test_fails_closed_without_redis(
     await _setup(session_maker)
     app.state.rate_limiter = DownLimiter()
 
-    response = await _ask(api, "Какие суточные?")
+    response = await _ask(api, "Какие суточные в командировке?")
 
     assert response.status_code == 503
     assert fake_llm.calls == []
@@ -397,7 +408,7 @@ async def test_exhausted_pool_is_demo_busy(
             spend(session, member, 420 * SETTINGS.seats)
             await session.commit()
 
-    response = await _ask(api, "Какие суточные?")
+    response = await _ask(api, "Какие суточные в командировке?")
 
     assert response.status_code == 503
     assert response.json()["code"] == "demo_busy"
@@ -453,7 +464,9 @@ async def test_stream_honeypot_answers_without_model(
     tenant = await _setup(session_maker)
     await _index_first_document(session_maker, tenant)
 
-    events = await _stream(api, "Какие суточные?", website="https://spam.example")
+    events = await _stream(
+        api, "Какие суточные в командировке?", website="https://spam.example"
+    )
 
     assert [event["type"] for event in events] == ["done"]
     assert events[0]["answer"]["origin"] == "none"
@@ -465,7 +478,7 @@ async def test_stream_checks_limits_and_company_before_streaming(
 ) -> None:
     """Песочница не заведена — 503 до потока; лимит по IP общий с /ask."""
     off = await api.post(
-        "/api/v1/demo/ask/stream", json={"question": "Какие суточные?"}
+        "/api/v1/demo/ask/stream", json={"question": "Какие суточные в командировке?"}
     )
     assert off.status_code == 503
     assert off.json()["code"] == "demo_off"
@@ -473,9 +486,12 @@ async def test_stream_checks_limits_and_company_before_streaming(
     await _setup(session_maker)
     # Лимит считает и вопрос к незаведённой песочнице: он идёт первым.
     for _ in range(9):
-        assert (await _ask(api, "Сколько дней удалёнки?")).status_code == 200
+        assert (
+            await _ask(api, "Сколько дней удалёнки положено проектировщикам?")
+        ).status_code == 200
     limited = await api.post(
-        "/api/v1/demo/ask/stream", json={"question": "Сколько дней удалёнки?"}
+        "/api/v1/demo/ask/stream",
+        json={"question": "Сколько дней удалёнки положено проектировщикам?"},
     )
     assert limited.status_code == 429
 
@@ -492,7 +508,7 @@ async def test_stream_exhausted_pool_is_error_event(
             spend(session, member, 420 * SETTINGS.seats)
             await session.commit()
 
-    events = await _stream(api, "Какие суточные?")
+    events = await _stream(api, "Какие суточные в командировке?")
 
     assert events[-1]["type"] == "error"
     assert events[-1]["code"] == "demo_busy"

@@ -122,16 +122,17 @@ async def create(
 
 
 @pytest.mark.parametrize("preview_kinds", [""])
-async def test_webdav_kinds_wait_for_live_check(
+async def test_webdav_kinds_checked_live_are_offered(
     webdav_api: httpx.AsyncClient, admin_account: User
 ) -> None:
+    # VK WorkSpace и Облако Mail.ru проверены живьём 28.10 — без флага.
     response = await webdav_api.get(f"{URL}/kinds", headers=bearer(admin_account))
-    assert "vk_workspace_disk" not in {k["kind"] for k in response.json()}
+    kinds = {k["kind"] for k in response.json()}
+    assert {"vk_workspace_disk", "mailru_cloud"} <= kinds
     response = await create(
         webdav_api, admin_account, "vk_workspace_disk", {"server": SERVER}
     )
-    assert response.status_code == 422
-    assert response.json()["code"] == "kind_unknown"
+    assert response.status_code == 201, response.text
 
 
 async def test_kinds_describe_webdav_forms(

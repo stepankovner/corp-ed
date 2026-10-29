@@ -12,7 +12,11 @@ import { PAGES, render } from "./prerender";
 const DEMO: Schemas["DemoInfoResponse"] = {
   company: "ООО «Меридиан Строй»",
   documents: ["Положение о служебных командировках", "Положение о закупках"],
-  questions: ["Как оформить командировку на объект?", "Сколько дней удалёнки положено?"],
+  questions: [
+    "Какие суточные в командировке?",
+    "Как перенести отпуск?",
+    "Сколько дней удалёнки положено?",
+  ],
 };
 
 function demoInfo(response: Record<string, unknown> = DEMO, status = 200) {
@@ -57,10 +61,9 @@ describe("главная для гостя", () => {
       await screen.findByText("В подключённых документах нет ответа на этот вопрос."),
     ).toBeVisible();
 
-    expect(screen.getByRole("link", { name: /Задать свой вопрос в песочнице/ })).toHaveAttribute(
-      "href",
-      "/demo",
-    );
+    expect(
+      screen.getByRole("link", { name: /Спросить настоящий kronto в песочнице/ }),
+    ).toHaveAttribute("href", "/demo");
   });
 
   it("меню на телефоне раскрывается кнопкой", async () => {
@@ -100,12 +103,16 @@ describe("песочница", () => {
 
     expect(await screen.findByText("Положение о закупках")).toBeVisible();
     expect(document.title).toBe("Песочница — kronto");
-    await user.type(screen.getByLabelText("Ваш вопрос"), "Какие суточные?{Enter}");
+    // Своего поля нет — только готовые вопросы (решение 28.10).
+    expect(screen.queryByLabelText("Ваш вопрос")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Какие суточные в командировке?" }));
 
     expect(await screen.findByText(/Суточные — 700 ₽ в день/)).toBeVisible();
-    expect(asked).toEqual([{ question: "Какие суточные?", website: "" }]);
+    expect(asked).toEqual([{ question: "Какие суточные в командировке?", website: "" }]);
     // Скринридер не зачитывает каждый кусок потока — только готовность.
-    expect(screen.getByText("Какие суточные?").closest("ol")).not.toHaveAttribute("aria-live");
+    expect(
+      screen.getByText("Какие суточные в командировке?", { selector: "p" }).closest("ol"),
+    ).not.toHaveAttribute("aria-live");
     expect(await screen.findByText("Ответ готов.")).toHaveAttribute("role", "status");
     const source = await screen.findByRole("button", {
       name: /Положение о служебных командировках › Раздел 4/,
@@ -114,7 +121,9 @@ describe("песочница", () => {
     await user.click(screen.getByRole("button", { name: "Источник 1" }));
     expect(source).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(/Бухгалтерия перечисляет аванс/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Спросить" })).toBeEnabled();
+    // После ответа можно выбрать следующий вопрос.
+    expect(screen.getByText("Спросить ещё")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Как перенести отпуск?" })).toBeEnabled();
   });
 
   it("два фрагмента одного раздела — одна карточка с обоими", async () => {
@@ -131,7 +140,7 @@ describe("песочница", () => {
     };
     server.use(http.post("/api/v1/demo/ask/stream", () => demoStream([{ type: "done", answer }])));
     renderApp("/demo", { signedIn: false });
-    await user.type(await screen.findByLabelText("Ваш вопрос"), "Какие суточные?{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Какие суточные в командировке?" }));
 
     const card = await screen.findByRole("button", {
       name: /^1, 2\s?Положение о служебных командировках › Раздел 4/,
@@ -176,31 +185,24 @@ describe("песочница", () => {
     ).toBeVisible();
     expect(screen.getByText("Готово: в документах нет ответа.")).toHaveAttribute("role", "status");
 
-    await user.type(screen.getByLabelText("Ваш вопрос"), "А премия?");
-    await user.click(screen.getByRole("button", { name: "Спросить" }));
+    await user.click(screen.getByRole("button", { name: "Какие суточные в командировке?" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Вопросов из песочницы на этот час больше нет",
     );
 
-    await user.type(screen.getByLabelText("Ваш вопрос"), "А отпуск?{Enter}");
+    await user.click(screen.getByRole("button", { name: "Как перенести отпуск?" }));
     expect(await screen.findByText("Модель сейчас не отвечает.")).toBeVisible();
   });
 
-  it("слишком короткий вопрос не отправляется", async () => {
-    const user = userEvent.setup();
-    demoInfo();
-    renderApp("/demo", { signedIn: false });
-    await screen.findByText("Положение о закупках");
-    await user.type(screen.getByLabelText("Ваш вопрос"), "а{Enter}");
-    expect(screen.getByRole("alert")).toHaveTextContent("Напишите вопрос");
-    expect(screen.getByLabelText("Ваш вопрос")).toHaveAttribute("aria-invalid", "true");
-  });
-
-  it("выключенная песочница — пояснение, поле недоступно", async () => {
+  it("выключенная песочница — пояснение, вопросы недоступны", async () => {
     demoInfo({ detail: "Песочница сейчас недоступна.", code: "demo_off" }, 503);
     renderApp("/demo", { signedIn: false });
     expect(await screen.findByText("Песочница сейчас недоступна")).toBeVisible();
-    expect(screen.getByLabelText("Ваш вопрос")).toBeDisabled();
+    for (const button of within(screen.getByRole("list", { name: "Выберите вопрос" })).getAllByRole(
+      "button",
+    )) {
+      expect(button).toBeDisabled();
+    }
   });
 });
 

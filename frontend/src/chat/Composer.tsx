@@ -46,8 +46,8 @@ export interface Draft {
 
 /**
  * Поле вопроса: до 4 000 символов, файлы к вопросу (ТЗ §6), «Остановить»,
- * пока печатается ответ. onSend — true, если вопрос ушёл; иначе текст и
- * файлы остаются в поле.
+ * пока печатается ответ. Поле очищается при отправке; onSend — true, если
+ * вопрос ушёл, иначе текст и файлы возвращаются в поле.
  */
 export function Composer({
   busy,
@@ -148,11 +148,17 @@ export function Composer({
     event?.preventDefault();
     if (disabled) return;
     const attachments = chips.flatMap((chip) => (chip.state === "ready" ? [chip.attachment] : []));
+    // Поле очищается сразу, а не когда допечатается ответ: вопрос уже виден
+    // в переписке. Не ушёл (ошибка, «Остановить») — текст и файлы
+    // возвращаются, если человек не начал писать новый.
+    const draft = { value, chips };
+    setValue("");
+    setChips([]);
     setSending(true);
     try {
-      if (await onSend({ question, attachments })) {
-        setValue("");
-        setChips([]);
+      if (!(await onSend({ question, attachments }))) {
+        setValue((current) => (current === "" ? draft.value : current));
+        setChips((current) => (current.length === 0 ? draft.chips : current));
       }
     } finally {
       setSending(false);

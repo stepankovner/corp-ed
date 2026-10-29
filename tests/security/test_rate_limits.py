@@ -18,6 +18,7 @@ from corp_ed.api.v1.rate_limits import (
 from corp_ed.core.rate_limit import (
     InMemoryRateLimiter,
     RateDecision,
+    RateLimitedError,
     RateLimiter,
     RateLimiterUnavailableError,
     RedisRateLimiter,
@@ -44,6 +45,15 @@ async def _fail(api: httpx.AsyncClient, email: str, times: int) -> None:
     for _ in range(times):
         response = await login(api, email, "wrong-password-123")
         assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "wait"), [(0, "1 с"), (45, "45 с"), (60, "1 мин"), (2900, "49 мин")]
+)
+def test_limit_message_says_when_to_retry(retry_after: int, wait: str) -> None:
+    error = RateLimitedError(retry_after)
+    assert str(error) == f"Слишком много запросов, повторите через {wait}"
+    assert error.retry_after == max(retry_after, 1)
 
 
 async def test_account_locks_after_repeated_failures(

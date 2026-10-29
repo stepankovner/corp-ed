@@ -2,8 +2,9 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import { AverageQuestion } from "./AverageQuestion";
+import { CONNECTOR_ARTICLES } from "./connectorArticles";
 
-export type Audience = "employee" | "admin";
+export type Audience = "employee" | "admin" | "connectors";
 
 export interface Article {
   /** Якорь статьи: /help#slug открывает её. */
@@ -189,7 +190,8 @@ export const ARTICLES: Article[] = [
           </li>
           <li>Нажмите «Подключить» и разрешите доступ на странице сервиса.</li>
           <li>
-            Документы появятся в ответах после ближайшей синхронизации — обычно в течение 30 минут.
+            kronto сразу начнёт забирать ваши документы: в ответах они появятся через несколько
+            минут, дальше обновляются сами.
           </li>
         </ol>
         <p>
@@ -317,10 +319,10 @@ export const ARTICLES: Article[] = [
           <Link to="/admin/departments">Управление → Отделы</Link>.
         </p>
         <p>
-          Документы без папки лежат в «Общих документах» — их видят все. Битрикс24, Яндекс 360 и
-          Confluence подключаются на вкладке{" "}
+          Документы без папки лежат в «Общих документах» — их видят все. Битрикс24, Яндекс 360,
+          Kaiten, Confluence и другие системы подключаются на вкладке{" "}
           <Link to="/admin/sources/connections">«Подключения»</Link>: документы оттуда обновляются
-          сами.
+          сами. Как подключить каждую — в группе «Подключение систем» ниже.
         </p>
       </>
     ),
@@ -413,4 +415,6 @@ export const ARTICLES: Article[] = [
       </>
     ),
   },
+  // Подключение систем — отдельной группой (connectorArticles.tsx).
+  ...CONNECTOR_ARTICLES,
 ];

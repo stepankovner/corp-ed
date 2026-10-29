@@ -1925,9 +1925,11 @@ async def test_demo_is_off_until_set_up(kronto: Kronto) -> None:
     calls = kronto.model.calls
     info = await anonymous.get(f"{API}/demo")
     assert info.status_code == 503, info.text
+    # Вопрос — из готового списка песочницы (решение владельца 28.10):
+    # свой текст отвергается раньше, 422.
     for path in ("/demo/ask", "/demo/ask/stream"):
         response = await anonymous.post(
-            f"{API}{path}", json={"question": "Как оформить отпуск?"}
+            f"{API}{path}", json={"question": "Как оформить командировку на объект?"}
         )
         assert response.status_code == 503, f"{path}: {response.status_code}"
     assert kronto.model.calls == calls
@@ -2018,15 +2020,22 @@ async def test_demo_never_leaks_real_company_documents(kronto: Kronto) -> None:
     assert info.json()["company"] != "ООО Альфа-Секрет"
     assert "Склад Альфы" not in info.json()["documents"]
 
+    # Свой вопрос песочница не принимает (28.10) — спрашиваем и им, и
+    # готовыми (двумя: лимит песочницы — по адресу): ни один ответ не
+    # выдаёт документ настоящей компании.
+    listed = info.json()["questions"][:2]
     for client in (anonymous, admin.http):
         for path in ("/demo/ask", "/demo/ask/stream"):
-            response = await client.post(f"{API}{path}", json={"question": question})
-            assert response.status_code == 200, f"{path}: {response.text}"
-            assert marker not in response.text, (
-                f"{path}: песочница выдала документ настоящей компании"
-            )
-            assert "Склад Альфы" not in response.text
-            assert "Альфа-Секрет" not in response.text
+            own = await client.post(f"{API}{path}", json={"question": question})
+            assert own.status_code == 422, f"{path}: {own.text}"
+            for ready in listed:
+                response = await client.post(f"{API}{path}", json={"question": ready})
+                assert response.status_code == 200, f"{path}: {response.text}"
+                assert marker not in response.text, (
+                    f"{path}: песочница выдала документ настоящей компании"
+                )
+                assert "Склад Альфы" not in response.text
+                assert "Альфа-Секрет" not in response.text
 
 
 async def test_demo_has_question_limit(kronto: Kronto) -> None:
@@ -2034,13 +2043,15 @@ async def test_demo_has_question_limit(kronto: Kronto) -> None:
     вызова модели, и новый браузер с того же адреса лимит не обходит."""
     await kronto.setup_demo()
     anonymous = kronto.browser()
-    base = (await anonymous.get(f"{API}/demo")).json()["questions"][0][:250]
+    # Вопросы — только из готового списка (28.10): перебираем их по кругу.
+    listed = (await anonymous.get(f"{API}/demo")).json()["questions"]
+    base = listed[0]
 
     answered_count = 0
     refused: httpx.Response | None = None
     for number in range(60):
         response = await anonymous.post(
-            f"{API}/demo/ask", json={"question": f"{base} (вариант {number})"}
+            f"{API}/demo/ask", json={"question": listed[number % len(listed)]}
         )
         if response.status_code != 200:
             refused = response
@@ -2054,20 +2065,17 @@ async def test_demo_has_question_limit(kronto: Kronto) -> None:
     assert refused.status_code in (429, 503), refused.text
 
     calls = kronto.model.calls
-    again = await anonymous.post(
-        f"{API}/demo/ask", json={"question": f"{base} (ещё раз)"}
-    )
+    again = await anonymous.post(f"{API}/demo/ask", json={"question": base})
     assert again.status_code in (429, 503), again.text
-    other = await kronto.browser().post(
-        f"{API}/demo/ask", json={"question": f"{base} (другой браузер)"}
-    )
+    other = await kronto.browser().post(f"{API}/demo/ask", json={"question": base})
     assert other.status_code in (429, 503), other.text
     assert kronto.model.calls == calls
 
 
 async def test_demo_question_validation(kronto: Kronto) -> None:
-    """ТЗ §1, §2 (правило 5 HARNESS): вопрос песочницы — 3–300 символов, без
-    лишних полей; неверный ввод модель не вызывает."""
+    """ТЗ §1, §2 (правило 5 HARNESS): вопрос песочницы — только из готового
+    списка (решение владельца 28.10), без лишних полей; неверный ввод
+    модель не вызывает."""
     await kronto.setup_demo()
     anonymous = kronto.browser()
     calls = kronto.model.calls
@@ -2076,7 +2084,8 @@ async def test_demo_question_validation(kronto: Kronto) -> None:
         {"question": ""},
         {"question": "аб"},
         {"question": "я" * 301},
-        {"question": "Как оформить отпуск?", "company": "alfa"},
+        {"question": "Как оформить отпуск?"},
+        {"question": "Как оформить командировку на объект?", "company": "alfa"},
     ]
     for body in bad_bodies:
         for path in ("/demo/ask", "/demo/ask/stream"):
@@ -2098,7 +2107,7 @@ async def test_demo_bot_trap_does_not_reach_model(kronto: Kronto) -> None:
     trap = await anonymous.post(
         f"{API}/demo/ask",
         json={
-            "question": f"{question} Подробнее.",
+            "question": question,
             "website": "https://spam.bb-kronto.ru",
         },
     )
@@ -2106,9 +2115,7 @@ async def test_demo_bot_trap_does_not_reach_model(kronto: Kronto) -> None:
     assert trap.status_code < 500, trap.text
     assert kronto.model.calls == calls
 
-    real = await kronto.browser().post(
-        f"{API}/demo/ask", json={"question": f"{question} Расскажите подробнее."}
-    )
+    real = await kronto.browser().post(f"{API}/demo/ask", json={"question": question})
     assert real.status_code == 200, real.text
     assert kronto.model.calls > calls
 
@@ -2121,9 +2128,7 @@ async def test_demo_reports_model_outage(kronto: Kronto) -> None:
     question = (await anonymous.get(f"{API}/demo")).json()["questions"][0][:250]
     kronto.model.unavailable = True
 
-    stream = await anonymous.post(
-        f"{API}/demo/ask/stream", json={"question": f"{question} Подробнее."}
-    )
+    stream = await anonymous.post(f"{API}/demo/ask/stream", json={"question": question})
     assert stream.status_code == 200, stream.text
     events = sse_events(stream.text)
     types = [event.get("type") for event in events]
@@ -2132,9 +2137,7 @@ async def test_demo_reports_model_outage(kronto: Kronto) -> None:
     errors = [event for event in events if event.get("type") == "error"]
     assert errors[0]["message"].strip()
 
-    whole = await anonymous.post(
-        f"{API}/demo/ask", json={"question": f"{question} Ещё подробнее."}
-    )
+    whole = await anonymous.post(f"{API}/demo/ask", json={"question": question})
     # допущение: целый ответ при упавшей модели — 503 demo_busy (не 200 и не 500)
     assert whole.status_code in (502, 503, 504), whole.text
 

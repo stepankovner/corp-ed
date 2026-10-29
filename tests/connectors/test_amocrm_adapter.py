@@ -120,11 +120,12 @@ def server() -> FakeAmo:
 # --- каталог и сборка -------------------------------------------------------------
 
 
-def test_spec_is_per_user_oauth_preview() -> None:
+def test_spec_is_per_user_oauth() -> None:
     assert SPEC.kind == KIND == "amocrm"
     assert SPEC.mode is ConnectorMode.PER_USER
     assert SPEC.user_auth is UserAuth.OAUTH and SPEC.oauth
-    assert SPEC.preview and SPEC.base
+    # Проверен живьём 28.10 — в каталоге без CONNECTOR_PREVIEW_KINDS.
+    assert not SPEC.preview and SPEC.base
     assert [m.name for m in SPEC.modules] == [
         "lead_files",
         "contacts_files",
@@ -142,13 +143,8 @@ def test_spec_is_per_user_oauth_preview() -> None:
     assert SPEC.url_field == "account"
 
 
-def test_kind_is_hidden_until_enabled() -> None:
-    hidden = registry()
-    assert hidden.kinds() == []
-    assert hidden.spec("amocrm").preview
-    enabled = AdapterRegistry(enabled_preview_kinds=frozenset({"amocrm"}))
-    register(enabled, settings())
-    assert [spec.kind for spec in enabled.kinds()] == ["amocrm"]
+def test_kind_is_in_the_catalog() -> None:
+    assert [spec.kind for spec in registry().kinds()] == ["amocrm"]
 
 
 @pytest.mark.parametrize(

@@ -115,22 +115,12 @@ async def _kinds(api: httpx.AsyncClient, admin: User) -> dict[str, dict[str, obj
 
 
 @pytest.mark.parametrize("preview_kinds", [""])
-async def test_unverified_kinds_are_not_offered(
+async def test_checked_kinds_are_offered_without_flag(
     kinds_api: httpx.AsyncClient, admin_account: User
 ) -> None:
+    # Kaiten и Yonote проверены живьём 28.10 — в каталоге без флага.
     kinds = await _kinds(kinds_api, admin_account)
-    assert not {"kaiten", "yonote"} & set(kinds)
-    response = await kinds_api.post(
-        URL,
-        json={
-            "kind": "kaiten",
-            "name": "Kaiten",
-            "modules": ["documents"],
-            "config": {"base_url": "https://company.kaiten.ru"},
-        },
-        headers=bearer(admin_account),
-    )
-    assert response.status_code == 422
+    assert {"kaiten", "yonote"} <= set(kinds)
 
 
 async def test_kaiten_form_and_employee_token(

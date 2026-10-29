@@ -62,8 +62,17 @@ IVAN_CREDENTIALS = {"login": IVAN_LOGIN, "password": IVAN_PASSWORD}
 MARIA_CREDENTIALS = {"login": MARIA_LOGIN, "password": MARIA_PASSWORD}
 
 
-LIVE_CHECKED = {"nextcloud", "nextcloud_oauth", "owncloud", "seafile", "webdav"}
-"""Проверены на настоящем сервере (tests/live/test_*_live.py) — без preview."""
+LIVE_CHECKED = {
+    "nextcloud",
+    "nextcloud_oauth",
+    "owncloud",
+    "seafile",
+    "webdav",
+    "vk_workspace_disk",
+    "mailru_cloud",
+}
+"""Проверены живьём — без preview: свои установки в Docker
+(tests/live/test_*_live.py), облака VK WorkSpace и Mail.ru — приёмкой 28.10."""
 
 
 def settings(**overrides: str) -> ConnectorSettings:
@@ -107,7 +116,7 @@ def server() -> FakeDav:
 # --- каталог --------------------------------------------------------------------
 
 
-def test_every_kind_is_per_user_base_and_preview_until_checked() -> None:
+def test_every_kind_is_per_user_base_and_checked_live() -> None:
     kinds = {spec.kind for spec in SPECS}
     assert kinds == {
         "nextcloud",
@@ -132,22 +141,19 @@ def test_every_kind_is_per_user_base_and_preview_until_checked() -> None:
     assert [f.name for f in NEXTCLOUD_OAUTH.app_credential_fields] == ["client_secret"]
     assert MAILRU.url_field is None
     assert {f.name for f in MAILRU.config_fields} == {"folders"}
+    # Облако обычно личное: админ видит, что пустое поле — всё оно.
+    assert "всё Облако" in MAILRU.config_fields[0].title
+    # Облачный VK WorkSpace — на адресе Облака Mail.ru (приёмка 28.10).
+    assert "https://webdav.cloud.mail.ru/" in VK_WORKSPACE.config_fields[0].title
     for spec in (NEXTCLOUD, NEXTCLOUD_OAUTH, OWNCLOUD, SEAFILE, VK_WORKSPACE, WEBDAV):
         assert spec.url_field == "server"
         assert "folders" in {f.name for f in spec.config_fields}
 
 
-def test_kinds_are_offered_only_after_live_check() -> None:
+def test_kinds_are_offered_after_live_check() -> None:
     registry = default_registry(ConnectorSettings())
     offered = {spec.kind for spec in registry.kinds()}
     assert offered & {spec.kind for spec in SPECS} == LIVE_CHECKED
-    assert "vk_workspace_disk" not in offered
-    # Живой проверке (cli connector-check) вид доступен и без флага.
-    assert registry.spec("vk_workspace_disk").preview
-    enabled = default_registry(ConnectorSettings(preview_kinds="vk_workspace_disk"))
-    offered = {spec.kind for spec in enabled.kinds()}
-    assert "vk_workspace_disk" in offered
-    assert "mailru_cloud" not in offered
 
 
 @pytest.mark.parametrize(
@@ -188,6 +194,7 @@ async def test_check_finds_user_root_through_principal(server: FakeDav) -> None:
     adapter = make(server)
     await adapter.check()
     assert adapter.external_user_id == IVAN
+    assert adapter.external_account == IVAN_LOGIN  # каким логином вошёл
     assert ("PROPFIND", "/remote.php/dav/", "0") in server.calls
     assert ("PROPFIND", f"/remote.php/dav/files/{IVAN}/", "0") in server.calls
 

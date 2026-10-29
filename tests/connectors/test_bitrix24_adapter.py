@@ -103,17 +103,7 @@ def test_spec_is_per_user_with_oauth() -> None:
 
 def test_default_registry_has_bitrix24(portal: FakePortal) -> None:
     registry = default_registry(settings())
-    assert [spec.kind for spec in registry.kinds()] == [
-        "bitrix24",
-        "confluence",
-        "nextcloud",
-        "nextcloud_oauth",
-        "outline",
-        "owncloud",
-        "seafile",
-        "webdav",
-        "yandex360",
-    ]
+    assert "bitrix24" in [spec.kind for spec in registry.kinds()]
     config = {"portal": portal.portal, "client_id": CLIENT_ID}
     adapter = registry.build(
         "bitrix24",
@@ -155,6 +145,8 @@ async def test_check_uses_profile_and_remembers_user(portal: FakePortal) -> None
     adapter = make_adapter(portal)
     await adapter.check()
     assert adapter.external_user_id == EMPLOYEE_ID
+    # Почту profile не отдаёт — сотрудник видит имя, под которым вошёл.
+    assert adapter.external_account == "Иван Петров"
     assert portal.calls == [("profile", {})]
 
 

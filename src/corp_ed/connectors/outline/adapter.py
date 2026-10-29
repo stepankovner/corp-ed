@@ -94,9 +94,10 @@ class Dialect:
 
 
 # Outline проверен живьём 09.10.2026 на 1.10.1 (tests/live/test_outline_live.py);
-# Yonote — нет.
+# Yonote — 28.10.2026 на облаке (приёмка: права коллекций, удаление, новый
+# документ, отзыв участника).
 OUTLINE = Dialect("outline", "Outline", "https://app.getoutline.com/", True, False)
-YONOTE = Dialect("yonote", "Yonote", "https://app.yonote.ru/", False, True)
+YONOTE = Dialect("yonote", "Yonote", "https://app.yonote.ru/", False, False)
 
 
 def _spec(dialect: Dialect) -> KindSpec:

@@ -10,9 +10,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed import stand_scenarios
+from corp_ed.api.v1.schemas import demo as demo_schemas
 from corp_ed.core.config import DemoSettings
 from corp_ed.core.security import hash_password
 from corp_ed.core.tenant_context import tenant_scope
+from corp_ed.demo import SUGGESTED_QUESTIONS
 from corp_ed.domain.models import (
     Department,
     Folder,
@@ -297,11 +299,12 @@ async def test_stage_scenarios_pass_with_employee(
         await session.commit()
     await DemoService(session_maker, DemoSettings()).setup()
     # «Мешок слов» не связывает «командировку» и «командировки»: вопрос
-    # песочницы — словами документа. На стенде — обычный вопрос.
+    # песочницы — словами документа. На стенде — обычный вопрос из списка;
+    # здесь песочница принимает и этот (она берёт только готовые).
+    demo_question = "Суточные в размере 700 рублей за каждый день командировки"
+    monkeypatch.setattr(stand_scenarios, "DEMO_QUESTION", demo_question)
     monkeypatch.setattr(
-        stand_scenarios,
-        "DEMO_QUESTION",
-        "Суточные в размере 700 рублей за каждый день командировки",
+        demo_schemas, "SUGGESTED_QUESTIONS", (*SUGGESTED_QUESTIONS, demo_question)
     )
 
     embeddings = WordEmbeddings()

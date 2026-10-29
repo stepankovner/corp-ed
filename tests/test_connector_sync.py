@@ -652,6 +652,41 @@ async def test_per_user_rights_disappear_with_the_listing(
     assert await materials_of(session, connector) == {}
 
 
+async def test_sync_records_the_account_each_employee_uses(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    admin: User,
+    employee: User,
+    secrets: SecretBox,
+    source: FakeSource,
+    service: ConnectorSyncService,
+) -> None:
+    """Гранты, заведённые до external_account, получают учётку с
+    синхронизацией; сменилась в источнике — сменится и у нас."""
+    source.add(doc("d1"), "Один.")
+    source.accounts = {"t-admin": "admin@portal.example.ru"}
+    connector = await make_connector(session, secrets, kind=FAKE_PER_USER_KIND)
+    await make_grant(session, secrets, connector, admin, "t-admin")
+    await make_grant(session, secrets, connector, employee, "t-emp")
+
+    await run(service, connector)
+    assert await accounts_of(session) == {
+        admin.id: "admin@portal.example.ru",
+        employee.id: None,
+    }
+
+    source.accounts["t-admin"] = "Иван  Петров"
+    await run(service, connector)
+    assert (await accounts_of(session))[admin.id] == "Иван Петров"
+
+
+async def accounts_of(session: AsyncSession) -> dict[UUID, str | None]:
+    grants = await session.scalars(
+        select(ConnectorUserGrant).execution_options(populate_existing=True)
+    )
+    return {grant.user_id: grant.external_account for grant in grants}
+
+
 async def test_rejected_employee_token_expires_only_that_grant(
     session: AsyncSession,
     tenant_ctx: Tenant,

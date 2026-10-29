@@ -75,6 +75,19 @@ describe("статьи", () => {
     ).toHaveAttribute("href", "/admin/sources/files");
   });
 
+  it("подключение систем — своя группа, статья открывается по адресу из формы", async () => {
+    signedIn(adminMe());
+    renderApp("/help#connect-vk-workspace");
+    const group = await screen.findByRole("region", { name: "Подключение систем" });
+    const toggle = within(group).getByRole("button", { name: "Подключить Диск VK WorkSpace" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(group).getByText("https://webdav.cloud.mail.ru/")).toBeVisible();
+    expect(within(group).getByRole("button", { name: "Подключить Битрикс24" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
   it("поиск по заголовку и тексту, в любой форме слова", async () => {
     signedIn();
     renderApp("/help");

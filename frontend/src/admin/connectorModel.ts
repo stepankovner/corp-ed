@@ -19,6 +19,23 @@ export const MODE_LABEL: Record<Connector["mode"], string> = {
   organization: "служебная учётная запись компании",
 };
 
+/** То же предложением — в окне нового подключения. */
+export const MODE_HINT: Record<Connector["mode"], string> = {
+  per_user:
+    "После создания каждый сотрудник подключит свой аккаунт сам — kronto увидит только то, что доступно ему.",
+  organization:
+    "kronto работает от одной служебной учётной записи компании, а кому что видно — берёт из прав в самой системе.",
+};
+
+/**
+ * Название нового подключения по умолчанию — система без пояснения в
+ * скобках: «Битрикс24», а не «Битрикс24 (облако и коробка)» — оно потом
+ * видно сотрудникам в «Моих подключениях» и в источниках.
+ */
+export function defaultName(kind: Kind): string {
+  return kind.title.replace(/\s*\([^)]*\)\s*$/, "").trim() || kind.title;
+}
+
 /** «Подключились 5 из 12 сотрудников» — у подключений, куда каждый входит своим аккаунтом. */
 export function grantsLabel(connector: Connector): string | null {
   if (connector.mode !== "per_user") return null;

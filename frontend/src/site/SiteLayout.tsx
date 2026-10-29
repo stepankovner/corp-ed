@@ -54,10 +54,10 @@ const FOOTER = [
 let navigated = false;
 
 /**
- * Оболочка публичного сайта (ТЗ §1): шапка с разделами и входом, подвал
- * со ссылками и контактами. Страницы сайта отдаются готовым HTML
- * (prerender.tsx) — здесь ничего не должно зависеть от браузера при
- * первой отрисовке.
+ * Оболочка публичного сайта (ТЗ §1): шапка с разделами, входом и
+ * регистрацией, подвал со ссылками и контактами. Страницы сайта отдаются
+ * готовым HTML (prerender.tsx) — здесь ничего не должно зависеть от
+ * браузера при первой отрисовке.
  */
 export function SiteLayout({ children }: { children: ReactNode }) {
   const { state } = useAuth();
@@ -114,6 +114,12 @@ export function SiteLayout({ children }: { children: ReactNode }) {
                   Войти
                 </Link>
                 <Link
+                  to="/register"
+                  className={`${buttonClass("ghost", "sm")} ${styles.headerCta}`}
+                >
+                  Регистрация
+                </Link>
+                <Link
                   to="/pricing/request"
                   className={`${buttonClass("dark", "sm")} ${styles.headerCta}`}
                 >
@@ -148,11 +154,18 @@ export function SiteLayout({ children }: { children: ReactNode }) {
               </li>
             ))}
             {signedIn ? null : (
-              <li>
-                <Link to="/pricing/request" onClick={() => setMenuOpen(false)}>
-                  Записаться на созвон
-                </Link>
-              </li>
+              <>
+                <li>
+                  <Link to="/register" onClick={() => setMenuOpen(false)}>
+                    Регистрация
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/pricing/request" onClick={() => setMenuOpen(false)}>
+                    Записаться на созвон
+                  </Link>
+                </li>
+              </>
             )}
           </ul>
         </nav>

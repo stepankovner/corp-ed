@@ -285,7 +285,7 @@ function ConnectorView({
               <thead>
                 <tr>
                   <th>Начало</th>
-                  <th>Итог</th>
+                  <th>Статус</th>
                   <th>Документы</th>
                   <th>Запуск</th>
                 </tr>

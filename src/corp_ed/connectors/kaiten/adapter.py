@@ -80,7 +80,9 @@ SPEC = KindSpec(
     url_field="base_url",
     config_check=_check_config,
     extra={"token_page": "/profile/api-key"},
-    preview=True,
+    # Проверен живьём 23 и 28.10.2026: права папок, выдача и отзыв доступа,
+    # правка, перенос, удаление.
+    preview=False,
 )
 
 
@@ -96,16 +98,23 @@ class KaitenAdapter:
         self._max_bytes = max_bytes
         self._spaces = tuple(spaces)
         self._user_id: str | None = None
+        self._account: str | None = None
 
     @property
     def external_user_id(self) -> str | None:
         return self._user_id
+
+    @property
+    def external_account(self) -> str | None:
+        return self._account
 
     async def check(self) -> None:
         user = await self._client.get_object("users/current")
         if user.get("id") is None:
             raise AdapterAuthError("user_unknown")
         self._user_id = str(user["id"])
+        label = user.get("email") or user.get("full_name") or user.get("username")
+        self._account = str(label) if label else None
 
     async def list(self, modules: Sequence[str]) -> AsyncIterator[RemoteDocument]:
         wanted = set(modules)

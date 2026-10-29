@@ -1885,6 +1885,8 @@ class ConnectorUserGrant(TenantMixin, Base):
     credentials: Mapped[str] = deferred(mapped_column(Text))
     # Идентификатор сотрудника в источнике, если адаптер его знает.
     external_user_id: Mapped[str | None] = mapped_column(String(128))
+    # Учётка в источнике для человека (почта, логин, имя): «Мои подключения».
+    external_account: Mapped[str | None] = mapped_column(String(320))
     status: Mapped[str] = mapped_column(
         String(16), default="active", server_default="active"
     )

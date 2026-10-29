@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type SubmitEvent } from "react";
+import { Link } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import { errorMessage } from "../api/errors";
@@ -96,6 +97,15 @@ export function WorkEditDialog({ target, onClose }: { target: WorkTarget; onClos
           value={department}
           onChange={(e) => setDepartment(e.target.value)}
           disabled={departments.isPending}
+          hint={
+            <>
+              Нужного отдела нет в списке — сначала создайте его в разделе{" "}
+              <Link to="/admin/departments" onClick={onClose}>
+                «Отделы»
+              </Link>
+              , потом вернитесь сюда.
+            </>
+          }
         >
           <option value="">Не выбран</option>
           {(departments.data ?? []).map((item) => (

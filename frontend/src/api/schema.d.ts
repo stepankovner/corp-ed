@@ -4933,6 +4933,8 @@ export interface components {
          * @description Коннектор режима per_user глазами сотрудника: подключён ли он сам.
          */
         MyConnectorResponse: {
+            /** Account */
+            account?: string | null;
             /** Credential Fields */
             credential_fields: components["schemas"]["FieldSpecResponse"][];
             /** Grant Error Code */
