@@ -158,6 +158,20 @@ def test_every_template_has_text_and_html() -> None:
         assert email.subject and email.text and email.html.startswith("<!doctype html>")
 
 
+def test_code_uses_the_letter_font() -> None:
+    """Код — тем же шрифтом, что и письмо: моноширинный у каждого клиента
+    свой, и код выглядел разными шрифтами."""
+    for email in (
+        email_templates.verify_email(name=None, code="482913", url="u", minutes=30),
+        email_templates.login_code(
+            name=None, code="482913", minutes=10, device=None, ip=None
+        ),
+    ):
+        assert "monospace" not in email.html
+        assert "Menlo" not in email.html
+        assert 'content="telephone=no"' in email.html
+
+
 def test_smtp_backend_needs_a_host() -> None:
     with pytest.raises(ValidationError):
         MailSettings(backend="smtp")

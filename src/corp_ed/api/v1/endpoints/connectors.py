@@ -111,6 +111,7 @@ def _mine(
         name=connector.name,
         grant_status=GrantStatus(grant.status) if grant else None,
         grant_error_code=grant.error_code if grant else None,
+        account=grant.external_account if grant else None,
         oauth=oauth,
         # Вид без адаптера в этой сборке — без формы: подключать нечем.
         credential_fields=(

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, FileText } from "lucide-react";
-import { useEffect, useId, useRef, useState, type SubmitEvent } from "react";
+import { FileText } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { api, unwrap, type Schemas } from "../api/client";
@@ -21,9 +21,6 @@ import site from "./Site.module.css";
 type Answer = Schemas["DemoAnswerResponse"];
 type DemoEvent = Schemas["DemoStreamEvent"];
 
-/** Как на сервере (DemoQuestionRequest). */
-const MAX_QUESTION = 300;
-const MIN_QUESTION = 3;
 /** Пока список с сервера не пришёл — те же вопросы, что в демо на главной. */
 const FALLBACK_QUESTIONS = SCENARIOS.map((item) => item.question);
 
@@ -37,9 +34,11 @@ interface Turn {
 }
 
 /**
- * Песочница (ТЗ §1): свой вопрос — ответ настоящего kronto по документам
- * вымышленной компании (src/corp_ed/demo). Без входа и без истории:
- * каждый вопрос — сам по себе, на сервере диалог не хранится.
+ * Песочница (ТЗ §1): готовый вопрос — ответ настоящего kronto по документам
+ * вымышленной компании (src/corp_ed/demo). Свой текст не пишется (решение
+ * владельца 28.10): сервер принимает только вопросы из списка, и ничего
+ * личного в модель не уходит. Без входа и без истории: каждый вопрос — сам
+ * по себе, на сервере диалог не хранится.
  */
 export function SandboxPage() {
   useSiteTitle(SITE.demo);
@@ -50,10 +49,7 @@ export function SandboxPage() {
     staleTime: Infinity,
   });
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [draft, setDraft] = useState("");
-  const [tooShort, setTooShort] = useState(false);
   const nextId = useRef(1);
-  const inputId = useId();
   const [pending, setPending] = useState(false);
   const stream = useRef<AbortController | null>(null);
   // Ушли со страницы — ответ дальше не читаем (сервер его тоже прервёт).
@@ -104,23 +100,11 @@ export function SandboxPage() {
     }
   }
 
-  function send(text: string) {
-    const question = text.trim().replace(/\s+/g, " ");
-    if (question.length < MIN_QUESTION) {
-      setTooShort(true);
-      return;
-    }
-    if (pending || question.length > MAX_QUESTION) return;
-    setTooShort(false);
+  function send(question: string) {
+    if (pending || off) return;
     const id = nextId.current++;
     setTurns((current) => [...current, { id, question, text: "" }]);
-    setDraft("");
     void ask(id, question);
-  }
-
-  function submit(event: SubmitEvent) {
-    event.preventDefault();
-    send(draft);
   }
 
   return (
@@ -130,7 +114,7 @@ export function SandboxPage() {
           level={1}
           eyebrow="песочница"
           title="Спросите kronto сами"
-          lead={`Ассистент ответит по документам вымышленной компании ${DEMO_COMPANY} и покажет, откуда взял ответ. Отвечает только по документам: на вопрос не о них честно скажет, что ответа нет.`}
+          lead={`Выберите вопрос — ассистент ответит по документам вымышленной компании ${DEMO_COMPANY} и покажет, откуда взял ответ. Отвечает только по документам: если ответа в них нет, так и скажет.`}
         />
 
         {off ? (
@@ -168,24 +152,7 @@ export function SandboxPage() {
           </aside>
 
           <section className={styles.chat} aria-label="Вопросы и ответы">
-            {turns.length === 0 ? (
-              <div className={styles.empty}>
-                <p className={styles.emptyTitle}>Выберите вопрос или напишите свой</p>
-                <div className={styles.chips}>
-                  {questions.map((question) => (
-                    <button
-                      key={question}
-                      type="button"
-                      className={styles.chip}
-                      disabled={pending || off}
-                      onClick={() => send(question)}
-                    >
-                      {question}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
+            {turns.length ? (
               <ol className={styles.thread}>
                 {turns.map((turn) => (
                   <li key={turn.id} className={styles.turn}>
@@ -197,60 +164,36 @@ export function SandboxPage() {
                   </li>
                 ))}
               </ol>
-            )}
+            ) : null}
             {/* Поток не зачитываем по кускам — только готовность ответа;
                 ошибки объявляет role="alert" у самого ответа. */}
             <p className="visually-hidden" role="status">
               {completion(turns.at(-1))}
             </p>
 
-            <form className={styles.composer} onSubmit={submit} noValidate>
-              <label htmlFor={inputId} className="visually-hidden">
-                Ваш вопрос
-              </label>
-              <textarea
-                id={inputId}
-                className={styles.input}
-                rows={2}
-                maxLength={MAX_QUESTION}
-                placeholder="Например: сколько дней на авансовый отчёт?"
-                value={draft}
-                disabled={off}
-                aria-invalid={tooShort || undefined}
-                aria-describedby={`${inputId}-hint`}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  if (tooShort) setTooShort(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    send(draft);
-                  }
-                }}
-              />
-              <button
-                type="submit"
-                className={styles.send}
-                aria-label="Спросить"
-                disabled={pending || off}
-              >
-                {pending ? <Spinner size={16} /> : <ArrowUp size={18} aria-hidden />}
-              </button>
-              <p id={`${inputId}-hint`} className={styles.hint}>
-                {tooShort ? (
-                  <span role="alert">Напишите вопрос — хотя бы пару слов.</span>
-                ) : (
-                  <>
-                    До {MAX_QUESTION} символов, 10 вопросов в час. Вопросы мы не сохраняем, но для
-                    ответа они уходят в модель — не пишите персональные данные.
-                  </>
-                )}
-                <span className={styles.counter}>
-                  {draft.length}/{MAX_QUESTION}
-                </span>
+            <div className={`${styles.picker} ${turns.length ? styles.pickerBelow : ""}`}>
+              <p className={styles.pickerTitle} id="sandbox-questions">
+                {turns.length ? "Спросить ещё" : "Выберите вопрос"}
               </p>
-            </form>
+              <ul className={styles.chips} aria-labelledby="sandbox-questions">
+                {questions.map((question) => (
+                  <li key={question}>
+                    <button
+                      type="button"
+                      className={styles.chip}
+                      disabled={pending || off}
+                      onClick={() => send(question)}
+                    >
+                      {question}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className={styles.hint}>
+                Вопросы — готовые: так в модель не уходит ничего личного. До 10 вопросов в час. Свой
+                вопрос задайте на созвоне — покажем kronto на документах вашей компании.
+              </p>
+            </div>
           </section>
         </div>
 
@@ -285,7 +228,7 @@ function askError(error: unknown): string {
     return "Вопросов из песочницы на этот час больше нет. Попробуйте позже — или запишитесь на созвон, и мы покажем kronto на ваших документах.";
   }
   if (error instanceof ApiError && error.status === 422) {
-    return `Вопрос — от ${MIN_QUESTION} до ${MAX_QUESTION} символов.`;
+    return "Этот вопрос песочница не знает — выберите из списка.";
   }
   return errorMessage(error);
 }

@@ -170,6 +170,9 @@ class MyConnectorResponse(BaseModel):
     name: str
     grant_status: GrantStatus | None
     grant_error_code: str | None
+    # Под какой учёткой источника подключился (почта, логин или имя);
+    # None — не подключался или источник её не называет.
+    account: str | None = None
     # Как подключаться: редирект (oauth) или ввод полей (PUT .../mine).
     oauth: bool = False
     # Поля формы сотрудника (без OAuth): что вводить. Значения не

@@ -178,6 +178,7 @@ class YandexAdapter:
         self._org_id = org_id
         self._wiki_roots = tuple(wiki_roots)
         self._user_id: str | None = None
+        self._account: str | None = None
 
     @property
     def refreshed_credentials(self) -> Mapping[str, str] | None:
@@ -187,9 +188,15 @@ class YandexAdapter:
     def external_user_id(self) -> str | None:
         return self._user_id
 
+    @property
+    def external_account(self) -> str | None:
+        return self._account
+
     async def check(self) -> None:
         info = await self._disk.get("", {"fields": "user.login,user.uid"})
         user = info.get("user") or {}
+        login = user.get("login")
+        self._account = str(login) if login else None
         # uid — идентификатор, которым Яндекс 360 называет сотрудника в
         # своих API; логин может смениться.
         identity = user.get("uid") or user.get("login")

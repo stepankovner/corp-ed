@@ -542,6 +542,21 @@ describe("открытый диалог", () => {
     expect(screen.queryByText("Ищу в других документах")).not.toBeInTheDocument();
   });
 
+  it("поле вопроса пустеет сразу, пока ответ ещё печатается", async () => {
+    signedIn();
+    const flow = controlledStream();
+    server.use(
+      http.get("/api/v1/conversations/c-1", () => HttpResponse.json(conversation())),
+      http.post("/api/v1/conversations/c-1/messages", () => eventStream(flow.stream)),
+    );
+    renderApp("/c/c-1");
+    await screen.findByText(/Суточные по России/);
+    await ask("Ещё вопрос");
+    // start ещё не пришёл, ответ не начат — а текста в поле уже нет.
+    await waitFor(() => expect(screen.getByLabelText("Ваш вопрос")).toHaveValue(""));
+    flow.close();
+  });
+
   it("«Остановить» до первого события сервера — ответ всё равно останавливается", async () => {
     signedIn();
     const flow = controlledStream();

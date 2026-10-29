@@ -97,6 +97,7 @@ class Bitrix24Adapter:
         self._client = client
         self._max_bytes = max_bytes
         self._user_id: str | None = None
+        self._account: str | None = None
         # Модуль базы знаний 2.0 держит содержимое между list и fetch.
         self._notes: notes_module.NotesModule | None = None
 
@@ -111,10 +112,18 @@ class Bitrix24Adapter:
             # Пустой объект — пользователь неактивен (документация).
             raise AdapterAuthError("user_inactive")
         self._user_id = str(result["ID"])
+        name = f"{result.get('NAME') or ''} {result.get('LAST_NAME') or ''}".strip()
+        self._account = name or None
 
     @property
     def external_user_id(self) -> str | None:
         return self._user_id
+
+    @property
+    def external_account(self) -> str | None:
+        """Имя и фамилия на портале: почту profile не отдаёт, а метод с
+        почтой (user.current) просит scope user."""
+        return self._account
 
     async def list(self, modules: Sequence[str]) -> AsyncIterator[RemoteDocument]:
         wanted = set(modules)

@@ -28,8 +28,20 @@ class RateLimitedError(DomainError):
     """Лимит исчерпан. HTTP 429 с заголовком Retry-After."""
 
     def __init__(self, retry_after: int) -> None:
-        super().__init__("Слишком много запросов, попробуйте позже")
-        self.retry_after = max(retry_after, 1)
+        retry_after = max(retry_after, 1)
+        # Когда можно снова — словами: «попробуйте позже» без срока
+        # заставлял нажимать кнопку наугад (приёмка 28.10).
+        super().__init__(
+            f"Слишком много запросов, повторите через {_wait(retry_after)}"
+        )
+        self.retry_after = retry_after
+
+
+def _wait(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds} с"
+    minutes = -(-seconds // 60)
+    return f"{minutes} мин"
 
 
 class RateLimiterUnavailableError(Exception):

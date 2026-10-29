@@ -134,10 +134,10 @@ function mockSources({
   return { state, bodies };
 }
 
-function mockConnectors(list: Connector[]) {
+function mockConnectors(list: Connector[], kinds: Schemas["ConnectorKindResponse"][] = []) {
   server.use(
     http.get("/api/v1/connectors", () => HttpResponse.json(list)),
-    http.get("/api/v1/connectors/kinds", () => HttpResponse.json([])),
+    http.get("/api/v1/connectors/kinds", () => HttpResponse.json(kinds)),
     http.get("/api/v1/connectors/tariff", () =>
       HttpResponse.json({
         tariff: "base",
@@ -597,6 +597,49 @@ describe("источники", () => {
     await user.click(doc.getByRole("button", { name: "Вернуть в ответы" }));
     expect(await doc.findByText("готов")).toBeInTheDocument();
     expect(bodies.map((b) => b.body)).toEqual([{ superseded: true }, { superseded: false }]);
+  });
+
+  it("«ключи не заданы» — только там, где ключи задаёт администратор", async () => {
+    mockSources();
+    const kind = (name: string, app: boolean): Schemas["ConnectorKindResponse"] => ({
+      kind: name,
+      title: name,
+      mode: "per_user",
+      modules: [],
+      config_fields: [],
+      credential_fields: [],
+      app_credential_fields: app
+        ? [
+            {
+              name: "client_secret",
+              title: "Секрет",
+              required: true,
+              secret: true,
+              multiline: false,
+            },
+          ]
+        : [],
+      oauth: app,
+      oauth_callback_url: null,
+      extra: {},
+      base: true,
+      push: false,
+      available: true,
+      limit_reached: false,
+    });
+    mockConnectors(
+      [
+        connector({ credentials_set_at: null }),
+        connector({ id: "c-2", kind: "kaiten", name: "Kaiten", credentials_set_at: null }),
+      ],
+      [kind("bitrix24", true), kind("kaiten", false)],
+    );
+    renderApp("/admin/sources/connections");
+
+    const bitrix = (await screen.findByText("Битрикс24")).closest("a");
+    expect(bitrix).toHaveTextContent("ключи не заданы");
+    // В Kaiten каждый входит своим ключом — у подключения ключей нет.
+    expect(screen.getByText("Kaiten").closest("a")).not.toHaveTextContent("ключи не заданы");
   });
 
   it("подключения: сколько сотрудников подключились сами", async () => {

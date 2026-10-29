@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, RootModel, field_validator
 
 from corp_ed.api.v1.schemas.base import RequestModel
+from corp_ed.demo import SUGGESTED_QUESTIONS
 from corp_ed.domain.types import AnswerOrigin
 
 DEMO_QUESTION_MAX = 300
@@ -22,10 +23,12 @@ class DemoQuestionRequest(RequestModel):
 
     @field_validator("question")
     @classmethod
-    def strip_question(cls, value: str) -> str:
+    def known_question(cls, value: str) -> str:
+        """Только вопрос из списка (SUGGESTED_QUESTIONS): свой текст
+        посетителя в модель не уходит."""
         value = " ".join(value.split())
-        if len(value) < 3:
-            raise ValueError("Вопрос слишком короткий")
+        if value not in SUGGESTED_QUESTIONS:
+            raise ValueError("Выберите вопрос из списка")
         return value
 
 

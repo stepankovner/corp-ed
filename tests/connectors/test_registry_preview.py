@@ -28,16 +28,23 @@ def test_flag_enables_preview_module() -> None:
 
 def test_nothing_is_hidden_by_default() -> None:
     kinds = [spec.kind for spec in default_registry(ConnectorSettings()).kinds()]
+    # amoCRM, Kaiten, Облако Mail.ru, VK WorkSpace, Yonote — после живой
+    # проверки 28.10.
     assert kinds == [
+        "amocrm",
         "bitrix24",
         "confluence",
+        "kaiten",
+        "mailru_cloud",
         "nextcloud",
         "nextcloud_oauth",
         "outline",
         "owncloud",
         "seafile",
+        "vk_workspace_disk",
         "webdav",
         "yandex360",
+        "yonote",
     ]
 
 
@@ -46,13 +53,18 @@ def test_hidden_kinds_leave_the_catalog_but_keep_working() -> None:
     registry = default_registry(settings)
 
     assert [spec.kind for spec in registry.kinds()] == [
+        "amocrm",
         "confluence",
+        "kaiten",
+        "mailru_cloud",
         "nextcloud",
         "nextcloud_oauth",
         "outline",
         "owncloud",
         "seafile",
+        "vk_workspace_disk",
         "webdav",
+        "yonote",
     ]
     assert not registry.offered("yandex360")
     assert registry.offered("confluence")
@@ -65,14 +77,19 @@ def test_misspelt_hidden_kind_is_reported() -> None:
     registry = default_registry(ConnectorSettings(hidden_kinds="yandex,confluence"))
     assert registry.unknown_hidden() == frozenset({"yandex"})
     assert [spec.kind for spec in registry.kinds()] == [
+        "amocrm",
         "bitrix24",
+        "kaiten",
+        "mailru_cloud",
         "nextcloud",
         "nextcloud_oauth",
         "outline",
         "owncloud",
         "seafile",
+        "vk_workspace_disk",
         "webdav",
         "yandex360",
+        "yonote",
     ]
 
 

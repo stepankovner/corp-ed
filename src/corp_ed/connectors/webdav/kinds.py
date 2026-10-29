@@ -125,8 +125,9 @@ def _spec(
     login_title: str,
     credential_title: str,
     preview: bool = True,
+    folders: FieldSpec = _FOLDERS,
 ) -> KindSpec:
-    config = (FieldSpec("server", server), _FOLDERS) if server else (_FOLDERS,)
+    config = (FieldSpec("server", server), folders) if server else (folders,)
     return KindSpec(
         kind=kind,
         title=title,
@@ -211,9 +212,20 @@ SEAFILE = _spec(
 VK_WORKSPACE = _spec(
     "vk_workspace_disk",
     "Диск VK WorkSpace",
-    server="Адрес WebDAV (https://webdav.cloud.<почтовый домен>/)",
+    # Облачный VK WorkSpace отвечает на адресе Облака Mail.ru, а не на
+    # своём домене (приёмка 28.10: webdav.cloud.<домен> не существует);
+    # webdav.cloud.<домен> — у коробочной установки.
+    server=(
+        "Адрес WebDAV: облако — https://webdav.cloud.mail.ru/, своя установка — "
+        "https://webdav.cloud.<почтовый домен>/"
+    ),
     login_title="Почта",
-    credential_title="Пароль для внешнего приложения",
+    credential_title=(
+        "Пароль для внешнего приложения (настройки почты → Безопасность; "
+        "нужен привязанный телефон)"
+    ),
+    # Проверен живьём 28.10.2026 на облаке: общие папки, отзыв, новый файл.
+    preview=False,
 )
 MAILRU = _spec(
     "mailru_cloud",
@@ -224,6 +236,17 @@ MAILRU = _spec(
         "Пароль для внешнего приложения (Безопасность → Пароли для внешних "
         "приложений, доступ «Облако»)"
     ),
+    # Облако у сотрудника обычно личное: пустое поле — всё оно целиком.
+    folders=FieldSpec(
+        "folders",
+        "Папки: пути по одному на строку (или через запятую). Пусто — всё "
+        "Облако сотрудника, включая личные файлы",
+        required=False,
+        multiline=True,
+    ),
+    # Проверен живьём 28.10.2026: ограничение папкой, перенос за её
+    # пределы, удаление, новый файл.
+    preview=False,
 )
 WEBDAV = _spec(
     "webdav",

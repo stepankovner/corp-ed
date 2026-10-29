@@ -13,3 +13,9 @@ c9e207986e73f21f1f61b318da93be711a255fe2:tests/live/dokuwiki/README.md:curl-auth
 e8a74c3a8e971db4d2a6c79971b6a635491dbd1a:tests/connectors/fake_elma365.py:generic-api-key:42
 e8a74c3a8e971db4d2a6c79971b6a635491dbd1a:tests/connectors/fake_elma365.py:generic-api-key:43
 e1c16d8dbad5a4d903a788561b267312f0205064:tests/connectors/fake_m365.py:generic-api-key:835
+# Найдено еженедельной проверкой всей истории 26.10 — выдуманные тестовые значения:
+# образец уведомления Точки из её документации, тестовый токен приглашения,
+# пример пароля в тесте политики паролей.
+4125f02abd79ac870c5fd4715592956903ac977d:tests/payments/fixtures/tochka_incoming_example.jwt:jwt:1
+395ef9b99ea4d0598586b7ab6658a6c1af530e94:frontend/src/auth/pendingInvite.test.ts:generic-api-key:10
+e1cfbec152607f4f962e175698ca0d3039de98ab:tests/security/test_password_policy.py:generic-api-key:33

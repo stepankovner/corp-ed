@@ -79,7 +79,8 @@ export function ConnectionsTab() {
       <div className={settingsStyles.stack}>
         {returned.status === "ok" ? (
           <Notice kind="ok" title="Аккаунт подключён">
-            Документы появятся в ответах после ближайшей синхронизации — обычно в течение часа.
+            kronto уже забирает ваши документы: в ответах они появятся через несколько минут, дальше
+            обновляются сами.
           </Notice>
         ) : null}
         {returned.status === "error" ? (
@@ -123,6 +124,13 @@ export function ConnectionsTab() {
                 <div className={styles.cardHead}>
                   <div>
                     <p className={styles.cardTitle}>{item.name}</p>
+                    {item.grant_status && item.account ? (
+                      // Под какой учёткой системы подключились: вошли не тем
+                      // аккаунтом — видно сразу (находка приёмки 28.10).
+                      <p className="muted" style={{ fontSize: "var(--fs-small)", marginTop: 4 }}>
+                        Аккаунт: {item.account}
+                      </p>
+                    ) : null}
                     {item.grant_error_code ? (
                       <p
                         style={{ color: "var(--error)", fontSize: "var(--fs-small)", marginTop: 4 }}
@@ -240,7 +248,8 @@ function CredentialsCard({ item, onDisconnect }: { item: Mine; onDisconnect: () 
     <>
       {save.isSuccess && !formOpen ? (
         <Notice kind="ok" title="Аккаунт подключён">
-          Документы появятся в ответах после ближайшей синхронизации — обычно в течение часа.
+          kronto уже забирает ваши документы: в ответах они появятся через несколько минут, дальше
+          обновляются сами.
         </Notice>
       ) : null}
       {formOpen ? (

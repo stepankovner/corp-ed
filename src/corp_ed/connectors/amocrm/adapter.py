@@ -103,7 +103,9 @@ SPEC = KindSpec(
         "oauth_callback_path": OAUTH_CALLBACK_PATH,
         "user_requirement": "администратор аккаунта amoCRM",
     },
-    preview=True,
+    # Проверен живьём 28.10.2026: права «только свои», смена ответственного,
+    # удаление и новый файл сделки.
+    preview=False,
 )
 
 

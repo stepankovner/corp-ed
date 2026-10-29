@@ -111,6 +111,11 @@ class WebDavAdapter:
         return self._user_id or self._login or None
 
     @property
+    def external_account(self) -> str | None:
+        """Логин, которым сотрудник вошёл (у облаков — почта)."""
+        return self._login or self._user_id or None
+
+    @property
     def refreshed_credentials(self) -> Mapping[str, str] | None:
         auth = self._client.auth
         return auth.refreshed_credentials if isinstance(auth, BearerAuth) else None

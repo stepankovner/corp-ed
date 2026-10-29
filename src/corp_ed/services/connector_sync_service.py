@@ -48,6 +48,7 @@ from corp_ed.connectors.base import (
     RemoteDocument,
     SharedResource,
     SourceAdapter,
+    account_label,
     refreshed_credentials,
     shared_lookup,
 )
@@ -363,7 +364,13 @@ class ConnectorSyncService:
         # документа сбрасывает загруженные атрибуты, и следующее чтение
         # ушло бы в базу из синхронного кода.
         active = [
-            (grant.id, grant.user_id, grant.credentials, grant.external_user_id)
+            (
+                grant.id,
+                grant.user_id,
+                grant.credentials,
+                grant.external_user_id,
+                grant.external_account,
+            )
             for grant in await grants.list_active_with_credentials(connector.id)
         ]
         # Кому открыто лично: права сотрудника снимаются после обхода всех
@@ -373,7 +380,7 @@ class ConnectorSyncService:
             recipient: set() for recipient in shares.recipients
         }
         deferred: dict[UUID, set[UUID]] = {}
-        for grant_id, user_id, token, external_user_id in active:
+        for grant_id, user_id, token, external_user_id, account in active:
             run.stats.grants += 1
             credentials = self._decrypt(token)
             if credentials is None:
@@ -387,6 +394,7 @@ class ConnectorSyncService:
                 if adapter is None:
                     return
                 await adapter.check()
+                await self._note_account(session, grant_id, account, adapter)
                 owner = getattr(adapter, "external_user_id", None) or external_user_id
                 mine = await self._walk(
                     session,
@@ -760,6 +768,24 @@ class ConnectorSyncService:
                 code=code,
             )
         )
+
+    async def _note_account(
+        self,
+        session: AsyncSession,
+        grant_id: UUID,
+        known: str | None,
+        adapter: SourceAdapter,
+    ) -> None:
+        """Учётка сотрудника в источнике — для «Моих подключений». Грант,
+        заведённый до неё, или сменившееся имя получают её здесь."""
+        account = account_label(adapter)
+        if account is None or account == known:
+            return
+        grant = await GrantRepository(session).get_by_id(grant_id)
+        if grant is None:
+            return
+        grant.external_account = account
+        await session.commit()
 
     async def _grant_changed(
         self, session: AsyncSession, grant_id: UUID, token: str

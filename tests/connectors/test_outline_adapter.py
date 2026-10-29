@@ -83,19 +83,18 @@ def server() -> FakeOutline:
 def test_specs_mirror_rights_with_admin_key(spec: Any, kind: str) -> None:
     assert spec.kind == kind
     assert spec.mode is ConnectorMode.ORGANIZATION and not spec.oauth
-    # Outline проверен живьём (tests/live/test_outline_live.py), Yonote — нет.
-    assert spec.preview is (kind == "yonote") and spec.base
+    # Outline проверен живьём (tests/live/test_outline_live.py), Yonote —
+    # на облаке 28.10: оба в каталоге.
+    assert not spec.preview and spec.base
     assert [m.name for m in spec.modules] == ["documents"]
     assert [(f.name, f.required) for f in spec.config_fields] == [("base_url", False)]
     assert [(f.name, f.secret) for f in spec.credential_fields] == [("token", True)]
     assert spec.url_field == "base_url"
 
 
-def test_kinds_are_offered_only_when_enabled() -> None:
+def test_kinds_are_in_the_catalog() -> None:
     offered = {s.kind for s in default_registry(settings()).kinds()}
-    assert "outline" in offered and "yonote" not in offered
-    enabled = default_registry(settings(preview_kinds="yonote"))
-    assert {"outline", "yonote"} <= {s.kind for s in enabled.kinds()}
+    assert {"outline", "yonote"} <= offered
 
 
 @pytest.mark.parametrize(

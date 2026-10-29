@@ -121,6 +121,8 @@ class FakeSource:
     # Сбой источника при вопросе о правах: AdapterError(retryable=True).
     shares_unavailable: bool = False
     share_calls: list[tuple[str, str]] = field(default_factory=list)
+    # Токен → учётка, которой источник называет сотрудника (external_account).
+    accounts: dict[str, str] = field(default_factory=dict)
 
     def add(self, document: RemoteDocument, text: str | None = None) -> RemoteDocument:
         self.documents.append(document)
@@ -135,6 +137,10 @@ class FakeAdapter:
     def __init__(self, source: FakeSource, credentials: Mapping[str, str]) -> None:
         self.source = source
         self.token = credentials.get("token", "")
+
+    @property
+    def external_account(self) -> str | None:
+        return self.source.accounts.get(self.token)
 
     async def check(self) -> None:
         self.source.check_calls.append(self.token)

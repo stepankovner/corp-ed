@@ -22,6 +22,7 @@ from corp_ed.connectors.base import (
     AdapterAuthError,
     AdapterError,
     SourceAdapter,
+    account_label,
     refreshed_credentials,
 )
 from corp_ed.connectors.common import safe_code
@@ -657,6 +658,7 @@ class ConnectorService:
             )
         config = {str(k): str(v) for k, v in connector.config.items()}
         external_user_id: str | None = None
+        account: str | None = None
         try:
             flow = self.registry.build_oauth(
                 connector.kind, config, app_credentials, self.http
@@ -675,6 +677,7 @@ class ConnectorService:
             external_user_id = exchanged.external_user_id or getattr(
                 adapter, "external_user_id", None
             )
+            account = account_label(adapter)
             credentials = refreshed_credentials(adapter) or exchanged.credentials
         except (AdapterError, OutboundURLError) as exc:
             return await self._oauth_failed(
@@ -695,11 +698,13 @@ class ConnectorService:
                     user_id=user.id,
                     credentials=token,
                     external_user_id=external_user_id,
+                    external_account=account,
                 )
             )
         else:
             grant.credentials = token
             grant.external_user_id = external_user_id
+            grant.external_account = account
             grant.status = GrantStatus.ACTIVE.value
             grant.error_code = None
         self._record(
@@ -793,7 +798,7 @@ class ConnectorService:
         # «Проверить»): неверный пароль — ошибка формы сейчас, а не
         # остановка гранта после синхронизации. До любой записи в базу.
         try:
-            await self._checked_adapter(
+            adapter = await self._checked_adapter(
                 connector, {**self._app_credentials(connector, spec), **clean}
             )
         except _CheckFailedError as exc:
@@ -807,15 +812,20 @@ class ConnectorService:
                 "Источник не принял учётные данные: " + exc.code,
             ) from None
         token = self.secrets.encrypt(clean)
+        account = account_label(adapter)
         grant = await self.grants.get(connector.id, user.id)
         if grant is None:
             grant = await self.grants.add(
                 ConnectorUserGrant(
-                    connector_id=connector.id, user_id=user.id, credentials=token
+                    connector_id=connector.id,
+                    user_id=user.id,
+                    credentials=token,
+                    external_account=account,
                 )
             )
         else:
             grant.credentials = token
+            grant.external_account = account
             grant.status = GrantStatus.ACTIVE.value
             grant.error_code = None
         self._record(

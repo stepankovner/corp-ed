@@ -629,6 +629,7 @@ async def test_employee_connects_and_disconnects_own_account(
     admin_account: User,
     account: User,
     session: AsyncSession,
+    source: FakeSource,
 ) -> None:
     created = await _create(
         connectors_api, admin_account, {**CREATE, "kind": FAKE_PER_USER_KIND}
@@ -644,6 +645,7 @@ async def test_employee_connects_and_disconnects_own_account(
             "name": "Портал",
             "grant_status": None,
             "grant_error_code": None,
+            "account": None,
             "oauth": False,
             # Форма сотрудника: что вводить; значения не возвращаются.
             "credential_fields": [
@@ -658,6 +660,7 @@ async def test_employee_connects_and_disconnects_own_account(
         }
     ]
 
+    source.accounts["my-token"] = "ivanov@portal.example.ru"
     response = await connectors_api.put(
         f"{URL}/{connector_id}/mine",
         json={"credentials": {"token": "my-token"}},
@@ -667,6 +670,8 @@ async def test_employee_connects_and_disconnects_own_account(
     assert "my-token" not in response.text
     mine = await connectors_api.get(f"{URL}/mine", headers=employee)
     assert mine.json()[0]["grant_status"] == "active"
+    # Под какой учёткой источника подключился — видно сотруднику.
+    assert mine.json()[0]["account"] == "ivanov@portal.example.ru"
     with tenant_scope(account.tenant_id):
         [grant] = (await session.scalars(select(ConnectorUserGrant))).all()
         raw = await session.scalar(

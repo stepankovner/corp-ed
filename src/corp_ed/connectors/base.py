@@ -178,6 +178,23 @@ def refreshed_credentials(adapter: object) -> Mapping[str, str] | None:
     return value if isinstance(value, Mapping) else None
 
 
+ACCOUNT_LABEL_MAX = 320
+
+
+def account_label(adapter: object) -> str | None:
+    """Под какой учёткой источника работает адаптер — для человека.
+
+    Сотрудник видит её в «Моих подключениях»: вошёл в Битрикс24 не тем
+    аккаунтом — заметно сразу, а не по странной выдаче. Адаптер держит её
+    в атрибуте external_account после check() — почта, логин или имя,
+    что источник называет; None — не называет.
+    """
+    value = getattr(adapter, "external_account", None)
+    if not isinstance(value, str):
+        return None
+    return " ".join(value.split())[:ACCOUNT_LABEL_MAX] or None
+
+
 @dataclass(frozen=True)
 class SharedResource:
     """Папка или файл, который владелец открыл сотруднику лично.

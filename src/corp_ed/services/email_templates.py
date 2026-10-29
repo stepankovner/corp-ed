@@ -15,6 +15,9 @@ _ACCENT = "#3b34d6"
 _INK = "#16161a"
 _MUTED = "#5e5e66"
 _SURFACE = "#f5f1e8"
+# Один шрифт на всё письмо, код — тоже: моноширинный у каждого клиента
+# свой (Menlo, Consolas, запасной), и код выглядел по-разному.
+_FONT = "-apple-system,'Segoe UI',Roboto,Arial,sans-serif"
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,6 @@ def _greeting(name: str | None) -> str:
 
 
 def _layout(title: str, blocks: list[str]) -> str:
-    font = "-apple-system,'Segoe UI',Roboto,Arial,sans-serif"
     table = 'role="presentation" width="100%" cellpadding="0" cellspacing="0"'
     card = "max-width:520px;background:#ffffff;border-radius:16px;padding:32px;"
     footer = (
@@ -39,9 +41,12 @@ def _layout(title: str, blocks: list[str]) -> str:
     )
     return (
         '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+        # Иначе iOS Mail принимает код из цифр за телефон и красит его
+        # ссылкой другим шрифтом.
+        '<meta name="format-detection" content="telephone=no">'
         f"<title>{escape(title)}</title></head>"
         f'<body style="margin:0;padding:24px 12px;background:{_SURFACE};'
-        f'font-family:{font};color:{_INK};">'
+        f'font-family:{_FONT};color:{_INK};">'
         f'<table {table}><tr><td align="center">'
         f'<table {table} style="{card}">'
         '<tr><td style="font-size:22px;font-weight:600;letter-spacing:-0.02em;'
@@ -75,7 +80,8 @@ def _button(label: str, url: str) -> str:
 def _code(code: str) -> str:
     return (
         f'<p style="margin:8px 0 24px;font-size:32px;letter-spacing:0.25em;'
-        f'font-weight:600;font-family:Menlo,Consolas,monospace;">{escape(code)}</p>'
+        f"font-weight:600;font-family:{_FONT};font-variant-numeric:tabular-nums;"
+        f'">{escape(code)}</p>'
     )
 
 
