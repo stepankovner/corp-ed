@@ -872,6 +872,8 @@ class FaqService:
         — build_answer_messages (faq-v2.7), общий ответ — без правила реплик.
         """
         assert self.decider is not None  # noqa: S101 — режим on только с ним
+        if await sink.should_stop():
+            return self._stopped()
         decider = self.decider
         # Отсечение спекуляции (фаза 1, решение Артёма 22.10): вопрос прошёл
         # только шлюз BH-37 — спекулятивный ответ не запускаем.
@@ -895,6 +897,11 @@ class FaqService:
             return await self._scheme_search(query, viewer)
 
         books = await self._directory_books(viewer)
+        # Чтение справочников открыло новую транзакцию после основного
+        # поиска. Решение и спекуляция не должны удерживать её соединение.
+        await self._release()
+        if await sink.should_stop():
+            return self._stopped()
 
         async def directory(role: str, missing: str, question: str) -> DirectoryHit:
             return find_in_directory(books, role, missing)
@@ -908,7 +915,11 @@ class FaqService:
             budget=self.decision_budget,
         )
         verdict = await loop.run(question, context, spec_skip=spec_skip)
-        if verdict.route is Route.SMALL_TALK:
+        if await sink.should_stop():
+            # Пока цикл работал, текст ещё не показывали. Завершённые
+            # вызовы ниже добавятся к расходу, но ответ после Stop не выйдет.
+            outcome = self._stopped()
+        elif verdict.route is Route.SMALL_TALK:
             outcome = await self._scheme_small_talk(question, verdict, mode, sink)
         elif verdict.route in (Route.NOT_FOUND, Route.OTHER_SUBJECT):
             outcome = await self._scheme_not_found(question, verdict, mode, sink)
@@ -956,6 +967,8 @@ class FaqService:
     ) -> _Outcome:
         """Маршрут ANSWER и откат (BH-46 п. 5, «Откат»): спекулятивный ответ,
         если годится, иначе новый вызов потоком. Отказ модели — п. 6."""
+        if await sink.should_stop():
+            return self._stopped()
         shown, decision = verdict.shown, verdict.decision
         edition = decision is not None and decision.match == "other_edition"
         prompt = (
@@ -971,9 +984,7 @@ class FaqService:
         completions: list[Completion] = []
         stopped = False
         if verdict.spec is not None:
-            text = verdict.spec.content.strip()
-            if not is_not_found(text):
-                await sink.delta(text)
+            completion = verdict.spec
         else:
             messages = build_answer_messages(
                 question, shown, decision, contact=verdict.contact
@@ -996,13 +1007,19 @@ class FaqService:
                 completion, stopped = streamed.completion, streamed.stopped
                 _count_fallback("answer", completion)
             completions.append(completion)
-            if completion.finish_reason is FinishReason.FILTERED and not stopped:
-                await sink.reset()
-                outcome = self._filtered(completion, reason="documents")
-                outcome.completions = completions
-                outcome.prompt_version = prompt
-                return outcome
-            text = completion.content.strip()
+        if (verdict.spec is not None or edition) and await sink.should_stop():
+            # Непотоковый ответ пока целиком скрыт; сохраняем только расход.
+            return self._stopped(*completions)
+        if completion.finish_reason is FinishReason.FILTERED and not stopped:
+            await sink.reset()
+            outcome = self._filtered(completion, reason="documents")
+            # Спекуляция учитывается с verdict.completions в _decided.
+            outcome.completions = completions
+            outcome.prompt_version = prompt
+            return outcome
+        text = completion.content.strip()
+        if verdict.spec is not None and not is_not_found(text):
+            await sink.delta(text)
         if not stopped and is_not_found(text):
             # Отказ модели по выдержкам — как «ответа нет» (п. 6).
             await sink.reset()
@@ -1027,6 +1044,8 @@ class FaqService:
         """Ответа по документам нет (BH-46 п. 6): общий ответ без правила
         реплик с оговоркой «В документах — «X», а не «Y».» сразу после
         пометки, или отказ в строгом режиме — с той же оговоркой."""
+        if await sink.should_stop():
+            return self._stopped()
         decision = verdict.decision
         note = mismatch_note(decision) if decision and decision.match == "other" else ""
         if mode is NotFoundMode.STRICT:
@@ -1046,9 +1065,8 @@ class FaqService:
         stopped = False
         if verdict.general is not None:
             completion = verdict.general
-            visible = _GeneralPrefixGate().feed(completion.content)
-            if visible:
-                await sink.delta(visible)
+            if await sink.should_stop():
+                return self._stopped()
         else:
             messages = build_general_messages(question)
             with llm_stage("general"):
@@ -1066,6 +1084,10 @@ class FaqService:
             outcome = self._filtered(completion, reason="general")
             outcome.completions = completions
             return outcome
+        if verdict.general is not None:
+            visible = _GeneralPrefixGate().feed(completion.content)
+            if visible:
+                await sink.delta(visible)
         noted = with_other_subject_note(
             ensure_general_prefix(completion.content), decision
         )
@@ -1088,11 +1110,18 @@ class FaqService:
         """Реплика, которую не знает правило (маршрут SMALL_TALK): общий
         промпт с правилом реплик; модель сочла это вопросом — как «ответа
         нет». Без пометки, совета и источников, не в пробелы (как BH-45)."""
+        if await sink.should_stop():
+            return self._stopped()
         with llm_stage("general"):
             completion = await self.llm_gateway.generate(
                 build_general_messages(question, small_talk=True),
                 temperature=self.temperature,
             )
+        if await sink.should_stop():
+            return self._stopped(completion)
+        if completion.finish_reason is FinishReason.FILTERED:
+            await sink.reset()
+            return self._filtered(completion, reason="general")
         reply = small_talk_reply(completion.content.strip())
         if reply is None:
             outcome = await self._scheme_not_found(question, verdict, mode, sink)
@@ -1107,6 +1136,17 @@ class FaqService:
             sources=[],
             completions=[completion],
             prompt_version=SMALL_TALK_PROMPT_VERSION,
+        )
+
+    @staticmethod
+    def _stopped(*completions: Completion) -> _Outcome:
+        """Stop до показа текста: пустой ответ, уже понесённый расход остаётся."""
+        return _Outcome(
+            content="",
+            origin=AnswerOrigin.NONE,
+            sources=[],
+            completions=list(completions),
+            stopped=True,
         )
 
     async def _rule_reply(

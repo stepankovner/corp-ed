@@ -66,6 +66,7 @@ export function Composer({
   const [chips, setChips] = useState<Chip[]>([]);
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const textRevision = useRef(0);
   const input = useRef<HTMLTextAreaElement>(null);
   const files = useRef<HTMLInputElement>(null);
   const mobile = useMediaQuery(MOBILE_QUERY);
@@ -148,11 +149,17 @@ export function Composer({
     event?.preventDefault();
     if (disabled) return;
     const attachments = chips.flatMap((chip) => (chip.state === "ready" ? [chip.attachment] : []));
+    const sentKeys = new Set(
+      chips.filter((chip) => chip.state === "ready").map((chip) => chip.key),
+    );
+    const sentRevision = textRevision.current;
     setSending(true);
     try {
       if (await onSend({ question, attachments })) {
-        setValue("");
-        setChips([]);
+        // Пока сервер принимал вопрос, человек мог уже изменить текст или
+        // приложить следующий файл. Убираем только отправленный черновик.
+        if (textRevision.current === sentRevision) setValue("");
+        setChips((prev) => prev.filter((chip) => !sentKeys.has(chip.key)));
       }
     } finally {
       setSending(false);
@@ -231,7 +238,10 @@ export function Composer({
           autoComplete="off"
           placeholder={mobile ? "Вопрос по документам…" : "Задайте вопрос по документам компании…"}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            textRevision.current += 1;
+            setValue(e.target.value);
+          }}
           onKeyDown={onKeyDown}
           aria-describedby="question-hint"
           autoFocus={autoFocus}

@@ -19,6 +19,7 @@
 import asyncio
 import time
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import UUID
@@ -30,9 +31,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.exceptions import CreditsExhaustedError, DailyLimitExhaustedError
 from corp_ed.core.tenant_context import tenant_scope
-from corp_ed.domain.models import ChatMessage, User, UserRole
+from corp_ed.domain.models import ChatAttachmentChunk, ChatMessage, User, UserRole
 from corp_ed.domain.tokens import count_tokens
 from corp_ed.domain.types import AnswerDiagnostics, AnswerOrigin, ChunkMatch
+from corp_ed.llm.embedding_gateway import EmbeddingGateway
 from corp_ed.llm.errors import LLMError
 from corp_ed.llm.throttle import ThrottleBusyError
 from corp_ed.prompts.dialogue import Turn
@@ -141,10 +143,11 @@ class RedisStopSignals(StopSignals):
 
     TTL_SECONDS = 600
     CHECK_INTERVAL = 0.25
+    MAX_CACHE_ENTRIES = 1024
 
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
-        self._checked: dict[UUID, tuple[float, bool]] = {}
+        self._checked: OrderedDict[UUID, tuple[float, bool]] = OrderedDict()
 
     @staticmethod
     def _key(message_id: UUID) -> str:
@@ -153,11 +156,19 @@ class RedisStopSignals(StopSignals):
     async def request(self, message_id: UUID) -> None:
         try:
             await self._redis.set(self._key(message_id), "1", ex=self.TTL_SECONDS)
+            self._checked.pop(message_id, None)
         except RedisError:
             logger.warning("chat_stop_unavailable", stage="request")
 
     async def is_set(self, message_id: UUID) -> bool:
         now = time.monotonic()
+        # Завершённые ответы больше не опрашиваются: чистим их при любом
+        # следующем запросе, иначе кэш рос бы всю жизнь процесса.
+        while self._checked:
+            first = next(iter(self._checked.values()))
+            if now - first[0] < self.CHECK_INTERVAL:
+                break
+            self._checked.popitem(last=False)
         checked = self._checked.get(message_id)
         if checked is not None and now - checked[0] < self.CHECK_INTERVAL:
             return checked[1]
@@ -166,7 +177,12 @@ class RedisStopSignals(StopSignals):
         except RedisError:
             logger.warning("chat_stop_unavailable", stage="check")
             value = False
-        self._checked[message_id] = (now, value)
+        # Ответы Redis могут прийти не в порядке запросов: время и порядок
+        # записи задаём после await. При всплеске ограничен и свежий кэш.
+        self._checked.pop(message_id, None)
+        self._checked[message_id] = (time.monotonic(), value)
+        while len(self._checked) > self.MAX_CACHE_ENTRIES:
+            self._checked.popitem(last=False)
         return value
 
 
@@ -205,12 +221,20 @@ class ChatRunner:
 class AttachmentContext:
     """Выдержки вложений диалога для промпта (AttachmentSource FaqService).
 
-    Небольшие файлы целиком, по порядку; большие — ближайшие к вопросу
-    фрагменты (их эмбеддинги посчитаны при загрузке), тоже по порядку
-    текста. Вне порога расстояния: о файле спросили явно.
+    Пока все файлы вместе помещаются — целиком. Иначе — ближайшие к
+    вопросу фрагменты, по порядку текста. Малые файлы при загрузке не
+    индексируются: недостающие векторы считаются при первом переполнении
+    общего бюджета и сохраняются для следующих вопросов.
     """
 
-    def __init__(self, session: AsyncSession, attachment_ids: list[UUID]) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        attachment_ids: list[UUID],
+        embedding_gateway: EmbeddingGateway,
+    ) -> None:
+        self.session = session
+        self.embedding_gateway = embedding_gateway
         self.repo = AttachmentRepository(session)
         self.attachment_ids = attachment_ids
         self.selected: list[ChunkMatch] = []
@@ -227,6 +251,7 @@ class AttachmentContext:
         total = sum(count_tokens(c.content) for c in chunks)
         distance: dict[UUID, float] = {}
         if total > ATTACHMENT_CONTEXT_TOKENS:
+            await self._index_missing(chunks)
             nearest = await self.repo.nearest_chunks(
                 list(attachments), embedding, ATTACHMENT_TOP_K
             )
@@ -254,6 +279,27 @@ class AttachmentContext:
             )
         self.selected = selected
         return selected
+
+    async def _index_missing(self, chunks: list[ChatAttachmentChunk]) -> None:
+        missing = [chunk for chunk in chunks if chunk.embedding is None]
+        if not missing:
+            return
+        # Здесь ещё только поиск: журнал и кредиты пишутся после ответа.
+        # Не держим соединение БД, пока ждём квоту и внешние эмбеддинги.
+        if self.session.in_transaction():
+            await self.session.commit()
+        vectors = [
+            (
+                await self.embedding_gateway.embed_document(
+                    chunk.embed_text or chunk.content
+                )
+            ).embedding
+            for chunk in missing
+        ]
+        for chunk, vector in zip(missing, vectors, strict=True):
+            chunk.embedding = vector
+        # nearest_chunks читает векторы SQL-запросом в этой же транзакции.
+        await self.session.flush()
 
 
 # --- сама генерация -------------------------------------------------------------------
@@ -357,13 +403,15 @@ class ChatGenerator:
         emit: Callable[[ChatEvent], None],
     ) -> None:
         sink = _StreamSink(emit, self.stop, job.answer_id)
-        attachments = AttachmentContext(session, job.attachment_ids)
         code: str | None = None
         try:
             member = await UserRepository(session).get_by_id(job.member_id)
             if member is None:
                 raise LookupError("member is gone")
             faq = self.build_faq(session)
+            attachments = AttachmentContext(
+                session, job.attachment_ids, faq.embedding_gateway
+            )
             async with asyncio.timeout(GENERATION_TIMEOUT):
                 result = await faq.answer_turn(
                     job.question,

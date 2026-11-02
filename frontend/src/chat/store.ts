@@ -32,6 +32,7 @@ export interface SendOptions {
 
 export interface ChatApi {
   live: Record<string, LiveAnswer>;
+  /** Завершается на start (вопрос принят), чтение ответа продолжает провайдер. */
   send: (turn: Turn, options?: SendOptions) => Promise<void>;
   stop: (conversationId: string) => void;
 }

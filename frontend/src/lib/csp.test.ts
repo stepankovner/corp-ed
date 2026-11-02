@@ -10,8 +10,11 @@ async function sha256(text: string): Promise<string> {
 
 describe("CSP статики", () => {
   it("разрешает встроенный скрипт темы из index.html по его хешу", async () => {
-    const scripts = [...indexHtml.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-      (match) => match[1] ?? "",
+    // CSP проверяет текст после HTML-парсера: CRLF из Windows checkout
+    // превращается в LF, как и в настоящем браузере.
+    const document = new DOMParser().parseFromString(indexHtml, "text/html");
+    const scripts = [...document.querySelectorAll("script:not([src])")].map(
+      (script) => script.textContent,
     );
     expect(scripts).toHaveLength(1);
     const policies = nginxConf.match(/script-src [^;]+;/g) ?? [];
