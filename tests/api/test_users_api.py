@@ -258,13 +258,12 @@ async def test_approve_needs_a_free_seat(
     assert response.status_code == 409
 
 
-async def test_last_admin_guard_in_service(
+async def test_missing_actor_cannot_bypass_admin_guard_in_service(
     session: AsyncSession, tenant_ctx: Tenant, admin_account: User
 ) -> None:
-    """Через HTTP сюда не дойти: вызывающий — сам активный админ, а себя
-    менять нельзя. Проверка — второй рубеж на случай новых путей вызова
-    (CLI, фоновые задачи), поэтому тестируется на уровне сервиса."""
-    from corp_ed.core.exceptions import LastAdminError
+    """Сервис заново проверяет права после ожидания блокировки компании:
+    переданная вызывающим старая/неперсистентная роль не даёт доступа."""
+    from corp_ed.core.exceptions import PermissionError
     from corp_ed.repositories.audit_repository import AuditRepository
     from corp_ed.repositories.user_repository import UserRepository
     from corp_ed.services.user_service import UserService
@@ -278,7 +277,7 @@ async def test_last_admin_guard_in_service(
         is_active=False,
     )
 
-    with pytest.raises(LastAdminError):
+    with pytest.raises(PermissionError):
         await service.update_user(actor, admin_account.id, role=UserRole.EMPLOYEE)
-    with pytest.raises(LastAdminError):
+    with pytest.raises(PermissionError):
         await service.remove(actor, admin_account.id)

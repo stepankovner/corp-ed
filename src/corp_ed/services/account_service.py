@@ -547,6 +547,15 @@ class AccountService:
             member = await self.users.get_by_account(account.id)
             if member is None or member.status is MemberStatus.LEFT:
                 raise NotFoundError("Компания не найдена")
+            # Вступление сначала пишет учётку, затем блокирует компанию.
+            # Тот же порядок исключает взаимное ожидание с accept().
+            if await self.accounts.get_for_update(account.id) is None:
+                raise NotFoundError("Учётная запись не найдена")
+            await self.session.refresh(account, attribute_names=["last_tenant_id"])
+            await self.tenants.lock(tenant_id)
+            member = await self.users.get_by_account(account.id, fresh=True)
+            if member is None or member.status is MemberStatus.LEFT:
+                raise NotFoundError("Компания не найдена")
             await _ensure_not_last_admin(
                 self.users,
                 member,
@@ -599,12 +608,21 @@ async def erase_account(
     """
     users = UserRepository(session)
     tenants = TenantRepository(session)
+    # Сериализуем со вступлением этой учётки: после снимка членств оно не
+    # должно создать нового администратора, которого удаление не проверит.
+    if await AccountRepository(session).get_for_update(account.id) is None:
+        raise NotFoundError("Учётная запись не найдена")
     with account_scope(account.id):
         memberships = await users.memberships_of_account(account.id)
+    # Один порядок для учёток в нескольких общих компаниях: иначе два
+    # удаления могут держать по одной блокировке и ждать друг друга.
+    for tenant_id in sorted({member.tenant_id for member in memberships}):
+        with tenant_scope(tenant_id):
+            await tenants.lock(tenant_id)
     blocking: list[str] = []
     for membership in memberships:
         with tenant_scope(membership.tenant_id):
-            member = await users.get_by_id(membership.id)
+            member = await users.get_by_id(membership.id, fresh=True)
             if member is None:
                 continue
             if (

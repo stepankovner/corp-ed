@@ -1,6 +1,7 @@
 """Чат (ТЗ §6): название диалога, что показывается в потоке, выдержки
 большого вложения."""
 
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -9,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from corp_ed.core.config import EMBEDDING_DIM
 from corp_ed.domain.models import ChatAttachment, ChatAttachmentChunk, Tenant, User
+from corp_ed.domain.tokens import count_tokens
+from corp_ed.llm.fake_embedding import FakeEmbeddingAdapter
 from corp_ed.prompts.faq import GENERAL_ANSWER_PREFIX
-from corp_ed.repositories.chat_repository import MessageRepository
+from corp_ed.repositories.chat_repository import AttachmentRepository, MessageRepository
 from corp_ed.services.chat_generation import (
+    ATTACHMENT_CONTEXT_TOKENS,
     ATTACHMENT_TOP_K,
     ERROR_MESSAGES,
     AttachmentContext,
@@ -88,7 +92,7 @@ async def test_large_attachment_sends_nearest_fragments_in_text_order(
         )
     await session.commit()
 
-    context = AttachmentContext(session, [attachment.id])
+    context = AttachmentContext(session, [attachment.id], FakeEmbeddingAdapter())
     selected = await context.select(near)
 
     assert 0 < len(selected) <= ATTACHMENT_TOP_K
@@ -122,10 +126,69 @@ async def test_small_attachment_goes_whole(
         )
     await session.commit()
 
-    selected = await AttachmentContext(session, [attachment.id]).select(
-        [0.1] * EMBEDDING_DIM
-    )
+    selected = await AttachmentContext(
+        session, [attachment.id], FakeEmbeddingAdapter()
+    ).select([0.1] * EMBEDDING_DIM)
     assert [m.content for m in selected] == ["Часть 0", "Часть 1", "Часть 2"]
+
+
+async def test_combined_small_attachments_persist_vectors_for_followup(
+    session: AsyncSession,
+    tenant_ctx: Tenant,
+    employee: User,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two individually small files exceed the combined prompt budget.
+
+    Exercise the actual pgvector nearest query and reread stored vectors,
+    rather than substituting the repository as the standalone tests do.
+    """
+    gateway = FakeEmbeddingAdapter()
+    embed = AsyncMock(wraps=gateway.embed_document)
+    monkeypatch.setattr(gateway, "embed_document", embed)
+    content = "Правила отпуска. " + "текст " * 200
+    file_tokens = 8 * count_tokens(content)
+    assert file_tokens <= ATTACHMENT_CONTEXT_TOKENS < 2 * file_tokens
+    ids, chunks = [], []
+    for _ in range(2):
+        attachment = ChatAttachment(
+            id=uuid4(),
+            user_id=employee.id,
+            filename="памятка.txt",
+            source_format="txt",
+            size=1,
+            tokens=file_tokens,
+        )
+        session.add(attachment)
+        await session.flush()
+        ids.append(attachment.id)
+        for position in range(8):
+            chunk = ChatAttachmentChunk(
+                id=uuid4(),
+                attachment_id=attachment.id,
+                position=position,
+                content=content,
+                embed_text=content,
+            )
+            chunks.append(chunk)
+            session.add(chunk)
+    await session.commit()
+    query = (await gateway.embed_query("Правила отпуска")).embedding
+
+    selected = await AttachmentContext(session, ids, gateway).select(query)
+
+    assert 0 < len(selected) <= ATTACHMENT_TOP_K
+    assert embed.await_count == len(chunks)
+    # FaqService releases this transaction before generating the answer.
+    await session.commit()
+    for chunk in chunks:
+        session.expunge(chunk)
+    stored = await AttachmentRepository(session).chunks_of(ids)
+    assert len(stored) == len(chunks)
+    assert all(chunk.embedding is not None for chunk in stored)
+
+    assert await AttachmentContext(session, ids, gateway).select(query)
+    assert embed.await_count == len(chunks)
 
 
 def _job(tenant: Tenant) -> GenerationJob:

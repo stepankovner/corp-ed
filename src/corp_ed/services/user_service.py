@@ -21,11 +21,14 @@ from corp_ed.core.exceptions import (
     ConflictError,
     LastAdminError,
     NotFoundError,
+    PermissionError,
     SelfModificationError,
 )
+from corp_ed.core.tenant_context import require_tenant
 from corp_ed.domain.models import Department, MemberStatus, User, UserRole
 from corp_ed.repositories.audit_repository import AuditAction, AuditRepository
 from corp_ed.repositories.department_repository import DepartmentRepository
+from corp_ed.repositories.tenant_repository import TenantRepository
 from corp_ed.repositories.user_repository import UserRepository
 from corp_ed.services.notification_service import (
     Notice,
@@ -66,7 +69,8 @@ class UserService:
         Смена роли и блокировка отзывают токены этой компании у человека
         сразу (версия членства), его вход в другие компании не трогается.
         """
-        user = await self._get(user_id)
+        await self._lock_admin(actor)
+        user = await self._get(user_id, fresh=True)
         before = {"role": user.role.value, "status": user.status.value}
 
         new_status = user.status
@@ -249,7 +253,8 @@ class UserService:
     async def remove(self, actor: User, user_id: UUID) -> None:
         """Убрать из компании: учётка человека остаётся, доступа к
         компании больше нет, его диалоги здесь скрываются (ТЗ §2)."""
-        user = await self._get(user_id)
+        await self._lock_admin(actor)
+        user = await self._get(user_id, fresh=True)
         if user.id == actor.id:
             raise SelfModificationError()
         if (
@@ -269,11 +274,25 @@ class UserService:
         await self.session.commit()
         logger.info("user_removed", user_id=str(user.id), actor_id=str(actor.id))
 
-    async def _get(self, user_id: UUID) -> User:
+    async def _lock_admin(self, actor: User) -> None:
+        # Все пути ухода/понижения держат эту же блокировку до commit:
+        # две операции не могут одновременно посчитать двух админов.
+        await TenantRepository(self.session).lock(require_tenant())
+        current = await self.repository.get_by_id(actor.id, fresh=True)
+        # HTTP проверил роль раньше ожидания блокировки. Другой админ за
+        # это время мог отозвать доступ вызывающего — проверяем заново.
+        if (
+            current is None
+            or current.role is not UserRole.ADMIN
+            or current.status is not MemberStatus.ACTIVE
+        ):
+            raise PermissionError("Недостаточно прав")
+
+    async def _get(self, user_id: UUID, *, fresh: bool = False) -> User:
         # Чужой пользователь не загрузится: хук изоляции добавит фильтр
         # по тенанту из контекста. Ответ — 404, а не 403, чтобы не
         # подтверждать, что такой id существует в другой компании.
-        user = await self.repository.get_by_id(user_id)
+        user = await self.repository.get_by_id(user_id, fresh=fresh)
         if user is None or user.status is MemberStatus.LEFT:
             raise NotFoundError("Пользователь не найден")
         return user

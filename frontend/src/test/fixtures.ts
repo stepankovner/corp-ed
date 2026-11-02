@@ -1,4 +1,6 @@
-import type { Schemas } from "../api/client";
+import type { components } from "../api/schema";
+
+type Schemas = components["schemas"];
 
 export function me(overrides: Partial<Schemas["MeResponse"]> = {}): Schemas["MeResponse"] {
   return {

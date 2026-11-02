@@ -91,105 +91,124 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const send = useCallback(
-    async (turn: Turn, options: SendOptions = {}) => {
-      let key = turn.kind === "new" ? NEW_KEY : turn.conversationId;
-      const controller = new AbortController();
-      controllers.current.set(key, controller);
-      setLive((prev) => ({
-        ...prev,
-        [key]: {
-          conversationId: turn.kind === "new" ? null : turn.conversationId,
-          question: turn.kind === "regenerate" ? "" : turn.question,
-          attachments: options.attachments ?? [],
-          parentId:
-            turn.kind === "ask"
-              ? turn.parentId
-              : turn.kind === "regenerate"
-                ? turn.questionId
-                : null,
-          regenerate: turn.kind === "regenerate",
-          answerId: null,
-          text: "",
-          stage: "searching",
-          origin: null,
-          stopping: false,
-        },
-      }));
+    (turn: Turn, options: SendOptions = {}) =>
+      new Promise<void>((resolve, reject) => {
+        let key = turn.kind === "new" ? NEW_KEY : turn.conversationId;
+        const controller = new AbortController();
+        controllers.current.set(key, controller);
+        setLive((prev) => ({
+          ...prev,
+          [key]: {
+            conversationId: turn.kind === "new" ? null : turn.conversationId,
+            question: turn.kind === "regenerate" ? "" : turn.question,
+            attachments: options.attachments ?? [],
+            parentId:
+              turn.kind === "ask"
+                ? turn.parentId
+                : turn.kind === "regenerate"
+                  ? turn.questionId
+                  : null,
+            regenerate: turn.kind === "regenerate",
+            answerId: null,
+            text: "",
+            stage: "searching",
+            origin: null,
+            stopping: false,
+          },
+        }));
 
-      const progress = { started: false };
-      const onEvent = (event: StreamEvent) => {
-        switch (event.type) {
-          case "start": {
-            progress.started = true;
-            const id = event.conversation.id;
-            if (key !== id) {
-              const from = key;
-              setLive((prev) => {
-                const item = prev[from];
-                const next = without(prev, from);
-                if (item) next[id] = { ...item, conversationId: id, answerId: event.answer.id };
-                return next;
-              });
-              controllers.current.delete(from);
-              controllers.current.set(id, controller);
-              key = id;
-            } else {
-              patch(key, (item) => ({ ...item, answerId: event.answer.id }));
+        const progress = { started: false };
+        const onEvent = (event: StreamEvent) => {
+          switch (event.type) {
+            case "start": {
+              progress.started = true;
+              // Вопрос уже сохранён сервером: поле можно очистить, пока этот
+              // провайдер продолжает читать ответ независимо от следующего черновика.
+              resolve();
+              const id = event.conversation.id;
+              if (key !== id) {
+                const from = key;
+                setLive((prev) => {
+                  const item = prev[from];
+                  const next = without(prev, from);
+                  if (item) next[id] = { ...item, conversationId: id, answerId: event.answer.id };
+                  return next;
+                });
+                controllers.current.delete(from);
+                controllers.current.set(id, controller);
+                key = id;
+              } else {
+                patch(key, (item) => ({ ...item, answerId: event.answer.id }));
+              }
+              if (pendingStops.current.delete(controller)) {
+                stopAnswer(id, event.answer.id).catch(() => controller.abort());
+              }
+              queryClient.setQueryData<Conversation>(conversationKey(id), (old) =>
+                applyStart(old, event, turn),
+              );
+              void queryClient.invalidateQueries({ queryKey: CONVERSATION_LISTS_KEY });
+              options.onStarted?.(id);
+              break;
             }
-            if (pendingStops.current.delete(controller)) {
-              stopAnswer(id, event.answer.id).catch(() => controller.abort());
+            case "stage":
+              patch(key, (item) => ({ ...item, stage: event.stage }));
+              break;
+            case "origin":
+              patch(key, (item) => ({ ...item, origin: event.origin }));
+              break;
+            case "delta":
+              patch(key, (item) => ({ ...item, stage: "writing", text: item.text + event.text }));
+              break;
+            case "reset":
+              patch(key, (item) => ({ ...item, text: "" }));
+              break;
+            case "done":
+            case "error": {
+              if (!progress.started) reject(new Error("stream ended before start"));
+              if (event.answer) {
+                const answer = event.answer;
+                queryClient.setQueryData<Conversation>(conversationKey(key), (old) =>
+                  applyAnswer(old, answer),
+                );
+              }
+              drop(key);
+              // Без итога (диалог удалили, пока писался ответ) — спросим сервер.
+              if (!event.answer) {
+                void queryClient.invalidateQueries({ queryKey: conversationKey(key) });
+              }
+              void queryClient.invalidateQueries({ queryKey: CONVERSATION_LISTS_KEY });
+              break;
             }
-            queryClient.setQueryData<Conversation>(conversationKey(id), (old) =>
-              applyStart(old, event, turn),
-            );
-            void queryClient.invalidateQueries({ queryKey: CONVERSATION_LISTS_KEY });
-            options.onStarted?.(id);
-            break;
           }
-          case "stage":
-            patch(key, (item) => ({ ...item, stage: event.stage }));
-            break;
-          case "origin":
-            patch(key, (item) => ({ ...item, origin: event.origin }));
-            break;
-          case "delta":
-            patch(key, (item) => ({ ...item, stage: "writing", text: item.text + event.text }));
-            break;
-          case "reset":
-            patch(key, (item) => ({ ...item, text: "" }));
-            break;
-          case "done":
-          case "error": {
-            if (event.answer) {
-              const answer = event.answer;
-              queryClient.setQueryData<Conversation>(conversationKey(key), (old) =>
-                applyAnswer(old, answer),
+        };
+
+        void (async () => {
+          try {
+            await streamTurn(turn, onEvent, controller.signal);
+            // Закрытое соединение без start не подтверждает приём вопроса.
+            if (!progress.started) reject(new Error("stream ended before start"));
+          } catch (error) {
+            // До start — ошибка запроса (лимит, 409, 422): её покажет поле вопроса.
+            if (!progress.started) {
+              reject(
+                error instanceof Error
+                  ? error
+                  : new Error("stream failed before start", { cause: error }),
               );
             }
-            drop(key);
-            // Без итога (диалог удалили, пока писался ответ) — спросим сервер.
-            if (!event.answer) {
-              void queryClient.invalidateQueries({ queryKey: conversationKey(key) });
+            // Поток оборвался — ответ допишется на сервере, карточку опросим.
+            else void queryClient.invalidateQueries({ queryKey: conversationKey(key) });
+          } finally {
+            pendingStops.current.delete(controller);
+            // done мог уже разрешить следующий ход, пока прежний reader
+            // ещё закрывается: его finally не должен стереть новый live.
+            if (controllers.current.get(key) === controller) {
+              drop(key);
+              controllers.current.delete(key);
             }
-            void queryClient.invalidateQueries({ queryKey: CONVERSATION_LISTS_KEY });
-            break;
           }
-        }
-      };
-
-      try {
-        await streamTurn(turn, onEvent, controller.signal);
-      } catch (error) {
-        // До start — ошибка запроса (лимит, 409, 422): её покажет поле вопроса.
-        if (!progress.started) throw error;
-        // Поток оборвался — ответ допишется на сервере, карточку опросим.
-        void queryClient.invalidateQueries({ queryKey: conversationKey(key) });
-      } finally {
-        drop(key);
-        pendingStops.current.delete(controller);
-        if (controllers.current.get(key) === controller) controllers.current.delete(key);
-      }
-    },
+        })();
+      }),
     [drop, patch, queryClient],
   );
 

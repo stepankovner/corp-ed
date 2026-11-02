@@ -21,11 +21,17 @@ class UserRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_by_id(self, user_id: UUID) -> User | None:
+    async def get_by_id(self, user_id: UUID, *, fresh: bool = False) -> User | None:
         # Не session.get: если объект уже в identity map сессии, get
         # вернёт его без SQL — а значит, мимо фильтра по тенанту. Запрос
         # через select всегда идёт в базу и всегда получает фильтр.
-        result = await self.session.scalars(select(User).where(User.id == user_id))
+        # После ожидания блокировки прежний объект в identity map может
+        # содержать отозванные права. fresh перечитывает и его поля.
+        result = await self.session.scalars(
+            select(User)
+            .where(User.id == user_id)
+            .execution_options(populate_existing=fresh)
+        )
         return result.first()
 
     async def get_by_id_for_update(self, user_id: UUID) -> User | None:
@@ -36,10 +42,14 @@ class UserRepository:
         )
         return result.first()
 
-    async def get_by_account(self, account_id: UUID) -> User | None:
+    async def get_by_account(
+        self, account_id: UUID, *, fresh: bool = False
+    ) -> User | None:
         """Членство учётки в компании из контекста."""
         result = await self.session.scalars(
-            select(User).where(User.account_id == account_id)
+            select(User)
+            .where(User.account_id == account_id)
+            .execution_options(populate_existing=fresh)
         )
         return result.first()
 

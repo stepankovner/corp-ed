@@ -9,13 +9,13 @@
 // один для стенда и боя, стенд закрыт от поисковиков.
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const ssr = join(root, "dist-ssr");
 
-const { PAGES, SITE_URL, render } = await import(join(ssr, "prerender.js"));
+const { PAGES, SITE_URL, render } = await import(pathToFileURL(join(ssr, "prerender.js")).href);
 
 const ROBOTS_META = '<meta name="robots" content="noindex" />';
 const TITLE = /<title>[^<]*<\/title>/;
