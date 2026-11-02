@@ -1,6 +1,8 @@
 import { HttpResponse } from "msw";
 
-import type { Schemas } from "../api/client";
+import type { components } from "../api/schema";
+
+type Schemas = components["schemas"];
 
 type Message = Schemas["MessageResponse"];
 type Conversation = Schemas["ConversationResponse"];
