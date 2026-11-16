@@ -1,5 +1,5 @@
 # ===== Стадия 1: builder — сборка зависимостей =====
-FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS builder
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS builder
 
 # uv — из официального образа, версия закреплена (та же, что у разработчиков
 # и в CI): «latest» в базовом образе — это сборка, которая меняется сама.
@@ -39,7 +39,7 @@ RUN python /tmp/fetch_root_ca.py "$RUSSIAN_ROOT_CA_SOURCE" "$RUSSIAN_ROOT_CA_SHA
     /app/certs/russian_trusted_root_ca.pem
 
 # ===== Стадия 2: runtime — финальный образ =====
-FROM python:3.12-slim@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9 AS runtime
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS runtime
 
 # Обновления безопасности базового образа: slim выходит по расписанию, а
 # CVE в libc и openssl — нет. Списки пакетов не оставляем (размер).
